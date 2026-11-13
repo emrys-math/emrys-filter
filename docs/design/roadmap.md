@@ -463,16 +463,19 @@ announcing it, before the guides are empty (Documentation above). The advertised
 posts under "Getting the word out" below, follows it. The soft launch waits for the items marked
 **soft launch**, which the tag needs or without which the README states something false, and for
 the guide questions marked **breaking** at the end of this section, since a breaking change costs
-no user anything before the first release. The rest may follow it. Whether the vcpkg and Conan
-submissions and GitHub Discussions wait for the advertised launch is undecided.
+no user anything before the first release. The rest may follow it. The vcpkg and Conan
+submissions wait for the advertised launch (decided 2026-11-12); whether GitHub Discussions does
+is undecided.
 
-On 2026-11-12 the repository was private, with no tag or release, and Discussions and Pages off.
+On 2026-11-12 the repository was made public, from one squashed commit on `main`, `dev`, and
+`next`, with no tag or release, the reference on Pages, and Discussions off.
 
 The front door:
 
-- [ ] **Soft launch.** `main` holds only the initial commit, 461 commits behind `dev`, and `next`
-      is 73 ahead of `dev` (2026-11-12); the launch merges `dev` to it and tags the release there.
-- [ ] vcpkg and Conan ports of the CMake package [cmake-package], vcpkg first. vcpkg ships with
+- [ ] **Soft launch.** `main` holds only the initial commit, behind `dev`; the launch merges `dev`
+      to it and tags the release there.
+- [ ] vcpkg and Conan ports of the CMake package [cmake-package], vcpkg first, submitted at the
+      advertised launch. vcpkg ships with
       Visual Studio and is where a Windows C++ developer looks first, so its registry is the
       larger discovery surface, but a port there records no compiler floor: a user on GCC 13
       installs it and meets the failure at the first include. A Conan recipe of package type
@@ -486,14 +489,15 @@ The front door:
       passes its own checks, and a consumer built with Clang 21 runs against each; the Conan
       recipe's `validate()` rejects Clang 20 and `cppstd` 17 with a plain message. The `vcpkg`
       and `conan` CI jobs passed on 2026-11-03 (Conan with GCC 14 and Clang 21
-      on Linux). Left: the `SHA512` and `sha256` of the first tag's archive in the port and
-      `conandata.yml`, with a CI step that installs the unmodified port and recipe after the
+      on Linux). Until the submissions, those jobs keep the port and recipe working. Left: the
+      `SHA512` and `sha256` of the archive of the tag submitted in the port and
+      `conandata.yml`, with a CI step that installs the unmodified port and recipe after that
       tag; and whether Conan Center takes the version range `eigen/[>=5.0.0 <6]` or wants `eigen/5.0.1` exactly.
 - [ ] The Eigen 5.0 features the library uses, in the README. Its opening names Eigen 5, and its
       Install section says that 5 is required and 3.4 is not enough; `Core/Version.h` rejects an
       older Eigen.
-- [ ] The README's Install section, once the vcpkg and Conan packages are published and not
-      before, since it states only what is true: `vcpkg install emrys-filter` and `conan install
+- [ ] The README's Install section, once the vcpkg and Conan packages are published at the
+      advertised launch and not before, since it states only what is true: `vcpkg install emrys-filter` and `conan install
       --requires=emrys-filter/0.1.0` first, then the same `find_package` lines. Reword "the 3.4
       that most package managers still ship", since vcpkg and Conan Center carry Eigen 5.0.1.
       Say that Conan rejects a compiler below the floor with a plain message, and vcpkg does not.

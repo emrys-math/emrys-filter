@@ -281,8 +281,9 @@ the decision, and history belongs in the commit message. An open question goes i
   documentation are for the maintainer and needn't.
 - In the examples, a full-line comment has a blank line above it, unless it is the first line of a
   block or continues a comment.
-- Example code in documentation keeps the library's 120 columns, which clang-format doesn't reach
-  there. A comment that shows a result or an error follows its statement where the line fits and
+- Example code in the user's documents (`README.md`, `docs/usage.md`, `docs/choosing.md`, and
+  `docs/porting.md`) keeps to 80 columns, so that GitHub shows each line whole beside its sidebar;
+  elsewhere it keeps the library's 120. clang-format doesn't reach either. A comment that shows a result or an error follows its statement where the line fits and
   goes on its own line above the statement where it doesn't. A code block of compiler or program
   output is quoted as printed, whatever its length.
 - Prose is in American spelling, as the identifiers are (*meters*, *normalize*, *behavior*), and

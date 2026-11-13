@@ -359,44 +359,33 @@ filters didn't say which kind it came from; a filter names itself and nests its 
 
 *A batched function takes every point at once, and the library calls it once per batch.*
 
-**Rule.** `batched(f)` marks a model's, a log-likelihood's, or a transform's function as taking
-the points as the columns of a matrix `X` and writing into one output argument `Y`, last, which the
-library provides and sizes once (`h(in, out, X, Y)`). Column $j$ of the result depends only on
-column $j$ of the inputs, which is the user's contract. The mark says what Jacobians the function
-gives, since the library sizes their storage before the call: none, `jacobians::perColumn()`, or
-`jacobians::shared()` for a function linear in its input; `Y.wantsJacobian<Name>()` says which
-blocks the method uses. Without a mark, a method that needs a Jacobian takes it by autodiff: of
-one column for `Linearized` and the iterated updates, and of the whole batch, in dual numbers seeded
-on the blocks it uses, where it needs the Jacobian at every point, as the factored transform
-[affine-coordinates] and a likelihood widened by its uncertain inputs [likelihood-measurements] do.
-The library calls a batched function once per sigma-point set and once per particle set or chunk
-[execution-policies]; an unmarked function is called per point. A model placed by `on()` takes
-batches as its function does, with its mark; `compose()` calls each batched part once over its rows
-of the batch and each other part per point, and `onEach()` calls a batched model once per
-repetition, and these two write no Jacobian, so a method that needs one differentiates them. A
-user's space whose `normalize()`, `plus()`, or `minus()` can't take a block of columns is not a
-`Space`.
+**Rule.** `batched(f)` marks a model's, log-likelihood's, or transform's function as taking the
+points as the columns of a matrix `X` and writing into a last argument `Y` that the library sizes
+once (`h(in, out, X, Y)`); column $j$ of the result depends only on column $j$ of the inputs. The
+mark names the Jacobians the function gives, whose storage is sized before the call: none,
+`jacobians::perColumn()`, or `jacobians::shared()` for a linear function; `Y.wantsJacobian<Name>()`
+says which blocks the method uses. Unmarked, a needed Jacobian comes by autodiff: of one column for
+`Linearized` and the iterated updates, and of the whole batch, in duals seeded on the blocks used,
+where every point's is needed [affine-coordinates], [likelihood-measurements]. The library calls a
+batched function once per sigma-point set and per particle set or chunk [execution-policies].
+`on()` keeps its model's mark; `compose()` calls each batched part once over its rows, `onEach()` a
+batched model once per repetition, and neither writes a Jacobian, so a method differentiates them.
+A user's space whose `normalize()`, `plus()`, or `minus()` can't take columns is not a `Space`.
 
 **Why.** Evaluating at many points can cost more than the arithmetic: a lock, a table lookup, a GPU
-dispatch, or a call into another runtime has a fixed cost per call, which a batch pays once. A
-Jacobian by block lets the function compute only the columns the method uses; a shared one keeps a
-linear map over $10^6$ particles from storing $10^6$ copies of one matrix.
+dispatch, or a call into another runtime has a fixed cost per call, which a batch pays once. Jacobians
+by block compute only the columns used; a shared one keeps $10^6$ particles from storing $10^6$ copies.
 
-**Rejected.** Detecting whether a function accepts a matrix: a generic lambda accepts anything, and
-a body written for one column can compile for many and be wrong (`x.norm()` of a block). The name
-`columnwise`, which reads as mapping a one-column function. Returning the results, which allocates
-every call [allocation]. A separate Jacobian argument, which an argument count can't tell from a
-form with one more space. Announcing Jacobians by the return type: their storage is sized before
-the call. One call across `onEach`'s repetitions, or over every mixture component's points: more
-indexing, or changed recursions, for a gain only a device would see.
+**Rejected.** Detecting whether a function accepts a matrix: a generic lambda accepts anything, and a
+one-column body can compile for many and be wrong (`x.norm()` of a block). The name `columnwise`,
+which reads as mapping a one-column function. Returning the results, which allocates [allocation].
+A Jacobian argument, which an argument count can't tell from one more space. One call across
+`onEach`'s repetitions or every mixture component, for a gain only a device would see.
 
 **Evidence.** Tests that count calls or compare with the per-point form; negative compile tests.
 
-**Where.** `Models/Batched.h` (`batched()`, `BatchedOutput`, `internal::callBatched()` and
-`internal::callBatchedWithJacobians()`); `Transform::evaluateEach()` in `Models/TransformArgs.h`; the
-function objects the resolvers give the transforms (`ResolvedFunction`, `ProcessStep`,
-`ModelTransform`, `PinnedMeasurement`); the placed and composed functions in `Models/Placement.h` and
-`Composition`.
+**Where.** `Models/Batched.h`, `Transform::evaluateEach()`, the resolvers' `ResolvedFunction`,
+`ProcessStep`, `ModelTransform`, and `PinnedMeasurement`, and `Composition` in `Models/Placement.h`.
 
 ### params-and-density
 
@@ -2325,37 +2314,30 @@ measurement contradicts with a weight it can't be given consistently.
 
 *IMM keeps one Gaussian per mode in a hybrid, and switches models and measurements by mode axis.*
 
-**Rule.** The IMM's state is a `Hybrid`: mode weights over a discrete mode space and exactly one
-component per mode. Its `SwitchingModel` holds a model per mode, one per value of a mode axis
-(`switchingModel<Maneuver>(chain, cruise, turn)`), or one shared, and its chain moves once per
-prediction. `predict()` mixes each mode's starting Gaussian through the chain and predicts it by its
-mode's model; `update()` updates each mode, reduces with the policy, and reweights by
-$p(z \mid m)$. The policy must keep one Gaussian, so `Keep` doesn't compile. A mode the policy
-rejects keeps its Gaussian with probability zero, which the chain restores. Noise
-`additiveNoise(mixture).byMode<Axis>()` makes its components the values of a mode axis, the Markov
-outlier model: a state whose mode space has the axis, in any filter, updates each mode with the
-component its value names, weighted by the chain alone; a state with no mode space reads the
-mixture with its weights, memoryless; a mode space without the axis fails to compile. A
-`SwitchingMeasurement` holds a measurement per value of a mode axis
-(`switchingMeasurement<Sensor>(nominal, biased)`), and the IMM's `update()` updates each mode by the
-one its value selects; their updates must have one type, and none of them has noise by mode axis.
-The update of one measurement takes a block given as `update(prior, measurement, given)` does
-[rb-point-mass], [rb-particle-filter].
+**Rule.** The IMM's state is a `Hybrid`: mode weights over a discrete mode space and one component
+per mode. Its `SwitchingModel` holds a model per value of a mode axis, or one shared
+(`switchingModel<Maneuver>(chain, cruise, turn)`), and its chain moves once per prediction.
+`predict()` mixes each mode's Gaussian through the chain and predicts it by its mode's model;
+`update()` updates each mode, reduces with a policy that keeps one Gaussian (`Keep` doesn't
+compile), and reweights by $p(z \mid m)$, a rejected mode keeping its Gaussian at probability zero.
+Noise `additiveNoise(mixture).byMode<Axis>()` is the Markov outlier model: in any filter whose mode
+space has the axis, each mode updates by its value's component, weighted by the chain alone; with
+no mode space the mixture is memoryless; a mode space without the axis fails to compile.
+`switchingMeasurement<Sensor>(nominal, biased)` updates each mode by its value's measurement, all of
+one update type and none with noise by mode axis. One measurement's update takes a block given as
+`update(prior, measurement, given)` does [rb-point-mass], [rb-particle-filter].
 
-**Why.** Every filter that tracks modes keeps one Gaussian per mode. Selecting the model by mode
-axis keeps a two-model maneuver set at two models when a two-state sensor is added to the mode.
-Naming the axis in the noise chooses once, where the sensor is modeled, and a filter with the axis
-always updates it. Without a mode space the noise can mean only the memoryless model, the IMM's case
-of identical rows, so one measurement serves the robust filter and the IMM; a mode space that could
-carry the axis but lacks it is most likely a mistake. A measurement selected by axis, as a model
-is, lets the mode change the function, not only the noise, with no index arithmetic in the user's
-code. Rejected modes keep their place because the mode set is fixed by the mode space.
+**Why.** Every filter that tracks modes keeps one Gaussian per mode, and the mode space fixes the
+set, so a rejected mode keeps its place for the chain to restore. Selecting by mode axis keeps a
+two-model maneuver set at two models when a two-state sensor joins the mode, and lets the mode change
+a measurement's function, not only its noise, without index arithmetic. Naming the axis in the noise
+chooses once, where the sensor is modeled. Without a mode space it can mean only the memoryless
+model, so one measurement serves the robust filter and the IMM; a mode space lacking it is a mistake.
 
-**Rejected.** A labeled `GaussianMixtureParams`, which would make every mixture carry labels and
-allow several components per mode, which no mode-tracking filter wants. `update<Path>()`, the axis
-named at each call: forgetting it left the axis to the chain. An error without a mode space: one
-sensor model could no longer serve both filters. The mode as an item of a measurement model's
-`reads()`, since the items are continuous blocks and inputs of a function's input vector.
+**Rejected.** A labeled `GaussianMixtureParams`, which would allow several components per mode.
+`update<Path>()`, naming the axis at each call: a forgotten axis was left to the chain. An error
+without a mode space, which splits one sensor model in two. The mode as an item of `reads()`, whose
+items are continuous blocks.
 
 **Where.** `Filters/ImmFilter.h`, `Models/SwitchingModel.h`, `Models/Policies.h`, `Distributions/Hybrid.h`.
 

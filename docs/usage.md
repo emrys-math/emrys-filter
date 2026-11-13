@@ -34,7 +34,9 @@ the install and fetch it, which finds an installed one first:
 
 ```cmake
 include(FetchContent)
-FetchContent_Declare(EmrysFilter GIT_REPOSITORY <repository URL> GIT_TAG <tag or commit>
+FetchContent_Declare(EmrysFilter
+  GIT_REPOSITORY <repository URL>
+  GIT_TAG <tag or commit>
   FIND_PACKAGE_ARGS 0.1 CONFIG)
 FetchContent_MakeAvailable(EmrysFilter)
 ```
@@ -44,7 +46,8 @@ Include `<EmrysFilter/EmrysFilter.h>` for everything, or one layer's header, suc
 file compiles against the headers alone, as the examples do:
 
 ```sh
-clang++ -std=c++23 -O2 -I <checkout>/include -isystem <eigen> -o estimator estimator.cpp
+clang++ -std=c++23 -O2 -I <checkout>/include -isystem <eigen> \
+  -o estimator estimator.cpp
 ```
 
 Including everything costs about three seconds and 300 MB of compiler memory, and a program the
@@ -156,7 +159,8 @@ The textbook filter of a position and velocity in the plane is
 
 ```cpp
 using State = Emrys::Linear<4>;  // x, y, and their rates
-auto const motion = Emrys::fixedStep(Emrys::processModel(F, Emrys::additiveNoise(Q)), dt);
+auto const motion =
+    Emrys::fixedStep(Emrys::processModel(F, Emrys::additiveNoise(Q)), dt);
 auto const fix = Emrys::measurementModel(H, Emrys::additiveNoise(R));
 auto const prior = Emrys::GaussianParams<State>{mean, cov};
 auto filter = Emrys::KalmanFilter{motion, prior};
@@ -212,7 +216,9 @@ none:
 
 ```cpp
 auto const gps = Emrys::measurementModel(
-    Eigen::Matrix2d::Identity(), Emrys::reads(Emrys::path<Position>), Emrys::additiveNoise(noise));
+    Eigen::Matrix2d::Identity(),
+    Emrys::reads(Emrys::path<Position>),
+    Emrys::additiveNoise(noise));
 auto const updated = filter.update(Emrys::observe(gps, z));
 ```
 
@@ -237,13 +243,15 @@ the same with `dt` after:
 
 ```cpp
 auto const range = Emrys::measurementModel(
-    []<typename T>(auto const & in, auto const &, auto const & x) {
-        return T{Emrys::block<Position>(in, x).norm()};   // a scalar, in the input's scalar
+    []<typename T>(auto const & in, auto const & x) {
+        // a scalar, in the input's scalar
+        return T{Emrys::block<Position>(in, x).norm()};
     },
     Emrys::reads(Emrys::path<Position>),
-    Emrys::writes(Emrys::path<Range>),                    // optional for a model used alone
+    Emrys::writes(Emrys::path<Range>),  // optional for a model used alone
     Emrys::additiveNoise(rangeNoise));
-auto const updated = filter.update(Emrys::observe(Emrys::methods::unscented(), range, z));
+auto const updated =
+    filter.update(Emrys::observe(Emrys::methods::unscented(), range, z));
 ```
 
 The method, made by its factory in `Emrys::methods` (`linearized()`, `unscented()`, `cubature()`,
@@ -263,10 +271,15 @@ made by a new model at each time, its function capturing that time's positions:
 
 ```cpp
 auto tdoa(Eigen::Vector3d const & a1, Eigen::Vector3d const & a2) {
-  auto const difference = [a1, a2](auto const & in, auto const &, auto const & x) { /* ... */ };
-  return Emrys::measurementModel(difference, Emrys::reads(Emrys::path<Position>), Emrys::additiveNoise(noise));
+  auto const difference = [a1, a2](auto const & in, auto const & x) {
+    /* ... */
+  };
+  return Emrys::measurementModel(difference,
+                                 Emrys::reads(Emrys::path<Position>),
+                                 Emrys::additiveNoise(noise));
 }
-auto const updated = filter.update(Emrys::observe(Emrys::methods::unscented(), tdoa(a1, a2), z));
+auto const updated = filter.update(
+    Emrys::observe(Emrys::methods::unscented(), tdoa(a1, a2), z));
 ```
 
 A model built once covers a measurement that follows the state's counts:
@@ -280,10 +293,12 @@ the differencing $D$, and its size is the number of receivers that heard it:
 
 ```cpp
 auto const ranging = Emrys::measurementModel(
-    dwellFunction(dwell),                                  // reads the receivers that heard it
+    dwellFunction(dwell),  // reads the receivers that heard it
     Emrys::reads(Emrys::path<Target>, Emrys::path<Receivers>),
-    Emrys::outputSpace(Reading{RoundTrip{}, Tdoas{Tdoa{}, n}}),  // Composite<RoundTrip, Tdoas>, sized for the dwell
-    Emrys::additiveNoise(Eigen::MatrixXd{d * sigma.asDiagonal() * d.transpose()}));
+    // Composite<RoundTrip, Tdoas>, sized for the dwell
+    Emrys::outputSpace(Reading{RoundTrip{}, Tdoas{Tdoa{}, n}}),
+    Emrys::additiveNoise(
+        Eigen::MatrixXd{d * sigma.asDiagonal() * d.transpose()}));
 filter.update(Emrys::observe(Emrys::methods::linearized(), ranging, dwell.z));
 ```
 
@@ -412,23 +427,32 @@ A process model is a function of what it reads, with policies that name it:
 
 ```cpp
 auto const unicycle = Emrys::processModel(
-    // in and out are the spaces that reads() and writes() define; x is a vector in in, read by
-    // block; the result is a vector in out, built from zeros<T>(out) and filled by block. T is
-    // the scalar of x, which the call supplies, so that Linearized can differentiate the function.
-    []<typename T>(auto const & in, auto const & out, auto const & x, double dt) {
-        T const heading = Emrys::block<Heading>(in, x)(0);
-        T const distance = dt * Emrys::block<Speed>(in, x)(0);
+    // in and out are the spaces that reads() and writes() define; x is a
+    // vector in in, read by block; the result is a vector in out, built from
+    // zeros<T>(out) and filled by block. T is the scalar of x, which the call
+    // supplies, so that Linearized can differentiate the function.
+    []<typename T>(auto const & in, auto const & out, auto const & x,
+                   double dt) {
+        using Emrys::block;
+        T const heading = block<Heading>(in, x)(0);
+        T const distance = dt * block<Speed>(in, x)(0);
         auto const displacement = Emrys::DifferenceVector<Position, T>{
-            distance * Eigen::numext::cos(heading), distance * Eigen::numext::sin(heading)};
-        Emrys::DifferenceVector<Heading, T> const turn = dt * Emrys::block<TurnRate>(in, x);
+            distance * Eigen::numext::cos(heading),
+            distance * Eigen::numext::sin(heading)};
+        Emrys::DifferenceVector<Heading, T> const turn =
+            dt * block<TurnRate>(in, x);
         auto y = Emrys::zeros<T>(out);
-        Emrys::block<Position>(out, y) = Emrys::plus<Position>(Emrys::block<Position>(in, x), displacement);
-        Emrys::block<Heading>(out, y) = Emrys::plus<Heading>(Emrys::block<Heading>(in, x), turn);
+        block<Position>(out, y) =
+            Emrys::plus<Position>(block<Position>(in, x), displacement);
+        block<Heading>(out, y) =
+            Emrys::plus<Heading>(block<Heading>(in, x), turn);
         return y;
     },
-    Emrys::reads(Emrys::path<Position>, Emrys::path<Heading>, Emrys::path<Speed>, Emrys::path<TurnRate>),
+    Emrys::reads(Emrys::path<Position>, Emrys::path<Heading>,
+                 Emrys::path<Speed>, Emrys::path<TurnRate>),
     Emrys::writes(Emrys::path<Position>, Emrys::path<Heading>),
-    Emrys::continuousNoise(Emrys::on<Heading>(0.01)));  // or additiveNoise(), or neither
+    // or additiveNoise(), or neither
+    Emrys::continuousNoise(Emrys::on<Heading>(0.01)));
 ```
 
 `reads()` names what the function reads, blocks of the state or inputs of the call; `writes()` the
@@ -465,35 +489,44 @@ a fading-memory filter that forgets old measurements:
 template <Emrys::Recursion Inner>
 class FadingMemory {
 public:
-  using Scalar = typename Inner::Scalar;        // the members the concept checks
+  // The members the concept checks. StateType is what the steps act on, here
+  // GaussianParams<State>; Reentrant is false for a recursion with scratch.
+  using Scalar = typename Inner::Scalar;
   using SpaceType = typename Inner::SpaceType;
-  using StateType = typename Inner::StateType;  // what the steps act on, here GaussianParams<State>
+  using StateType = typename Inner::StateType;
   using ModelType = typename Inner::ModelType;
   using MethodType = typename Inner::MethodType;
-  static constexpr bool Reentrant = Inner::Reentrant;  // false for a recursion with scratch
-  template <Emrys::MeasurementModel M> using UpdateType = typename Inner::template UpdateType<M>;
-  template <Emrys::MeasurementModel M> using ResultType = typename Inner::template ResultType<M>;
+  static constexpr bool Reentrant = Inner::Reentrant;
+  template <Emrys::MeasurementModel M>
+  using UpdateType = typename Inner::template UpdateType<M>;
+  template <Emrys::MeasurementModel M>
+  using ResultType = typename Inner::template ResultType<M>;
 
-  FadingMemory(Inner inner, Scalar alpha) : m_inner{std::move(inner)}, m_alpha{alpha} {}
+  FadingMemory(Inner inner, Scalar alpha)
+      : m_inner{std::move(inner)}, m_alpha{alpha} {}
   ModelType const & model() const { return m_inner.model(); }
   ModelType & model() { return m_inner.model(); }
   MethodType const & method() const { return m_inner.method(); }
 
-  // predict(state, dt, inputs...), or predict(state, inputs...) with a fixed-step model
+  // predict(state, dt, inputs...), or predict(state, inputs...) with a
+  // fixed-step model
   template <typename... Args>
   void predict(StateType & state, Args const &... args) const {
     m_inner.predict(state, args...);
     state.setCovariance(m_alpha * m_alpha * state.covarianceLower());
   }
-  // Returns UpdateType<M>, a std::expected whose value says whether the policy accepted the
-  // measurement and gives the observation's log-likelihood, by which a mixture reweights.
+  // Returns UpdateType<M>, a std::expected whose value says whether the
+  // policy accepted the measurement and gives the observation's
+  // log-likelihood, by which a mixture reweights.
   template <Emrys::MeasurementModel M, typename Policy>
-  auto update(StateType & state, M const & measurement, Policy const & policy) const {
+  auto update(StateType & state, M const & measurement,
+              Policy const & policy) const {
     return m_inner.update(state, measurement, policy);
   }
   // The same into a result whose storage is reused.
   template <Emrys::MeasurementModel M, typename Policy, typename Result>
-  auto update(StateType & state, M const & measurement, Policy const & policy, Result & result) const {
+  auto update(StateType & state, M const & measurement, Policy const & policy,
+              Result & result) const {
     return m_inner.update(state, measurement, policy, result);
   }
 
@@ -504,7 +537,8 @@ private:
 
 using Inner = Emrys::KalmanRecursion<Emrys::Gaussian<State>, decltype(motion)>;
 auto filter = Emrys::KalmanFilter{FadingMemory{Inner{motion}, 1.1}, initial};
-auto bank = Emrys::MixtureFilter{FadingMemory{Inner{motion}, 1.1}, mixture};  // on each component
+// on each component
+auto bank = Emrys::MixtureFilter{FadingMemory{Inner{motion}, 1.1}, mixture};
 ```
 
 A recursion written from scratch conditions the state itself: `Emrys::update(state, measurement)`
@@ -548,10 +582,13 @@ struct Floor {
   double variance;
   template <typename Branches>
   auto operator()(Branches && branches) const {
-    auto const g = *Emrys::reductions::collapse()(std::forward<Branches>(branches));  // Collapse always returns one
+    // Collapse always returns one.
+    auto const g =
+        *Emrys::reductions::collapse()(std::forward<Branches>(branches));
     auto cov = g.covarianceLower();
     for (int i = 0; i < 2; ++i) cov(i, i) = std::max(cov(i, i), variance);
-    return std::optional{std::remove_const_t<decltype(g)>{g.space(), g.mean(), cov}};
+    using Gaussian = std::remove_const_t<decltype(g)>;
+    return std::optional{Gaussian{g.space(), g.mean(), cov}};
   }
 };
 
@@ -567,7 +604,8 @@ moving each in:
 ```cpp
 auto keepLikely = [](auto && branches, auto & out) {
   for (auto & b : branches)
-    if (b.logWeight >= std::log(0.01)) out.add(b.logWeight, std::move(b.posterior));
+    if (b.logWeight >= std::log(0.01))
+      out.add(b.logWeight, std::move(b.posterior));
 };
 ```
 
@@ -592,10 +630,12 @@ template <double CenterWeight>
 struct SymmetricSet {
   static constexpr Eigen::Index pointCount(Eigen::Index n) { return 2 * n + 1; }
 
-  // points is n by pointCount(n), weights has pointCount(n) entries, both in the transform's scalar;
-  // returns the index of the point the output mean is taken about, as a tangent-space mean.
+  // points is n by pointCount(n), weights has pointCount(n) entries, both
+  // in the transform's scalar; returns the index of the point the output
+  // mean is taken about, as a tangent-space mean.
   template <typename Points, typename Weights>
-  static Eigen::Index unitPoints(Eigen::Index n, Points & points, Weights & weights) {
+  static Eigen::Index unitPoints(Eigen::Index n, Points & points,
+                                 Weights & weights) {
     using Scalar = typename Points::Scalar;
     Scalar const center = Scalar(CenterWeight);
     Scalar const radius = Eigen::numext::sqrt(Scalar(n) / (Scalar(1) - center));
@@ -610,7 +650,8 @@ struct SymmetricSet {
   }
 };
 
-auto const updated = filter.update(Emrys::observe(SymmetricSet<0.5>{}, range, z));
+auto const updated =
+    filter.update(Emrys::observe(SymmetricSet<0.5>{}, range, z));
 ```
 
 The weights must sum to one and give the points mean zero and identity covariance, which is what
@@ -637,11 +678,13 @@ no `double`. This one keeps the center weight nonnegative:
 struct ClampedFourthMoment {
   template <typename Scalar>
   static constexpr Emrys::UnscentedParams<Scalar> params(Eigen::Index n) {
-    return {Scalar(1), Scalar(0), n < 3 ? Scalar(3 - n) : Scalar(0)};  // alpha, beta, kappa
+    // alpha, beta, kappa
+    return {Scalar(1), Scalar(0), n < 3 ? Scalar(3 - n) : Scalar(0)};
   }
 };
 
-auto const updated = filter.update(Emrys::observe(ClampedFourthMoment{}, range, z));
+auto const updated =
+    filter.update(Emrys::observe(ClampedFourthMoment{}, range, z));
 ```
 
 `params()` must be a constant expression for a constant $n$. Over a fixed number of coordinates in
@@ -674,9 +717,11 @@ triangular so that the last coordinate's column varies alone:
 
 ```cpp
 struct ReversedCholesky {
-  static constexpr bool canFail = true;  // Cholesky fails off the positive definite cone
+  // Cholesky fails off the positive definite cone.
+  static constexpr bool canFail = true;
 
-  // U with U U^T = P, upper triangular: J L J for the Cholesky factor L of J P J, J the reversal.
+  // U with U U^T = P, upper triangular: J L J for the Cholesky factor L of
+  // J P J, J the reversal.
   template <typename Derived>
   std::expected<Emrys::roots::RootMatrix<Derived>, Emrys::GaussianError>
   root(Eigen::MatrixBase<Derived> const & cov) const {
@@ -691,9 +736,12 @@ struct ReversedCholesky {
   }
 };
 
-auto const upper = Emrys::roots::squareRoot(ReversedCholesky{}, cov);  // a std::expected
-auto const axes = Emrys::roots::withFallbacks(ReversedCholesky{}, Emrys::roots::pivoted());
-auto const method = Emrys::methods::spread(Emrys::methods::cubature(), axes);  // cannot fail
+// a std::expected
+auto const upper = Emrys::roots::squareRoot(ReversedCholesky{}, cov);
+auto const axes =
+    Emrys::roots::withFallbacks(ReversedCholesky{}, Emrys::roots::pivoted());
+// cannot fail
+auto const method = Emrys::methods::spread(Emrys::methods::cubature(), axes);
 auto const updated = filter.update(Emrys::observe(method, range, z));
 ```
 
@@ -722,15 +770,19 @@ state, which is referred to, not copied):
 auto tracker = Emrys::KalmanFilter{motion, prior};
 auto shadow = Emrys::KalmanFilter{motion, prior};
 
-Emrys::GaussianParams<State> const filtered = tracker.state();  // a copy, for the reference to refer to
-shadow.predict(dt, Emrys::linearizedAbout(filtered));           // before the inputs, if there are any
+// a copy, for the reference to refer to
+Emrys::GaussianParams<State> const filtered = tracker.state();
+// the reference goes before the inputs, if there are any
+shadow.predict(dt, Emrys::linearizedAbout(filtered));
 tracker.predict(dt);
 
 Emrys::GaussianParams<State> const predicted = tracker.state();
-auto const fromShadow = shadow.update(measurement, Emrys::linearizedAbout(predicted));
+auto const fromShadow =
+    shadow.update(measurement, Emrys::linearizedAbout(predicted));
 auto const fromTracker = tracker.update(measurement);
 if (!fromShadow || !fromTracker) {
-  // an innovation covariance was not positive definite, and that filter's state is unchanged
+  // an innovation covariance was not positive definite, and that filter's
+  // state is unchanged
 }
 ```
 
@@ -761,8 +813,10 @@ that covariance.
 struct Bias : Emrys::Linear<1> {};
 using State = Emrys::Composite<Heading, Bias>;
 
-auto const fix = Emrys::observe(method, compass, z, Emrys::consider(Emrys::path<Bias>));
-auto const updated = filter.update(fix);  // the bias's mean and variance are the prior's
+auto const fix =
+    Emrys::observe(method, compass, z, Emrys::consider(Emrys::path<Bias>));
+// the bias's mean and variance are the prior's
+auto const updated = filter.update(fix);
 ```
 
 `consider()` takes one or more paths, each a block of the state, and the model need not read it: a
@@ -840,17 +894,21 @@ blends two. A filter that records for a smoother marks the parents itself, in `p
 leave the call out there and carry once per cycle:
 
 ```cpp
-Eigen::VectorXd running = Eigen::VectorXd::Zero(filter.state().size());  // one sum per component
+// one sum per component
+Eigen::VectorXd running = Eigen::VectorXd::Zero(filter.state().size());
 ...
-filter.state().startLineage();  // the components about to be updated are the parents
+// the components about to be updated are the parents
+filter.state().startLineage();
 auto const updated = filter.update(Emrys::observe(gps, z));
 if (!updated) { /* an innovation covariance was not positive definite */ }
 for (Eigen::Index i = 0; i < running.size(); ++i) {
-  if (updated->components[i].accepted) running(i) += updated->components[i].branches.front().nis();
+  auto const & component = updated->components[i];
+  if (component.accepted) running(i) += component.branches.front().nis();
 }
 // prune or merge the components through filter.state()
 auto carried = Eigen::VectorXd(filter.state().size());
-filter.state().lineage().carry(running, carried);  // a dropped component's sum goes; a merge blends two
+// a dropped component's sum goes; a merge blends two
+filter.state().lineage().carry(running, carried);
 running = carried;
 ```
 

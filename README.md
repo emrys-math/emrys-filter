@@ -15,64 +15,76 @@ invented here.
 ```cpp
 #include <EmrysFilter/EmrysFilter.h>
 
-#include <iomanip>
-#include <iostream>
+#include <print>
 #include <random>
 
 using namespace Emrys;
 
-// The state is named blocks. These two are plain vectors; a heading is an angle.
+// The state is named blocks. These two are plain vectors; a heading is an
+// angle.
 struct Position : Linear<2> {};
 struct Velocity : Linear<2> {};
 using State = Composite<Position, Velocity>;
 
-// A radar measures a range and a bearing, an angle that wraps at plus and minus pi.
+// A radar measures a range and a bearing, an angle that wraps at plus and
+// minus pi.
 struct Range : Linear<1> {};
 struct Bearing : RadiansPi<1> {};
 
 int main()
 {
-    // Constant velocity, driven by white acceleration noise of spectral density 0.1.
+    // Constant velocity, driven by white acceleration noise of spectral
+    // density 0.1.
     double const accelerationDensity = 0.1;
-    auto const motion = ConstantVelocity<Position, Velocity>{accelerationDensity};
+    auto const motion =
+        ConstantVelocity<Position, Velocity>{accelerationDensity};
     auto const initial = GaussianParams<State>{
         ValueVector<State>{-78.0, 12.0, 0.8, -0.3},
         DifferenceVector<State>{25.0, 25.0, 1.0, 1.0}.asDiagonal()};
     auto filter = KalmanFilter{motion, initial};
 
-    // A radar at the origin sees the Position block as range and bearing, which is
-    // nonlinear. The model reads the blocks it names, wherever they sit in the state;
-    // Linearized differentiates it automatically, or takes the Jacobian a function
-    // returns with withJacobian().
+    // A radar at the origin sees the Position block as range and bearing,
+    // which is nonlinear. The model reads the blocks it names, wherever they
+    // sit in the state; Linearized differentiates it automatically, or takes
+    // the Jacobian a function returns with withJacobian().
     double const rangeVariance = 1.0;
     double const bearingVariance = 1e-4;
-    Eigen::Matrix2d const radarNoise = Eigen::Vector2d{rangeVariance, bearingVariance}.asDiagonal();
+    Eigen::Matrix2d const radarNoise =
+        Eigen::Vector2d{rangeVariance, bearingVariance}.asDiagonal();
     auto const radar = measurementModel(
-        []<typename T>(auto const & in, auto const &, auto const & x) {
+        []<typename T>(auto const & in, auto const & x) {
             auto const p = block<Position>(in, x);
-            return Eigen::Matrix<T, 2, 1>{sqrt(p.squaredNorm()), atan2(p(1), p(0))};
+            return Eigen::Matrix<T, 2, 1>{
+                sqrt(p.squaredNorm()), atan2(p(1), p(0))};
         },
         reads(path<Position>),
         writes(path<Range>, path<Bearing>),
         additiveNoise(radarNoise));
 
-    // A GPS fix sees the Position block itself, with correlated noise. It is linear,
-    // so it is given by its matrix, and its update is the Kalman filter's exact one.
+    // A GPS fix sees the Position block itself, with correlated noise. It is
+    // linear, so it is given by its matrix, and its update is the Kalman
+    // filter's exact one.
     Eigen::Matrix2d const gpsNoise{{4.0, 1.0}, {1.0, 3.0}};
-    auto const gps = measurementModel(Eigen::Matrix2d::Identity(), reads(path<Position>), additiveNoise(gpsNoise));
+    auto const gps = measurementModel(
+        Eigen::Matrix2d::Identity(),
+        reads(path<Position>),
+        additiveNoise(gpsNoise));
 
     auto rng = std::mt19937_64{42};
     auto truth = ValueVector<State>{-80.0, 10.0, 1.0, -0.5};  // bearing wraps
     auto monitor = NisMonitor{50};
 
-    // The filter takes a measurement from any model the same way, each with its method.
+    // The filter takes a measurement from any model the same way, each with
+    // its method. An update fails if the innovation covariance is not
+    // positive definite.
     auto const measure = [&](auto const & m) {
         auto const z = Eigen::Vector2d{simulate<State>(truth, m, rng)};
-        auto const updated = filter.update(observe(methods::linearized(), m, z));
+        auto const updated =
+            filter.update(observe(methods::linearized(), m, z));
         if (updated) {
             monitor.add(*updated);
         }
-        return updated.has_value();  // false: innovation covariance not positive definite
+        return updated.has_value();
     };
     for (int k = 0; k < 50; ++k) {
         truth = simulate<State>(truth, motion, rng, 1.0);  // moves
@@ -81,11 +93,12 @@ int main()
             return 1;
         }
     }
-    std::cout << std::setprecision(3)
-              << filter.state().marginal<Position>().copy() << std::endl
-              << "truth " << truth(idx<State, Position>()).transpose() << std::endl
-              << "NIS average " << monitor.average().value() << ", consistent at 99%: "
-              << std::boolalpha << (monitor.verdict(0.99) == Consistency::Consistent) << std::endl;
+    auto const position = truth(idx<State, Position>());
+    std::println("{:.3}", filter.state().marginal<Position>().copy());
+    std::println("truth {:.3} {:.3}", position(0), position(1));
+    std::println("NIS average {:.3}, consistent at 99%: {}",
+                 monitor.average().value(),
+                 monitor.verdict(0.99) == Consistency::Consistent);
 }
 ```
 
@@ -304,8 +317,7 @@ when the problem is a graph; this library is the tool when the problem is a recu
 Pre-1.0. The algorithm set for 0.1 is frozen and the API is settling through the design
 reviews; names may change before the first tagged release, after which `CHANGELOG.md` records
 every change. CI runs GCC, Clang, MSVC, the sanitizers, clang-format, the header-layer check,
-and the Doxygen build, dispatched by a maintainer for the changes that need them. The repository was eigen-filter and moved to
-[emrys-math/emrys-filter](https://github.com/emrys-math/emrys-filter).
+and the Doxygen build, dispatched by a maintainer for the changes that need them.
 
 ## Contributing and citing
 

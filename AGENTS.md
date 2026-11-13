@@ -38,6 +38,9 @@ header's. The library was eigen-filter until roadmap step 13, and its repository
 - Design reviews of each area live in `docs/guide/`. [docs/guide/README.md](docs/guide/README.md)
   lists them, their scope, and how to write one. An open design question goes in the review for
   its area, as a numbered question.
+- `dev` is the public branch, and its history is never rewritten: no rebase, amend, or force-push
+  of a commit already on it. `next` reaches `dev` by fast-forward only, and a mistake on `dev` is
+  fixed by a new commit. Only the user decides to rewrite `dev`.
 
 ## Build and test
 
@@ -89,7 +92,7 @@ clang-format check, a header-layer check, a check that each claimed compile erro
 test (`tools/check_compile_errors.py`), and a Doxygen build that fails on any warning, followed by a
 check over its XML that each policy namespace holds only its kind (`tools/check_policies.py`). The tests, examples, and benchmarks build with warnings as errors
 (`EMRYS_FILTER_WARNINGS_AS_ERRORS`). CI runs only when dispatched by hand, and only the jobs
-ticked, since a full run costs hours of runner time: nothing runs on a push or a pull request, so
+ticked, since a full run takes hours to finish: nothing runs on a push or a pull request, so
 run the local checks above, and dispatch a job only when the user asks for it
 (`gh workflow run CI --ref next -f gcc=true -f docs=true`). The Linux jobs but `clang-libcxx`
 install TBB, so libstdc++ runs `std::execution::par` on threads; without TBB it runs on one

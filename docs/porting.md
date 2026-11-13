@@ -162,7 +162,9 @@ failure cannot raise: a fallible step returns an `ok` flag beside its result, as
 solvers do. Outside `jit`, a port may raise exceptions instead, which is the Python convention.
 
 ```python
-State = Composite(position=Linear(3), velocity=Linear(3), attitude=UnitQuaternion())
+State = Composite(
+    position=Linear(3), velocity=Linear(3), attitude=UnitQuaternion()
+)
 estimator = KalmanFilter(motion, initial)
 estimator = estimator.predict(dt)
 estimator, stats, ok = estimator.update(range_at(z))
@@ -193,7 +195,11 @@ The derive macro also gives tag paths a better form than in C++, since a field i
 
 ```rust
 #[derive(Space)]
-struct State { position: Linear<3>, velocity: Linear<3>, attitude: UnitQuaternion }
+struct State {
+    position: Linear<3>,
+    velocity: Linear<3>,
+    attitude: UnitQuaternion,
+}
 
 let mut filter = KalmanFilter::new(motion, initial);
 filter.predict(dt);
@@ -240,7 +246,8 @@ val filter = KalmanFilter(motion, initial)
 filter.predict(dt)
 when (val stats = filter.update(rangeAt(z))) {
     is Ok -> log(stats.value.nis())
-    is Err -> skip(z)                // NotPositiveDefinite; the state is unchanged [innovation-cholesky]
+    // NotPositiveDefinite; the state is unchanged [innovation-cholesky]
+    is Err -> skip(z)
 }
 ```
 
