@@ -1,0 +1,110 @@
+# The project's style: Google-based, 120 columns, with four-column indentation, braces on their
+# own lines, and one declaration part or argument per line once a line breaks.
+#
+# Requires clang-format 20 or later (BinPackParameters: OnePerLine).
+---
+Language: Cpp
+BasedOnStyle: Google
+ColumnLimit: 120
+SortIncludes: Never
+StatementMacros:
+  - EIGEN_STATIC_ASSERT
+  - EIGEN_INITIALIZE_COEFFS_IF_THAT_OPTION_IS_ENABLED
+  - EIGEN_INTERNAL_DENSE_STORAGE_CTOR_PLUGIN
+AttributeMacros:
+  - EIGEN_STRONG_INLINE
+  - EIGEN_ALWAYS_INLINE
+  - EIGEN_DEVICE_FUNC
+  - EIGEN_DONT_INLINE
+  - EIGEN_DEPRECATED
+  - EIGEN_UNUSED
+  - EMRYS_FILTER_NO_UNIQUE_ADDRESS
+
+# Indentation: four columns, access specifiers flush with the class keyword.
+IndentWidth: 4
+ContinuationIndentWidth: 4
+AccessModifierOffset: -4
+IndentCaseLabels: true
+IndentRequiresClause: true
+IndentWrappedFunctionNames: false
+IndentPPDirectives: AfterHash
+NamespaceIndentation: None
+
+# Braces on their own line for every block; lambdas keep theirs inline.
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterCaseLabel: true
+  AfterClass: true
+  AfterControlStatement: Always
+  AfterEnum: true
+  AfterExternBlock: true
+  AfterFunction: true
+  AfterNamespace: true
+  AfterStruct: true
+  AfterUnion: true
+  BeforeCatch: true
+  BeforeElse: true
+  BeforeLambdaBody: false
+  BeforeWhile: true
+  IndentBraces: false
+  SplitEmptyFunction: false
+  SplitEmptyRecord: false
+  SplitEmptyNamespace: false
+InsertBraces: true
+
+# Nothing collapses onto one line but an empty body, whose braces stay together as {}: on the
+# header's line where a declaration fits on one, otherwise on the line after it.
+AllowShortBlocksOnASingleLine: Empty
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortEnumsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: Empty
+AllowShortLoopsOnASingleLine: false
+AllowShortCompoundRequirementOnASingleLine: true
+
+# Declarations: the template header, then the attributes and return type, each on their own
+# line, so the function name always starts one. [[nodiscard]] stays with the type it marks. A
+# constructor has no return type, so its explicit stays on the name's line: the rule keeps a long
+# return type from pushing the name right, and a constructor's prefix is short and fixed.
+BreakTemplateDeclarations: Yes
+BreakAfterAttributes: Never
+BreakAfterReturnType: All
+RequiresClausePosition: OwnLine
+RequiresExpressionIndentation: OuterScope
+BreakBeforeConceptDeclarations: Always
+
+# Argument and parameter lists: all on one line, or one per line with the closing bracket on
+# its own line.
+AlignAfterOpenBracket: BlockIndent
+BinPackArguments: false
+BinPackParameters: OnePerLine
+AllowAllArgumentsOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: false
+BreakConstructorInitializers: BeforeComma
+PackConstructorInitializers: Never
+BreakInheritanceList: BeforeComma
+
+# Long expressions: operators lead the continuation line.
+BreakBeforeBinaryOperators: NonAssignment
+BreakBinaryOperations: Never
+BreakBeforeTernaryOperators: true
+AlignOperands: AlignAfterOperator
+
+# Qualifiers after the type they qualify (East const), and `&` and `*` spaced on both sides:
+# `Source const & source`, `auto && sub`, `Scalar const * data`.
+QualifierAlignment: Right
+PointerAlignment: Middle
+ReferenceAlignment: Middle
+DerivePointerAlignment: false
+
+# Vertical whitespace.
+SeparateDefinitionBlocks: Always
+EmptyLineBeforeAccessModifier: Always
+EmptyLineAfterAccessModifier: Always
+MaxEmptyLinesToKeep: 2
+KeepEmptyLines:
+  AtEndOfFile: false
+  AtStartOfBlock: false
+  AtStartOfFile: false
+...

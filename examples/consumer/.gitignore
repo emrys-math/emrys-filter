@@ -1,0 +1,4 @@
+/build*/
+# The skills install from EmrysFilter, at the version this project builds against.
+/.claude/skills/emrys-filter-*/
+/.agents/skills/emrys-filter-*/

@@ -1,0 +1,270 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 28, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "clang",
+      "displayName": "Clang (Ninja)",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++",
+        "EMRYS_FILTER_TEST_COMPILE_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "gcc",
+      "displayName": "GCC (Ninja)",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "g++",
+        "EMRYS_FILTER_TEST_COMPILE_ERRORS": "ON"
+      }
+    },
+    {
+      "name": "msvc",
+      "displayName": "MSVC (Ninja, from an x64 developer environment)",
+      "inherits": "base",
+      "generator": "Ninja",
+      "architecture": { "value": "x64", "strategy": "external" },
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "cl",
+        "EMRYS_FILTER_TEST_COMPILE_ERRORS": "ON"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "clang-sanitize",
+      "displayName": "Clang (Ninja), AddressSanitizer and UndefinedBehaviorSanitizer",
+      "inherits": "clang",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer",
+        "EMRYS_FILTER_TEST_COMPILE_ERRORS": "OFF"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
+    },
+    {
+      "name": "clang-coverage",
+      "displayName": "Clang (Ninja), source-based coverage (run tools/coverage.py)",
+      "inherits": "clang",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fprofile-instr-generate -fcoverage-mapping",
+        "EMRYS_FILTER_TEST_COMPILE_ERRORS": "OFF"
+      }
+    },
+    {
+      "name": "gcc-no-exceptions",
+      "displayName": "GCC (Ninja), without exceptions or RTTI",
+      "inherits": "gcc",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-fno-exceptions -fno-rtti",
+        "EMRYS_FILTER_TEST_COMPILE_ERRORS": "OFF"
+      }
+    },
+    {
+      "name": "clang-libcxx",
+      "displayName": "Clang (Ninja) with libc++",
+      "inherits": "clang",
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-stdlib=libc++",
+        "EMRYS_FILTER_TEST_COMPILE_ERRORS": "OFF"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Linux" }
+    },
+    {
+      "name": "apple-clang",
+      "displayName": "Apple Clang (Ninja) with libc++",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++"
+      },
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
+    },
+    {
+      "name": "bench",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "EMRYS_FILTER_BUILD_TESTS": "OFF",
+        "EMRYS_FILTER_BUILD_BENCHMARKS": "ON"
+      }
+    },
+    { "name": "clang-bench", "displayName": "Clang (Ninja), release benchmarks", "inherits": ["bench", "clang"] },
+    { "name": "gcc-bench", "displayName": "GCC (Ninja), release benchmarks", "inherits": ["bench", "gcc"] },
+    { "name": "msvc-bench", "displayName": "MSVC (Ninja), release benchmarks", "inherits": ["bench", "msvc"] }
+  ],
+  "buildPresets": [
+    { "name": "clang", "configurePreset": "clang" },
+    { "name": "gcc", "configurePreset": "gcc" },
+    { "name": "msvc", "configurePreset": "msvc" },
+    { "name": "clang-sanitize", "configurePreset": "clang-sanitize" },
+    { "name": "clang-coverage", "configurePreset": "clang-coverage" },
+    { "name": "clang-compile-errors", "configurePreset": "clang", "targets": ["emrys_filter_compile_errors"] },
+    { "name": "gcc-compile-errors", "configurePreset": "gcc", "targets": ["emrys_filter_compile_errors"] },
+    { "name": "msvc-compile-errors", "configurePreset": "msvc", "targets": ["emrys_filter_compile_errors"] },
+    { "name": "gcc-no-exceptions", "configurePreset": "gcc-no-exceptions" },
+    { "name": "clang-libcxx", "configurePreset": "clang-libcxx" },
+    { "name": "apple-clang", "configurePreset": "apple-clang" },
+    { "name": "clang-bench", "configurePreset": "clang-bench", "targets": ["benchmark"] },
+    { "name": "gcc-bench", "configurePreset": "gcc-bench", "targets": ["benchmark"] },
+    { "name": "msvc-bench", "configurePreset": "msvc-bench", "targets": ["benchmark"] }
+  ],
+  "testPresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8 }
+    },
+    {
+      "name": "tests",
+      "hidden": true,
+      "inherits": "base",
+      "filter": { "exclude": { "label": "compile_error" } }
+    },
+    {
+      "name": "compile-errors",
+      "hidden": true,
+      "inherits": "base",
+      "filter": { "include": { "label": "compile_error" } }
+    },
+    { "name": "clang", "inherits": "tests", "configurePreset": "clang" },
+    { "name": "gcc", "inherits": "tests", "configurePreset": "gcc" },
+    { "name": "msvc", "inherits": "tests", "configurePreset": "msvc" },
+    { "name": "clang-compile-errors", "inherits": "compile-errors", "configurePreset": "clang" },
+    { "name": "gcc-compile-errors", "inherits": "compile-errors", "configurePreset": "gcc" },
+    { "name": "msvc-compile-errors", "inherits": "compile-errors", "configurePreset": "msvc" },
+    {
+      "name": "clang-sanitize",
+      "inherits": "base",
+      "configurePreset": "clang-sanitize",
+      "environment": {
+        "ASAN_OPTIONS": "detect_leaks=1:abort_on_error=1:alloc_dealloc_mismatch=0",
+        "UBSAN_OPTIONS": "print_stacktrace=1"
+      }
+    },
+    { "name": "gcc-no-exceptions", "inherits": "base", "configurePreset": "gcc-no-exceptions" },
+    { "name": "clang-libcxx", "inherits": "base", "configurePreset": "clang-libcxx" },
+    { "name": "apple-clang", "inherits": "base", "configurePreset": "apple-clang" }
+  ],
+  "workflowPresets": [
+    {
+      "name": "clang",
+      "steps": [
+        { "type": "configure", "name": "clang" },
+        { "type": "build", "name": "clang" },
+        { "type": "test", "name": "clang" }
+      ]
+    },
+    {
+      "name": "gcc",
+      "steps": [
+        { "type": "configure", "name": "gcc" },
+        { "type": "build", "name": "gcc" },
+        { "type": "test", "name": "gcc" }
+      ]
+    },
+    {
+      "name": "msvc",
+      "steps": [
+        { "type": "configure", "name": "msvc" },
+        { "type": "build", "name": "msvc" },
+        { "type": "test", "name": "msvc" }
+      ]
+    },
+    {
+      "name": "clang-compile-errors",
+      "steps": [
+        { "type": "configure", "name": "clang" },
+        { "type": "build", "name": "clang-compile-errors" },
+        { "type": "test", "name": "clang-compile-errors" }
+      ]
+    },
+    {
+      "name": "gcc-compile-errors",
+      "steps": [
+        { "type": "configure", "name": "gcc" },
+        { "type": "build", "name": "gcc-compile-errors" },
+        { "type": "test", "name": "gcc-compile-errors" }
+      ]
+    },
+    {
+      "name": "msvc-compile-errors",
+      "steps": [
+        { "type": "configure", "name": "msvc" },
+        { "type": "build", "name": "msvc-compile-errors" },
+        { "type": "test", "name": "msvc-compile-errors" }
+      ]
+    },
+    {
+      "name": "clang-sanitize",
+      "steps": [
+        { "type": "configure", "name": "clang-sanitize" },
+        { "type": "build", "name": "clang-sanitize" },
+        { "type": "test", "name": "clang-sanitize" }
+      ]
+    },
+    {
+      "name": "clang-coverage",
+      "steps": [
+        { "type": "configure", "name": "clang-coverage" },
+        { "type": "build", "name": "clang-coverage" }
+      ]
+    },
+    {
+      "name": "gcc-no-exceptions",
+      "steps": [
+        { "type": "configure", "name": "gcc-no-exceptions" },
+        { "type": "build", "name": "gcc-no-exceptions" },
+        { "type": "test", "name": "gcc-no-exceptions" }
+      ]
+    },
+    {
+      "name": "clang-libcxx",
+      "steps": [
+        { "type": "configure", "name": "clang-libcxx" },
+        { "type": "build", "name": "clang-libcxx" },
+        { "type": "test", "name": "clang-libcxx" }
+      ]
+    },
+    {
+      "name": "apple-clang",
+      "steps": [
+        { "type": "configure", "name": "apple-clang" },
+        { "type": "build", "name": "apple-clang" },
+        { "type": "test", "name": "apple-clang" }
+      ]
+    },
+    {
+      "name": "clang-bench",
+      "steps": [
+        { "type": "configure", "name": "clang-bench" },
+        { "type": "build", "name": "clang-bench" }
+      ]
+    },
+    {
+      "name": "gcc-bench",
+      "steps": [
+        { "type": "configure", "name": "gcc-bench" },
+        { "type": "build", "name": "gcc-bench" }
+      ]
+    },
+    {
+      "name": "msvc-bench",
+      "steps": [
+        { "type": "configure", "name": "msvc-bench" },
+        { "type": "build", "name": "msvc-bench" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+name: Feature request
+description: Propose an algorithm or a capability, with the literature it would implement.
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The library implements the public literature and contributes nothing of its own, so a
+        feature is a published method plus the place it fits. If there is no reference yet, the
+        method belongs on `docs/research.md` instead; see `CONTRIBUTING.md`. Please check
+        `docs/design/roadmap.md` and the open questions in `docs/design/decisions.md` first.
+  - type: textarea
+    id: need
+    attributes:
+      label: The need
+      description: What can't be done today, or can only be done badly, and in what application.
+      placeholder: >
+        A fixed-lag smoother on a bearings-only tracker needs to reject a measurement after later
+        data has shown it to be an outlier; today the forward gate is the only rejection.
+    validations:
+      required: true
+  - type: textarea
+    id: literature
+    attributes:
+      label: The literature
+      description: >
+        First author, year, title, venue, and the sections or equations the code would follow.
+        Say what the library would take from the source and where it would have to depart
+        (manifold states, allocation, a different noise model). One primary source, then any
+        secondary ones. Preprints are fine.
+      placeholder: >
+        A. C. Harvey and S. J. Koopman. Diagnostic checking of unobserved-components time series
+        models. Journal of Business and Economic Statistics, 10(4):377–389, 1992. Section 3, the
+        auxiliary residuals; the library would compute them in the tangent space from the
+        recorded innovations rather than from the disturbance smoother.
+    validations:
+      required: true
+  - type: dropdown
+    id: layer
+    attributes:
+      label: Where it fits
+      description: The layer the change lives in (docs/design/decisions.md, [layered-headers]).
+      options:
+        - Filters
+        - Models
+        - Distributions
+        - Spaces
+        - Core
+        - Tests or benchmarks
+        - Documentation
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: interface
+    attributes:
+      label: Interface sketch
+      description: >
+        Optional. How a caller would use it, in the library's conventions: a space first and a
+        scalar last, a policy or a free function rather than a filter flag, an `std::expected` for
+        anything that can fail.
+      render: cpp
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: >
+        What test would show it works: a hand computation, a closed form, a plain-Eigen
+        reference, or an identity it must satisfy (reproduces an existing filter in a special
+        case, allocates nothing on a bounded space).
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I looked for this in the roadmap, the design decisions, and the open issues.
+          required: true
+        - label: I would prototype it, outside the library or as a pull request.

@@ -1,0 +1,17 @@
+{
+  "name": "emrys-filter",
+  "version": "0.1.0",
+  "description": "Header-only C++23 state estimation library on Eigen 5.0: Kalman, particle, and grid filters over typed state spaces.",
+  "homepage": "https://github.com/emrys-math/emrys-filter",
+  "license": "MIT",
+  "dependencies": [
+    {
+      "name": "eigen3",
+      "version>=": "5.0.0"
+    },
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    }
+  ]
+}

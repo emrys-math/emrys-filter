@@ -1,0 +1,437 @@
+name: CI
+
+# Runs only when dispatched, and only the jobs ticked: the test suite is thorough and costs hours of
+# runner time per full run, so each job is chosen by hand for the change at hand. Every input
+# defaults to off. From the command line:
+#
+#   gh workflow run CI --ref next -f clang=true -f format=true
+on:
+  workflow_dispatch:
+    inputs:
+      gcc:
+        description: GCC 14 on Linux, with TBB
+        type: boolean
+        default: false
+      clang:
+        description: Clang 21 on Linux, with TBB
+        type: boolean
+        default: false
+      clang_sanitize:
+        description: Clang 21 on Linux with AddressSanitizer and UndefinedBehaviorSanitizer
+        type: boolean
+        default: false
+      coverage:
+        description: Clang 21 on Linux, coverage of the headers by the tests
+        type: boolean
+        default: false
+      gcc_no_exceptions:
+        description: GCC 14 on Linux without exceptions or RTTI
+        type: boolean
+        default: false
+      clang_libcxx:
+        description: Clang 21 on Linux with libc++
+        type: boolean
+        default: false
+      gcc_arm64:
+        description: GCC 14 on Linux arm64, with TBB
+        type: boolean
+        default: false
+      macos:
+        description: Apple Clang on macOS arm64, with libc++
+        type: boolean
+        default: false
+      cortex_m:
+        description: Cortex-M4F and M7 under QEMU, with code size and stack use
+        type: boolean
+        default: false
+      msvc:
+        description: MSVC on Windows
+        type: boolean
+        default: false
+      docs:
+        description: Doxygen reference, failing on any warning
+        type: boolean
+        default: false
+      layers:
+        description: Header-layer, decision-index, and compile-error checks
+        type: boolean
+        default: false
+      format:
+        description: clang-format check
+        type: boolean
+        default: false
+      vcpkg:
+        description: The vcpkg port, installed from the checkout and used by examples/consumer
+        type: boolean
+        default: false
+      conan:
+        description: The Conan recipe, created from the checkout, with GCC 14 and Clang 21
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  LLVM_VERSION: 21
+
+jobs:
+  # Each job runs the same workflow preset as a local build. The presets name the compilers
+  # `g++` and `clang++`, so the Linux jobs put the wanted versions first on PATH under those names.
+  # `clang-sanitize` runs the tests under AddressSanitizer and UndefinedBehaviorSanitizer, which
+  # catch what the views' stamp check cannot: an owner destroyed or reallocated under a view, and
+  # the Eigen maps and expressions over an owner (decisions.md [view-stamp]). Its test preset turns off
+  # ASan's alloc_dealloc_mismatch, since the allocation tests replace operator new and delete with
+  # malloc and free to count the heap. `gcc-no-exceptions` builds everything with -fno-exceptions
+  # -fno-rtti [embedded-builds]; `clang-libcxx` builds with LLVM's library, as macOS does, but
+  # without TBB, which is built against libstdc++; `gcc-arm64` runs the gcc preset on an Arm runner,
+  # where Eigen takes its NEON paths. A job not ticked is excluded from the matrix, so it starts no
+  # runner; the runner and preset are worked out from the job's name, since an `include` entry
+  # would bring an excluded job back.
+  linux:
+    name: ${{ matrix.job }} (Linux)
+    if: >-
+      inputs.gcc || inputs.clang || inputs.clang_sanitize || inputs.gcc_no_exceptions
+      || inputs.clang_libcxx || inputs.gcc_arm64
+    runs-on: ${{ matrix.job == 'gcc-arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        job: [gcc, clang, clang-sanitize, gcc-no-exceptions, clang-libcxx, gcc-arm64]
+        exclude:
+          - job: ${{ !inputs.gcc && 'gcc' || '' }}
+          - job: ${{ !inputs.clang && 'clang' || '' }}
+          - job: ${{ !inputs.clang_sanitize && 'clang-sanitize' || '' }}
+          - job: ${{ !inputs.gcc_no_exceptions && 'gcc-no-exceptions' || '' }}
+          - job: ${{ !inputs.clang_libcxx && 'clang-libcxx' || '' }}
+          - job: ${{ !inputs.gcc_arm64 && 'gcc-arm64' || '' }}
+    env:
+      # Two heavy template translation units at a time fit in the runner's memory.
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+      PRESET: ${{ matrix.job == 'gcc-arm64' && 'gcc' || matrix.job }}
+      COMPILER: ${{ startsWith(matrix.job, 'gcc') && 'g++' || 'clang++' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+          # libstdc++ runs the parallel algorithms on TBB [execution-policies]; the tests link it when found.
+          if [ "$PRESET" != clang-libcxx ]; then
+            sudo apt-get install -y libtbb-dev
+          fi
+          mkdir -p "$HOME/bin"
+          if [ "$COMPILER" = g++ ]; then
+            ln -s "$(command -v g++-14)" "$HOME/bin/g++"
+          else
+            wget -q https://apt.llvm.org/llvm.sh
+            sudo bash llvm.sh "$LLVM_VERSION"
+            if [ "$PRESET" = clang-libcxx ]; then
+              sudo apt-get install -y "libc++-$LLVM_VERSION-dev" "libc++abi-$LLVM_VERSION-dev"
+            fi
+            ln -s "$(command -v clang++-$LLVM_VERSION)" "$HOME/bin/clang++"
+          fi
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Show compiler
+        run: $COMPILER --version
+
+      - name: Build and test
+        run: cmake --workflow --preset "$PRESET"
+
+      # A case checks the compiler's result, so each compiler runs them once, in its plain build
+      # [check-stages].
+      - name: Negative compile tests
+        if: matrix.job == 'gcc' || matrix.job == 'clang'
+        run: cmake --workflow --preset "$PRESET-compile-errors"
+
+  # Clang's source-based coverage of the headers by the tests, the benchmarks' agreement tests, and
+  # the examples [coverage]. tools/coverage.py runs them, puts the table by layer in the run's
+  # summary, and writes the regions not executed and the annotated sources, kept as an artifact.
+  coverage:
+    name: coverage (Linux)
+    if: inputs.coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 2
+    steps:
+      - uses: actions/checkout@v4
+
+      # llvm-profdata and llvm-cov are in the llvm package, which clang's doesn't bring in; they
+      # install beside clang++, where tools/coverage.py looks.
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libtbb-dev doxygen
+          wget -q https://apt.llvm.org/llvm.sh
+          sudo bash llvm.sh "$LLVM_VERSION"
+          sudo apt-get install -y "llvm-$LLVM_VERSION"
+          mkdir -p "$HOME/bin"
+          ln -s "$(command -v clang++-$LLVM_VERSION)" "$HOME/bin/clang++"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      # The Doxygen XML lists the public entities the tests must instantiate. The docs job fails on
+      # Doxygen's warnings; this one needs only the XML, which Doxygen writes before failing.
+      - name: List the public entities
+        run: |
+          cmake -S . -B build/docs -DEMRYS_FILTER_BUILD_TESTS=OFF -DEMRYS_FILTER_BUILD_DOCS=ON
+          cmake --build build/docs --target docs || echo "::warning::Doxygen warned; the docs job lists the warnings"
+
+      - name: Build
+        run: cmake --workflow --preset clang-coverage
+
+      - name: Test and measure
+        run: >-
+          python3 tools/coverage.py build/clang-coverage -j 4 --summary "$GITHUB_STEP_SUMMARY"
+          --html build/clang-coverage/coverage-html --doxygen build/docs/docs/xml
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            build/clang-coverage/coverage-html
+            build/clang-coverage/coverage_unexecuted.txt
+            build/clang-coverage/coverage_uninstantiated.txt
+          retention-days: 14
+          if-no-files-found: ignore
+
+  # Apple Clang and libc++ on an Arm Mac, the compiler and library a macOS or iOS user builds with.
+  macos:
+    name: apple-clang (macOS)
+    if: inputs.macos
+    runs-on: macos-26
+    timeout-minutes: 120
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 3
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: brew install ninja
+
+      - name: Show compiler
+        run: clang++ --version
+
+      - name: Build and test
+        run: cmake --workflow --preset apple-clang
+
+  # The Cortex-M build [embedded-builds]: the ranging tests in float for the Cortex-M4F and M7, run
+  # under QEMU, and the code size and stack use, which go to the run's summary. Ubuntu 26.04 has
+  # the Arm GNU toolchain 14 and QEMU 10 as packages; 24.04's toolchain is GCC 13, below the floor.
+  cortex-m:
+    name: cortex-m (QEMU)
+    if: inputs.cortex_m
+    runs-on: ubuntu-24.04
+    container: ubuntu:26.04
+    timeout-minutes: 60
+    steps:
+      - name: Install tools
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates git cmake ninja-build python3 qemu-system-arm \
+            gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib
+
+      - uses: actions/checkout@v4
+
+      - name: Show compiler
+        run: arm-none-eabi-g++ --version
+
+      - name: Build
+        run: |
+          cmake -S benchmarks/cortex_m -B build/cortex-m -G Ninja
+          cmake --build build/cortex-m
+
+      - name: Test under QEMU
+        run: ctest --test-dir build/cortex-m --output-on-failure
+
+      - name: Report code size and stack use
+        run: cmake --build build/cortex-m --target footprint | tee -a "$GITHUB_STEP_SUMMARY"
+
+  msvc:
+    name: msvc (Windows)
+    if: inputs.msvc
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      # The msvc preset uses Ninja and finds cl.exe, and Visual Studio's Ninja, on PATH.
+      - name: Enter the x64 developer environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build and test
+        run: cmake --workflow --preset msvc
+
+      - name: Negative compile tests
+        run: cmake --workflow --preset msvc-compile-errors
+
+  docs:
+    name: docs (Doxygen)
+    if: inputs.docs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Doxygen
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y doxygen
+
+      - name: Configure
+        run: cmake -S . -B build/docs -DEMRYS_FILTER_BUILD_TESTS=OFF -DEMRYS_FILTER_BUILD_DOCS=ON
+
+      - name: Build the reference
+        run: cmake --build build/docs --target docs
+
+      - name: Check that each policy namespace holds only its kind
+        run: python3 tools/check_policies.py build/docs/docs/xml
+
+      # Every entity is documented and WARN_AS_ERROR = FAIL_ON_WARNINGS (docs/CMakeLists.txt), so
+      # an undocumented one fails the step above; this lists what it found.
+      - name: Show warnings
+        if: failure()
+        run: head -n 100 build/docs/docs/warnings.txt
+
+  # The vcpkg port [cmake-package]: installed from this checkout, which tools/vcpkg_test_port.py
+  # puts in place of the tag the portfile fetches, then used by examples/consumer with Clang. vcpkg
+  # configures the header-only port with the runner's default compiler, and compiles nothing. The
+  # consumer is configured with fetching disabled, so it fails if it would fetch EmrysFilter or
+  # Eigen rather than use vcpkg's. After the first tag, add a step that installs the unmodified
+  # port, which checks its SHA512.
+  vcpkg:
+    name: vcpkg (Linux)
+    if: inputs.vcpkg
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+          wget -q https://apt.llvm.org/llvm.sh
+          sudo bash llvm.sh "$LLVM_VERSION"
+          mkdir -p "$HOME/bin"
+          ln -s "$(command -v clang++-$LLVM_VERSION)" "$HOME/bin/clang++"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      # The runner's own vcpkg may be behind the registry, which has Eigen 5.0.1 only recently.
+      - name: Get vcpkg
+        run: |
+          git clone --depth 1 https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
+          "$HOME/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+
+      - name: Install the port
+        run: |
+          python3 tools/vcpkg_test_port.py "$RUNNER_TEMP/port"
+          "$HOME/vcpkg/vcpkg" install emrys-filter --overlay-ports="$RUNNER_TEMP/port/ports"
+
+      - name: Build and run the consumer
+        run: |
+          cmake -S examples/consumer -B build/consumer -G Ninja -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_TOOLCHAIN_FILE="$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_MANIFEST_MODE=OFF -DFETCHCONTENT_FULLY_DISCONNECTED=ON
+          cmake --build build/consumer
+          build/consumer/estimator
+
+  # The Conan recipe [cmake-package]: tools/conan_test_recipe.py puts this checkout in place of the
+  # tag's archive, and `conan create` builds the package and runs its test_package, which links
+  # the target and calls the skills function from the package's build module. The recipe's
+  # validate() is the compiler floor, so each compiler here is one it accepts; the cases it
+  # rejects are not run. After the first tag, add a step that creates the unmodified recipe, which
+  # checks the archive's sha256.
+  conan:
+    name: conan ${{ matrix.compiler }} (Linux)
+    if: inputs.conan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+          pip install conan
+          if [ "${{ matrix.compiler }}" = gcc ]; then
+            echo "CC=gcc-14" >> "$GITHUB_ENV"
+            echo "CXX=g++-14" >> "$GITHUB_ENV"
+            echo "COMPILER_VERSION=14" >> "$GITHUB_ENV"
+          else
+            wget -q https://apt.llvm.org/llvm.sh
+            sudo bash llvm.sh "$LLVM_VERSION"
+            echo "CC=clang-$LLVM_VERSION" >> "$GITHUB_ENV"
+            echo "CXX=clang++-$LLVM_VERSION" >> "$GITHUB_ENV"
+            echo "COMPILER_VERSION=$LLVM_VERSION" >> "$GITHUB_ENV"
+          fi
+
+      - name: Write the profile
+        run: |
+          cat > "$RUNNER_TEMP/profile" <<EOF
+          [settings]
+          os=Linux
+          arch=x86_64
+          build_type=Release
+          compiler=${{ matrix.compiler }}
+          compiler.version=$COMPILER_VERSION
+          compiler.cppstd=23
+          compiler.libcxx=libstdc++11
+          [conf]
+          tools.cmake.cmaketoolchain:generator=Ninja
+          tools.build:compiler_executables={"c": "$CC", "cpp": "$CXX"}
+          EOF
+
+      - name: Create the package and run its test
+        run: |
+          python3 tools/conan_test_recipe.py "$RUNNER_TEMP/recipe"
+          conan profile detect --force
+          conan create "$RUNNER_TEMP/recipe/all" --version 0.1.0 \
+            -pr:h "$RUNNER_TEMP/profile" -pr:b "$RUNNER_TEMP/profile" --build=missing
+
+  layers:
+    name: header layers
+    if: inputs.layers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check that no header includes from a later layer
+        run: python3 tools/check_layers.py
+
+      - name: Check that every decision is indexed and every citation names one
+        run: python3 tools/check_decisions.py
+
+      - name: Check that every claimed compile error has a negative compile test
+        run: python3 tools/check_compile_errors.py
+
+  format:
+    name: clang-format
+    if: inputs.format
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: |
+          wget -q https://apt.llvm.org/llvm.sh
+          sudo bash llvm.sh "$LLVM_VERSION"
+          sudo apt-get install -y "clang-format-$LLVM_VERSION"
+
+      - name: Check formatting
+        run: git ls-files '*.h' '*.cpp' | xargs "clang-format-$LLVM_VERSION" --dry-run --Werror

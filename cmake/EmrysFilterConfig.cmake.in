@@ -1,0 +1,12 @@
+# find_package(EmrysFilter) reads this file from an installed EmrysFilter. It finds the Eigen the
+# library was installed against, which the install put beside it when it fetched Eigen, and gives
+# the target EmrysFilter::EmrysFilter and emrys_filter_add_skills_target().
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(Eigen3 @EMRYS_FILTER_EIGEN_VERSION@ CONFIG HINTS "${PACKAGE_PREFIX_DIR}")
+
+include("${CMAKE_CURRENT_LIST_DIR}/EmrysFilterTargets.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/EmrysFilterSkills.cmake")
+
+check_required_components(EmrysFilter)

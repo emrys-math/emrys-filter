@@ -1,0 +1,7 @@
+emrys-filter provides CMake targets:
+
+    find_package(EmrysFilter 0.1 CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE EmrysFilter::EmrysFilter)
+
+It needs a C++23 compiler (GCC 14, Clang 21, or MSVC 19.4x) and links Eigen3::Eigen from the
+eigen3 port. Its docs, examples, and agent skills are under share/EmrysFilter.

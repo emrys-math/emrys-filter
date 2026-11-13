@@ -1,0 +1,15 @@
+# The version and the DOI are added at the first tagged release.
+cff-version: 1.2.0
+message: If you use this software, please cite it as below.
+type: software
+title: EmrysFilter
+abstract: >-
+  Header-only C++23 state estimation on Eigen: the Kalman filter and its square-root and
+  information forms, Gaussian mixture, interacting multiple model, hidden Markov, particle, and
+  Rao-Blackwellized filters, and smoothers, with every algorithm cited.
+authors:
+  - family-names: Moore
+    given-names: Jay
+  - name: Emrys Applied Mathematics
+repository-code: https://github.com/emrys-math/emrys-filter
+license: MIT

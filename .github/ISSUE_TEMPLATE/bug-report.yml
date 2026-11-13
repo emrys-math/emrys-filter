@@ -1,0 +1,64 @@
+name: Bug report
+description: A wrong result, a failed build, or a hang, with a program that shows it.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A bug report is most useful with a program short enough to paste, the exact compiler
+        and Eigen version, and the commit or tag of the library. A wrong estimate needs the
+        number you expected and why; `simulate()` and the NIS and NEES monitors in
+        `docs/usage.md`, "Checking an estimator", give one. A precondition failure
+        (`EMRYS_FILTER_ASSERT`) that names a wrong input is not a bug unless the input is right.
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: The wrong value, the compile error's first lines, or the hang, as observed.
+      placeholder: >
+        `KalmanFilter::update()` returns `accepted = false` on every step of a 2D ranging
+        filter once the state's covariance drops below about 1e-8 m², although the
+        measurements are consistent.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: The value, the build, or the return, and why: a hand computation, a plain-Eigen reference, or an identity it should satisfy.
+    validations:
+      required: true
+  - type: textarea
+    id: program
+    attributes:
+      label: Program that shows it
+      description: >
+        A complete program, as short as it can be, that builds against the library alone. One
+        of the programs in `examples/` is a good start.
+      render: cpp
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Library commit or tag
+      placeholder: "v0.1.0, or the output of `git rev-parse --short HEAD`"
+    validations:
+      required: true
+  - type: input
+    id: toolchain
+    attributes:
+      label: Compiler, standard library, Eigen, and platform
+      placeholder: "Clang 21.1 with libstdc++ 14, Eigen 5.0.0, Ubuntu 24.04 x86-64"
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: The program builds in a Debug configuration, so that `EMRYS_FILTER_ASSERT` runs, and the report says whether it fired.
+          required: true
+        - label: I looked for this in the open issues and in `docs/usage.md`, "What is not built yet".
+          required: true

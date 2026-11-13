@@ -1,0 +1,56 @@
+name: Research project
+description: Take an open problem from docs/research.md, or propose one.
+title: "[Research] "
+labels: ["research"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        `docs/research.md` lists needs the library can't fill until someone publishes the method
+        or its guarantee. Filing this issue claims one, so that two people don't start the same
+        problem, and gives the maintainers a place to answer questions about the hooks. Nothing
+        here commits you to a timeline.
+  - type: input
+    id: item
+    attributes:
+      label: Which problem
+      description: Its heading on `docs/research.md`, or "new" and describe it below.
+    validations:
+      required: true
+  - type: textarea
+    id: claim
+    attributes:
+      label: The question and the claim
+      description: >
+        What you expect to show: a bound, an equivalence, an error analysis, an experiment on a
+        benchmark the library's tests already run. For a new problem, also the need in the
+        library that it answers.
+    validations:
+      required: true
+  - type: textarea
+    id: plan
+    attributes:
+      label: Prototype plan
+      description: >
+        Which hooks you would build on (the free functions, the recorded histories, the
+        statistical linearization, the upkeep function objects) and whether the prototype
+        lives outside the library, as [splitting-hooks] keeps splitting, or as a branch.
+  - type: textarea
+    id: starting
+    attributes:
+      label: Starting points you have already read
+      description: Citations beyond the ones the page lists, if any.
+  - type: input
+    id: contact
+    attributes:
+      label: Group or advisor
+      description: Optional.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Understanding
+      options:
+        - label: >
+            Once the result is published, the library may implement it and will cite it; the
+            prototype itself need not be contributed.
+          required: true
