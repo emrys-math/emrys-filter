@@ -34,8 +34,8 @@ vectors. All three run through the wall-clock harness of our own (`benchmarks/ha
 command line, the replay of a run, the interleaved pair driver, and the table) and have a `--count`
 mode for Callgrind. At a fixed step the EKF's result is 0.91 to 1.44 instructions per step
 relative to the hand-rolled filter in double and 0.89 to 1.35 in float (section 1); the attitude
-EKF's, 1.18 and 1.27, and the particle filter's, 1.03 to 1.07, are in sections 2 and 3 below. Nothing runs them in CI, nothing publishes the numbers, and the README makes no efficiency
-claim.
+EKF's, 1.18 and 1.27, and the particle filter's, 1.03 to 1.07, are in sections 2 and 3 below. Nothing runs them in CI, and the numbers are not yet published with their method; the README
+quotes the fixed-step ranging ratios.
 
 **Fragments.** Benchmark work is promised in five other places: the attitude benchmark of step
 13e (the covariance reset on a quaternion), the fixed-step case of step 13d (a model that builds
@@ -583,7 +583,7 @@ count grows with the library and that is right. And because the allocation tests
 instruction-count ceiling make performance regressions test failures, a new feature never needs
 a benchmark to be kept honest; it needs a test, and the allocation target already has a file per
 filter family to add to. The test build's own cost is the "Shorter test builds" item under
-Before going public and is not this plan's concern.
+the roadmap's Launch and is not this plan's concern.
 
 ## Steps
 

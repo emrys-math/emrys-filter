@@ -113,11 +113,11 @@ NIS average 1.01, consistent at 99%: true
 ```
 
 (Clang 21 on the MSVC standard library; libstdc++ draws different noise from the same seed.)
-Write `methods::unscented()`, `methods::iterated(methods::linearized())`, or `methods::gaussHermite<3>()` in place of the radar's
-`methods::linearized()` and the same filter is a UKF, an iterated EKF, or a Gauss-Hermite filter. Write
-`SqrtKalmanFilter` in place of `KalmanFilter` and it runs in square-root form. Give the noise a
-second, wide component and the update is probabilistic data association. The state, the model,
-and the measurement don't change.
+Write `methods::unscented()`, `methods::iterated(methods::linearized())`, or
+`methods::gaussHermite<3>()` in place of the radar's `methods::linearized()` and the same filter
+is a UKF, an iterated EKF, or a Gauss-Hermite filter. Write `SqrtKalmanFilter` in place of
+`KalmanFilter` and it runs in square-root form. Give the noise a second, wide component and the
+update is probabilistic data association. The state, the model, and the measurement don't change.
 
 ## How it fits together
 
@@ -148,7 +148,7 @@ filters, a hidden Markov filter beside them. Marginals, conditionals, upkeep, sm
 and printing are written once and work on all of them. Manifold states are built in: the
 boxplus and boxminus of a space, tangent-space covariances and means, and the covariance reset
 are the library's, and angles and SO(3), as the unit quaternion, ship. SE(3) and the extended
-pose group come next as spaces, and the invariant EKF is then a space, not a filter.
+pose group are planned as spaces, and the invariant EKF is then a space, not a filter.
 
 **Efficient and embedded-friendly.** Nothing sized by a bounded space allocates: not a predict,
 an update, a transform, a marginal, or a draw, and the allocation tests build with
@@ -157,9 +157,11 @@ elements takes a standard allocator, so a `std::pmr` arena holds a particle filt
 is owned and reused. The scalar is a template parameter: a `float` filter computes in `float`
 throughout, and autodiff and multiprecision scalars run the same code. The library throws
 nothing, reports failure through `std::expected`, and builds with `-fno-exceptions -fno-rtti`
-and for Cortex-M4F and M7. The `KalmanFilter` costs 1.00 to 1.34 instructions per step relative
-to a hand-written Eigen EKF on the same problem, after both pass the same agreement and
-consistency tests.
+and for Cortex-M4F and M7. On the ranging benchmark the `KalmanFilter` takes 0.89 to 1.44 times
+the instructions per step of a hand-written Eigen EKF, after both pass the same agreement and
+consistency tests; the ratio is highest on the smallest problems, where the library's fixed cost
+of about 320 instructions per update is a quarter of the total
+([benchmarks.md](docs/design/benchmarks.md)).
 
 **Parallel by policy.** Every loop over a run-time count (particles, mixture components, grid
 cells) takes an `ExecutionPolicy` as its first argument, `execution::sequential` by default. Pass a
@@ -180,8 +182,8 @@ published method fills a need, the library records the problem in
 [docs/research.md](docs/research.md) instead of improvising.
 
 **Agent-friendly.** A coding agent in a fresh clone should build a working estimator while
-reading little, compiling few times, and checking the result numerically. So: examples of about
-a hundred lines, built in CI, to copy; a short usage page with a "which filter?" table;
+reading little, compiling few times, and checking the result numerically. So: eleven examples of
+100 to 250 lines, built and run in CI, to copy; a usage page with a "which filter?" table;
 `simulate()` and the NIS and NEES monitors, which say pass or fail without a plot; one naming
 convention without exceptions; [CLAUDE.md](CLAUDE.md) and [AGENTS.md](AGENTS.md), which route an
 agent to the right page; and a skill in [skills/](skills/) that an agent working in your own
@@ -227,7 +229,7 @@ that Linux distributions still ship; if CMake finds no Eigen 5, the build fetche
 include(FetchContent)
 FetchContent_Declare(EmrysFilter
   GIT_REPOSITORY https://github.com/emrys-math/emrys-filter.git
-  GIT_TAG        dev)  # a release tag, once there is one
+  GIT_TAG        v0.1.0)
 FetchContent_MakeAvailable(EmrysFilter)
 target_link_libraries(my_estimator PRIVATE EmrysFilter::EmrysFilter)
 ```
@@ -279,8 +281,8 @@ and the ones before it, and CI checks that.
 EmrysFilter does sequential inference on one state over time, continuous, discrete, or hybrid.
 
 **Coming to EmrysFilter** ([roadmap](docs/design/roadmap.md)): a GPU backend for the particle,
-grid, and Rao-Blackwellized filters, with counter-based random numbers and batched functions on
-the way to it; the ensemble Kalman filter; fusion rules, out-of-sequence updates, and the
+grid, and Rao-Blackwellized filters, with counter-based random numbers and batched sigma-point
+transforms on the way to it; the ensemble Kalman filter; fusion rules, out-of-sequence updates, and the
 consensus step for distributed estimation; SE(3) and the extended pose group as spaces beside
 SO(3), with the invariant EKF as their example; hooks for splitting a mixture by nonlinearity; and
 Student-t robust updates.
@@ -314,10 +316,13 @@ when the problem is a graph; this library is the tool when the problem is a recu
 
 ## Status
 
-Pre-1.0. The algorithm set for 0.1 is frozen and the API is settling through the design
-reviews; names may change before the first tagged release, after which `CHANGELOG.md` records
-every change. CI runs GCC, Clang, MSVC, the sanitizers, clang-format, the header-layer check,
-and the Doxygen build, dispatched by a maintainer for the changes that need them.
+0.1.0, pre-1.0: a minor release may change the API, and [CHANGELOG.md](CHANGELOG.md) records
+every change a user can see, with what to do about one that breaks code. The design reviews in
+[docs/guide/](docs/guide/) hold the questions still open, and an answer may rename or reshape
+what it covers. CI runs every compiler and platform under Install, the sanitizers, the
+no-exceptions, libc++, arm64, Cortex-M, coverage, vcpkg, and Conan builds, clang-format, the
+header-layer check, and the Doxygen build, dispatched by a maintainer for the changes that need
+them.
 
 ## Contributing and citing
 

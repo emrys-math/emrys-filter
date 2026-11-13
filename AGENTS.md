@@ -27,9 +27,10 @@ header's. The library was eigen-filter until roadmap step 13, and its repository
 
 ## Before starting work
 
-- The library has not launched, so a breaking change costs no user anything. Make it now: never
-  defer a rename, a signature change, or any other change that could break code until after
-  the launch. Only additions that break nothing may wait.
+- The library is pre-1.0, so a breaking change is still allowed and cheaper now than later:
+  never defer a rename, a signature change, or any other change that could break code. Only
+  additions that break nothing may wait. Every change a user can see goes into `CHANGELOG.md`
+  under Unreleased in the commit that makes it, and a breaking one says what to write instead.
 - Treat recorded decisions as settled. If one turns out to be wrong, change it in `decisions.md`
   in the same commit as the code, and give the reason in the commit message.
 - `roadmap.md` is the handoff between sessions, and changes in the commit with the code: a

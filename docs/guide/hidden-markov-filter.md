@@ -379,8 +379,8 @@ axes' transitions, which is `MarkovChain`'s product constructor (`ProductIsTheKr
 > side, where any nonnegative number is a rate. Is the shared name worth a different spelling,
 > such as `persistent(leaveRate)` or `leaving(rate)`?
 >
-> **Scheduled:** before the launch, since a rename breaks code (roadmap, "Before going public",
-> the guide questions to answer before the launch). `fromDwellTimes()`, a mean time per value on
+> **Scheduled:** first after the soft launch, since a rename breaks code (roadmap, "Launch", the
+> **breaking** guide questions). `fromDwellTimes()`, a mean time per value on
 > both chains, is a third spelling with neither reading, so one answer keeps `persistent()` as it
 > is and points to it.
 
@@ -464,9 +464,9 @@ What a fixed-step filter gives up is the arrival step of §5, which needs the ge
 > may later take this chain in place of $\Pi$". Is that for after 0.1, and should imm-filter.md
 > show the workaround?
 >
-> **Scheduled:** the template's shape is decided before the launch, since adding a chain
-> parameter later would break code; the continuous chain itself may follow (roadmap, "Before going
-> public", the guide questions to answer before the launch).
+> **Scheduled:** the template's shape is decided first after the soft launch, since adding a chain
+> parameter later breaks more code; the continuous chain itself may follow (roadmap, "Launch", the
+> **breaking** guide questions).
 
 ## 5. Modulated arrivals
 

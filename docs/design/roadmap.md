@@ -1,6 +1,6 @@
 # Roadmap
 
-The work left before the first release and after it, in order. It is written for contributors;
+The work left after 0.1.0, the first release, in order. It is written for contributors;
 what the library does and why is in [decisions.md](decisions.md), how code is written in
 [style.md](style.md), and open design questions in the reviews in `docs/guide/`. The plan behind
 steps 18 and 19 is [parallelism.md](parallelism.md), and the plan for the benchmarks is
@@ -17,8 +17,8 @@ How it is kept:
 - Step numbers are never reused, since the headers, tests, and documents cite them; a new step
   takes the next free letter after the step it follows.
 - Status is **not started**, **in progress**, **done**, or **deferred**.
-- Users don't read this file. From the first tagged release, every change a user can see goes into
-  `CHANGELOG.md` in the commit that makes it, and the usage page lists what is not built yet.
+- Users don't read this file. Every change a user can see goes into `CHANGELOG.md` in the commit
+  that makes it, and the usage page lists what is not built yet.
 
 ## 17t. Sigma-point axes and repairs — in progress
 
@@ -235,7 +235,7 @@ Done when: the above pass on all three compilers, with the consensus step's para
 ## 17d. Ensemble Kalman filter — deferred
 
 Past the launch: inflation and localization, without which the filter fails at small ensembles,
-make it more than the first release needs. Evensen (1994), with perturbed observations (Burgers,
+made it more than the first release needed. Evensen (1994), with perturbed observations (Burgers,
 van Leeuwen, and Evensen 1998). `ParticleSet` holds the members and `predict()` already moves them.
 
 - [ ] The stochastic update, with an execution policy and a case in `tests/parallel.cpp`.
@@ -319,17 +319,16 @@ The aim is documentation that can accompany a graduate course: every algorithm c
 [published-algorithms-only], extensive examples, a well-structured reference, and the design
 explained for people and agents alike. The documents for each reader:
 
-| Reader | Before the launch | After the launch |
+| Reader | Now | Once the guides are empty |
 |---|---|---|
 | Any agent, every session | `AGENTS.md` (CLAUDE.md imports it) | the same |
 | Contributor | `style.md`, `decisions.md`, `roadmap.md`, the guides | `style.md`, `decisions.md`, `roadmap.md` |
-| User and user's agent | `docs/usage.md`, `examples/` | the same, the public reference, and `CHANGELOG.md` |
+| User and user's agent | `docs/usage.md`, `examples/`, the public reference, `CHANGELOG.md` | the same |
 
 - [ ] As each guide section settles, move it into the reference: explanation to a module's `.dox`
       page, examples to `examples/` included with `\snippet`, reasons to decisions.md; the section
-      becomes a pointer. The launch does not wait for the move (decided 2026-11-12): the first
-      release is an unadvertised soft launch, made with the guides as they are, about 8,800 lines
-      and 93 open questions, and the move continues after it. When the guides are empty, any
+      becomes a pointer. 0.1.0 was released with the guides as they were, about 8,800 lines and
+      93 open questions (decided 2026-11-12), and the move continues. When the guides are empty, any
       question still open moves here. The guide README's table tracks both.
 - [ ] A user page listing every circumstance in which the library may allocate: a count growing
       past its reserve, the first use of count-sized scratch [allocation], the standard algorithms
@@ -350,7 +349,6 @@ explained for people and agents alike. The documents for each reader:
       and `parallel.cpp` cases, bibliography entry, roadmap row), `record-decision`,
       `guide-review`, `guide-to-reference`, and `benchmark`. Each states a procedure and points to
       style.md and decisions.md.
-- [ ] **Soft launch.** A public reference build without `Emrys::internal` beside the maintainer's.
 - [ ] `KalmanFilter` names its update's type only through its recursion,
       `decltype(filter)::RecursionType::UpdateType<M>`; give the filter the alias too (from the
       Kalman filter review).
@@ -379,9 +377,7 @@ fetches the library, keeps template errors short, and installs the skills.
       showed it. GCC 14 warns `-Wmaybe-uninitialized` inside `GaussianParams`' copy (the cached
       `std::optional<Eigen::LLT>`) when `additiveNoise()` copies one, depending on inlining.
 - [ ] Usage page and skill: once the API index and `checkModel` exist, point to them, in usage.md
-      and in step 3 of `emrys-filter-build-estimator`; at the release, replace the `FetchContent`
-      placeholder with the repository and a release tag, and in `examples/consumer/CMakeLists.txt`
-      the private repository's URL and `dev` with them.
+      and in step 3 of `emrys-filter-build-estimator`.
 - [ ] Short compile errors: the model contracts as named concepts, checked by `static_assert`s with
       plain messages at each filter's entry, and `checkModel<Model, Space>()`.
 - [ ] A compact API index generated from the Doxygen XML (public signatures only), and a header map
@@ -454,26 +450,25 @@ Done when: CI is warning-free with warnings as errors, the coverage job reports 
 instantiated and every region executed, the no-exceptions and Cortex-M jobs pass, and the ranging
 numbers are published.
 
-## Before going public — in progress
+## Launch — in progress
 
 What a first visitor meets before any feature matters, then what a reviewer looks for.
 
-The launch is in two parts (decided 2026-11-12). The soft launch publishes the release without
-announcing it, before the guides are empty (Documentation above). The advertised launch, the
-posts under "Getting the word out" below, follows it. The soft launch waits for the items marked
-**soft launch**, which the tag needs or without which the README states something false, and for
-the guide questions marked **breaking** at the end of this section, since a breaking change costs
-no user anything before the first release. The rest may follow it. The vcpkg and Conan
-submissions wait for the advertised launch (decided 2026-11-12); whether GitHub Discussions does
-is undecided.
+The launch is in two parts (decided 2026-11-12). The soft launch was 0.1.0, released on
+2026-11-13 without an announcement, before the guides are empty (Documentation above). The
+advertised launch, the posts under "Getting the word out" below, follows it. The guide questions
+marked **breaking** at the end of this section stayed open past the soft launch (decided
+2026-11-13): each answered goes into a 0.x release with its `CHANGELOG.md` entry. The vcpkg and
+Conan submissions wait for the advertised launch (decided 2026-11-12); whether GitHub Discussions
+does is undecided.
 
-On 2026-11-12 the repository was made public, from one squashed commit on `main`, `dev`, and
-`next`, with no tag or release, the reference on Pages, and Discussions off.
+The repository is public since 2026-11-12, from one squashed commit. A release is tagged on
+`main`, which `dev` fast-forwards, and published there as a GitHub release; Zenodo archives each
+published release, not a pushed tag, so a release is published only from its tag. The reference is
+on Pages, and Discussions are off.
 
 The front door:
 
-- [ ] **Soft launch.** `main` holds only the initial commit, behind `dev`; the launch merges `dev`
-      to it and tags the release there.
 - [ ] vcpkg and Conan ports of the CMake package [cmake-package], vcpkg first, submitted at the
       advertised launch. vcpkg ships with
       Visual Studio and is where a Windows C++ developer looks first, so its registry is the
@@ -497,24 +492,11 @@ The front door:
       Install section says that 5 is required and 3.4 is not enough; `Core/Version.h` rejects an
       older Eigen.
 - [ ] The README's Install section, once the vcpkg and Conan packages are published at the
-      advertised launch and not before, since it states only what is true: `vcpkg install emrys-filter` and `conan install
-      --requires=emrys-filter/0.1.0` first, then the same `find_package` lines. Reword "the 3.4
-      that most package managers still ship", since vcpkg and Conan Center carry Eigen 5.0.1.
-      Say that Conan rejects a compiler below the floor with a plain message, and vcpkg does not.
-- [ ] **Soft launch.** The README states as present what the launch must make true: the
-      published reference and `CHANGELOG.md` (`find_package()`, `CITATION.cff`, and the
-      `-fno-exceptions` and Cortex-M jobs are true now). Check it before the launch, reword
-      whatever is still a promise, and recount what it counts: decisions
-      (`tools/check_decisions.py`), design reviews, bibliography entries, and the instruction
-      ratio against benchmarks.md. It gives no test count; one needs `--gtest_list_tests` over the
-      built executables, since `ctest -N` counts executables.
-- [ ] **Soft launch.** The design documents published to GitHub Pages from CI. The reference is
-      published there by the `Pages` workflow, the public API alone, since 2026-11-12.
-- [ ] **Soft launch.** A Zenodo DOI, and the version, in `CITATION.cff` at the first tag. Zenodo
-      archives only a public repository's releases, and only those made after its GitHub
-      integration is turned on, so turn it on after the repository goes public and before the tag.
-- [ ] **Soft launch.** A version and stability statement (pre-1.0, the API may change) and
-      `CHANGELOG.md` from the first tagged release.
+      advertised launch and not before, since it states only what is true: `vcpkg install
+      emrys-filter` and `conan install --requires=emrys-filter/0.1.0` first, then the same
+      `find_package` lines, and that vcpkg and Conan Center carry Eigen 5. Say that Conan rejects
+      a compiler below the floor with a plain message, and vcpkg does not.
+- [ ] The DOI Zenodo minted for 0.1.0, in `CITATION.cff` and the README.
 - [ ] Build cost for contributors: time and memory per workflow preset and the `-j` warning, with
       `-ftime-trace` numbers per header (`tools/compile_cost.py --match` times any compile
       command, and `--time-trace` adds Clang's totals).
@@ -553,7 +535,7 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       repository's 20 topics, GitHub's limit, were chosen on 2026-11-12 by how many public
       repositories use each, so that each has an audience browsing it; a filter named in the
       README is found by search without a topic.
-- [ ] The day of the tag: a Show HN (a Hacker News post of one's own work, with a first comment
+- [ ] The day of the advertised launch: a Show HN (a Hacker News post of one's own work, with a first comment
       from the submitter saying what it is and what feedback is wanted; one attempt, a weekday
       morning US time, since a post climbs in its first hour or sinks and reposts are discouraged)
       and an r/cpp post, both leading with the README's opening and the 50-line example. The
@@ -564,7 +546,7 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       a serious consumer of Eigen 5.0 is news the maintainers relay; pull requests to the
       awesome-cpp and awesome-robotics lists.
 - [ ] The projects in the README's comparison table: an example that wraps a manif group as a
-      `Space`, written before the launch and sent to manif's authors; GTSAM's forum is where "a
+      `Space`, written before the advertised launch and sent to manif's authors; GTSAM's forum is where "a
       recursion, not a graph" questions land.
 - [ ] The academic track, in parallel and months long: a JOSS paper beside the `CITATION.cff` and
       DOI above, since "every algorithm cited, nothing invented here" and documentation that can
@@ -626,8 +608,8 @@ Performance with no change to results:
 - [ ] `internal::printCount()` pluralizes by adding "s"; the first noun that doesn't, such as
       "vertex", adds a defaulted plural argument.
 
-**Breaking**: guide questions whose likely answer breaks code or changes results, to answer before
-the soft launch (an answer that keeps today's behavior settles one too):
+**Breaking**: guide questions whose likely answer breaks code or changes results, open at the soft
+launch and to answer first after it (an answer that keeps today's behavior settles one too):
 
 - [ ] hidden-markov-filter.md Q1 (the chain first in `HiddenMarkovFilter`), Q3 (an emission in
       another scalar), Q6 (`persistent()` takes a probability in one chain and a rate in the

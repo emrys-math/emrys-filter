@@ -16,7 +16,7 @@ endif()
 include(FetchContent)
 FetchContent_Declare(EmrysFilter
   GIT_REPOSITORY https://github.com/emrys-math/emrys-filter.git
-  GIT_TAG dev
+  GIT_TAG v0.1.0
   GIT_SHALLOW TRUE
   FIND_PACKAGE_ARGS 0.1 CONFIG
 )

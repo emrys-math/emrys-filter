@@ -35,8 +35,8 @@ the install and fetch it, which finds an installed one first:
 ```cmake
 include(FetchContent)
 FetchContent_Declare(EmrysFilter
-  GIT_REPOSITORY <repository URL>
-  GIT_TAG <tag or commit>
+  GIT_REPOSITORY https://github.com/emrys-math/emrys-filter.git
+  GIT_TAG v0.1.0
   FIND_PACKAGE_ARGS 0.1 CONFIG)
 FetchContent_MakeAvailable(EmrysFilter)
 ```

@@ -241,7 +241,7 @@ namespace internal
  * constants and computes none of them. Any other scalar, such as an autodiff or a multiprecision
  * one, computes them at run time in its own arithmetic, at its own precision. What is sized by a
  * count, the spherical simplex's steps and the Gauss-Hermite rule, is computed at run time on
- * every transform (roadmap, Before going public).
+ * every transform (roadmap, Launch).
  */
 template <typename Scalar>
 inline constexpr bool takesDoubleConstants = std::same_as<Scalar, float> || std::same_as<Scalar, double>;
