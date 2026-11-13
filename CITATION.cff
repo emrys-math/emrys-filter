@@ -6,12 +6,14 @@ title: EmrysFilter
 version: 0.1.0
 date-released: 2026-11-13
 abstract: >-
-  Header-only C++23 state estimation on Eigen: the Kalman filter and its square-root and
-  information forms, Gaussian mixture, interacting multiple model, hidden Markov, particle, and
-  Rao-Blackwellized filters, and smoothers, with every algorithm cited.
+  A header-only C++23 library for sequential Bayesian estimation, built on Eigen. It implements
+  the Kalman filter with its square-root and information forms, the Gaussian mixture,
+  interacting multiple model, particle, grid, Rao-Blackwellized, and hidden Markov filters, and
+  smoothers for each, over states composed of vectors, angles, unit quaternions, and discrete
+  modes. The documentation cites the published source of each algorithm.
 authors:
   - family-names: Moore
     given-names: Jay
-  - name: Emrys Applied Mathematics
+    affiliation: Emrys Applied Mathematics
 repository-code: https://github.com/emrys-math/emrys-filter
 license: MIT
