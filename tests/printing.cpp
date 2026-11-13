@@ -144,6 +144,38 @@ TEST(Printing, NumbersFollowTheStreamsPrecision)
     );
 }
 
+// A precision in std::format is the stream's, not a string's truncation: {:.3} prints three
+// significant digits, as setprecision(3) does, with a type s or a width and alignment too, and a
+// '.' as the fill is still the fill.
+TEST(Printing, FormatTakesTheStreamsPrecision)
+{
+    auto const third =
+        GaussianParams<Linear<1>>{Eigen::Matrix<double, 1, 1>{1.0 / 3}, Eigen::Matrix<double, 1, 1>{2.0 / 3}};
+    auto stream = std::ostringstream{};
+    stream << std::setprecision(3) << third;
+    std::string const text = stream.str();
+    EXPECT_EQ(std::format("{:.3}", third), text);
+    EXPECT_EQ(std::format("{:.3s}", third), text);
+    EXPECT_EQ(std::format("{:.12}", third), [&] {
+        auto twelve = std::ostringstream{};
+        twelve << std::setprecision(12) << third;
+        return twelve.str();
+    }());
+
+    std::string const padded = std::format("{:*>80.3}", third);
+    ASSERT_EQ(padded.size(), 80u);
+    EXPECT_EQ(padded.substr(80 - text.size()), text);
+    EXPECT_EQ(padded.front(), '*');
+
+    std::string const dotted = std::format("{:.>80}", third);
+    ASSERT_EQ(dotted.size(), 80u);
+    EXPECT_EQ(dotted.substr(80 - printed(third).size()), printed(third));
+    EXPECT_EQ(dotted.front(), '.');
+    std::string const dottedThree = std::format("{:.>80.3}", third);
+    ASSERT_EQ(dottedThree.size(), 80u);
+    EXPECT_EQ(dottedThree.substr(80 - text.size()), text);
+}
+
 // A space whose differences have another size than its values says so: a unit quaternion has
 // four coordinates and three degrees of freedom.
 TEST(Printing, DifferenceDimensionIsNamedWhereItDiffers)

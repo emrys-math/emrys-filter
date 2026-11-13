@@ -12,7 +12,8 @@
  * and \c logWeights() print through Eigen. Its first line names the distribution and its
  * dimension, and the lines after it are indented by two spaces per level, so a mixture's
  * components nest under it. Numbers follow the stream's precision, as Eigen's do; the formatter
- * prints at the default precision and takes a width, a fill, and an alignment, as a string does.
+ * takes a width, a fill, and an alignment, as a string does, and a precision, <tt>{:.3}</tt>, as
+ * the stream's.
  *
  * Defining \c EMRYS_FILTER_NO_IO before the first EmrysFilter header leaves all of it out, with
  * the standard headers \c format, \c ostream, and \c sstream; Eigen's \c EIGEN_NO_IO implies it (Macros.h).
@@ -215,25 +216,78 @@ operator<<(std::ostream & stream, T const & value)
  * \brief Formats any type the library describes (Emrys::internal::Printable) as its
  * \c operator<< prints it.
  *
- * The specification is a string's: a width, a fill, and an alignment apply to the whole
- * description. The numbers are at the stream's default precision.
+ * The specification is a string's, but for its precision: a width, a fill, and an alignment
+ * apply to the whole description, and a precision is the stream's, the significant digits of its
+ * numbers, rather than the string's truncation. Without one the numbers are at the stream's
+ * default precision. The precision is a number, not a replacement field, and ends the
+ * specification but for a type \c s; a width given by a replacement field takes no precision.
  *
  * \code
  * std::println("{}", filter.state());
+ * std::println("{:.3}", filter.state());  // three significant digits
  * \endcode
  */
 template <Emrys::internal::Printable T>
 struct std::formatter<T, char> : std::formatter<std::string_view, char>
 {
-    /** Writes the description of \a value to \a context's output. */
+    /** Parses \a context's specification: a precision at its end is the stream's, and the rest is
+     * the string's.
+     */
+    template <typename ParseContext>
+    constexpr typename ParseContext::iterator
+    parse(ParseContext & context)
+    {
+        auto const begin = context.begin();
+        auto end = begin;
+        while (end != context.end() && *end != '}')
+        {
+            ++end;
+        }
+        auto const spec = std::string_view{begin, end};
+        // The spec without a trailing type s, which is a string's default.
+        auto const body = spec.ends_with('s') ? spec.substr(0, spec.size() - 1) : spec;
+        // A precision is a '.' and the digits after it, at the end. A '.' as the fill is followed
+        // by an alignment, so a '.' just before the last digits is always the precision.
+        auto digits = body.size();
+        while (digits > 0 && body[digits - 1] >= '0' && body[digits - 1] <= '9')
+        {
+            --digits;
+        }
+        if (digits == body.size() || digits == 0 || body[digits - 1] != '.')
+        {
+            return std::formatter<std::string_view, char>::parse(context);
+        }
+        int precision = 0;
+        for (char const digit : body.substr(digits))
+        {
+            precision = precision * 10 + (digit - '0');
+        }
+        m_precision = precision;
+        // The string's part, the spec before the precision, parsed on its own.
+        auto rest = std::format_parse_context{body.substr(0, digits - 1)};
+        std::formatter<std::string_view, char>::parse(rest);
+        return end;
+    }
+
+    /** Writes the description of \a value to \a context's output, its numbers at the precision
+     * given, if one was.
+     */
     template <typename Context>
     [[nodiscard]] typename Context::iterator
     format(T const & value, Context & context) const
     {
         auto stream = std::ostringstream{};
+        if (m_precision >= 0)
+        {
+            stream.precision(m_precision);
+        }
         stream << value;
         return std::formatter<std::string_view, char>::format(stream.str(), context);
     }
+
+private:
+
+    int m_precision = -1;  ///< the stream's precision, or -1 for its default
 };
 
 #endif  // EMRYS_FILTER_NO_IO
