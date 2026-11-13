@@ -1,5 +1,7 @@
 # EmrysFilter
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24195424.svg)](https://doi.org/10.5281/zenodo.24195424)
+
 **State estimation in C++23 on Eigen 5. One design from the Kalman filter to the
 Rao-Blackwellized particle filter, on vectors, angles, quaternions, and discrete modes.
 Header-only, allocation-free on bounded states, parallel by policy, and every algorithm cited
@@ -330,7 +332,9 @@ The library implements algorithms from the public literature and contributes non
 so a feature request names the paper it would implement; see
 [CONTRIBUTING.md](CONTRIBUTING.md). A need that no published method fills goes on
 [docs/research.md](docs/research.md) for a researcher to solve and publish, after which the
-library implements and cites it. To cite the library, use `CITATION.cff`. To take the library
+library implements and cites it. To cite the library, use `CITATION.cff` or its DOI,
+[10.5281/zenodo.24195424](https://doi.org/10.5281/zenodo.24195424), which resolves to the latest
+release. To take the library
 to another language, or to C++20 or C++17, start from [docs/porting.md](docs/porting.md).
 
 MIT license. Copyright (c) 2026 Jay Moore.

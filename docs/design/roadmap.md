@@ -496,7 +496,6 @@ The front door:
       emrys-filter` and `conan install --requires=emrys-filter/0.1.0` first, then the same
       `find_package` lines, and that vcpkg and Conan Center carry Eigen 5. Say that Conan rejects
       a compiler below the floor with a plain message, and vcpkg does not.
-- [ ] The DOI Zenodo minted for 0.1.0, in `CITATION.cff` and the README.
 - [ ] Build cost for contributors: time and memory per workflow preset and the `-j` warning, with
       `-ftime-trace` numbers per header (`tools/compile_cost.py --match` times any compile
       command, and `--time-trace` adds Clang's totals).
@@ -549,7 +548,7 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       `Space`, written before the advertised launch and sent to manif's authors; GTSAM's forum is where "a
       recursion, not a graph" questions land.
 - [ ] The academic track, in parallel and months long: a JOSS paper beside the `CITATION.cff` and
-      DOI above, since "every algorithm cited, nothing invented here" and documentation that can
+      its DOI, since "every algorithm cited, nothing invented here" and documentation that can
       accompany a graduate course are what JOSS reviews for, and a paper is what puts a library
       on a syllabus; and `docs/research.md`'s open problems sent to advisors in the ISIF and
       FUSION community directly, since each is scoped for a graduate student.
