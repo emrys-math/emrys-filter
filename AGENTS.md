@@ -100,7 +100,11 @@ fetched and then installed [cmake-package];
 and the test `skills.install` installs the user skills and checks them [user-skills].
 
 The reference documentation (roadmap step 13b) is a Doxygen build of every header, internals
-included, for the maintainer. It needs Doxygen on PATH (`winget install DimitriVanHeesch.Doxygen`
+included, for the maintainer; `-DEMRYS_FILTER_DOCS_INTERNALS=OFF` leaves out the `internal`
+namespace and private members, which is the reference that the `Pages` workflow
+([.github/workflows/pages.yml](.github/workflows/pages.yml)) publishes to
+https://emrys-math.github.io/emrys-filter/ when dispatched (`gh workflow run Pages --ref dev`). Both
+fail on any warning. It needs Doxygen on PATH (`winget install DimitriVanHeesch.Doxygen`
 on Windows) or `-DDOXYGEN_EXECUTABLE=...`:
 
 ```sh

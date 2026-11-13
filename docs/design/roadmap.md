@@ -504,7 +504,8 @@ The front door:
       (`tools/check_decisions.py`), design reviews, bibliography entries, and the instruction
       ratio against benchmarks.md. It gives no test count; one needs `--gtest_list_tests` over the
       built executables, since `ctest -N` counts executables.
-- [ ] **Soft launch.** The reference and the design documents published to GitHub Pages from CI.
+- [ ] **Soft launch.** The design documents published to GitHub Pages from CI. The reference is
+      published there by the `Pages` workflow, the public API alone, since 2026-11-12.
 - [ ] **Soft launch.** A Zenodo DOI, and the version, in `CITATION.cff` at the first tag. Zenodo
       archives only a public repository's releases, and only those made after its GitHub
       integration is turned on, so turn it on after the repository goes public and before the tag.

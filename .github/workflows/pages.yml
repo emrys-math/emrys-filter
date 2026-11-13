@@ -1,0 +1,61 @@
+# The published reference: the Doxygen build without the internal namespace and private members
+# (EMRYS_FILTER_DOCS_INTERNALS=OFF, docs/CMakeLists.txt), deployed to GitHub Pages. Like CI, it runs
+# only when dispatched by hand (gh workflow run Pages --ref dev); Pages deploys from the default
+# branch.
+
+name: Pages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a newer one waits rather than cancelling one in progress.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build the reference
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # The release the maintainer builds with, not Ubuntu's 1.9.8 (tools/install_doxygen.sh).
+      - name: Install Doxygen
+        run: bash tools/install_doxygen.sh
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build/docs-public -DEMRYS_FILTER_BUILD_TESTS=OFF -DEMRYS_FILTER_BUILD_DOCS=ON
+          -DEMRYS_FILTER_DOCS_INTERNALS=OFF
+
+      # WARN_AS_ERROR = FAIL_ON_WARNINGS (docs/CMakeLists.txt), so a warning stops the deployment.
+      - name: Build the reference
+        run: cmake --build build/docs-public --target docs
+
+      - name: Show warnings
+        if: failure()
+        run: head -n 100 build/docs-public/docs/warnings.txt
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/docs-public/docs/html
+
+  deploy:
+    name: deploy
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,12 +1,16 @@
-# The reference documentation: Doxygen over every header, internals included, written for the
-# maintainer first (roadmap step 13b). `cmake --build <dir> --target docs` writes HTML to
-# <dir>/docs/html and the warnings to <dir>/docs/warnings.txt.
+# The reference documentation: Doxygen over every header (roadmap step 13b). `cmake --build <dir>
+# --target docs` writes HTML to <dir>/docs/html and the warnings to <dir>/docs/warnings.txt.
+#
+# With EMRYS_FILTER_DOCS_INTERNALS on, the default, it is the maintainer's reference: private
+# members, anonymous namespaces, and the `internal` namespace are included, since it is for reading
+# the library, not only using it, and its XML is what tools/check_policies.py and tools/coverage.py
+# read. Off, it is the published reference on GitHub Pages (.github/workflows/pages.yml): the
+# public API alone.
 
 find_package(Doxygen REQUIRED)
 
 # The comments use their first sentence as the brief and describe parameters in prose, so the
-# brief is automatic and a missing \param is not a warning. Private and static members and the
-# `internal` namespace are included: this reference is for reading the library, not only using it.
+# brief is automatic and a missing \param is not a warning.
 set(DOXYGEN_PROJECT_NAME "${PROJECT_NAME}")
 set(DOXYGEN_PROJECT_NUMBER "${PROJECT_VERSION}")
 set(DOXYGEN_PROJECT_BRIEF "${PROJECT_DESCRIPTION}")
@@ -15,10 +19,19 @@ set(DOXYGEN_STRIP_FROM_INC_PATH "${PROJECT_SOURCE_DIR}/include")
 set(DOXYGEN_FILE_PATTERNS *.h *.md)
 set(DOXYGEN_RECURSIVE YES)
 set(DOXYGEN_EXTRACT_ALL NO)
-set(DOXYGEN_EXTRACT_PRIVATE YES)
 set(DOXYGEN_EXTRACT_STATIC YES)
-set(DOXYGEN_EXTRACT_ANON_NSPACES YES)
-set(DOXYGEN_INTERNAL_DOCS YES)
+if(EMRYS_FILTER_DOCS_INTERNALS)
+  set(DOXYGEN_EXTRACT_PRIVATE YES)
+  set(DOXYGEN_EXTRACT_ANON_NSPACES YES)
+  set(DOXYGEN_INTERNAL_DOCS YES)
+  # The main page's \if maintainer text.
+  set(DOXYGEN_ENABLED_SECTIONS maintainer)
+else()
+  set(DOXYGEN_EXTRACT_PRIVATE NO)
+  set(DOXYGEN_EXTRACT_ANON_NSPACES NO)
+  set(DOXYGEN_INTERNAL_DOCS NO)
+  set(DOXYGEN_EXCLUDE_SYMBOLS internal Emrys::internal)
+endif()
 set(DOXYGEN_HIDE_UNDOC_MEMBERS NO)
 set(DOXYGEN_JAVADOC_AUTOBRIEF YES)
 set(DOXYGEN_BUILTIN_STL_SUPPORT YES)

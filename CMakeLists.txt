@@ -9,6 +9,8 @@ project(EmrysFilter
 option(EMRYS_FILTER_BUILD_TESTS "Build EmrysFilter unit tests" ${PROJECT_IS_TOP_LEVEL})
 option(EMRYS_FILTER_BUILD_EXAMPLES "Build the examples and run them as tests" ${EMRYS_FILTER_BUILD_TESTS})
 option(EMRYS_FILTER_BUILD_DOCS "Add the docs target (needs Doxygen)" OFF)
+option(EMRYS_FILTER_DOCS_INTERNALS
+  "Document the internal namespace and private members, for the maintainer; OFF gives the published reference" ON)
 option(EMRYS_FILTER_BUILD_BENCHMARKS "Build the benchmark runners and the benchmark target" OFF)
 option(EMRYS_FILTER_INSTALL "Install the headers, the CMake package, and a fetched Eigen"
   ${PROJECT_IS_TOP_LEVEL})

@@ -246,8 +246,9 @@ and the ones before it, and CI checks that.
 ## Documentation
 
 - **Using it:** [docs/usage.md](docs/usage.md), the examples in [examples/](examples/),
-  [docs/choosing.md](docs/choosing.md) for the choice of filter, and the reference the `docs`
-  target builds from every header, internals included, written for the maintainer first.
+  [docs/choosing.md](docs/choosing.md) for the choice of filter, and
+  [the reference](https://emrys-math.github.io/emrys-filter/), the public API of every header.
+  The `docs` target builds it, or with the internals for the maintainer.
 - **Understanding it:** [docs/guide/](docs/guide/), the five design reviews still open, in reading order from
   [imm-filter.md](docs/guide/imm-filter.md) to
   [smoothing.md](docs/guide/smoothing.md), each
