@@ -1066,7 +1066,7 @@ template <typename Path, ProcessModel Model, typename... Renames>
 [[nodiscard]] auto
 on(Model const & model, Renames const &...)
 {
-    internal::refuseWholeState<Model>();
+    static_assert(internal::wholeStateRefused<Model>);
     using Prefix = internal::AsTagPath<Path>;
     using Placement = internal::Placement<Prefix, Model, Renames...>;
     using Step = internal::PlacedStep<Model>;
@@ -1092,7 +1092,7 @@ template <typename Path, MeasurementModel Model, typename... Renames>
 [[nodiscard]] auto
 on(Model const & model, Renames const &...)
 {
-    internal::refuseWholeState<Model>();
+    static_assert(internal::wholeStateRefused<Model>);
     using Prefix = internal::AsTagPath<Path>;
     using Placement = internal::Placement<Prefix, Model, Renames...>;
     using InnerIn = typename Model::template Policy<internal::PolicyKind::reads>::InputSpace;
@@ -1137,7 +1137,7 @@ template <typename Path, ProcessModel Model, typename... Renames>
 [[nodiscard]] auto
 onEach(Model const & model, Renames const &...)
 {
-    internal::refuseWholeState<Model>();
+    static_assert(internal::wholeStateRefused<Model>);
     using Prefix = internal::AsTagPath<Path>;
     using Each = internal::EachPlacement<Prefix, Model, Renames...>;
     using Step = internal::EachStep<Prefix, Model, Renames...>;
@@ -1157,9 +1157,10 @@ template <typename... Models>
 [[nodiscard]] auto
 composeMeasurements(Models... models)
 {
-    (refuseWholeState<Models>(), ...);
+    static_assert((wholeStateRefused<Models> && ...));
+    // A whole-state model has no writes() either, which its own refusal says.
     static_assert(
-        (Models::template has<PolicyKind::writes> && ...),
+        ((Models::template has<PolicyKind::writes> || readsWholeState<Models>) && ...),
         "compose() takes measurement models that name their output with writes()"
     );
     static_assert(

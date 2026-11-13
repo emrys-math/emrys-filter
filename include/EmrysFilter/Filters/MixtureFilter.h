@@ -1060,7 +1060,8 @@ private:
             return {};
         }
         // The accepted components keep their order, so prior i ends where the count of those up
-        // to it does.
+        // to it does. The scan starts from an Index: without a start, libc++ sums in the
+        // components' own type.
         std::transform_inclusive_scan(
             result.components.begin(),
             result.components.end(),
@@ -1068,7 +1069,8 @@ private:
             std::plus<>{},
             [](auto const & component) {
                 return Eigen::Index(component.accepted);
-            }
+            },
+            Eigen::Index{0}
         );
         for (Eigen::Index i = 0; i < count; ++i)
         {
@@ -1196,7 +1198,7 @@ private:
     }
 
     /** The reduction output of the update through the branches (see ReductionPolicy): each
-     * component a policy adds of the state's component #prior joins the posterior with #logWeight,
+     * component a policy adds of the state's component \c prior joins the posterior with \c logWeight,
      * the prior's weight times its likelihood, times the component's own weight among the branches,
      * and with the prior's lineage.
      */
@@ -1342,7 +1344,19 @@ public:
         Allocator_,
         internal::RecursionForType<Gaussian<Space_, Scalar_>, Model_, Method_, Allocator_>,
         Upkeep_>;
-    using Base::Base;
+
+    /** The filter MixtureFilter's constructor makes from \a args. It forwards rather than
+     * inheriting the constructors, since MSVC 19.51 crashes deducing the class's arguments when
+     * C++23 lets the inherited constructors take part; the deduction guides below deduce them.
+     */
+    template <typename... Args>
+        requires(
+            std::constructible_from<Base, Args...>
+            && !(sizeof...(Args) == 1 && (std::is_same_v<std::remove_cvref_t<Args>, GaussianMixtureFilter> && ...))
+        )
+    GaussianMixtureFilter(Args &&... args)
+        : Base(std::forward<Args>(args)...)
+    {}
 };
 
 /// \cond DEDUCTION_GUIDES

@@ -104,7 +104,8 @@ inline constexpr bool holdsSeveral<Out> = Out::HoldsSeveral;
 template <typename Component, typename Scalar, typename Target = Component>
 struct OneComponentOutput
 {
-    using ComponentType = Component;  ///< the component a policy adds
+    /** the component a policy adds */
+    using ComponentType = Component;
 
     Target & target;       ///< where the added component goes
     Scalar logWeight = 0;  ///< the added component's log-weight (see ReductionPolicy)
@@ -134,8 +135,10 @@ struct OneComponentOutput
 template <typename Component, typename Scalar>
 struct SeveralComponentOutput
 {
-    using ComponentType = Component;            ///< the component a policy adds
-    static constexpr bool HoldsSeveral = true;  ///< it holds any number
+    /** the component a policy adds */
+    using ComponentType = Component;
+    /** it holds any number */
+    static constexpr bool HoldsSeveral = true;
 
     /** Discards \a component. */
     void

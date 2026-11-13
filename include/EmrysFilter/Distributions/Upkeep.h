@@ -478,10 +478,10 @@ private:
         return size_ ? *size_ : Eigen::Index(state.size());
     }
 
-    G * generator_;
-    EMRYS_FILTER_NO_UNIQUE_ADDRESS Resampler_ resampler_;
-    std::optional<Eigen::Index> size_;
-    EMRYS_FILTER_NO_UNIQUE_ADDRESS Policy_ policy_;
+    G * generator_;                                        ///< the generator the draws come from
+    EMRYS_FILTER_NO_UNIQUE_ADDRESS Resampler_ resampler_;  ///< the resampler
+    std::optional<Eigen::Index> size_;                     ///< the size resampled to, or none
+    EMRYS_FILTER_NO_UNIQUE_ADDRESS Policy_ policy_;        ///< the execution policy
 };
 
 /** \ingroup Upkeep
@@ -678,9 +678,9 @@ public:
 
 private:
 
-    G * generator_;
-    Scalar_ scale_;
-    EMRYS_FILTER_NO_UNIQUE_ADDRESS Policy_ policy_;
+    G * generator_;                                  ///< the generator the jitter comes from
+    Scalar_ scale_;                                  ///< the kernel covariance as a multiple of the bandwidth
+    EMRYS_FILTER_NO_UNIQUE_ADDRESS Policy_ policy_;  ///< the execution policy
 };
 
 /** \ingroup Upkeep

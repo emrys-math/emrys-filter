@@ -306,18 +306,27 @@ inline constexpr bool readsWholeState = !Model::template has<PolicyKind::reads>;
 
 /** Refuses the whole-state model \a Model where models are placed or composed, by on(), onEach(),
  * and compose(), which work through the paths of reads() and writes() (decisions.md
- * [whole-state-models]).
+ * [whole-state-models]). The assertion is a class's, which fires where wholeStateRefused is read,
+ * before the caller's own assertions: a consteval function's waits for its body, and MSVC 19.51
+ * reported compose()'s first.
  */
 template <typename Model>
-consteval void
-refuseWholeState()
+struct WholeStateRefusal
 {
     static_assert(
         !readsWholeState<Model>,
         "a model without reads() and writes() reads and writes the whole state, so it is not placed by on() or "
         "onEach() or composed by compose(): give it reads() and writes() to name its blocks"
     );
-}
+
+    static constexpr bool value = true;  ///< read to make the assertion
+};
+
+/** True once WholeStateRefusal has refused a whole-state \a Model: assert it where models are placed
+ * or composed.
+ */
+template <typename Model>
+inline constexpr bool wholeStateRefused = WholeStateRefusal<Model>::value;
 
 /** What \a Model reads in the state space \a Space: its reads(), or ReadsWhole for a whole-state model. */
 template <typename Model, typename Space>

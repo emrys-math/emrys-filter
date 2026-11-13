@@ -56,7 +56,8 @@ class HeldUpkeep
 {
 public:
 
-    using UpkeepType = Upkeep_;  ///< the upkeep the filter holds (see \ref Upkeep)
+    /** the upkeep the filter holds (see \ref Upkeep) */
+    using UpkeepType = Upkeep_;
 
     /** \returns the upkeep the filter holds, upkeep::None if it was given none */
     [[nodiscard]] Upkeep_ const &

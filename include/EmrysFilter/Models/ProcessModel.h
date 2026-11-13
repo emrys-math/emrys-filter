@@ -503,7 +503,7 @@ struct ProcessWrites<true, Writes>
  * <tt>zeros<T>(out)</tt>, either generic in the scalar of \a x or with its Jacobian beside it
  * (withJacobian(), decisions.md [returned-jacobians]), rows in \a out's differences and columns in
  * \a in's. A function generic in the scalar may take it as its one template parameter,
- * <tt>[]<typename T>(auto const & in, auto const & out, auto const & x, double dt)</tt>, which the
+ * <tt>[]\<typename T\>(auto const & in, auto const & out, auto const & x, double dt)</tt>, which the
  * call supplies (decisions.md [function-scalars]). The next state is the state with the written blocks replaced. A
  * model without reads() and writes() reads and writes the whole state of the filter it is given to, and both spaces are
  * the state's (decisions.md [whole-state-models]).
@@ -1648,8 +1648,9 @@ stepPartsBatch(
 )
 {
     using T = typename X::Scalar;
-    constexpr int Cols = X::ColsAtCompileTime;
-    constexpr int MaxCols = X::MaxColsAtCompileTime;
+    // Used in the parts' types only, which MSVC 19.51 takes for unused (C4189).
+    [[maybe_unused]] constexpr int Cols = X::ColsAtCompileTime;
+    [[maybe_unused]] constexpr int MaxCols = X::MaxColsAtCompileTime;
     Eigen::Index const count = x.cols();
     auto & values = y.values();
     values.setZero();
@@ -2053,7 +2054,7 @@ template <ProcessModel... Models>
 [[nodiscard]] Composition<std::remove_cvref_t<Models>...>
 compose(Models &&... models)
 {
-    (internal::refuseWholeState<std::remove_cvref_t<Models>>(), ...);
+    static_assert((internal::wholeStateRefused<std::remove_cvref_t<Models>> && ...));
     return Composition<std::remove_cvref_t<Models>...>{std::forward<Models>(models)...};
 }
 
@@ -2367,7 +2368,7 @@ public:
         values.resize(valueDimension(m_out), count);
         auto wanted = std::array<bool, std::tuple_size_v<InputBlocks<In>>>{};
         [&]<std::size_t... I>(std::index_sequence<I...>) {
-            ((wanted[I] = this->template itemFactored<I>()), ...);
+            ((wanted[I] = Base::template itemFactored<I>()), ...);
         }(std::make_index_sequence<ItemCount>{});
         Eigen::Index const l = jacobians.cols() / std::max<Eigen::Index>(count, 1);
         using OutJacobians = MatrixOf<
@@ -2395,7 +2396,7 @@ public:
                         {
                             if constexpr (Base::inState(I))
                             {
-                                BlockRows const rows = m_reads.differenceRows(stateIndexOf(I));
+                                BlockRows const rows = this->m_reads.differenceRows(Base::stateIndexOf(I));
                                 for (Eigen::Index j = 0; j < count; ++j)
                                 {
                                     for (Eigen::Index r = 0; r < rows.size; ++r)
@@ -2404,7 +2405,7 @@ public:
                                     }
                                 }
                             }
-                            offset += m_differenceRows[I].size;
+                            offset += this->m_differenceRows[I].size;
                         }
                     }(),
                     ...

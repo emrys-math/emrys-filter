@@ -589,7 +589,7 @@ private:
 
 /** \ingroup Distributions
  * \returns points for the block named by the path \a P of a state in \a space at \a centers,
- * one per column, with cells (<tt>PointCells<P></tt>) numbered in column order, and each cell's covariance about its
+ * one per column, with cells (<tt>PointCells\<P\></tt>) numbered in column order, and each cell's covariance about its
  * center \a cellCovariance (none by default), stored through \a allocator
  */
 template <typename P, Space S, typename Derived, typename Allocator = DefaultAllocator>
@@ -607,7 +607,7 @@ pointGrid(
 
 /** \ingroup Distributions
  * \returns points for the block named by the path \a P of a state in \a space at \a centers,
- * one per column, with cells (<tt>PointCells<P></tt>) numbered in column order, and \a cellCovariances, each cell's
+ * one per column, with cells (<tt>PointCells\<P\></tt>) numbered in column order, and \a cellCovariances, each cell's
  * covariance about its center, in the same order. The grid needs a PerPointCovariance filter.
  */
 template <typename P, Space S, typename Derived, typename Allocator = DefaultAllocator>
@@ -672,7 +672,7 @@ regularCells(std::array<Eigen::Index, D> const & counts)
  * \returns points on a regular grid for the block named by the path \a P of a state in \a space:
  * \a counts[i] points along axis \a i, the first at \a first and the rest \a spacing apart, with
  * each cell's covariance about its center \a cellCovariance (none by default). The cells are
- * <tt>GridCells<P></tt>, so the probability of each axis is a marginal
+ * <tt>GridCells\<P\></tt>, so the probability of each axis is a marginal
  * (<tt>marginal<GridAxis<Position, 0>>()</tt>). A GridGaussian over the grid allocates through
  * \a allocator.
  */

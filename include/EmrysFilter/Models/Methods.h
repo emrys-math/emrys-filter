@@ -102,7 +102,7 @@ callEvaluated(F & f, Args &&... args)
 }
 
 /** Whether \a F, called with \a Args, takes \a Scalar as its first template argument, given
- * explicitly: a function written <tt>[]<typename T>(auto const & x)</tt>, whose \c T no argument
+ * explicitly: a function written <tt>[]\<typename T\>(auto const & x)</tt>, whose \c T no argument
  * deduces (decisions.md [function-scalars]). A generic function without a template parameter list
  * doesn't: \a Scalar would name its first argument's type, which a space or a vector is not.
  */

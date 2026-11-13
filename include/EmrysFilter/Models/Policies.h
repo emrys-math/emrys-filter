@@ -790,7 +790,8 @@ inline constexpr bool isAdditiveNoise = policyKind<std::remove_cvref_t<T>> == Po
 template <typename Noise>
 struct NoiseModeAxisOf
 {
-    using type = void;  ///< no mode axis
+    /** no mode axis */
+    using type = void;
 };
 
 /// \cond INTERNAL_SPECIALIZATIONS

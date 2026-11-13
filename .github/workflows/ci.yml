@@ -165,7 +165,8 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build libtbb-dev doxygen
+          sudo apt-get install -y ninja-build libtbb-dev
+          bash tools/install_doxygen.sh
           wget -q https://apt.llvm.org/llvm.sh
           sudo bash llvm.sh "$LLVM_VERSION"
           sudo apt-get install -y "llvm-$LLVM_VERSION"
@@ -281,10 +282,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The release the maintainer builds with, not Ubuntu's 1.9.8 (tools/install_doxygen.sh).
       - name: Install Doxygen
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y doxygen
+        run: bash tools/install_doxygen.sh
 
       - name: Configure
         run: cmake -S . -B build/docs -DEMRYS_FILTER_BUILD_TESTS=OFF -DEMRYS_FILTER_BUILD_DOCS=ON

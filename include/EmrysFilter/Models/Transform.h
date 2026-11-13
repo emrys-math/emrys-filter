@@ -1198,7 +1198,7 @@ transformResult(FactoredAt<AffineSize, AffineMaxSize, Points> const & method, Pr
                 }
             }();
             // The center, then the plus and minus points of each column of the spread in turn.
-            auto const shiftAt = [&](Index k) {
+            auto const shiftAt = [&]([[maybe_unused]] Index k) {
                 InputDifferenceVector shift = InputDifferenceVector::Zero(total);
                 if constexpr (RestSize != 0)
                 {

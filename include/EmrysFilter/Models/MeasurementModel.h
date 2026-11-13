@@ -142,7 +142,7 @@ struct CountFrom
  * <tt>block<Name>(in, x)</tt>; it returns a vector in \a out, which it may fill block by block from
  * <tt>zeros<T>(out)</tt>, either generic in its scalar or with its Jacobian beside it
  * (withJacobian(), decisions.md [returned-jacobians]). A function generic in its scalar may take it
- * as its one template parameter, <tt>[]<typename T>(auto const & in, auto const & out, auto const &
+ * as its one template parameter, <tt>[]\<typename T\>(auto const & in, auto const & out, auto const &
  * x)</tt>, which the call supplies (decisions.md [function-scalars]). A model with a likelihood alone
  * (logLikelihood()) and no function serves the filters that weight points.
  *

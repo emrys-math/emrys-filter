@@ -545,7 +545,7 @@ public:
     {
         auto wanted = std::array<bool, std::tuple_size_v<InputBlocks<In>>>{};
         [&]<std::size_t... I>(std::index_sequence<I...>) {
-            ((wanted[I] = this->template itemFactored<I>()), ...);
+            ((wanted[I] = Base::template itemFactored<I>()), ...);
         }(std::make_index_sequence<ItemCount>{});
         auto const x = gatherColumns<Y>(joint, inputs...);
         callBatchedWithJacobians(m_measurement.model().function(), m_in, m_out, x, wanted, y, jacobians);
