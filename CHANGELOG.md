@@ -11,6 +11,11 @@ instead.
 - `SECURITY.md`: how to report a vulnerability privately, and what counts as one. Among them is
   undefined behavior, or a call that never returns, caused by a floating-point value passed to the
   library, NaN and infinities included, in a build with `NDEBUG`.
+- `Zero<Path>{variance}`, a built-in process model that resets its block to zero with that variance
+  on each coordinate, independent of the rest of the state, over any step: the model of a block a
+  switching model's mode doesn't use and in which the quantity is zero, such as a
+  constant-velocity mode's acceleration beside a constant-acceleration mode, where `Constant`
+  hands the old acceleration back at the next mixing.
 - `CategoricalParams<Mode>::independent(maneuver, sensor)` builds the distribution on a
   `DiscreteProduct` whose axes are independent from one distribution per axis, as
   `MarkovChain<Mode>::independent()` builds the chain, so an IMM's mode prior is no longer written

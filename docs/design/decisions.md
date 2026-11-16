@@ -80,6 +80,7 @@ Read the index, then the decisions your change touches.
 | [additive-noise](#additive-noise) | Additive noise is explicit, and it may be a mixture |
 | [weighted-branches](#weighted-branches) | An update returns weighted branches |
 | [switching-models](#switching-models) | A switching process model is a set of per-mode models plus Π |
+| [unused-blocks](#unused-blocks) | A block a mode doesn't use is held where the quantity persists and reset where it is zero |
 | [templated-measurements](#templated-measurements) | Heterogeneous sensors use templates, not type erasure |
 | [sensors](#sensors) | A measurement model predicts the observation from what it reads, and a measurement is the model observed by a method |
 | [linear-sensors](#linear-sensors) | A linear measurement is a model given its matrix, or its matrix's columns by block, which reads blocks whose values add |
@@ -1494,33 +1495,59 @@ state is a `HybridGaussian`, and a branch's mode is a flat index into its mode s
 
 *A switching process model is a set of per-mode models plus a chain over their step.*
 
-**Rule.** A `SwitchingModel` holds one process model per mode and a chain on the modes, and is owned
-by the filter as a single process model is. The chain's kind follows the models': with models
-stepped by a time step it is a `ContinuousTimeMarkovChain`, moving the mode by
-$\Pi = e^{Q \Delta t}$ over each prediction; with fixed-step models it is a `MarkovChain`, and a
-continuous-time chain given there is taken over their step once. A `MarkovChain` with models
-stepped by a time step doesn't compile. All modes share one state space; a mode that doesn't use a block holds it. Each
-mode's model predicts by the filter's method unless it carries its own, as a fixed-step model does
-or through `withMethod(model, method)`, a wrapper only a switching model takes; fixed-step models
-may differ in their methods. The filter's `method()` is the method of the modes that carry none:
-`Linearized` by default, and `ModelsMethod`, the empty tag, when every model is fixed-step.
+**Rule.** A `SwitchingModel` holds one process model per mode and a chain on the modes, owned by the
+filter as a single process model is. With models stepped by a time step the chain is a
+`ContinuousTimeMarkovChain`, moving the mode by $\Pi = e^{Q \Delta t}$ over each prediction; with
+fixed-step models it is a `MarkovChain`, and a continuous-time chain given there is taken over their
+step. A `MarkovChain` with models stepped by a time step doesn't compile. All modes share one state
+space, and each mode's model writes all of it, a block the mode doesn't use included
+[unused-blocks]. A mode's model predicts by the filter's method unless it carries its own, as a
+fixed-step model does or through `withMethod(model, method)`, which only a switching model takes.
+The filter's `method()` is that of the modes that carry none: `Linearized` by default,
+`ModelsMethod`, the empty tag, when every model is fixed-step.
 
-**Why.** A common space is the standard approach; mixing Gaussians of different dimensions is
-messy. A method per model, because a constant-velocity mode is exact under `Linearized` while a
-coordinated-turn mode beside it may need `Unscented`. The chain follows the models' step because
-the mode and the state move over the same interval, as a process model's noise is discretized over
-it [continuous-time-noise].
+**Why.** A common space is the standard approach; mixing Gaussians of different dimensions is messy.
+A method per model, because a constant-velocity mode is exact under `Linearized` while a
+coordinated-turn mode beside it may need `Unscented`. The chain follows the models' step because the
+mode and the state move over the same interval [continuous-time-noise].
 
-**Rejected.** A `MarkovChain` beside models stepped by a time step, one $\Pi$ per prediction
-whatever its step, the rule until imm-filter.md Q1: asynchronous sensors or a changing rate silently
-changed the switching rate, and `predict(0.0)` moved the mode. Resizable spaces for dimensions that
-depend on the mode. One method for every mode (until imm-filter.md Q7). `withMethod()` as a process
-model every filter takes: outside a switching model it only moves the filter's method into the
-model. The first model's method as the filter's `method()`. A transform shared by modes differing
-only in $Q$ (until imm-filter.md Q12, never built): each mode transforms its own mixed component.
+**Rejected.** A `MarkovChain` beside models stepped by a time step, one $\Pi$ per prediction (until
+imm-filter.md Q1): a changing rate silently changed the switching rate, and `predict(0.0)` moved the
+mode. Resizable spaces for dimensions that depend on the mode. One method for every mode (until Q7).
+`withMethod()` as a process model every filter takes: outside a switching model it only moves the
+filter's method into the model. The first model's method as the filter's `method()`. A transform
+shared by modes differing only in $Q$ (claimed until Q12, never built): each mode transforms its own
+mixed component.
 
 **Where.** `Models/SwitchingModel.h`; the modes' predictions in `Filters/ImmFilter.h` and
 `Filters/RbParticleFilter.h`.
+
+### unused-blocks
+
+*A block a mode doesn't use is held where the quantity persists and reset where it is zero.*
+
+**Rule.** Each mode's model in a `SwitchingModel` writes the whole state [switching-models], and
+says what a block the mode doesn't use is in that mode: held, by `Constant` or `RandomWalk`, where
+the quantity persists through the mode, such as a sensor bias, and reset by `Zero<Path>{variance}`
+where it is zero in the mode, such as a constant-velocity mode's acceleration. `Zero` sets its block
+to zero with the variance on each coordinate and no covariance with the rest of the state, over any
+step. Where the mode's measurements don't read the block, the variance changes nothing within the
+mode: it sets what the mode hands to the others at mixing, and what the merged estimate reports.
+
+**Why.** No one treatment suits every block: a held acceleration returns to the
+constant-acceleration mode at the next mixing, with covariances that only that mode's dynamics made,
+and a reset bias loses its estimate at every switch. A reset whatever the step is
+`OrnsteinUhlenbeck`'s limit as $\tau \to 0$, for any positive step.
+
+**Rejected.** Holding every unused block (until imm-filter.md Q6). `OrnsteinUhlenbeck` with a short
+$\tau$ as the reset: it keeps $e^{-\Delta t / \tau}$ of the block, nearly all of it over a short
+step. Filling the block at mixing from the modes that use it, as IMMs on states of unequal dimension
+do: a mode's model writes its whole component, and mixing knows no blocks.
+
+**Evidence.** `ImmFilter.ACruiseModeResetsTheAccelerationItDoesNotUse`;
+`ModelMethodTest.ZeroResetsItsBlockWhateverTheStep` in `tests/Models/models.cpp`.
+
+**Where.** `Models/ProcessModel.h` (`Zero`), `Models/SwitchingModel.h`.
 
 ### templated-measurements
 
@@ -1642,7 +1669,8 @@ that varies by measurement is built with the measurement anyway.
 **Rule.** The built-in models take continuous-time parameters and discretize them exactly over the
 step: `RandomWalk` takes a white-noise spectral density over its block's differences, `Kinematic`
 (two blocks or more, with `ConstantVelocity`, `ConstantAcceleration`) one on its last derivative,
-`OrnsteinUhlenbeck` a time constant and a stationary variance, and `Constant` nothing. A model of the
+`OrnsteinUhlenbeck` a time constant and a stationary variance, and `Constant` nothing; `Zero`, which
+resets its block [unused-blocks], takes the variance it resets to, the same over every step. A model of the
 user's own gives `continuousNoise()`, spectral densities by block of its output discretized as
 $Q_c \, \Delta t$, or `additiveNoise()`, a fixed discrete $Q$, or neither; never both, and never a
 mixture. `OrnsteinUhlenbeck` takes one $\tau$ and $\sigma^2$, by name, for every coordinate of its

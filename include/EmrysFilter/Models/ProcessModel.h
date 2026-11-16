@@ -4,10 +4,10 @@
  * Process models as functions with reads and writes (decisions.md [model-policies], [continuous-time-noise],
  * [prediction-inputs], [time-steps]): the ProcessFunction that processModel() builds from a function and its policies;
  * the built-in models RandomWalk, the Kinematic chains ConstantVelocity and ConstantAcceleration, OrnsteinUhlenbeck,
- * and Constant, each the same object; compose(), which puts process models side by side; the ProcessModel concept;
- * predict(), which moves a %Gaussian through one by any transform method with the discretized process noise added,
- * and predictJoint(), which also keeps the %Gaussian it started from and its cross-covariance with the prediction, a
- * PredictedJoint, which is what a smoother records [smoothing]; propagate(), the noise-free step; and
+ * Constant, and Zero, each the same object; compose(), which puts process models side by side; the ProcessModel
+ * concept; predict(), which moves a %Gaussian through one by any transform method with the discretized process noise
+ * added, and predictJoint(), which also keeps the %Gaussian it started from and its cross-covariance with the
+ * prediction, a PredictedJoint, which is what a smoother records [smoothing]; propagate(), the noise-free step; and
  * FixedStepModel, a model over one step with the work that depends only on the step done once. How a prediction
  * reads a model is internal::ResolvedProcess, built on ResolvedReads.h. Read Measurement.h next.
  */
@@ -952,6 +952,41 @@ struct OrnsteinUhlenbeckNoise
     }
 };
 
+/** The function of a Zero model: \f$ y = 0 \f$, with the zero matrix as its Jacobian. */
+struct ZeroStep
+{
+    /** \returns zero in \a out, with the zero Jacobian over its differences */
+    template <typename In, typename Out, typename X, typename TimeScalar>
+    [[nodiscard]] auto
+    operator()(In const &, Out const & out, X const &, TimeScalar) const
+    {
+        using T = ScalarOf<X>;
+        using JacobianMatrix = typename Moments<Out, TimeScalar>::MatrixType;
+        Eigen::Index const n = differenceDimension(out);
+        return withJacobian(
+            typename Moments<Out, T>::VectorType{zeros<T>(out)},
+            JacobianMatrix{JacobianMatrix::Zero(n, n)}
+        );
+    }
+};
+
+/** The noise of a Zero model, whatever the step: \f$ \sigma^2 \f$ on each coordinate. */
+template <typename Scalar>
+struct ZeroNoise
+{
+    Scalar variance;  ///< \f$ \sigma^2 \f$
+
+    /** \returns \f$ \sigma^2 I \f$ over the differences of \a out */
+    template <typename Out, typename TimeScalar>
+    [[nodiscard]] typename Moments<Out, TimeScalar>::MatrixType
+    operator()(Out const & out, TimeScalar) const
+    {
+        using Matrix = typename Moments<Out, TimeScalar>::MatrixType;
+        Eigen::Index const n = differenceDimension(out);
+        return Matrix{TimeScalar(variance) * Matrix::Identity(n, n)};
+    }
+};
+
 }  // namespace internal
 
 /** \ingroup Models
@@ -1290,6 +1325,77 @@ public:
               AffineIn<internal::PathTag<Path>>{}
           }
     {}
+};
+
+/** \ingroup Models
+ * \brief The block named by \a Path is reset at every step to zero mean and variance
+ * \f$ \sigma^2 \f$ on each coordinate, independent of the rest of the state: the block of a
+ * switching model's mode in which the quantity is zero, such as the acceleration of a
+ * constant-velocity mode beside a constant-acceleration one (decisions.md [unused-blocks]).
+ *
+ * A step gives \f$ x' = 0 \f$ with noise \f$ \sigma^2 I \f$, whatever \f$ \Delta t \f$: the limit
+ * of OrnsteinUhlenbeck as \f$ \tau \to 0 \f$, for any positive step, where an
+ * OrnsteinUhlenbeck model with a short \f$ \tau \f$ keeps \f$ e^{-\Delta t / \tau} \f$ of its
+ * block and nearly holds it over a short step. The step also resets the block when
+ * \f$ \Delta t = 0 \f$. The model reads its block, which it ignores, and is affine in it, with the
+ * zero matrix as its Jacobian, so it cuts the block's covariance with the rest of the state.
+ *
+ * In a mode whose other models and measurements don't read the block, \f$ \sigma^2 \f$ changes
+ * only what the mode hands to the others when the IMM mixes, and the variance of the block in the
+ * merged estimate: a small one says that the quantity is zero in the mode, and a larger one, on
+ * the scale of the quantity in the modes that use it, lets those modes take it up faster after a
+ * switch. Every coordinate takes the same \f$ \sigma^2 \f$; coordinates that differ are blocks of
+ * their own. The block's differences must have the size of its values, as a Linear block's do,
+ * so that zero is a value of it. \a Scalar_ is the type of \f$ \sigma^2 \f$.
+ *
+ * \sa Constant, OrnsteinUhlenbeck
+ */
+template <typename Path, RealScalar Scalar_ = double>
+class Zero
+    : public ProcessFunction<
+          internal::ZeroStep,
+          internal::ReadsOne<Path>,
+          internal::WritesOf<Path>,
+          AffineIn<internal::PathTag<Path>>,
+          internal::DiscreteNoise<internal::ZeroNoise<Scalar_>>>
+{
+    static_assert(
+        internal::hasEqualSizes<internal::PathTag<Path>>,
+        "the block of a Zero model must have differences of the same size as its values"
+    );
+
+    /** The model this is. */
+    using Base = ProcessFunction<
+        internal::ZeroStep,
+        internal::ReadsOne<Path>,
+        internal::WritesOf<Path>,
+        AffineIn<internal::PathTag<Path>>,
+        internal::DiscreteNoise<internal::ZeroNoise<Scalar_>>>;
+
+public:
+
+    /** the scalar type of the variance */
+    using Scalar = Scalar_;
+
+    /** Variance \a variance on each coordinate after every step. */
+    explicit Zero(Scalar_ variance)
+        : Base{
+              internal::ZeroStep{},
+              internal::ReadsOne<Path>{},
+              internal::WritesOf<Path>{},
+              AffineIn<internal::PathTag<Path>>{},
+              internal::DiscreteNoise<internal::ZeroNoise<Scalar_>>{internal::ZeroNoise<Scalar_>{variance}}
+          }
+    {
+        EMRYS_FILTER_ASSERT(variance >= 0 && "the variance must be nonnegative");
+    }
+
+    /** \returns the variance \f$ \sigma^2 \f$ */
+    [[nodiscard]] Scalar_
+    variance() const
+    {
+        return this->template policy<internal::PolicyKind::discreteNoise>().function.variance;
+    }
 };
 
 namespace internal

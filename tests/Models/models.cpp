@@ -1,10 +1,10 @@
 // ProcessModel and Measurement (steps 1, 2; [templated-measurements], [method-per-measurement], [additive-noise],
-// [weighted-branches], [continuous-time-noise], and [prediction-inputs]): blocks compose the transition and the noise
-// and must partition the state, a constant-velocity block takes a density matrix, each method's prediction and
-// hand-driven predict/update match the closed form, a partial measurement updates the full state, noise through the
-// function matches additive noise where it adds, range-bearing on a tagged subspace, mixture noise gives one branch
-// per component and favors the outlier component for an outlier, the point-wise log-likelihood, and a square-root
-// prior.
+// [weighted-branches], [continuous-time-noise], [unused-blocks], and [prediction-inputs]): blocks compose the
+// transition and the noise and must partition the state, a constant-velocity block takes a density matrix, each
+// method's prediction and hand-driven predict/update match the closed form, a Zero block resets whatever the step, a
+// partial measurement updates the full state, noise through the function matches additive noise where it adds,
+// range-bearing on a tagged subspace, mixture noise gives one branch per component and favors the outlier component for
+// an outlier, the point-wise log-likelihood, and a square-root prior.
 
 #include <EmrysFilter/Distributions/Mixture.h>
 #include <EmrysFilter/Distributions/SqrtGaussian.h>
@@ -46,6 +46,7 @@ using Emrys::ScalarOf;
 using Emrys::StationaryVariance;
 using Emrys::TagPath;
 using Emrys::TimeConstant;
+using Emrys::Zero;
 
 namespace methods = Emrys::methods;
 
@@ -921,6 +922,37 @@ accelerometerDriven()
 // predict() forwards an uncertain input (an accelerometer reading) and a known one (gravity) to a
 // hand-written block [prediction-inputs], and the result matches the closed form with the input's covariance
 // mapped through G.
+// A Zero block beside a constant-velocity pair predicts mean zero and variance 0.25 on each of its
+// coordinates, uncorrelated with the rest, over every step, zero included, by each method: the
+// transition is zero on the block.
+TYPED_TEST(ModelMethodTest, ZeroResetsItsBlockWhateverTheStep)
+{
+    constexpr double resetVar = 0.25;
+    auto const x = makeState();
+    auto const model =
+        compose(ConstantVelocity<Position, Velocity>{jerkDensity}, Zero<Acceleration>{resetVar}, Constant<Bias>{});
+    EXPECT_EQ(Zero<Acceleration>{resetVar}.variance(), resetVar);
+    Eigen::Matrix2d const i2 = Eigen::Matrix2d::Identity();
+    for (double const dt : {0.0, 0.1, timeStep, 10.0})
+    {
+        Matrix7 f = Matrix7::Identity();
+        f.block<2, 2>(0, 2) = dt * i2;
+        f.block<2, 2>(4, 4).setZero();
+        Matrix7 q = Matrix7::Zero();
+        q.block<2, 2>(0, 0) = jerkDensity * std::pow(dt, 3) / 3 * i2;
+        q.block<2, 2>(0, 2) = jerkDensity * dt * dt / 2 * i2;
+        q.block<2, 2>(2, 0) = jerkDensity * dt * dt / 2 * i2;
+        q.block<2, 2>(2, 2) = jerkDensity * dt * i2;
+        q.block<2, 2>(4, 4) = resetVar * i2;
+
+        auto const predicted = Emrys::predict(TypeParam{}, x, model, dt);
+
+        Matrix7 const cov = predicted.covarianceLower().template selfadjointView<Eigen::Lower>();
+        EXPECT_LT((predicted.mean() - f * x.mean()).norm(), 1e-12) << dt;
+        EXPECT_LT((cov - (f * makeCov() * f.transpose() + q)).norm(), 1e-12) << dt;
+    }
+}
+
 TYPED_TEST(ModelMethodTest, PredictTakesUncertainAndKnownInputs)
 {
     using Inertial = Composite<Position, Velocity, Bias>;

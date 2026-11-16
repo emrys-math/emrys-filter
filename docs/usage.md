@@ -199,9 +199,11 @@ as an instance, `Emrys::minus(space, a, b)`, wherever its size can't be read fro
 **A process model.** A process model writes some blocks of the state from the blocks it reads, and
 `Emrys::compose(models...)` puts models side by side: `ConstantVelocity<Position, Velocity>{q}`,
 `ConstantAcceleration`, `RandomWalk<B>{q}`, `OrnsteinUhlenbeck<B>{TimeConstant{tau},
-StationaryVariance{s}}`, and `Constant<B>{}` are built in. Their parameters are continuous-time
-spectral densities, discretized exactly over each step. Every coordinate of the state must be
-written by exactly one model, so a block that doesn't move still needs `Constant` or `RandomWalk`.
+StationaryVariance{s}}`, `Constant<B>{}`, and `Zero<B>{variance}` are built in. Their parameters
+are continuous-time spectral densities, discretized exactly over each step; `Zero` resets its
+block to zero with its variance over any step, for the block of a switching model's mode in
+which the quantity is zero. Every coordinate of the state must be written by exactly one model,
+so a block that doesn't move still needs `Constant` or `RandomWalk`.
 Motion the library doesn't provide, such as a unicycle or a gyroscope turning an attitude, is a
 model you write with `Emrys::processModel()` (below). Wrap the model in
 `Emrys::fixedStep(model, dt)` when the step never changes: the filter it is given computes the

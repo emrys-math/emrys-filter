@@ -115,7 +115,10 @@ now in the code (§4). These decisions from
   their step, owned by the filter: a `ContinuousTimeMarkovChain`, moving the mode by
   $\Pi = e^{Q \Delta t}$ over each prediction, or, with fixed-step models, a `MarkovChain`; a
   `MarkovChain` with models stepped by `predict(dt)` doesn't compile (Q1). Every mode shares one
-  state space; a mode that doesn't use a block holds it. Each mode's model may predict by a method
+  state space, and each mode's model writes all of it, holding a block the mode doesn't use where
+  the quantity persists and resetting it with `Zero` where it is zero in the mode (Q6,
+  [unused-blocks]). Each mode's
+  model may predict by a method
   of its own, given by `withMethod()` or carried by a fixed-step model, and by default every mode
   predicts by the filter's (Q7). The filter's `method()` is that default, `ModelsMethod` when
   every model is fixed-step (Q14).
@@ -564,27 +567,59 @@ count being right.
 
 ### A common state space
 
-[switching-models] puts every mode on one state space, with a mode that doesn't use a block holding
-it, "for example, acceleration held at zero with small Q". The library has two built-in models that
-can do the holding, and they hold differently. A CV/CA pair on a 1-D position, velocity, and
-acceleration, one prediction from acceleration 2:
+[switching-models] puts every mode on one state space, and each mode's model writes all of it, which
+`predict()` checks as it does for any composition. A block that a mode doesn't use still has a
+prediction in that mode, and as long as the mode's other models and its measurements don't read the
+block, the prediction matters in two places only: at mixing, where mode $j$ starts from a component
+that weights mode $i$'s by $\mu_{i \mid j}$ (§5), so that the block in one mode becomes part of
+another's start after a switch, and in the merged estimate. The library has three built-in models
+that can predict such a block. A CV/CA pair on a 1-D position, velocity, and acceleration, one
+prediction from acceleration 2:
 
 ```cpp
-auto const steady = compose(ConstantVelocity<P, V>{0.01}, Constant<A>{});
+auto const held = compose(ConstantVelocity<P, V>{0.01}, Constant<A>{});
 auto const decaying =
     compose(ConstantVelocity<P, V>{0.01}, OrnsteinUhlenbeck<A>{TimeConstant{0.5}, StationaryVariance{1e-4}});
+auto const reset = compose(ConstantVelocity<P, V>{0.01}, Zero<A>{1e-4});
 auto const accelerating = ConstantAcceleration<P, V, A>{1.0};
-// steady mode, Constant<A>:            (0, 0, 2)
-// steady mode, OrnsteinUhlenbeck<A>:   (0, 0, 0.2707)
-// accelerating mode:                   (1, 2, 2)
+// CV mode, Constant<A>:            (0, 0, 2)
+// CV mode, OrnsteinUhlenbeck<A>:   (0, 0, 0.2707)
+// CV mode, Zero<A>:                (0, 0, 0)
+// accelerating mode:               (1, 2, 2)
 ```
 
 `Constant` keeps the acceleration with no noise, so the CV mode carries 2 m/s² that it ignores, and
-mixing hands it back to the CA mode at the next step. An Ornstein-Uhlenbeck model with a short time
-constant pulls it toward zero, which is closer to [switching-models]'s "held at zero". Neither sets
-it to zero.
+mixing hands it back to the CA mode at the next step. It also keeps the acceleration's covariance
+with the position and velocity, which the CA mode's dynamics made and the CV mode's don't, so the CV
+mode's position fixes go on moving it. `ImmFilter.ACruiseModeResetsTheAccelerationItDoesNotUse`
+flies a 15-step maneuver at 2 m/s²: with `Constant` in the CV mode, the merged acceleration averages
+2.5 m/s² over ten steps of the cruise that follows, more than the maneuver's, and with `Zero`
+0.04 m/s². An Ornstein-Uhlenbeck model with a short time constant decays the block by a fraction
+that depends on the step: with $\tau = 0.5$ it keeps 14% of it over $\Delta t = 1$ and 82% over
+$\Delta t = 0.1$, so with fast or asynchronous sensors it nearly holds. `Zero<A>{variance}` sets the block to
+zero with that variance and no covariance with the rest of the state, over any step, as the
+Ornstein-Uhlenbeck model does in the limit $\tau \to 0$.
 
-> **Q6.** Which is the recommended model for a block a mode doesn't use? I'd say
+Which is right depends on what the block is in the mode. A quantity that is zero in the mode, such
+as a CV mode's acceleration, or its turn rate beside a coordinated-turn mode, is reset by `Zero`. A
+quantity that persists through the mode, such as a sensor bias or a calibration parameter, is held
+by `Constant` or `RandomWalk`, since a reset would discard its estimate at every switch.
+
+The variance of the reset changes nothing within the mode, as long as its measurements don't read
+the block: not the mode's prediction of the other blocks, and not its likelihood. It sets what the
+mode hands to the others at mixing, and what the merged estimate reports. A small variance says that
+the acceleration is zero in the CV mode, and adds little to the merged acceleration's variance; a
+maneuver then starts from an acceleration near zero, which the CA mode's jerk noise has to grow. A
+variance on the scale of a maneuver's acceleration is a prior for the onset, so the CA mode takes up
+a sudden acceleration faster, and the merged variance grows by $\mu_{CV} \sigma^2$ while the CV mode
+is likely. The onset prior belongs to the switch from CV to CA, and an IMM has no transition that
+depends on the pair of modes. A sensor that reads the block, such as an accelerometer, makes the
+variance part of the mode's likelihood, where a small one helps tell the modes apart.
+
+> **Q6.** *Decided [unused-blocks]: a block a mode doesn't use is held where the quantity
+> persists through the mode and reset by the new `Zero<Path>{variance}` where it is zero in the
+> mode; `OrnsteinUhlenbeck` is rejected as the reset, since it nearly holds over a short step.*
+> ~~Which is the recommended model for a block a mode doesn't use? I'd say
 > `OrnsteinUhlenbeck` with a time constant shorter than the step and a small variance, write that
 > into the `SwitchingModel` comment, and amend [switching-models]'s example to name it, since "held
 > at zero with small Q" describes no model that exists. A `Zero<Path>` model that resets to zero
@@ -592,7 +627,7 @@ it to zero.
 > function returns zero, with `reads(path<A>)`, `writes(path<A>)`, and `additiveNoise()` of the
 > variance [model-policies], which predicts $(0, 0, 0)$ from the state above with variance $10^{-4}$
 > on $A$. A model that reads nothing, `reads()`, does not compile: its input space would be an empty
-> `Composite`, which fails `a composite needs at least one block` deep in the instantiation.
+> `Composite`, which fails `a composite needs at least one block` deep in the instantiation.~~
 
 > **Q7.** ~~One method serves every mode, so a CV/coordinated-turn IMM runs the CV mode through
 > `Unscented` too (exact for an affine model, at $2n + 1$ sigma points). Leave it?~~ *Decided
@@ -1308,8 +1343,8 @@ component. `MixtureParams::merged()` and `merge()` work on hybrids, keeping each
    `GridGaussianParams` for the grid.
 5. ~~`switchingModel<Path>(chain, model)` with one model is silently shared (bug?) (§4).~~
    Decided: one model is shared only without a path; with one, the count is checked.
-6. The recommended model for a block a mode doesn't use; amend [switching-models]'s example
-   (§4).
+6. ~~The recommended model for a block a mode doesn't use; amend [switching-models]'s example
+   (§4).~~ *Decided [unused-blocks]: held where it persists, reset by `Zero` where it is zero.*
 7. ~~One prediction method for every mode; leave it? (§4; see Q14)~~ *Decided [switching-models]:
    a method per model, the same for every mode by default.* *Done: `withMethod()`.*
 8. ~~Follow the mixture filter for partly gated modes (§6).~~ Decided: a mode is

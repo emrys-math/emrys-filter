@@ -454,6 +454,10 @@ struct Landmarks : Emrys::Linear<Eigen::Dynamic, 8>
 [[maybe_unused]] constexpr auto size = sizeof(Emrys::Kinematic<double, Attitude, Spin>);
 #endif
 
+#if defined(ZERO_QUATERNION)  // static_assert: ProcessModel.h: the block of a Zero model must have differences
+[[maybe_unused]] constexpr auto size = sizeof(Emrys::Zero<Attitude>);
+#endif
+
 // A process model's function of the position alone, the identity.
 [[maybe_unused]] auto const holdPosition = []<typename T>(auto const & in, auto const &, auto const & x, auto) {
     return Eigen::Matrix<T, 2, 1>{Emrys::block<Position>(in, x)};

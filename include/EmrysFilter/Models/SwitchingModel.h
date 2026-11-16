@@ -177,8 +177,11 @@ withMethod(Model model, Method method)
  * and the process model each mode follows [switching-models].
  *
  * Each model is a process model over the whole state (see ProcessModel), and every mode
- * shares the state space; a mode that doesn't use a block holds it. There are three ways to
- * assign models to modes:
+ * shares the state space. A mode's model writes even a block the mode doesn't use: with Constant
+ * or RandomWalk where the quantity persists through the mode, such as a sensor bias, and with Zero
+ * where it is zero in the mode, such as the acceleration of a constant-velocity mode beside a
+ * constant-acceleration one (decisions.md [unused-blocks]). There are three ways to assign models
+ * to modes:
  *  - one model per mode, in flat-index order: <tt>SwitchingModel{chain, cruise, turn}</tt>;
  *  - one model per value of one axis of the mode space, when the others (such as a
  *    sensor's inlier/outlier state) don't affect the dynamics:

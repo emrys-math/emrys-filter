@@ -34,7 +34,7 @@
  * <tt>Linear<4></tt> is <tt>processModel(F, additiveNoise(q))</tt> and
  * <tt>measurementModel(H, additiveNoise(r))</tt>. A process model is processModel(), a built-in model, or compose() of
  * process models; a measurement model is measurementModel(). The built-in process models, RandomWalk, Constant,
- * ConstantVelocity and ConstantAcceleration (Kinematic), and OrnsteinUhlenbeck, take their tags
+ * ConstantVelocity and ConstantAcceleration (Kinematic), OrnsteinUhlenbeck, and Zero, take their tags
  * as template arguments and the scalar of their parameters last, \c double by default:
  *
  * \code

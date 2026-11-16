@@ -1,10 +1,10 @@
-// ImmFilter and HybridGaussian (steps 5b, 13d; [switching-models], [imm], [fixed-step-models]): collapsing
-// over modes and by dimension, one mode is a Kalman filter, a hand-computed IMM step with Markov
-// outlier states, noise by mode axis read as memoryless outliers by a Kalman filter and matched by an
-// IMM with a memoryless chain, a measurement per value of a mode axis, fixed-step models fix the step
-// and the method, the mode moves by the chain over each step, fixed-step models take a
-// continuous-time chain over their step, each mode predicts by its own method, rejected modes lose
-// their probability, a maneuver is detected, and a burst of outliers is ridden out.
+// ImmFilter and HybridGaussian (steps 5b, 13d; [switching-models], [unused-blocks], [imm], [fixed-step-models]):
+// collapsing over modes and by dimension, one mode is a Kalman filter, a hand-computed IMM step with Markov outlier
+// states, noise by mode axis read as memoryless outliers by a Kalman filter and matched by an IMM with a memoryless
+// chain, a measurement per value of a mode axis, fixed-step models fix the step and the method, the mode moves by the
+// chain over each step, fixed-step models take a continuous-time chain over their step, each mode predicts by its own
+// method, rejected modes lose their probability, a maneuver is detected, a cruise mode that resets the acceleration it
+// doesn't use hands the maneuvering mode none after a maneuver, and a burst of outliers is ridden out.
 
 #include <EmrysFilter/Distributions/Categorical.h>
 #include <EmrysFilter/Distributions/ContinuousTimeMarkovChain.h>
@@ -34,7 +34,10 @@
 
 using Emrys::additiveNoise;
 using Emrys::CategoricalParams;
+using Emrys::compose;
 using Emrys::Composite;
+using Emrys::Constant;
+using Emrys::ConstantAcceleration;
 using Emrys::ConstantVelocity;
 using Emrys::ContinuousTimeMarkovChain;
 using Emrys::DiscreteProduct;
@@ -52,6 +55,7 @@ using Emrys::ScalarOf;
 using Emrys::switchingMeasurement;
 using Emrys::SwitchingModel;
 using Emrys::switchingModel;
+using Emrys::Zero;
 
 namespace methods = Emrys::methods;
 namespace reductions = Emrys::reductions;
@@ -68,6 +72,11 @@ struct Velocity : Linear<2>
 {};
 
 using State = Composite<Position, Velocity>;
+
+struct Acceleration : Linear<2>
+{};
+
+using AccelerationState = Composite<Position, Velocity, Acceleration>;
 
 struct Cruise
 {};
@@ -1060,6 +1069,96 @@ TEST(ImmFilter, DetectsAManeuver)
     EXPECT_GT(activeManeuverProbability, 0.8);
     EXPECT_LT(std::sqrt(immError), 0.5 * std::sqrt(kalmanError))
         << std::sqrt(immError) << " " << std::sqrt(kalmanError);
+}
+
+// What a cruise/maneuvering IMM on position, velocity, and acceleration estimates over a cruise, a
+// 15-step sideways acceleration of 2 m/s^2, and another cruise.
+struct AccelerationRun
+{
+    double worstCruiseReset = 0;      // largest distance of the cruise mode's acceleration from N(0, resetVar)
+    double maneuverAcceleration = 0;  // the maneuvering mode's sideways acceleration over the maneuver's last 8 steps
+    double maneuverProbability = 0;   // the maneuvering mode's probability over the same steps
+    double mergedAfterwards = 0;      // the merged acceleration's norm over steps 11 to 20 after the maneuver
+};
+
+constexpr double resetVar = 1e-4;
+
+// One run of the IMM whose cruise mode treats the acceleration by \a cruiseAcceleration, a model of
+// the Acceleration block, on the same truth and the same noise draws whatever the model.
+template <typename AccelerationModel>
+AccelerationRun
+runAccelerationImm(AccelerationModel const & cruiseAcceleration)
+{
+    using Vector6 = Eigen::Matrix<double, 6, 1>;
+    using Matrix6 = Eigen::Matrix<double, 6, 6>;
+    auto rng = std::mt19937_64{5};
+    auto normal = std::normal_distribution<double>{};
+    auto const noiseFactor = Eigen::LLT<Eigen::Matrix2d>{R};
+    auto const initial = GaussianParams<AccelerationState>{
+        AccelerationState{},
+        Vector6{0, 0, 10, 0, 0, 0},
+        Matrix6{Vector6{10, 10, 4, 4, 1, 1}.asDiagonal()}
+    };
+    auto imm = ImmFilter{
+        SwitchingModel{
+            ContinuousTimeMarkovChain<Maneuver>::persistent(0.05),
+            compose(makeModel(quiet), cruiseAcceleration),
+            ConstantAcceleration<Position, Velocity, Acceleration>{0.5}
+        },
+        HybridParams{CategoricalParams<Maneuver>{}, initial}
+    };
+
+    auto run = AccelerationRun{};
+    auto truth = Eigen::Vector4d{0, 0, 10, 0};
+    for (int k = 1; k <= 65; ++k)
+    {
+        double const accel = k > 30 && k <= 45 ? 2.0 : 0.0;
+        truth.head<2>() += truth.tail<2>() * timeStep + Eigen::Vector2d{0, 0.5 * accel};
+        truth(3) += accel * timeStep;
+        Eigen::Vector2d const z = truth.head<2>() + noiseFactor.matrixL() * Eigen::Vector2d{normal(rng), normal(rng)};
+        imm.predict(timeStep);
+        EXPECT_TRUE(imm.update(makeFix(z)));
+
+        Vector6 const cruiseMean = imm.state().template conditional<Cruise>().mean();
+        Matrix6 const cruiseCov =
+            imm.state().template conditional<Cruise>().covarianceLower().template selfadjointView<Eigen::Lower>();
+        double const reset = cruiseMean.tail<2>().norm()
+                           + (cruiseCov.bottomRightCorner<2, 2>() - resetVar * Eigen::Matrix2d::Identity()).norm()
+                           + cruiseCov.bottomLeftCorner<2, 4>().norm();
+        run.worstCruiseReset = std::max(run.worstCruiseReset, reset);
+        if (k > 37 && k <= 45)
+        {
+            run.maneuverAcceleration += imm.state().template conditional<Maneuvering>().mean()(5) / 8;
+            run.maneuverProbability += imm.state().modes().toDensity().value().template probability<Maneuvering>() / 8;
+        }
+        if (k > 55)
+        {
+            run.mergedAfterwards += imm.state().toDensity()->collapsed().mean().template tail<2>().norm() / 10;
+        }
+    }
+    return run;
+}
+
+// A cruise mode that resets the acceleration it doesn't use, Zero<Acceleration>, keeps it at exactly
+// N(0, resetVar) after every update, uncorrelated with position and velocity, and the merged
+// acceleration after the maneuver averages under 0.2 m/s^2. Holding it instead, Constant<Acceleration>,
+// gives the maneuver's acceleration to the cruise mode by mixing and keeps it there: the merged
+// acceleration after the maneuver averages over 0.5 m/s^2. Both detect the maneuver, whose mode
+// estimates the acceleration within 0.5 m/s^2.
+TEST(ImmFilter, ACruiseModeResetsTheAccelerationItDoesNotUse)
+{
+    AccelerationRun const reset = runAccelerationImm(Zero<Acceleration>{resetVar});
+    AccelerationRun const held = runAccelerationImm(Constant<Acceleration>{});
+
+    EXPECT_LT(reset.worstCruiseReset, 1e-12);
+    EXPECT_GT(held.worstCruiseReset, 0.5);
+    for (AccelerationRun const & run : {reset, held})
+    {
+        EXPECT_GT(run.maneuverProbability, 0.8);
+        EXPECT_NEAR(run.maneuverAcceleration, 2.0, 0.5);
+    }
+    EXPECT_LT(reset.mergedAfterwards, 0.2);
+    EXPECT_GT(held.mergedAfterwards, 0.5);
 }
 
 // With the sensor state as the mode and a 50-unit bias on five consecutive fixes, the outlier
