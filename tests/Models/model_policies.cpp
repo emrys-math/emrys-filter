@@ -99,7 +99,8 @@ using Map = Composite<Position, Landmarks>;
 // a bare tag's value is a path of one tag; and the input space is the Composite of the names, in order.
 TEST(Policies, ReadsNamesItsItems)
 {
-    auto const r = reads(on<SensorPosition>(path<Ownship, Position>), path<Target, Position>, ScaleNoise{});
+    [[maybe_unused]] auto const r =
+        reads(on<SensorPosition>(path<Ownship, Position>), path<Target, Position>, ScaleNoise{});
     using R = decltype(r);
     static_assert(R::Count == 3);
     static_assert(std::is_same_v<R::Item<0>::PathType, TagPath<Ownship, Position>>);
@@ -118,7 +119,7 @@ TEST(Policies, ReadsNamesItsItems)
 // writes() keeps the blocks written, and the output space is their Composite in order.
 TEST(Policies, WritesNamesItsBlocks)
 {
-    auto const w = writes(path<Range>, Bearing{});
+    [[maybe_unused]] auto const w = writes(path<Range>, Bearing{});
     using W = decltype(w);
     static_assert(W::Count == 2);
     static_assert(std::is_same_v<W::Path<0>, TagPath<Range>>);
@@ -130,7 +131,7 @@ TEST(Policies, WritesNamesItsBlocks)
 // affineIn() keeps the names, each the tag an input is read under.
 TEST(Policies, AffineInNamesInputs)
 {
-    auto const a = affineIn(path<ScaleNoise>, Position{});
+    [[maybe_unused]] auto const a = affineIn(path<ScaleNoise>, Position{});
     static_assert(std::is_same_v<decltype(a), Emrys::AffineIn<ScaleNoise, Position> const>);
     static_assert(decltype(a)::Count == 2);
 }
@@ -240,7 +241,7 @@ TEST(Policies, TheOtherPoliciesHoldWhatTheyAreGiven)
     });
     EXPECT_EQ(g.function(Linear<2>{}, Eigen::Vector2d{1.0, 1.0}, Eigen::Vector2d{1.0, 2.0}), -1.0);
 
-    auto const fixed = outputSpace(RangeBearing{});
+    [[maybe_unused]] auto const fixed = outputSpace(RangeBearing{});
     static_assert(!decltype(fixed)::Computed);
     static_assert(std::is_same_v<decltype(fixed.in(Map{})), RangeBearing>);
     auto const counted = outputSpace(Emrys::CountFrom<Landmarks, Offsets>{});

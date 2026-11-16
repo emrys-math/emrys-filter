@@ -455,7 +455,7 @@ TEST(SpaceProjection, ComplementKeepsTheRemainingBlocks)
     static_assert(std::is_same_v<decltype(rest), Composite<Ownship, Repeated<Composite<Latitude, Altitude>>> const>);
     EXPECT_EQ(rest.block<1>().count(), 2);
     EXPECT_EQ(valueDimension(rest), 10);
-    auto const ownship = complementSubspace<Vehicles>(world);
+    [[maybe_unused]] auto const ownship = complementSubspace<Vehicles>(world);
     static_assert(std::is_same_v<decltype(ownship), Ownship const>);
 }
 

@@ -1052,6 +1052,7 @@ template <typename T>
 [[nodiscard]] T const &
 inputOf(T const & argument)
 {
+    // NOLINTNEXTLINE(bugprone-return-const-ref-from-parameter): the identity case of the overloads
     return argument;
 }
 

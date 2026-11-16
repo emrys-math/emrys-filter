@@ -190,8 +190,9 @@ TEST(UniformMixture, DensityRipplesAsPoissonSummationSays)
         auto const mixture = mixtureOf(uniformComponents(uniform, 40, c));
         auto const density = mixture.toDensity().value();
         double largest = 0;
-        for (double x = 10.0; x <= 30.0; x += 0.05)
+        for (int i = 0; i <= 400; ++i)
         {
+            double const x = 10.0 + 0.05 * i;
             double const expected = latticeDensity(x, 0.0, 40.0, 40, c);
             EXPECT_NEAR(density.density(Vector1{x}), expected, 1e-12 * expected) << x;
             largest = std::max(largest, std::abs(40 * density.density(Vector1{x}) - 1));
@@ -210,8 +211,9 @@ TEST(UniformMixture, WholePeriodHasNoFace)
     auto const heading = Uniform<Heading>{};
     auto const mixture = mixtureOf(uniformComponents(heading, 12));
     auto const density = mixture.toDensity().value();
-    for (double x = -pi; x < pi; x += 0.01)
+    for (int i = 0; i < 629; ++i)
     {
+        double const x = -pi + 0.01 * i;
         double const expected = latticeDensity(x, -pi, 2 * pi, 12, 0.6);
         EXPECT_NEAR(density.density(Vector1{x}), expected, 1e-12 * expected) << x;
     }

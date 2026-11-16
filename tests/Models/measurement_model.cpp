@@ -139,7 +139,7 @@ TEST(MeasurementModel, NoiseTakesADiagonalCovariance)
     static_assert(Noise::ZeroMean);
     static_assert(std::is_same_v<Noise::Distribution, Eigen::Matrix2d>);
     EXPECT_EQ(diagonal.distribution(), r);
-    auto const placed = additiveNoise(on<Position>(variances.asDiagonal()));
+    [[maybe_unused]] auto const placed = additiveNoise(on<Position>(variances.asDiagonal()));
     static_assert(std::is_same_v<std::remove_cvref_t<decltype(std::get<0>(placed.parts()).value)>, Eigen::Matrix2d>);
 
     auto const prior = makePrior();

@@ -61,13 +61,11 @@
 
 using Emrys::additiveNoise;
 using Emrys::CategoricalParams;
-using Emrys::compose;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
 using Emrys::FixedStepModel;
 using Emrys::GaussianHistory;
 using Emrys::GaussianParams;
-using Emrys::Hybrid;
 using Emrys::HybridGaussian;
 using Emrys::HybridGaussianHistory;
 using Emrys::HybridParams;
@@ -636,7 +634,7 @@ struct HandMode
 {
     Vector4 mean;
     Matrix4 cov;
-    double probability;
+    double probability = 0;
 };
 
 }  // namespace

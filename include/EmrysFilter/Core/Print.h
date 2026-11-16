@@ -228,6 +228,7 @@ operator<<(std::ostream & stream, T const & value)
  * \endcode
  */
 template <Emrys::internal::Printable T>
+// NOLINTNEXTLINE(cert-dcl58-cpp): the standard lets a program specialize std::formatter for its types
 struct std::formatter<T, char> : std::formatter<std::string_view, char>
 {
     /** Parses \a context's specification: a precision at its end is the stream's, and the rest is

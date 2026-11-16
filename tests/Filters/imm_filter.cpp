@@ -32,13 +32,11 @@
 
 using Emrys::additiveNoise;
 using Emrys::CategoricalParams;
-using Emrys::compose;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
 using Emrys::DiscreteProduct;
 using Emrys::GaussianMixtureParams;
 using Emrys::GaussianParams;
-using Emrys::Hybrid;
 using Emrys::HybridGaussian;
 using Emrys::HybridGaussianParams;
 using Emrys::HybridParams;
@@ -51,7 +49,6 @@ using Emrys::ScalarOf;
 using Emrys::switchingMeasurement;
 using Emrys::SwitchingModel;
 using Emrys::switchingModel;
-using Emrys::valueOf;
 
 namespace methods = Emrys::methods;
 namespace reductions = Emrys::reductions;

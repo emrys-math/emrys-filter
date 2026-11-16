@@ -25,13 +25,11 @@
 using Emrys::additiveNoise;
 using Emrys::AmmFilter;
 using Emrys::CategoricalParams;
-using Emrys::compose;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
 using Emrys::FixedStepModel;
 using Emrys::Gaussian;
 using Emrys::GaussianParams;
-using Emrys::Hybrid;
 using Emrys::HybridGaussian;
 using Emrys::HybridGaussianParams;
 using Emrys::ImmFilter;

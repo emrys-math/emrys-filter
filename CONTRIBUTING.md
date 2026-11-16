@@ -39,7 +39,10 @@ tests it needs is not merged.
 Build and test with `cmake --workflow --preset clang` (or `gcc`, or `msvc` from an x64 Visual
 Studio developer environment, since every preset uses Ninja); CI runs all three,
 clang-format, a header-layer check, and a Doxygen build that fails on any warning, when a
-maintainer dispatches it, so run them locally before opening a pull request. The
+maintainer dispatches it, so run them locally before opening a pull request. Before each release,
+clang-tidy analyzes the headers with the checks in `.clang-tidy`
+(`python tools/clang_tidy.py build/clang`), and a finding is fixed or suppressed at its line with
+the reason. The
 conventions the code follows are in [docs/design/style.md](docs/design/style.md): names,
 parameter order, allocation, `std::expected` errors, no exceptions, and the citation convention.
 [AGENTS.md](AGENTS.md) holds the workflow, for people and coding agents alike. A change to the

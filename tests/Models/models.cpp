@@ -45,7 +45,6 @@ using Emrys::reads;
 using Emrys::ScalarOf;
 using Emrys::StationaryVariance;
 using Emrys::TagPath;
-using Emrys::TagPaths;
 using Emrys::TimeConstant;
 
 namespace methods = Emrys::methods;

@@ -39,9 +39,6 @@ inline int failures = 0;
 #include <utility>
 #include <vector>
 
-namespace reductions = Emrys::reductions;
-namespace resamplers = Emrys::resamplers;
-
 namespace
 {
 

@@ -209,8 +209,9 @@ TEST(Gamma, LogDensityMatchesTheFormula)
     auto const skewed = Gamma<Linear<1>>::create(2.5, 1.5).value();
     double integral = 0;
     double const h = 1e-3;
-    for (double x = h / 2; x < 60; x += h)
+    for (int i = 0; i < 60'000; ++i)
     {
+        double const x = (i + 0.5) * h;
         integral += skewed.density(Eigen::Matrix<double, 1, 1>{x}) * h;
     }
     EXPECT_NEAR(integral, 1.0, 1e-6);

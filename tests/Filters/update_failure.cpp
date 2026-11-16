@@ -44,7 +44,6 @@
 
 using Emrys::additiveNoise;
 using Emrys::CategoricalParams;
-using Emrys::compose;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
 using Emrys::drawParticleGaussian;
@@ -52,7 +51,6 @@ using Emrys::GaussianError;
 using Emrys::GaussianMixtureFilter;
 using Emrys::GaussianMixtureParams;
 using Emrys::GaussianParams;
-using Emrys::Hybrid;
 using Emrys::HybridParams;
 using Emrys::ImmFilter;
 using Emrys::InfoFilter;

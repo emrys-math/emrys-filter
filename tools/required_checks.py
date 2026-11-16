@@ -86,6 +86,11 @@ CHECKS = [
           'cmake --workflow --preset clang-coverage && '
           'python tools/coverage.py build/clang-coverage --doxygen build/docs/docs/xml',
           HEADERS + r'|^tests/|^tools/coverage\.py$'),
+    Check('clang-tidy', 'ci',
+          'gh workflow run CI --ref next -f clang_tidy=true, or python tools/clang_tidy.py build/clang',
+          HEADERS + r'|^(tests|examples|benchmarks)/|^\.clang-tidy$|^tools/clang_tidy\.py$',
+          [Trigger('pr', 'the clang-tidy checks or their runner changed',
+                   path=r'^\.clang-tidy$|^tools/clang_tidy\.py$')]),
     Check('gcc-no-exceptions', 'ci', 'gh workflow run CI --ref next -f gcc_no_exceptions=true', COMPILED,
           [Trigger('pr', 'exceptions or RTTI changed',
                    line=r'\b(throw|try|catch|typeid|dynamic_cast|__cpp_exceptions|__cpp_rtti)\b|<stdexcept>')]),

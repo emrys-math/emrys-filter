@@ -102,7 +102,7 @@ protected:
         return -0.5 * (double(n) * std::log(2.0 * std::numbers::pi) + std::log(p.determinant()) + squaredDistance);
     }
 
-    MG
+    [[nodiscard]] MG
     make() const
     {
         return MG{makeVector(0.0), makeSpd()};

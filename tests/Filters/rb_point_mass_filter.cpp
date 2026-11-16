@@ -41,7 +41,6 @@
 #include <vector>
 
 using Emrys::additiveNoise;
-using Emrys::compose;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
 using Emrys::Gaussian;
