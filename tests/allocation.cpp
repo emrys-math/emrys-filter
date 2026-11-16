@@ -33,6 +33,7 @@
 #include <cstdlib>
 #include <new>
 #include <random>
+#include <type_traits>
 
 void *
 operator new(std::size_t size)
@@ -133,9 +134,10 @@ TEST(Allocation, KalmanFilterWithMixtureNoiseRefillsItsUpdate)
     auto z = Eigen::Vector2d{};
     auto const fix = makeMixtureFix(z);
     auto collapsing = KalmanFilter{makeModel(), makeInitial()};
-    using Update = decltype(collapsing.update(fix))::value_type;
+    auto result = collapsing.emptyUpdate<decltype(fix)>();
+    using Update = decltype(result);
+    static_assert(std::is_same_v<Update, decltype(collapsing.update(fix))::value_type>);
     static_assert(Update::BranchCount == std::dynamic_extent);
-    auto result = Update{};
     expectStepsAllocateNothing([&](int k) {
         z = fixAt(k);
         collapsing.predict(timeStep);
@@ -145,7 +147,7 @@ TEST(Allocation, KalmanFilterWithMixtureNoiseRefillsItsUpdate)
     EXPECT_EQ(result.branches.size(), 2);
 
     auto selecting = KalmanFilter{makeModel(), makeInitial()};
-    auto selected = Update{};
+    auto selected = selecting.emptyUpdate<decltype(fix)>();
     expectStepsAllocateNothing([&](int k) {
         z = fixAt(k);
         selecting.predict(timeStep);

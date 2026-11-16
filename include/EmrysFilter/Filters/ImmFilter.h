@@ -1691,6 +1691,30 @@ public:
         return m_recursion.update(m_state, measurement, policy, result);
     }
 
+    /** \returns an empty result for update(measurement, policy, result) with a measurement of type
+     * \a M, \c const and references aside, a measurement or a SwitchingMeasurement, from the
+     * state's allocator, with room for an update of every mode: the recursion's
+     * ImmRecursion::emptyUpdate() for the state
+     */
+    template <typename M>
+        requires Measurement<M> || internal::isSwitchingMeasurement<std::remove_cvref_t<M>>
+    [[nodiscard]] auto
+    emptyUpdate() const
+    {
+        using Plain = std::remove_cvref_t<M>;
+        if constexpr (internal::isSwitchingMeasurement<Plain>)
+        {
+            return m_recursion.template emptyUpdate<typename Plain::template MeasurementType<0>>(
+                get_allocator(),
+                m_state.size()
+            );
+        }
+        else
+        {
+            return m_recursion.template emptyUpdate<Plain>(get_allocator(), m_state.size());
+        }
+    }
+
 private:
 
     StateType m_state;          ///< the state estimate

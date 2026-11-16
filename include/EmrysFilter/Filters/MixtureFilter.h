@@ -650,7 +650,7 @@ public:
     [[nodiscard]] UpdateType<M>
     update(P && executionPolicy, M const & measurement, Policy const & policy = {})
     {
-        auto result = emptyResult<ResultType<M>>();
+        auto result = emptyUpdate<M>();
         auto const updated = update(std::forward<P>(executionPolicy), measurement, policy, result);
         if (!updated)
         {
@@ -716,6 +716,21 @@ public:
                 }
             );
         }
+    }
+
+    /** \returns an empty ResultType for update(measurement, policy, result) with a measurement of
+     * type \a M, \c const and references aside, from the state's allocator, with room for an
+     * update of every component the state now holds
+     */
+    template <typename M>
+        requires Measurement<M>
+    [[nodiscard]] ResultType<std::remove_cvref_t<M>>
+    emptyUpdate() const
+    {
+        auto result = ResultType<std::remove_cvref_t<M>>{get_allocator()};
+        result.components.reserve(std::size_t(m_state.size()));
+        internal::UpdateAccess::posteriorEnds(result).reserve(std::size_t(m_state.size()));
+        return result;
     }
 
 private:
@@ -889,17 +904,6 @@ private:
             });
         });
         m_state.startLineage();
-    }
-
-    /** \returns an empty \a Result with room for every component, from the state's allocator */
-    template <typename Result>
-    [[nodiscard]] Result
-    emptyResult() const
-    {
-        auto result = Result{get_allocator()};
-        result.components.reserve(std::size_t(m_state.size()));
-        internal::UpdateAccess::posteriorEnds(result).reserve(std::size_t(m_state.size()));
-        return result;
     }
 
     /** \returns the posterior ends of \a result, one per component of the state, reserved to the

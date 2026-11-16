@@ -64,10 +64,10 @@ expectGaussianMixtureFilterStepsWithinItsResource(Model const & model)
     auto filter = GaussianMixtureFilter{model, std::move(prior)};
     EXPECT_EQ(filter.get_allocator(), allocator);
 
-    using Update = typename decltype(filter.update(makeFix(fixAt(0))))::value_type;
-    auto result = Update{allocator};
+    auto result = filter.template emptyUpdate<decltype(makeFix(fixAt(0)))>();
     EXPECT_EQ(result.get_allocator(), allocator);
-    result.components.reserve(2);
+    EXPECT_TRUE(result.components.empty());
+    EXPECT_GE(result.components.capacity(), 2u);
     expectStepsAllocateNothing(
         [&](int k) {
             predictOverTheStep(filter);
@@ -81,10 +81,10 @@ expectGaussianMixtureFilterStepsWithinItsResource(Model const & model)
     EXPECT_EQ(filter.state().size(), 2);
 }
 
-// A GaussianMixtureFilter over a pmr mixture takes the mixture's allocator, as does a result made
-// from it, and with a reserved result and truncation its steps ask neither the heap nor the
-// resource for memory after warm-up, with a fixed-step model too; the result's posterior indices,
-// reserved by the state's capacity, are read at each step.
+// A GaussianMixtureFilter over a pmr mixture takes the mixture's allocator, as does the result its
+// emptyUpdate() makes, with room for both components, and with that result and truncation its
+// steps ask neither the heap nor the resource for memory after warm-up, with a fixed-step model
+// too; the result's posterior indices, reserved by the state's capacity, are read at each step.
 TEST(Allocation, GaussianMixtureFilterStepsWithinItsResource)
 {
     expectGaussianMixtureFilterStepsWithinItsResource(makeModel());
@@ -108,9 +108,7 @@ TEST(Allocation, GaussianMixtureFilterWithMixtureNoiseStepsWithinItsResource)
         auto filter = GaussianMixtureFilter{makeModel(), std::move(prior)};
         auto z = Eigen::Vector2d{};
         auto const fix = makeMixtureFix(z);
-        using Update = typename decltype(filter.update(fix, policy))::value_type;
-        auto result = Update{allocator};
-        result.components.reserve(2);
+        auto result = filter.emptyUpdate<decltype(fix)>();
         expectStepsAllocateNothing(
             [&](int k) {
                 z = fixAt(k);
@@ -163,10 +161,8 @@ TEST(Allocation, ImmFilterWithMixtureNoiseStepsWithinItsResource)
     auto filter = ImmFilter{switchingModel<Maneuver>(chain, makeModel(0.01), makeModel(4.0)), std::move(initial)};
     auto z = Eigen::Vector2d{};
     auto const fix = makeMixtureFix(z);
-    using Update = typename decltype(filter.update(fix))::value_type;
-    auto result = Update{allocator};
+    auto result = filter.emptyUpdate<decltype(fix)>();
     EXPECT_EQ(result.get_allocator(), allocator);
-    result.modes.reserve(4);
     expectStepsAllocateNothing(
         [&](int k) {
             z = fixAt(k);
@@ -195,9 +191,7 @@ TEST(Allocation, MixtureCopyKeepsItsSourcesResourceAndCapacity)
 
     auto filter = GaussianMixtureFilter{makeModel(), copied};
     EXPECT_EQ(filter.get_allocator(), allocator);
-    using Update = typename decltype(filter.update(makeFix(fixAt(0))))::value_type;
-    auto result = Update{allocator};
-    result.components.reserve(2);
+    auto result = filter.emptyUpdate<decltype(makeFix(fixAt(0)))>();
     expectStepsAllocateNothing(
         [&](int k) {
             predictOverTheStep(filter);
@@ -225,9 +219,7 @@ expectImmFilterStepsWithinItsResource(Quiet const & quiet, Agile const & agile)
     auto const abbreviated = Emrys::ImmFilter{switchingModel<Maneuver>(chain, quiet, agile), filter.state()};
     static_assert(std::is_same_v<decltype(abbreviated), const decltype(filter)>);
 
-    using Update = typename decltype(filter.update(makeFix(fixAt(0))))::value_type;
-    auto result = Update{allocator};
-    result.modes.reserve(4);
+    auto result = filter.template emptyUpdate<decltype(makeFix(fixAt(0)))>();
     expectStepsAllocateNothing(
         [&](int k) {
             predictOverTheStep(filter);
@@ -369,9 +361,7 @@ expectAmmFilterStepsWithinItsResource(Quiet const & quiet, Agile const & agile)
     auto filter = AmmFilter{std::move(initial), quiet, agile};
     EXPECT_EQ(filter.get_allocator(), allocator);
 
-    using Update = typename decltype(filter.update(makeFix(fixAt(0))))::value_type;
-    auto result = Update{allocator};
-    result.modes.reserve(2);
+    auto result = filter.template emptyUpdate<decltype(makeFix(fixAt(0)))>();
     auto const floor = upkeep::floorModes(1e-3);
     expectStepsAllocateNothing(
         [&](int k) {
@@ -414,8 +404,7 @@ expectMixtureOfImmsStepsWithinItsResource(Quiet const & quiet, Agile const & agi
     auto filter = MixtureFilter{switchingModel<Maneuver>(chain, quiet, agile), std::move(prior)};
     EXPECT_EQ(filter.get_allocator(), allocator);
 
-    using Update = typename decltype(filter.update(makeFix(fixAt(0))))::value_type;
-    auto result = Update{allocator};
+    auto result = filter.template emptyUpdate<decltype(makeFix(fixAt(0)))>();
     expectStepsAllocateNothing(
         [&](int k) {
             predictOverTheStep(filter);
@@ -482,9 +471,7 @@ expectImmSmoothingWithinItsResource(Quiet const & quiet, Agile const & agile)
     );
     auto initial = HybridGaussianParams<State, Mode, double, Pmr>{CategoricalParams<Mode>{}, makeInitial(), allocator};
     auto filter = ImmFilter{switchingModel<Maneuver>(chain, quiet, agile), std::move(initial)};
-    using Update = typename decltype(filter.update(makeFix(fixAt(0))))::value_type;
-    auto result = Update{allocator};
-    result.modes.reserve(4);
+    auto result = filter.template emptyUpdate<decltype(makeFix(fixAt(0)))>();
     using Joint = HybridPredictedJoint<State, Mode, double, Pmr>;
     auto joint = Joint{
         CategoricalParams<Mode>{},
@@ -556,9 +543,7 @@ expectGaussianMixtureSmoothingWithinItsResource(Model const & model)
     prior.add(std::log(0.6), makeInitial().moments());
     prior.add(std::log(0.4), Vector4{1.0, -1.0, 0.5, 0.5}, makeInitial().covarianceLower());
     auto filter = GaussianMixtureFilter{model, std::move(prior)};
-    using Update = typename decltype(filter.update(makeFix(fixAt(0))))::value_type;
-    auto result = Update{allocator};
-    result.components.reserve(2);
+    auto result = filter.template emptyUpdate<decltype(makeFix(fixAt(0)))>();
     using Joint = GaussianMixturePredictedJoint<State, double, Pmr>;
     auto joint = Joint{
         typename Joint::LogWeightsType(allocator),

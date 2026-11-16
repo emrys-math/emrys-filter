@@ -815,6 +815,25 @@ public:
         return m_recursion.update(m_state, measurement, about, policy, result);
     }
 
+    /** \returns an empty result for update(measurement, policy, result) with a measurement of type
+     * \a M, \c const and references aside: the update inside the \c std::expected that
+     * update(measurement) returns. The other filters' emptyUpdate() reserves room for their
+     * components or modes; a result here holds one update, and its branches under mixture noise
+     * are the measurement's to count, so the first fill sizes them.
+     */
+    template <typename M>
+        requires Measurement<M>
+    [[nodiscard]] auto
+    emptyUpdate() const
+    {
+        using Update = decltype(std::declval<RecursionType &>().update(
+            std::declval<StateType &>(),
+            std::declval<std::remove_cvref_t<M> const &>(),
+            reductions::collapse()
+        ));
+        return typename Update::value_type{};
+    }
+
 private:
 
     RecursionType m_recursion;  ///< the model and method the steps run with

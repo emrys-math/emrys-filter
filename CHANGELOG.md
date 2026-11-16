@@ -20,6 +20,12 @@ instead.
   `DiscreteProduct` whose axes are independent from one distribution per axis, as
   `MarkovChain<Mode>::independent()` builds the chain, so an IMM's mode prior is no longer written
   in flat-index order; `independent(space, axes...)` takes the space, for a run-time cardinality.
+- `KalmanFilter`, `MixtureFilter`, `ImmFilter`, and `AmmFilter` have `emptyUpdate<M>()`, the empty
+  result that `update(measurement, policy, result)` refills, made from the state's allocator with
+  room for every component or mode, so a reused result is one line:
+  `auto result = filter.emptyUpdate<Fix>();`. The IMM's takes a `SwitchingMeasurement` too. It
+  replaces `filter.recursion().emptyUpdate<Fix>(filter.get_allocator(), filter.state().size())`
+  and a result built from the allocator and reserved by hand, which still work.
 
 ### Changed
 

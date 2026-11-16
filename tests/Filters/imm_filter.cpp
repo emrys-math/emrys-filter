@@ -565,8 +565,9 @@ TEST(ImmFilter, NoiseByModeIsMemorylessWhereNoModeSpaceHasItsAxis)
 // Over four modes, an update by switchingMeasurement<Sensor>() matches the hand update in which the
 // Inlier modes see the plain fix and the Outlier modes a fix of another model type, biased and
 // with four times the noise; switchingMeasurement<Maneuver>() selects by the other axis, whose
-// stride in the flat index is two; and refilling one result gives the same state as the update
-// that returns its result.
+// stride in the flat index is two; and refilling one result, made empty by the filter's
+// emptyUpdate() with room for the four modes, gives the same state as the update that returns its
+// result.
 TEST(ImmFilter, UpdatesEachModeByTheMeasurementItsValueSelects)
 {
     auto const maneuverChain =
@@ -596,7 +597,10 @@ TEST(ImmFilter, UpdatesEachModeByTheMeasurementItsValueSelects)
         return switchingMeasurement<Sensor>(makeFix(z), makeBiasedFix(z, bias, 4.0));
     };
     using Switching = decltype(switchingFix(fixes.front()));
-    auto result = decltype(filter)::RecursionType::SwitchingResultType<Switching>{};
+    auto result = refilled.emptyUpdate<Switching>();
+    static_assert(std::is_same_v<decltype(result), decltype(filter)::RecursionType::SwitchingResultType<Switching>>);
+    EXPECT_TRUE(result.modes.empty());
+    EXPECT_GE(result.modes.capacity(), 4u);
     for (Eigen::Vector2d const & z : fixes)
     {
         filter.predict(timeStep);

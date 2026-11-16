@@ -169,7 +169,7 @@ now in the code (§4). These decisions from
 
 | | `KalmanFilter` | `ImmFilter` |
 |---|---|---|
-| Params | `<Component, Model, Method, Recursion>` | `<Component, Model, Method, Allocator>`, the allocator the state's; no recursion parameter (Q18) |
+| Params | `<Component, Model, Method, Recursion, Upkeep>` | `<Component, Model, Method, Allocator, Upkeep>`, the allocator the state's; no recursion parameter (Q18) |
 | Model | a process model | a `SwitchingModel`: a chain on the modes, a `ContinuousTimeMarkovChain` or with fixed-step models a `MarkovChain` (§2), and one or more process models |
 | State | a `Component`, such as `GaussianParams<Space, Scalar>` | `HybridParams<Component, ModeSpace, Allocator>`, normally a `HybridGaussianParams<Space, ModeSpace>` |
 | Recursion [filters-and-recursions] | `KalmanRecursion` | `ImmRecursion`, with scratch for every mode; not reentrant |
@@ -268,7 +268,7 @@ p = predict(p, chain);  // 0.6171 0.2904 0.0629 0.0296;    P(Turn) 0.0925
 ```
 
 Because the last axis varies fastest, the Kronecker product's entry $(i, j)$ is the product
-of each axis's entry at $i$'s and $j$'s coordinates, which is what the constructor computes
+of each axis's entry at $i$'s and $j$'s coordinates, which is what `independent()` computes
 directly. Note that `persistent()` on the product itself is a different chain: it moves to each
 of the three other modes with probability $0.2 / 3 = 0.0667$, so a maneuver change and a sensor
 change are as likely together as apart. For independent axes, build per axis.
@@ -802,12 +802,13 @@ posterior mode probabilities are only in the state. Noise by mode axis gives the
 
 `update(measurement, policy, result)` refills a result instead of returning one, and returns
 `std::expected<void, GaussianError>` [innovation-cholesky], so a loop that passes the same result
-allocates nothing once it has been as large. The filter has no maker for that result; the
-recursion's does the job:
+allocates nothing once it has been as large. The filter's `emptyUpdate<M>()` makes that result,
+from the state's allocator and with room for every mode (Q15), and takes a
+`SwitchingMeasurement` too:
 
 ```cpp
 using Fix = decltype(fix({0, 0}));
-auto result = filter.recursion().emptyUpdate<Fix>(filter.get_allocator(), filter.state().size());
+auto result = filter.emptyUpdate<Fix>();
 for (int k = 1; k <= 3; ++k) {
   filter.predict(1.0);
   if (!filter.update(fix({10.0 * k, 0}), reductions::collapse(), result)) { ... }
@@ -815,14 +816,21 @@ for (int k = 1; k <= 3; ++k) {
 // 2 modes, accepted 1, log p(z) -3.445
 ```
 
-(Printed on 2026-11-04 with the per-step chain, before Q1 was decided. Not rerun.)
+(Printed on 2026-11-04 with the per-step chain, before Q1 was decided, by the recursion's
+`emptyUpdate()`. Not rerun.)
 
-The allocation tests build it by hand instead, `auto result = Update{allocator};` and a `reserve()`.
+The allocation tests make their results by `emptyUpdate()` too.
 
-> **Q15.** Forward `emptyUpdate<M>()` and `emptyAxisUpdate<M>()` from the filter, defaulting the
-> allocator and mode count to the state's, so that reusing a result is one line? Whatever the
-> answer, the Kalman and mixture filters should spell it the same way (the mixture filter's
-> maker is a private `emptyResult()`); `KalmanFilter.h` is where that convention lives.
+> **Q15.** *Done: `emptyUpdate<M>()` on `KalmanFilter`, `MixtureFilter` (its private
+> `emptyResult()`, made public), and `ImmFilter`, which takes a `SwitchingMeasurement` as well;
+> [allocation] names it. The Kalman filter's reserves nothing, since its result holds one update
+> whose branches the measurement counts.* ~~Forward `emptyUpdate<M>()` from the filter, defaulting the allocator and mode count to
+> the state's, so that reusing a result is one line? It would take a `SwitchingMeasurement` too,
+> whose result the tests now spell `decltype(filter)::RecursionType::SwitchingResultType<S>{}`.
+> The recursion's `emptyGivenUpdate()` serves the point-mass and particle filters' hybrid cells,
+> and the filter has no update it would fill. Whatever the answer, the Kalman and mixture filters
+> should spell it the same way (the mixture filter's maker is a private `emptyResult()`, and the
+> Kalman filter has none); `KalmanFilter.h` is where that convention lives.~~
 
 ### Gating and rejection
 
@@ -1281,12 +1289,16 @@ The plain AMM never returns to the mode that explains the data far better; only 
 own filter slowly walks back to the origin. With the floor, one fix restores the cruise mode, and
 the floor then holds the turn mode at 0.001.
 
-> **Q16.** Should the AMM floor its modes itself, as an option of the filter, since without a floor
-> any gated update can end its usefulness for good? [autonomous-multiple-model] says no: the floor
-> changes the distribution on purpose, so it is the caller's [upkeep], and it serves the IMM
-> too. I agree, and would only make the class comment's example, which already applies the floor,
-> the first thing a reader sees. Recorded here so the choice is visible; I'd mark it decided
-> [autonomous-multiple-model] unless the review disagrees.
+> **Q16.** *Decided [autonomous-multiple-model]: a floor as a filter option is rejected, and the
+> floor is upkeep. Every filter holds an upkeep [upkeep], so `AmmFilter{upkeep::floorModes(1e-3),
+> state, models...}` keeps the floor with the filter and `maintain()` applies it; the class
+> comment's first example applies the floor, and its second holds it.* ~~Should the AMM floor its
+> modes itself, as an option of the filter, since without a floor any gated update can end its
+> usefulness for good? [autonomous-multiple-model] says no: the floor changes the distribution on
+> purpose, so it is the caller's [upkeep], and it serves the IMM too. I agree, and would only make
+> the class comment's example, which already applies the floor, the first thing a reader sees.
+> Recorded here so the choice is visible; I'd mark it decided [autonomous-multiple-model] unless
+> the review disagrees.~~
 
 ## 12. What builds on the IMM
 
@@ -1323,12 +1335,13 @@ component. `MixtureParams::merged()` and `merge()` work on hybrids, keeping each
 > too, and in the tests for consistency? The class template's name is right ([sensors]), so the tag
 > is what gives way.~~
 
-> **Q18.** `KalmanFilter` and `MixtureFilter` take a recursion as their last template parameter and
-> a constructor `Filter{recursion, state}` [filters-and-recursions], [user-extension-points];
-> `ImmFilter` has neither, so a user's step over a hybrid (a fading-memory IMM, say) has to be run
-> on each component of a one-component `MixtureFilter` of hybrids. Give `ImmFilter` the same
-> parameter and constructor, so the three filters are spelled alike? It is a breaking change only
-> in the parameter count, and nothing is launched.
+> **Q18.** `KalmanFilter` and `MixtureFilter` take a recursion as a template parameter, before the
+> upkeep, and a constructor `Filter{recursion, state}` [filters-and-recursions],
+> [user-extension-points]; `ImmFilter` has neither, so a user's step over a hybrid (a fading-memory
+> IMM, say) has to be run on each component of a one-component `MixtureFilter` of hybrids. Give
+> `ImmFilter` the same parameter and constructor, so the three filters are spelled alike? It breaks
+> only code that spells the filter's template arguments out to its upkeep, and a breaking change is
+still allowed before 1.0.
 
 ## Questions
 
@@ -1363,9 +1376,10 @@ component. `MixtureParams::merged()` and `merge()` work on hybrids, keeping each
     and the code say not (§3a).~~ *Decided: the square-root form is one.*
 14. ~~Fixed-step models with different methods: allow them, or check in `SwitchingModel` with a
     message that names the cause (§4).~~ *Decided with Q7: allow them.* *Done.*
-15. Forward `emptyUpdate()` from the filter, so a reused result is one line (§6).
-16. The AMM's floor stays the caller's upkeep, not a filter option (§11;
-    [autonomous-multiple-model] says so).
+15. ~~Forward `emptyUpdate()` from the filter, so a reused result is one line (§6).~~ *Done, on
+    the Kalman, mixture, and IMM filters alike.*
+16. ~~The AMM's floor stays the caller's upkeep, not a filter option (§11).~~ *Decided
+    [autonomous-multiple-model]: upkeep, which the filter can hold and `maintain()` runs.*
 17. ~~The tag `Sensor` collides with `Emrys::Sensor` under `using namespace Emrys`; this document now
     writes `SensorMode`. Rename it in the header comments and tests too (§12)?~~ *Settled by roadmap
     17z: `Emrys::Sensor` is gone, so nothing collides.*

@@ -149,8 +149,8 @@ count comes from an `Allocator` parameter (style.md, Types).
 - An optional capacity is reserved once, and going past it is a precondition violation; without
   one, the container grows. Scratch sized by a count is owned by the container or filter, reused
   across calls, and lent to a function object that accepts it (`ResamplerWithScratch`).
-- An update result owns its count-sized arrays; `update(measurement, policy, result)` refills one
-  the caller keeps. No result is a view into filter scratch.
+- An update result owns its count-sized arrays, and is never a view into filter scratch;
+  `update(measurement, policy, result)` refills one the caller keeps, made by `emptyUpdate<M>()`.
 - A `SampleSet` is a batch of draws or a temporary, never stored. `drawSample()` and
   `drawSampleWithLogDensity()` allocate nothing for a bounded space; `drawSamples()` does.
 
