@@ -1135,6 +1135,9 @@ TEST(GaussianMixtureDeathTest, ChangeMixtureInsideCallback)
 // Reading a density of a mixture that was moved from dies.
 TEST(GaussianMixtureDeathTest, ReadAfterMove)
 {
+    // clang-tidy, which defines __clang_analyzer__, would report the read after the move that the
+    // test makes on purpose, at the read's line in the header.
+#    ifndef __clang_analyzer__
     auto mixture = makeWeighted({1.0, 2.0});
     auto const g = mixture.toDensity();
     EXPECT_DEATH(
@@ -1144,6 +1147,7 @@ TEST(GaussianMixtureDeathTest, ReadAfterMove)
         },
         "changed while a view"
     );
+#    endif
 }
 
 #endif

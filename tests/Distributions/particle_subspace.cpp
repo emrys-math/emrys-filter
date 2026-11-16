@@ -258,6 +258,9 @@ TEST(ParticleSetMarginalDeathTest, ReadAfterStructuralChange)
         },
         message
     );
+    // clang-tidy, which defines __clang_analyzer__, would report the read after the move that the
+    // test makes on purpose, at the read's line in the header.
+#    ifndef __clang_analyzer__
     EXPECT_DEATH(
         {
             auto stolen = std::move(set);
@@ -265,6 +268,7 @@ TEST(ParticleSetMarginalDeathTest, ReadAfterStructuralChange)
         },
         message
     );
+#    endif
 }
 
 #endif
