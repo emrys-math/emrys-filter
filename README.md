@@ -282,12 +282,17 @@ and the ones before it, and CI checks that.
 
 EmrysFilter does sequential inference on one state over time, continuous, discrete, or hybrid.
 
-**Coming to EmrysFilter** ([roadmap](docs/design/roadmap.md)): a GPU backend for the particle,
-grid, and Rao-Blackwellized filters, with counter-based random numbers and batched sigma-point
-transforms on the way to it; the ensemble Kalman filter; fusion rules, out-of-sequence updates, and the
-consensus step for distributed estimation; SE(3) and the extended pose group as spaces beside
-SO(3), with the invariant EKF as their example; hooks for splitting a mixture by nonlinearity; and
-Student-t robust updates.
+**Coming to EmrysFilter** ([roadmap](docs/design/roadmap.md)): SE(2), SE(3), and the extended
+pose group as spaces beside SO(3), with the invariant EKF as their example; noise covariances
+adapted as the filter runs, and Student-t robust updates; particle proposals that use the
+measurement, the auxiliary particle filter, and resample-move; the ensemble Kalman filter;
+correlated process and measurement noise; the UD form; unknown inputs; fixed-gain filters; GPB1
+and GPB2; the second-order EKF and the divided-difference filters; state constraints;
+continuous-discrete filtering; the fixed-point, two-filter, iterated, and particle smoothers; a
+test of the innovations' whiteness; fusion rules, out-of-sequence updates, and the consensus
+step for distributed estimation; hooks for splitting a mixture by nonlinearity; and counter-based
+random numbers. A GPU backend for the particle, grid, and Rao-Blackwellized filters comes later,
+and the API is being made ready for it.
 
 **Planned as separate Emrys projects** that build on this one: a **tracker** (data association
 and track management: JPDA, MHT, multi-target), **navigation** (inertial, GNSS, and geodetic

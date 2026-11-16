@@ -291,7 +291,9 @@ update that follows it would become one launch without a `predictAndUpdate()` in
 
 ## What to find out first
 
-Cheap experiments that would change the plan, in the order to run them:
+Cheap experiments that would change the plan, in the order to run them. Step 19 is deferred past
+the advertised launch, and roadmap step 19b runs the first experiment, which needs no GPU, to
+make the API ready for it:
 
 1. Compile one particle filter instantiation with `clang++ -x cuda --cuda-device-only
    -fsyntax-only -std=c++23` after a first pass of `EMRYS_FILTER_DEVICE` annotations, to learn

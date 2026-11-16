@@ -20,6 +20,12 @@ How it is kept:
 - Users don't read this file. Every change a user can see goes into `CHANGELOG.md` in the commit
   that makes it, and the usage page lists what is not built yet.
 
+The advertised launch (Launch, below) waits for every step in this file but step 19 and what
+"Deferred past the advertised launch" lists; for every design review finished and every guide
+question answered, breaking or not; and for every algorithm checked against its source, each source
+read in full (decided 2026-11-16). With no date to meet, a feature that may want a change to the
+existing API is built before the launch rather than after it.
+
 ## 17t. Sigma-point axes and repairs — in progress
 
 [sigma-point-axes] records the design. The second differences, which use `along(d)`, are 16b's.
@@ -54,6 +60,16 @@ are the evidence.
       could not read.
 
 Done when: the entry is checked and the `land` checks pass, with MSVC.
+
+## 17g. Posterior Cramér-Rao bound — in progress
+
+[cramer-rao-bound]: the recursion and its tests are done.
+
+- [ ] A singular $Q$ (a noiseless block): Section IV of Tichavský, Muravchik, and Nehorai (1998),
+      decided with 17zh's singular $Q$.
+- [ ] An example of the bound on the Models module page, beside simulate() and nees().
+
+Done when: the singular case is decided and passes its tests on all three compilers.
 
 ## 18c. Batched functions — in progress
 
@@ -95,52 +111,257 @@ Done when: every call site above takes a batched function, the tests pass on all
 and the benchmark row is published. A chunk size other than 1024, if a user needs one, would be a
 policy adaptor such as `chunked(std::execution::par, 4096)`, never a build flag.
 
-## 17za. Mixture arguments of a model — not started
+## 18. Execution policies — in progress
 
-A mixture as an uncertain argument of `predict()` or `observe()` [prediction-inputs], in stages after
-the first, which exists (additive mixture noise, [additive-noise]): a mixture through the function;
-then several mixtures each naming a mode axis, as `byMode<Axis>()` names one for additive noise
-(imm-filter.md Q10); then several memoryless mixtures.
-The Kalman filter refuses a mixture argument, and the mixture filters take it, with a branch per
-component. Each stage is an addition, so the step may follow the launch; the first two change no
-spelling.
+[execution-policies]; the loops and the reasoning are in parallelism.md. Every loop takes a policy.
 
-- [ ] A mixture through the function: a `GaussianMixtureParams` argument read by the model, each
-      component pushed through by the method, the branches weighted by the component weights. Test:
-      a `GaussianMixtureFilter` prediction with a two-component input equals the mixture of the two
-      predictions with each component as a Gaussian argument.
-- [ ] Several mixtures each naming a mode axis, for an `ImmFilter` (imm-filter.md Q10).
-- [ ] Several memoryless mixtures, their components crossed.
+- [ ] Benchmark [benchmarks]: thread scaling of the ranging particle filter
+      (`benchmarks/particles/`) at $10^3$ to $10^6$ particles, as the ratio to `Sequential`. Under
+      `Sequential` it is 1.04 to 1.07 times the hand loop's instructions.
+- [ ] `Gaussian::logDensity()` recognizing a diagonal or scalar covariance: with an isotropic $R$,
+      the triangular solve costs 45 instructions per particle more than a closed form.
 
-Done when: each stage passes its test on all three compilers.
+Done when: the scaling curve is published.
 
-## 17zd. Step models — deferred
+## 18b. Counter-based random numbers — not started
 
-Not decided whether to build. A process model whose function returns the step over the blocks it
-writes rather than their new values, with the library applying `plus()` to each written block. Most
-process functions compute new block = old block ⊞ step, so the function reads the block, builds an
-output vector, and writes the block back, naming its tag three times; a step model names it in
-`writes()` alone. The attitude's prediction becomes the same line as the heading's, since `plus()` on
-a unit quaternion is $q \otimes \mathrm{Exp}(d)$:
+Parallel draws need a generator with no shared state: Philox (Salmon et al. 2011), standardized in
+C++26 as `std::philox4x32` (parallelism.md, "Random numbers in parallel"). The engine stays the
+caller's and the draws go through the standard distributions, so they are reproducible across
+thread counts but not across standard libraries.
 
-```cpp
-Emrys::processModel(
-    Emrys::increment([]<typename T>(auto const & in, auto const &, auto const & x, double dt) {
-        return (Emrys::less<Gyro>(Emrys::block<Gyro>(in, x), Emrys::block<Bias>(in, x)) * dt).eval();
-    }),
-    Emrys::reads(Emrys::path<Heading>, Emrys::path<Bias>, Emrys::path<Gyro>),
-    Emrys::writes(Emrys::path<Heading>),
-    Emrys::continuousNoise(Emrys::on<Heading>(noiseDensity)));
-```
+- [ ] `Core/Random.h`: a `CounterBasedGenerator` concept (an independent stream at a step and an
+      index), which `std::philox4x32` meets where the library has it.
+- [ ] Parallel overloads of `predict()`, `Roughen`, `drawSamples()`, and the Monte Carlo
+      divergences that draw inside the loop from such a generator; without one they keep drawing
+      before the loop.
+- [ ] `MetropolisResampler` and `RejectionResampler` (Murray, Lee, and Jacob 2016), which need no
+      cumulative sum, and the systematic and stratified resamplers by scan and binary search.
+- [ ] Bibliography entries for Salmon et al. (2011) and Murray, Lee, and Jacob (2016).
+- [ ] Tests: a parallel prediction equals the sequential one bitwise at any thread count; the new
+      resamplers' counts match the weights in expectation.
 
-What it needs: every written block is also read; a zero difference vector to fill, beside
-`zeros<T>(out)`; and a returned Jacobian of the step chained through ⊞ by the blocks' Jacobians, as
-[covariance-reset] does. `increment` is a placeholder name. A model whose new value is not a step
-from the old one keeps the present form. It breaks nothing, so it may follow the launch.
+Done when: parallel draws are bitwise reproducible across thread counts within one standard
+library, and the six resamplers pass their tests.
 
-Done when: decided, and if built, the examples whose models are steps (`consider_bias.cpp`,
-`attitude.cpp`, `unicycle.cpp`) use it, and a test shows a step model predicts as its value form does
-under every method.
+## 19b. A public API ready for the GPU backend — not started
+
+Step 19 is deferred past the advertised launch (decided 2026-11-16), and must then arrive as an
+addition: nothing a user writes against 0.x should change when a `Device` policy joins. What it
+would otherwise break is found and changed now, with no GPU needed.
+
+- [ ] The device-only syntax check, the first experiment of parallelism.md's "What to find out
+      first": one `ParticleFilter` and one `RbParticleFilter` instantiation compiled with
+      `clang++ -x cuda --cuda-device-only -fsyntax-only -std=c++23` after a first pass of
+      `EMRYS_FILTER_DEVICE` over what a particle's body reaches. An obstacle in a public signature
+      or a user's contract is changed before the launch; one inside a function body goes into
+      step 19's list.
+- [ ] What a device-callable model is, on the user page and in the model contracts: no
+      `std::function`, no heap, nothing captured by reference to host memory, and a lambda that
+      clang or nvcc's `--extended-lambda` compiles. The built-in models and the examples' models
+      meet it.
+- [ ] The accessors of the count-sized containers, such as `ParticleSet`'s `Eigen::Map`s, under an
+      allocator whose memory the host cannot read: decide now what they become, so that
+      `BufferFor<Allocator, T>` and an explicit copy to the host add a type rather than change an
+      accessor (parallelism.md, "Memory").
+- [ ] The draws: check that the generator signature step 18b settles is the one a device path
+      takes, with the normal draws made on the device (parallelism.md's open question on where
+      they come from).
+- [ ] parallelism.md's open questions that reach a public signature decided: `Parallel{minimumCount}`,
+      and who owns the step count that a counter-based generator advances.
+
+Done when: the device-only syntax check passes with only function bodies left to change, those
+listed in step 19, and parallelism.md's open questions that reach the API are decided.
+
+## 17zf. Invariant EKF and pose spaces — not started
+
+Barrau and Bonnabel (2017): an EKF on a Lie group whose error is the group error, which converges
+from large initial errors on group-affine dynamics ($SE(3)$, $SE_2(3)$). It is `KalmanFilter` with
+`Linearized` on a group space whose `plus()` and `minus()` apply the increment on a chosen side, so
+it is spaces, an example, and tests, not a filter. The groups go in `Spaces/` [lie-groups]. Its
+largest user base is legged robots, by contact-aided estimation (Hartley et al. 2020); the
+mechanization and contact models stay EmrysNavigation's.
+
+- [ ] The side of the increment on `UnitQuaternion`: right (the body frame, today's) by default,
+      left as the alternative, each with its reset Jacobian [covariance-reset].
+- [ ] $SE(2)$, $SE(3)$, and $SE_2(3)$ as spaces with both sides, their exponential and logarithm
+      smooth at zero, and closed-form reset Jacobians (Solà, Deray, and Atchuthan 2018). Test:
+      each reset Jacobian equals autodiff's, and the exponential and logarithm invert each other
+      near zero and at large angles.
+- [ ] The typed view. [unit-quaternion] rejected a generic `view(space, block)` until a second
+      space wanted a typed form, and a pose is that space. Decide between it and a `map()` per
+      space, and whether a `LieGroup` concept (exponential, logarithm, adjoint) stands beside
+      `Space`, before the launch, since either could rename `UnitQuaternion::map()`.
+- [ ] Tests: the error Jacobian is constant on group-affine dynamics; the invariant filter
+      converges from a large initial heading error where the EKF on the same model does not.
+- [ ] An example: an IMU with position fixes on $SE_2(3)$, with gyro and accelerometer biases
+      beside it (the "imperfect" invariant filter, whose biases break the invariance), its
+      mechanization written in the example as `attitude.cpp` writes its own.
+
+Done when: the view is decided, and the spaces, the example, and the tests pass on all three
+compilers.
+
+## 17zg. Adaptive noise and robust updates — not started
+
+Noise covariances estimated inside the filter as it runs, and updates that tolerate heavy-tailed
+noise, which share the variational Bayes machinery. Estimating noise over a recorded run stays the
+analysis project's [analysis-project], and Sage-Husa in an INS/GNSS example EmrysNavigation's.
+
+- [ ] Where an adapted $Q$ lives, decided first, since it changes the existing API. A filter holds
+      its process model as `const`, and $Q$ is a policy inside it (`additiveNoise()`,
+      `continuousNoise()`), so adapting it needs a noise policy read through a handle, a mutable
+      `model()`, or a $Q$ given to `predict()`. An adapted $R$ needs no change: the measurement
+      model is given to each `observe()`, so an object the caller holds carries its estimate
+      across updates.
+- [ ] The variational Bayes estimate of $R$: diagonal by inverse-gamma (Särkkä and Nummenmaa
+      2009), and full by inverse-Wishart (Särkkä and Hartikainen 2013), each iterating the update
+      on the machinery of [iterated-update].
+- [ ] $Q$ and $R$ together by variational Bayes (Huang et al. 2018).
+- [ ] Sage-Husa (1969) with fading memory, and a guard that keeps its estimates positive definite
+      against its known divergence.
+- [ ] The Student-t update by variational Bayes (Piché, Särkkä, and Hartikainen 2012; Roth, Özkan,
+      and Gustafsson 2013), and the Huber M-estimator update as an iterated reweighting of $R$,
+      its source chosen when it is written. Particle and grid filters take Student-t noise already,
+      through a measurement's own `logLikelihood()`.
+- [ ] Which Gaussian forms take each: the covariance form first, the square-root and information
+      forms refused with a message until written, as consider states are [consider-states].
+- [ ] Tests: with the true noise the estimate converges to it and the NEES is consistent; started
+      from a wrong $R$ or $Q$ the adaptive filter recovers where the fixed one stays inconsistent;
+      Sage-Husa's guard holds where the unguarded recursion goes indefinite; the Student-t update
+      moves less than the Kalman update under an outlier, and approaches it as the degrees of
+      freedom grow; `tests/allocation.cpp`.
+
+Done when: the decision on $Q$ is recorded, and the estimators and robust updates pass their tests
+on all three compilers.
+
+## 17zh. Transition densities — not started
+
+A process model's $\log p(x_{k+1} \mid x_k)$, the prerequisite of the particle proposals and moves
+of 17zi and of the particle smoother of 14b. For additive noise it is the Gaussian density of
+$x_{k+1} \boxminus f(x_k)$ under $Q$ [tangent-gaussians].
+
+- [ ] A singular $Q$, the usual case (noise that drives the velocity and not the position), makes
+      the density degenerate: define it on the subspace the noise reaches, with the rest a
+      constraint, decided together with 17g's singular $Q$.
+- [ ] A model with an uncertain input through its function [prediction-inputs] has no closed-form
+      density: refuse it with a message, or let the model give its own, decided when written.
+- [ ] Tests: on a linear Gaussian model it equals the closed form; with a singular $Q$ it is finite
+      exactly on the reachable set; on a unit quaternion block it uses the tangent density.
+
+Done when: the density passes its tests on all three compilers.
+
+## 17zi. Particle proposals and moves — not started
+
+Proposals that use the measurement, and moves that rejuvenate a resampled set. Particle flow is
+deferred past the advertised launch.
+
+- [ ] The shape of a step that proposes from the measurement, decided first, since it changes the
+      filter's API. Today `predict(rng, dt)` and `update(z)` are separate calls, and every proposal
+      below needs $z$ while it predicts: a fused step, a proposal given to `predict()`, or another
+      shape, and what several measurements at one time do. Decide it with particle-filter.md Q11
+      (a recursion for the particle filter).
+- [ ] The locally optimal proposal (Doucet, Godsill, and Andrieu 2000): exact for a measurement
+      linear in the state with additive Gaussian noise, by the per-point Kalman update the
+      Rao-Blackwellized filters already have; linearized (the EKF proposal) or unscented (van der
+      Merwe et al. 2000) otherwise.
+- [ ] The auxiliary particle filter (Pitt and Shephard 1999).
+- [ ] Resample-move with a Metropolis-Hastings move (Gilks and Berzuini 2001), on 17zh's density.
+- [ ] An adaptive particle count by KLD-sampling (Fox 2003), within the set's reserve [allocation].
+- [ ] Tests: on a linear Gaussian model each proposal's estimate approaches `KalmanFilter`'s as the
+      count grows, and the optimal proposal's weights vary less than the bootstrap's; with a
+      precise measurement the optimal and auxiliary filters keep an effective sample size where
+      the bootstrap filter collapses; resample-move leaves the posterior invariant; KLD-sampling's
+      count follows the spread; cases in `tests/parallel.cpp` and `tests/allocation_particles.cpp`.
+
+Done when: the step's shape is decided, and the proposals and moves pass their tests on all three
+compilers.
+
+## 17d. Ensemble Kalman filter — not started
+
+Evensen (1994), with perturbed observations (Burgers, van Leeuwen, and Evensen 1998). `ParticleSet`
+holds the members and `predict()` already moves them, and a batched measurement function
+[batched-functions] is the observation operator over the whole ensemble. It is supported for
+whoever chooses it over a sigma-point filter, at any state size the library serves, so a
+dynamic-size state of a few thousand coordinates must perform; the operational sizes of weather and
+ocean assimilation are not the aim.
+
+- [ ] The members' container: `ParticleSet` with equal weights, or a type of its own, since an
+      ensemble is unweighted.
+- [ ] The stochastic update, with an execution policy and a case in `tests/parallel.cpp`.
+- [ ] The deterministic updates as methods: the ensemble transform filter (Bishop, Etherton, and
+      Majumdar 2001) and the ensemble adjustment filter (Anderson 2001).
+- [ ] Inflation, multiplicative and adaptive (Anderson 2007; Anderson 2009).
+- [ ] Localization by a Schur product with a distance taper (Houtekamer and Mitchell 2001; the
+      taper of Gaspari and Cohn 1999). How a space says which coordinates are near which, and a
+      measurement near which coordinates, is the one new decision: a taper over coordinates by
+      index runs against [tag-addressing], so decide whether the user's taper takes tag paths.
+- [ ] Tests: at large $N$ the moments match `KalmanFilter` on an affine model; localization
+      recovers the Kalman covariance on a banded problem at small $N$; `tests/allocation.cpp` on a
+      bounded space; the time of a dynamic-size run of a few thousand coordinates, recorded.
+
+Done when: the filter, both deterministic updates, inflation, and localization pass on all three
+compilers.
+
+## 17zj. Correlated noise — not started
+
+- [ ] Process and measurement noise correlated with each other, $E[w_k v_k^T] = S$ (Simon 2006,
+      §7.1), which changes the gain. How a model pair declares $S$ is the decision. Test: equals the
+      Kalman filter on the state augmented with the noise, built in plain Eigen.
+- [ ] Measurement noise correlated in time, by measurement differencing (Bryson and Henrikson
+      1968; Simon 2006, §7.2), which works where augmenting the state with the noise leaves $R$
+      singular. Test: with a white part, equals the augmented filter; without one, stays
+      consistent where the augmented filter cannot run.
+
+Done when: both pass their tests on all three compilers.
+
+## 17zk. UD factorization — not started
+
+The covariance as $U D U^T$, the form of much aerospace flight software and a well-conditioned form
+in `float`: the time update by modified weighted Gram-Schmidt (Thornton 1976; Thornton and Bierman
+1977) and the measurement update by Bierman's scalar updates (Bierman 1977), which `FormSteps.h`
+already cites for the square-root information form. A fifth form beside the four of
+[gaussian-forms], read alike through its density [form-densities].
+
+- [ ] `UdGaussianParams` and a filter over it, with conversions to and from the other forms.
+- [ ] The methods it takes: affine and linearized first; a sigma-point method through a conversion,
+      or refused, decided when written.
+- [ ] Tests: equals `KalmanFilter` to rounding on an affine model; in `float` on an ill-conditioned
+      problem it stays positive definite where the covariance form does not, beside
+      `SqrtKalmanFilter`; `tests/allocation.cpp`.
+
+Done when: the form passes its tests on all three compilers, or a decision records why the
+square-root form serves its users instead.
+
+## 17zl. Unknown inputs — not started
+
+The state estimated through an input that nothing measures and nothing models: Kitanidis (1987),
+and the joint input and state estimate of Gillijns and De Moor (2007).
+
+- [ ] The update, on an affine model. Test: on a linear system driven by an arbitrary unknown input,
+      the state estimate is unbiased and matches the closed form, and the input estimate converges.
+
+Done when: it passes its test on all three compilers.
+
+## 17zm. Fixed-gain filters — not started
+
+- [ ] The steady-state Kalman filter, its gain found by running the filter's own covariance
+      recursion to convergence. Test: equals the Kalman filter once it has converged, and its gain
+      the closed-form Riccati solution on a scalar problem.
+- [ ] The alpha-beta and alpha-beta-gamma filters, with the closed-form gains of the built-in
+      kinematic blocks (Kalata 1984). Test: their gains equal the steady-state filter's on the
+      constant-velocity and constant-acceleration models.
+
+Done when: both pass their tests on all three compilers.
+
+## 17zn. Generalized pseudo-Bayesian estimators — not started
+
+GPB1 and GPB2 beside the IMM and the AMM, on `SwitchingModel` [switching-models] (Bar-Shalom, Li,
+and Kirubarajan 2001).
+
+- [ ] Both estimators. Test: with one mode each equals the Kalman filter; on the IMM's maneuvering
+      target, GPB1's error is at or above the IMM's and GPB2's at or below, as the source reports.
+
+Done when: both pass their tests on all three compilers.
 
 ## 16b. Hooks for splitting by nonlinearity — not started
 
@@ -175,6 +396,78 @@ what comes back from a transform. The second differences extend 17u's root form,
 Done when: the second differences, the Hessians, and the split pass their tests on all three compilers with no allocation
 on a bounded space, and an outside action built on them splits a component on a range-bearing
 example where the unsplit filter is inconsistent.
+
+## 17zo. Second-order and divided-difference filters — not started
+
+Two more rungs of choosing.md's ladder, as methods beside the sigma-point sets [sigma-point-sets]:
+the second-order EKF (Athans, Wishner, and Bertolini 1968) on 16b's Hessians, and the
+divided-difference filters DD1 and DD2 (Nørgaard, Poulsen, and Ravn 2000).
+
+- [ ] The second-order EKF. Test: on a quadratic measurement its mean correction
+      $\tfrac12 \operatorname{tr}(\nabla^2 h \, P)$ is exact.
+- [ ] DD1 and DD2. Test: DD1 approaches the EKF as the interval shrinks, and DD2 matches the
+      second-order EKF's mean on a quadratic.
+- [ ] choosing.md places both on its ladder.
+
+Done when: both pass their tests on all three compilers.
+
+## 17zp. State constraints — not started
+
+Constraints applied as a step after the update; nonlinear ones are the optimizer's, by moving
+horizon estimation.
+
+- [ ] Projection onto linear equality constraints (Simon and Chia 2002). Test: the estimate meets
+      the constraint, and its error on a constrained simulation is no larger than the unconstrained
+      filter's.
+- [ ] Truncation at linear inequality constraints (Simon and Simon 2010). Test: the truncated
+      moments match a Monte Carlo of the truncated density.
+
+Done when: both pass their tests on all three compilers.
+
+## 17zq. Continuous-discrete filtering — not started
+
+Models given as differential equations, with measurements at discrete times. The Kalman-Bucy
+filter, for measurements taken continuously, stays out of scope.
+
+- [ ] A continuous-time block that integrates a user's ODE by fixed-step RK4, differentiates it by
+      autodiff, and discretizes its noise by Van Loan (1978), each stage applied by `plus()`. Test:
+      on a linear time-invariant system it equals the exact discretization to the integrator's
+      order.
+- [ ] The moment equations of the continuous-discrete EKF and UKF (Särkkä 2007). Test: on a linear
+      system each equals the Kalman filter on the exact discretization.
+- [ ] Smoothing between measurement times, with 14b.
+
+Done when: the three pass their tests on all three compilers.
+
+## 14b. More smoothers — not started
+
+The smoothers smoothing.md lists as absent, and the fixed-point smoother.
+
+- [ ] The fixed-point smoother (Simon 2006, §9.2): one past state's estimate, refined as
+      measurements arrive. Test: equals the fixed-interval smoother's estimate of that state at
+      every step.
+- [ ] The two-filter smoother (Fraser and Potter 1969), through `InfoFilter`. Test: equals the
+      Rauch-Tung-Striebel smoother on an affine model.
+- [ ] The iterated smoothers (Bell 1994; García-Fernández, Svensson, and Särkkä 2017). Test: on an
+      affine model one iteration equals the Rauch-Tung-Striebel smoother.
+- [ ] Smoothers for the Rao-Blackwellized and grid filters, and smoothing a mixture of IMMs.
+- [ ] Particle smoothing by backward simulation (Godsill, Doucet, and West 2004), on 17zh's density.
+      Test: on a linear Gaussian model its moments approach the Rauch-Tung-Striebel smoother's as
+      the counts grow.
+
+Done when: each passes its test on all three compilers.
+
+## 17zr. Innovation whiteness test — not started
+
+The third consistency test beside the NIS and the NEES [innovation-statistics]: whether a run's
+innovations are correlated in time (Bar-Shalom, Li, and Kirubarajan 2001, ch. 5), which a
+mistuned filter can show while its NIS passes.
+
+- [ ] The normalized sample autocorrelation of the innovations at lags 1 to $L$, with its
+      acceptance region, beside `NeesMonitor`. Test: over Monte Carlo runs of a correctly tuned
+      filter it accepts at its stated rate; with $Q$ too small it rejects.
+
+Done when: it passes its test on all three compilers.
 
 ## 16c. Fusion rules, out-of-sequence updates, and consensus — not started
 
@@ -232,72 +525,63 @@ The distributed-fusion operations that are pure functions of the library's types
 
 Done when: the above pass on all three compilers, with the consensus step's parallel case.
 
-## 17d. Ensemble Kalman filter — deferred
+## 17za. Mixture arguments of a model — not started
 
-Past the launch: inflation and localization, without which the filter fails at small ensembles,
-made it more than the first release needed. Evensen (1994), with perturbed observations (Burgers,
-van Leeuwen, and Evensen 1998). `ParticleSet` holds the members and `predict()` already moves them.
+A mixture as an uncertain argument of `predict()` or `observe()` [prediction-inputs], in stages after
+the first, which exists (additive mixture noise, [additive-noise]): a mixture through the function;
+then several mixtures each naming a mode axis, as `byMode<Axis>()` names one for additive noise
+(imm-filter.md Q10); then several memoryless mixtures.
+The Kalman filter refuses a mixture argument, and the mixture filters take it, with a branch per
+component. Each stage is an addition; the first two change no spelling.
 
-- [ ] The stochastic update, with an execution policy and a case in `tests/parallel.cpp`.
-- [ ] Inflation (Anderson 2007).
-- [ ] Localization by a Schur product with a distance taper (Houtekamer and Mitchell 2001); how a
-      space says which coordinates are near which is the one new decision.
-- [ ] The deterministic variants (ensemble square-root and adjustment filters) as methods.
-- [ ] Tests: at large $N$ the moments match `KalmanFilter` on an affine model; localization
-      recovers the Kalman covariance on a banded problem at small $N$; `tests/allocation.cpp`.
+- [ ] A mixture through the function: a `GaussianMixtureParams` argument read by the model, each
+      component pushed through by the method, the branches weighted by the component weights. Test:
+      a `GaussianMixtureFilter` prediction with a two-component input equals the mixture of the two
+      predictions with each component as a Gaussian argument.
+- [ ] Several mixtures each naming a mode axis, for an `ImmFilter` (imm-filter.md Q10).
+- [ ] Several memoryless mixtures, their components crossed.
 
-Done when: the filter, inflation, and localization pass on all three compilers.
+Done when: each stage passes its test on all three compilers.
 
-## 17g. Posterior Cramér-Rao bound — in progress
+## 17zd. Step models — not started
 
-[cramer-rao-bound]: the recursion and its tests are done.
+Not decided whether to build. A process model whose function returns the step over the blocks it
+writes rather than their new values, with the library applying `plus()` to each written block. Most
+process functions compute new block = old block ⊞ step, so the function reads the block, builds an
+output vector, and writes the block back, naming its tag three times; a step model names it in
+`writes()` alone. The attitude's prediction becomes the same line as the heading's, since `plus()` on
+a unit quaternion is $q \otimes \mathrm{Exp}(d)$:
 
-- [ ] A singular $Q$ (a noiseless block): Section IV of Tichavský, Muravchik, and Nehorai (1998).
-- [ ] An example of the bound on the Models module page, beside simulate() and nees().
+```cpp
+Emrys::processModel(
+    Emrys::increment([]<typename T>(auto const & in, auto const &, auto const & x, double dt) {
+        return (Emrys::less<Gyro>(Emrys::block<Gyro>(in, x), Emrys::block<Bias>(in, x)) * dt).eval();
+    }),
+    Emrys::reads(Emrys::path<Heading>, Emrys::path<Bias>, Emrys::path<Gyro>),
+    Emrys::writes(Emrys::path<Heading>),
+    Emrys::continuousNoise(Emrys::on<Heading>(noiseDensity)));
+```
 
-Done when: the singular case is decided and passes its tests on all three compilers.
+What it needs: every written block is also read; a zero difference vector to fill, beside
+`zeros<T>(out)`; and a returned Jacobian of the step chained through ⊞ by the blocks' Jacobians, as
+[covariance-reset] does. `increment` is a placeholder name. A model whose new value is not a step
+from the old one keeps the present form. It breaks nothing, but is decided before the launch, since
+if it is built the examples use it.
 
-## 18. Execution policies — in progress
+Done when: decided, and if built, the examples whose models are steps (`consider_bias.cpp`,
+`attitude.cpp`, `unicycle.cpp`) use it, and a test shows a step model predicts as its value form does
+under every method.
 
-[execution-policies]; the loops and the reasoning are in parallelism.md. Every loop takes a policy.
-
-- [ ] Benchmark [benchmarks]: thread scaling of the ranging particle filter
-      (`benchmarks/particles/`) at $10^3$ to $10^6$ particles, as the ratio to `Sequential`. Under
-      `Sequential` it is 1.04 to 1.07 times the hand loop's instructions.
-- [ ] `Gaussian::logDensity()` recognizing a diagonal or scalar covariance: with an isotropic $R$,
-      the triangular solve costs 45 instructions per particle more than a closed form.
-
-Done when: the scaling curve is published.
-
-## 18b. Counter-based random numbers — not started
-
-Parallel draws need a generator with no shared state: Philox (Salmon et al. 2011), standardized in
-C++26 as `std::philox4x32` (parallelism.md, "Random numbers in parallel"). The engine stays the
-caller's and the draws go through the standard distributions, so they are reproducible across
-thread counts but not across standard libraries.
-
-- [ ] `Core/Random.h`: a `CounterBasedGenerator` concept (an independent stream at a step and an
-      index), which `std::philox4x32` meets where the library has it.
-- [ ] Parallel overloads of `predict()`, `Roughen`, `drawSamples()`, and the Monte Carlo
-      divergences that draw inside the loop from such a generator; without one they keep drawing
-      before the loop.
-- [ ] `MetropolisResampler` and `RejectionResampler` (Murray, Lee, and Jacob 2016), which need no
-      cumulative sum, and the systematic and stratified resamplers by scan and binary search.
-- [ ] Bibliography entries for Salmon et al. (2011) and Murray, Lee, and Jacob (2016).
-- [ ] Tests: a parallel prediction equals the sequential one bitwise at any thread count; the new
-      resamplers' counts match the weights in expectation.
-
-Done when: parallel draws are bitwise reproducible across thread counts within one standard
-library, and the six resamplers pass their tests.
-
-## 19. GPU backend — not started
+## 19. GPU backend — deferred
 
 A `Device` policy runs the step 18 primitives on a GPU, with the particles in device memory
 through the allocator [allocation] and the per-element bodies compiled as device code. The
 experiments of parallelism.md, "What to find out first", decide whether the step is worth it.
+Deferred past the advertised launch (decided 2026-11-16); step 19b readies the API for it, and
+has taken the device-only syntax check.
 
-- [ ] Experiments: a device-only syntax check of one particle filter with clang CUDA; the ranging
-      benchmark under nvc++ `-stdpar=gpu` against `std::execution::par`, for the crossover count.
+- [ ] The experiment: the ranging benchmark under nvc++ `-stdpar=gpu` against
+      `std::execution::par`, for the crossover count.
 - [ ] `EMRYS_FILTER_DEVICE` on the kernel-reachable surface, and a CI job compiling a device-only
       instantiation with clang.
 - [ ] A device-callable fixed-size Cholesky, triangular solves, and log-determinant in `Core/`
@@ -328,12 +612,23 @@ explained for people and agents alike. The documents for each reader:
 - [ ] As each guide section settles, move it into the reference: explanation to a module's `.dox`
       page, examples to `examples/` included with `\snippet`, reasons to decisions.md; the section
       becomes a pointer. 0.1.0 was released with the guides as they were, about 8,800 lines and
-      93 open questions (decided 2026-11-12), and the move continues. When the guides are empty, any
-      question still open moves here. The guide README's table tracks both.
+      93 open questions (decided 2026-11-12), and the move continues. The advertised launch waits
+      for every guide reviewed and emptied, every question answered and none moved here (decided
+      2026-11-16). A step above whose area no guide covers gets a review of its own, written as
+      docs/guide/README.md says, before it is done. The guide README's table tracks both.
 - [ ] A user page listing every circumstance in which the library may allocate: a count growing
       past its reserve, the first use of count-sized scratch [allocation], the standard algorithms
       under a policy other than `Sequential` [execution-policies], and anything sized by an
       unbounded space. Audit the headers for it rather than writing it from memory.
+- [ ] What is thread-safe, on the user page: which calls on one filter may run at once (none that
+      change it), whether two filters sharing a model may run on two threads, and what an
+      execution policy's body may touch [execution-policies]. Audit the headers for it, as for
+      allocation.
+- [ ] A teaching track: an ordered path through the examples and the module pages that a graduate
+      course can follow, from the constant-velocity Kalman filter to the hybrid filters, with the
+      fixed-gain, GPB, and ensemble filters where a course meets them.
+- [ ] An example on recorded data: a small public dataset, chosen for its license, beside an
+      example that reads it with `<fstream>` itself, since I/O is not the library's.
 - [ ] More examples beside the six of Agent-friendly use, among them learned models: a small
       network's weights embedded as Eigen matrices, under Unscented and under Linearized with its
       own Jacobian [returned-jacobians]; a heteroscedastic network as input noise; a learned
@@ -376,6 +671,8 @@ fetches the library, keeps template errors short, and installs the skills.
       particle set that degenerates onto one particle reports nothing; only a NEES in the 1e43s
       showed it. GCC 14 warns `-Wmaybe-uninitialized` inside `GaussianParams`' copy (the cached
       `std::optional<Eigen::LLT>`) when `additiveNoise()` copies one, depending on inlining.
+- [ ] A filter's description naming its model, its method, and its last update (accepted, NIS),
+      after its name and state [printing-and-simulation].
 - [ ] Usage page and skill: once the API index and `checkModel` exist, point to them, in usage.md
       and in step 3 of `emrys-filter-build-estimator`.
 - [ ] Short compile errors: the model contracts as named concepts, checked by `static_assert`s with
@@ -456,11 +753,10 @@ What a first visitor meets before any feature matters, then what a reviewer look
 
 The launch is in two parts (decided 2026-11-12). The soft launch was 0.1.0, released on
 2026-11-13 without an announcement, before the guides are empty (Documentation above). The
-advertised launch, the posts under "Getting the word out" below, follows it. The guide questions
-marked **breaking** at the end of this section stayed open past the soft launch (decided
-2026-11-13): each answered goes into a 0.x release with its `CHANGELOG.md` entry. The vcpkg and
-Conan submissions wait for the advertised launch (decided 2026-11-12); whether GitHub Discussions
-does is undecided.
+advertised launch, the posts under "Getting the word out" below, follows it, and waits for what
+the opening of this file says (decided 2026-11-16). Each guide question answered goes into a 0.x
+release with its `CHANGELOG.md` entry. The vcpkg and Conan submissions wait for the advertised
+launch (decided 2026-11-12), and Discussions are turned on with it.
 
 The repository is public since 2026-11-12, from one squashed commit. A release is tagged on
 `main`, which `dev` fast-forwards, and published there as a GitHub release; Zenodo archives each
@@ -496,6 +792,20 @@ The front door:
       emrys-filter` and `conan install --requires=emrys-filter/0.1.0` first, then the same
       `find_package` lines, and that vcpkg and Conan Center carry Eigen 5. Say that Conan rejects
       a compiler below the floor with a plain message, and vcpkg does not.
+- [ ] The minimum compilers. The launch states only what has been tried, as the README's Install
+      section does: CI passes on GCC 14, Clang 21, Apple Clang 21, and the MSVC of Visual Studio
+      2026; GCC 13 builds the README example and the examples but isn't tested; Clang 18 on
+      libstdc++ 13 fails at the first `std::expected`. Untried: Clang 19 and 20 (which the Conan
+      recipe's `validate()` rejects untested), older MSVC and Apple Clang, and each compiler on the
+      other standard libraries. Closing it means a table by compiler and standard library,
+      `validate()` matching it, and a check naming the floor before the first `std::expected`, the
+      only message a vcpkg user would get.
+- [ ] Which built-in models ship here, and which in EmrysNavigation: undecided (2026-11-16), as is
+      whether EmrysNavigation launches with this library or shortly after with a set of
+      essentials. The candidates here are the coordinated-turn and gyroscope blocks the examples
+      write themselves, and range, bearing, and range-bearing sensors. Nothing is taken from
+      navigation's scope to fill this library.
+- [ ] The library on Compiler Explorer, so that a thread can link a snippet that compiles.
 - [ ] Build cost for contributors: time and memory per workflow preset and the `-j` warning, with
       `-ftime-trace` numbers per header (`tools/compile_cost.py --match` times any compile
       command, and `--time-trace` adds Clang's totals).
@@ -503,7 +813,9 @@ The front door:
       --match tests/ --time-trace` on a test build finds them), then explicit instantiation of
       the setups the tests repeat (`extern template` in a support header, instantiations in their
       own translation units), and a precompiled header if parsing matters. Record a clean build's
-      time per preset before and after. This is also the profiling the deferred module asks for.
+      time per preset before and after.
+- [ ] A C++23 module beside the headers [layered-headers], after the profiling above, built if
+      the three compiler families import it reliably; if not, a decision records why.
 - [ ] A ThreadSanitizer run of `tests/parallel.cpp` by hand.
 - [ ] What a precondition failure does, on the user's page: `EMRYS_FILTER_ASSERT` is `eigen_assert`,
       which aborts, and `NDEBUG` or `EIGEN_NO_DEBUG` silences it. A user's own definition may be an
@@ -524,12 +836,19 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       fetches or runs something other than it declares; report as a bug a diverging filter, a
       failed `EMRYS_FILTER_ASSERT` precondition (gone under `NDEBUG`, so the caller's to meet),
       and defects in Eigen or a compiler. Fixes go onto `dev` only while the library is pre-1.0.
-- [ ] The paywalled sources read, before the advertised launch: the 34 entries that
-      `docs/reference/bibliography.md` marks **Not read.** (2026-11-12), which comments credit
-      while taking their numbers from a free source. For each, check the code against the original
-      as the bibliography's opening says, cite its own sections and equations where the code
-      follows it, and delete the sentence. Every algorithm is cited, and a reader who checks a
-      citation against the paper should find what the comment says there.
+- [ ] The review of every algorithm against its source, before the advertised launch (decided
+      2026-11-16): every entry of `docs/reference/bibliography.md`, those the steps above add
+      included, read in full, and every algorithm in the headers checked against the equations it
+      cites, as the bibliography's opening says. Each comment cites its source's sections and
+      equations where the code follows it, and each departure is said in the entry's note. The 34
+      entries marked **Not read.** (2026-11-12), which comments credit while taking their numbers
+      from a free source, are the first. The maintainer obtains the paywalled papers and keeps
+      them out of the repository, which is public. Done when no entry says **Not read.** and a
+      reader who checks a citation finds what the comment says there.
+- [ ] Benchmarks against the other libraries in the README's comparison table that run the same
+      problem (mherb/kalman's EKF and UKF on the ranging problem), by the method of benchmarks.md,
+      since a reader's first question is "how fast against X", and the README's numbers are only
+      against hand-written Eigen.
 - [ ] GitHub Discussions turned on, so questions have somewhere to go besides issues. The
       repository's 20 topics, GitHub's limit, were chosen on 2026-11-12 by how many public
       repositories use each, so that each has an audience browsing it; a filter named in the
@@ -607,8 +926,9 @@ Performance with no change to results:
 - [ ] `internal::printCount()` pluralizes by adding "s"; the first noun that doesn't, such as
       "vertex", adds a defaulted plural argument.
 
-**Breaking**: guide questions whose likely answer breaks code or changes results, open at the soft
-launch and to answer first after it (an answer that keeps today's behavior settles one too):
+**Breaking**: guide questions whose likely answer breaks code or changes results, to answer first
+of the questions the advertised launch waits for (an answer that keeps today's behavior settles
+one too):
 
 - [ ] hidden-markov-filter.md Q1 (the chain first in `HiddenMarkovFilter`), Q3 (an emission in
       another scalar), Q6 (`persistent()` takes a probability in one chain and a rate in the
@@ -619,20 +939,6 @@ launch and to answer first after it (an answer that keeps today's behavior settl
       queries on a flat index, `has<Turn>(space, v)` (what `internal::ValueLocation::matches` does)
       and `indexIn<Cell>(space, v)`, the reverse of `valueOf` and `at<>()`, not a value type; Q1
       under its unfavored option.
-
-## Accepted, not yet sequenced
-
-### Invariant extended Kalman filter and pose spaces
-
-Barrau and Bonnabel (2017): an EKF on a Lie group whose error is the group error, which converges
-from large initial errors on group-affine dynamics ($SE(3)$, $SE_2(3)$). It is `KalmanFilter` with
-`Linearized` on a group space whose `plus()` and `minus()` apply the increment on a chosen side, so
-it is an example and a test, not a header. It needs the perturbation side on the unit quaternion
-(only this library can add it), the groups as spaces (a `Composite` is a product manifold, not the
-group), and a test that the error Jacobian is constant on group-affine dynamics. The groups go in
-`Spaces/` [lie-groups]; add the side to the quaternion first. Its largest user base is legged
-robots, by contact-aided estimation (Hartley et al. 2020), so sequence it before EmrysNavigation
-starts.
 
 ## Interests that shape later steps
 
@@ -655,7 +961,7 @@ starts.
   - **EmrysAnalysis** [analysis-project]: noise tuning over recorded runs, by expectation-maximization
     (Shumway and Stoffer 1982), innovation correlation (Mehra 1970), and covariance matching; a
     finite-difference check of Jacobians; and fault detection. The online adaptive updates are this
-    library's ("Deferred past the first release").
+    library's (step 17zg).
   - **EmrysController:** LQR and LQG, iLQR and DDP, belief-space control and sensor scheduling, up
     to what a Riccati sweep computes; model predictive control would take a user's solver. Also
     H-infinity filtering, the dual of H-infinity control on the same Riccati machinery. Its matrix
@@ -702,7 +1008,7 @@ Estimators with users that neither this library nor any planned project will car
 - **Set-membership estimators** (ellipsoidal, interval, zonotope). They aren't probabilistic, and
   they need an arithmetic of their own (interval arithmetic, zonotope order reduction).
 - **The Kalman-Bucy filter**, for measurements taken continuously. Software receives sampled
-  measurements, which the continuous-discrete filters (deferred, below) serve.
+  measurements, which the continuous-discrete filters (step 17zq) serve.
 - **4D-Var.** It needs adjoint models, at the scale of operational weather and ocean
   assimilation. The ensemble Kalman filter (step 17d) is the part of that field's methods that
   fits here.
@@ -727,55 +1033,10 @@ General-purpose pieces Eigen lacks, to offer once ours have settled [eigen-partn
   `Core/Triangularization.h` [gaussian-forms], as a `HouseholderQR::computeInPlace()` that discards
   the reflections or a free function.
 
-## Deferred past the first release
+## Deferred past the advertised launch
 
-- Student-t robust updates for Kalman-family filters. Student-t noise isn't conjugate, so it needs
-  an approximation (a variational update, or reweighting $R$ by the Mahalanobis distance). Particle
-  and grid filters take it now through a measurement's own `logLikelihood()`, and mixture noise is
-  the robust model until then. Beside it, the Huber M-estimator update, as an iterated reweighting
-  of $R$ on the `Iterated` machinery.
-- Adaptive noise inside the filter: the variational Bayes estimate of $R$ (Särkkä and Nummenmaa
-  2009), and Sage-Husa (1969) with fading memory and a guard that keeps its estimates positive
-  definite, against its known divergence. Estimating the noise over a recorded run is the analysis
-  project's (Interests, above).
-- A process model's transition density $p(x_{k+1} \mid x_k)$, which no process model exposes now.
-  It is the one prerequisite of six features: the auxiliary particle filter (Pitt and Shephard
-  1999), the locally optimal proposal (Doucet, Godsill, and Andrieu 2000), EKF and UKF proposals
-  (van der Merwe et al. 2000), resample-move with a Metropolis-Hastings move (Gilks and Berzuini
-  2001), particle flow as a proposal (Daum and Huang 2007; Li and Coates 2017), and particle
-  smoothing by backward simulation (Godsill, Doucet, and West 2004).
-- The smoothers smoothing.md lists as absent: the two-filter smoother (Fraser and Potter 1969)
-  through `InfoFilter`, the iterated smoothers (Bell 1994; García-Fernández, Svensson, and Särkkä
-  2017), smoothers for the Rao-Blackwellized and grid filters, and smoothing a mixture of IMMs.
-- Two more rungs of choosing.md's ladder: the second-order EKF, on step 16b's Hessians, and the
-  divided-difference filters DD1 and DD2 (Nørgaard, Poulsen, and Ravn 2000), as methods beside the
-  sigma-point sets.
-- Fixed-gain filters: the steady-state Kalman filter, its gain found by running the filter's own
-  covariance recursion to convergence, and the alpha-beta and alpha-beta-gamma filters, with the
-  closed-form gains of the built-in kinematic blocks (Kalata 1984).
-- State constraints: projection onto linear equality constraints (Simon and Chia 2002) and
-  truncation at linear inequality constraints (Simon and Simon 2010), as a step after the update.
-  Nonlinear constraints are the optimizer's, by moving horizon estimation.
-- GPB1 and GPB2, the generalized pseudo-Bayesian estimators beside the IMM and the AMM, for the
-  course companion.
-- Continuous-discrete filtering: a continuous-time block that integrates a user's ODE by
-  fixed-step RK4, differentiates it by autodiff, and discretizes its noise by Van Loan (1978), each
-  stage applied by `plus()`; the moment equations of the continuous-discrete EKF and UKF (Särkkä
-  2007); and smoothing between measurement times.
-- Noise tuning over recorded runs and a finite-difference check of Jacobians belong to the
-  analysis project [analysis-project]; the library supplies the log-likelihoods, innovations
-  [innovation-statistics], and `withJacobian()`.
-- A C++23 module beside the headers [layered-headers], after the test-build profiling above.
-- A filter's description naming its model, its method, and its last update (accepted, NIS), after
-  its name and state [printing-and-simulation].
-- The minimum compilers. The launch states only what has been tried, as the README's Install
-  section does: CI passes on GCC 14, Clang 21, Apple Clang 21, and the MSVC of Visual Studio 2026;
-  GCC 13 builds the README example and the examples but isn't tested; Clang 18 on libstdc++ 13
-  fails at the first `std::expected`. Untried: Clang 19 and 20 (which the Conan recipe's
-  `validate()` rejects untested), older MSVC and Apple Clang, and each compiler on the other
-  standard libraries. Closing it means a table by compiler and standard library, `validate()`
-  matching it, and a check naming the floor before the first `std::expected`, the only message a
-  vcpkg user would get.
+- Step 19, the GPU backend, with its API made ready by step 19b.
+- Particle flow as a proposal (Daum and Huang 2007; Li and Coates 2017).
 - The Rao-Blackwellized point-mass filter's prediction between cells (Šmídl and Gašperin 2013;
   Duník et al. 2019): the block moves by a convolution of the cell probabilities with its
   transition density, the rest entering as noise on the block (Pocoma et al. 2023, §III-D), which
