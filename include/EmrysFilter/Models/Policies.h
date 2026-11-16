@@ -482,7 +482,7 @@ private:
  * space, such as a KalmanFilter or a GaussianMixtureFilter, reads it as the AdditiveNoise it
  * derives from, a mixture whose weights are the outliers' rate at each measurement, independent of
  * the last: the memoryless outlier model. A filter whose state has a mode space without \a Axis
- * refuses it at compile time. So one measurement serves the outlier-robust filter and the IMM, and
+ * refuses it at compile time. So one measurement serves a filter with mixture noise and the IMM, and
  * an IMM always updates the axis the measurement names. The weights the memoryless reading uses
  * should match the chain's stationary probabilities on \a Axis, for the two readings to describe
  * one sensor.

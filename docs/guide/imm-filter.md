@@ -817,7 +817,7 @@ The same noise means something in every filter, by what the filter's state has [
 | a mode space with the named axis (IMM, AMM, a mixture of IMMs, a Rao-Blackwellized filter of hybrids) | the axis's values: Markov outliers, with the chain's probabilities |
 | a mode space without the named axis | a compile-time error (below) |
 
-So one sensor model serves the outlier-robust Kalman filter and the IMM [imm]. For the two readings
+So one sensor model serves a Kalman filter with mixture noise and the IMM [imm]. For the two readings
 to describe one sensor, the weights should be the chain's stationary probabilities on the axis.
 
 On the full `Mode`, with the prior of §3, a 30 m bias on fixes 8 to 10, and exact fixes
@@ -852,10 +852,14 @@ after a few steps, and the chain's persistences decide which wins. The test suit
 `RidesOutABurstOfOutliers` uses a sensor axis alone (no maneuver) and holds within 10 m
 during a 50 m burst, against more than 30 m for a plain Kalman filter.
 
-### Memoryless outliers are the robust Kalman filter
+### Memoryless outliers are a Kalman filter with mixture noise
 
 The Filters module page says memoryless mixture noise is the IMM case where every row of $\Pi$ is
-the same. It holds exactly here, and since Q10 the two filters take the same measurement. With a
+the same. It holds exactly here, and since Q10 the two filters take the same measurement. With
+identical rows, the IMM is the first-order generalized pseudo-Bayesian estimator, GPB1, of
+[Bar-Shalom, Li, and Kirubarajan (2001)](../reference/bibliography.md#barshalom2001), §11.6, and
+GPB1 with a memoryless chain is a Kalman filter whose measurement noise is the mixture, collapsed
+after each update. With a
 memoryless chain on `SensorMode` matching the noise weights, a target at 10 m/s along x, and six
 exact fixes of which the fourth is 25 m off:
 
