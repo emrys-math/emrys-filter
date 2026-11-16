@@ -89,9 +89,12 @@ jobs:
   # malloc and free to count the heap. `gcc-no-exceptions` builds everything with -fno-exceptions
   # -fno-rtti [embedded-builds]; `clang-libcxx` builds with LLVM's library, as macOS does, but
   # without TBB, which is built against libstdc++; `gcc-arm64` runs the gcc preset on an Arm runner,
-  # where Eigen takes its NEON paths. A job not ticked is excluded from the matrix, so it starts no
-  # runner; the runner and preset are worked out from the job's name, since an `include` entry
-  # would bring an excluded job back.
+  # where Eigen takes its NEON paths. The negative compile tests check a compiler's result, so each
+  # compiler runs them once, in its plain build [check-stages]; the `<compiler>-compile-errors`
+  # workflow builds only their four objects, not the tests, so it is a job of its own beside the
+  # compiler's build, which then needn't wait for it, and reports even when the build fails. A job
+  # not ticked is excluded from the matrix, so it starts no runner; the runner and preset are
+  # worked out from the job's name, since an `include` entry would bring an excluded job back.
   linux:
     name: ${{ matrix.job }} (Linux)
     if: >-
@@ -102,10 +105,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        job: [gcc, clang, clang-sanitize, gcc-no-exceptions, clang-libcxx, gcc-arm64]
+        job: [gcc, gcc-compile-errors, clang, clang-compile-errors, clang-sanitize, gcc-no-exceptions,
+              clang-libcxx, gcc-arm64]
         exclude:
           - job: ${{ !inputs.gcc && 'gcc' || '' }}
+          - job: ${{ !inputs.gcc && 'gcc-compile-errors' || '' }}
           - job: ${{ !inputs.clang && 'clang' || '' }}
+          - job: ${{ !inputs.clang && 'clang-compile-errors' || '' }}
           - job: ${{ !inputs.clang_sanitize && 'clang-sanitize' || '' }}
           - job: ${{ !inputs.gcc_no_exceptions && 'gcc-no-exceptions' || '' }}
           - job: ${{ !inputs.clang_libcxx && 'clang-libcxx' || '' }}
@@ -144,12 +150,6 @@ jobs:
 
       - name: Build and test
         run: cmake --workflow --preset "$PRESET"
-
-      # A case checks the compiler's result, so each compiler runs them once, in its plain build
-      # [check-stages].
-      - name: Negative compile tests
-        if: matrix.job == 'gcc' || matrix.job == 'clang'
-        run: cmake --workflow --preset "$PRESET-compile-errors"
 
   # Clang's source-based coverage of the headers by the tests, the benchmarks' agreement tests, and
   # the examples [coverage]. tools/coverage.py runs them, puts the table by layer in the run's
@@ -258,13 +258,25 @@ jobs:
       - name: Report code size and stack use
         run: cmake --build build/cortex-m --target footprint | tee -a "$GITHUB_STEP_SUMMARY"
 
+  # The build and its negative compile tests run side by side, as on Linux. The Windows runners'
+  # processors differ, and the same job took 76 minutes on one and 89 on another on 2026-11-16, so
+  # the job names the processor it ran on.
   msvc:
-    name: msvc (Windows)
+    name: ${{ matrix.preset }} (Windows)
     if: inputs.msvc
     runs-on: windows-2025-vs2026
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [msvc, msvc-compile-errors]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Show processor
+        run: |
+          Get-CimInstance Win32_Processor | Select-Object Name, NumberOfLogicalProcessors | Format-List
+          "Memory: {0:N1} GB" -f ((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
 
       # The msvc preset uses Ninja and finds cl.exe, and Visual Studio's Ninja, on PATH.
       - name: Enter the x64 developer environment
@@ -273,10 +285,7 @@ jobs:
           arch: x64
 
       - name: Build and test
-        run: cmake --workflow --preset msvc
-
-      - name: Negative compile tests
-        run: cmake --workflow --preset msvc-compile-errors
+        run: cmake --workflow --preset ${{ matrix.preset }}
 
   docs:
     name: docs (Doxygen)
