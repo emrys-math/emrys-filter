@@ -624,9 +624,6 @@ explained for people and agents alike. The documents for each reader:
       change it), whether two filters sharing a model may run on two threads, and what an
       execution policy's body may touch [execution-policies]. Audit the headers for it, as for
       allocation.
-- [ ] A teaching track: an ordered path through the examples and the module pages that a graduate
-      course can follow, from the constant-velocity Kalman filter to the hybrid filters, with the
-      fixed-gain, GPB, and ensemble filters where a course meets them.
 - [ ] An example on recorded data: a small public dataset, chosen for its license, beside an
       example that reads it with `<fstream>` itself, since I/O is not the library's.
 - [ ] More examples beside the six of Agent-friendly use, among them learned models: a small
@@ -1037,11 +1034,17 @@ General-purpose pieces Eigen lacks, to offer once ours have settled [eigen-partn
 
 - Step 19, the GPU backend, with its API made ready by step 19b.
 - Particle flow as a proposal (Daum and Huang 2007; Li and Coates 2017).
-- The Rao-Blackwellized point-mass filter's prediction between cells (Šmídl and Gašperin 2013;
-  Duník et al. 2019): the block moves by a convolution of the cell probabilities with its
-  transition density, the rest entering as noise on the block (Pocoma et al. 2023, §III-D), which
-  [rb-point-mass] now rejects. It revives pruned cells and costs a pass over cell pairs, so it
-  waits for a use whose fixed block moves; until then that use is `RbParticleFilter`'s.
+- Teaching aids (decided 2026-11-16): a course syllabus, an ordered path through the examples and
+  the module pages that a graduate course can follow, from the constant-velocity Kalman filter to
+  the hybrid filters, with the fixed-gain, GPB, and ensemble filters where a course meets them;
+  and a Gemini Gem for students, given the syllabus, usage.md, choosing.md, and the examples as
+  its knowledge.
+- Maybe before the advertised launch, undecided (2026-11-16): the Rao-Blackwellized point-mass
+  filter's prediction between cells (Šmídl and Gašperin 2013; Duník et al. 2019): the block moves
+  by a convolution of the cell probabilities with its transition density, the rest entering as
+  noise on the block (Pocoma et al. 2023, §III-D), which [rb-point-mass] now rejects. It revives
+  pruned cells and costs a pass over cell pairs, so it waits for a use whose fixed block moves;
+  until then that use is `RbParticleFilter`'s.
 
 ## Done
 
