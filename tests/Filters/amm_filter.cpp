@@ -5,6 +5,7 @@
 // rules it out. Headers: Filters/AmmFilter.h, Filters/ImmFilter.h, Distributions/Upkeep.h.
 
 #include <EmrysFilter/Distributions/Categorical.h>
+#include <EmrysFilter/Distributions/ContinuousTimeMarkovChain.h>
 #include <EmrysFilter/Distributions/Upkeep.h>
 #include <EmrysFilter/Distributions/Hybrid.h>
 #include <EmrysFilter/Filters/AmmFilter.h>
@@ -27,6 +28,7 @@ using Emrys::AmmFilter;
 using Emrys::CategoricalParams;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
+using Emrys::ContinuousTimeMarkovChain;
 using Emrys::FixedStepModel;
 using Emrys::Gaussian;
 using Emrys::GaussianParams;
@@ -35,7 +37,6 @@ using Emrys::HybridGaussianParams;
 using Emrys::ImmFilter;
 using Emrys::KalmanFilter;
 using Emrys::Linear;
-using Emrys::MarkovChain;
 using Emrys::Named;
 using Emrys::ScalarOf;
 using Emrys::SwitchingModel;
@@ -129,7 +130,7 @@ TEST(AmmFilter, IsABankOfKalmanFilters)
                       Gaussian<State>,
                       SwitchingModel<Regime, double, Regime, decltype(makeModel(quiet)), decltype(makeModel(agile))>>,
                   decltype(filter)>);
-    EXPECT_TRUE(filter.model().chain().matrix().isIdentity(0.0));
+    EXPECT_TRUE(filter.model().chain().generator().isZero(0.0));
 
     auto const initial = makeInitial();
     auto bank = std::vector<KalmanFilter<Gaussian<State>, decltype(makeModel(quiet))>>{
@@ -167,15 +168,16 @@ TEST(AmmFilter, IsABankOfKalmanFilters)
     }
 }
 
-// On the identity chain, predict() leaves the mode probabilities bitwise as they were, and agrees
-// to rounding with an IMM whose chain is the identity but for off-diagonal probabilities of
-// 1e-300, which takes the full collapse: their mixing weights differ from the identity's by about
-// 1e-300 of the probabilities.
+// On the chain that never moves, predict() leaves the mode probabilities bitwise as they were, and
+// agrees to rounding with an IMM whose chain jumps at rates of 1e-300, which takes the full
+// collapse: over the step its off-diagonal probabilities are about 1e-300, so their mixing weights
+// differ from the identity's by about 1e-300 of the probabilities.
 TEST(AmmFilter, SkipsTheMixingAndAgreesWithTheFullCollapse)
 {
     auto filter = AmmFilter{makeInitial(), makeModel(quiet), makeModel(agile)};
-    auto const nearlyIdentity = MarkovChain<Regime>::create(Eigen::Matrix2d{{1.0, 1e-300}, {1e-300, 1.0}}).value();
-    auto imm = ImmFilter{SwitchingModel{nearlyIdentity, makeModel(quiet), makeModel(agile)}, makeInitial()};
+    auto const nearlyStill =
+        ContinuousTimeMarkovChain<Regime>::create(Eigen::Matrix2d{{0, 1e-300}, {1e-300, 0}}).value();
+    auto imm = ImmFilter{SwitchingModel{nearlyStill, makeModel(quiet), makeModel(agile)}, makeInitial()};
     for (int k = 1; k <= 6; ++k)
     {
         auto const before = filter.state().modes().toDensity().value().logProbabilities();

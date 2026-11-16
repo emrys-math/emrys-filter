@@ -493,24 +493,29 @@ public:
         if constexpr (Switching)
         {
             assertParticlesRunUnder<P>();
-            return moveHybridParticles(rng, [&](auto const & model, auto const & method, auto const & predictBy) {
-                auto const call = internal::modelWith(std::cref(model), inputs...);
-                auto const resolved = internal::resolveProcess(call, m_state.space());
-                return std::apply(
-                    [&](auto const &... uncertain) {
-                        return predictBy(
-                            method,
-                            resolved.template noise<Scalar_>(step),
-                            internal::ProcessStepValues<std::remove_cvref_t<decltype(resolved)>, Scalar_>{
-                                resolved,
-                                step
-                            },
-                            internal::inputOf(uncertain)...
-                        );
-                    },
-                    resolved.inputs()
-                );
-            });
+            auto const chainOverStep = m_steps.model().transition(step);
+            return moveHybridParticles(
+                rng,
+                chainOverStep,
+                [&](auto const & model, auto const & method, auto const & predictBy) {
+                    auto const call = internal::modelWith(std::cref(model), inputs...);
+                    auto const resolved = internal::resolveProcess(call, m_state.space());
+                    return std::apply(
+                        [&](auto const &... uncertain) {
+                            return predictBy(
+                                method,
+                                resolved.template noise<Scalar_>(step),
+                                internal::ProcessStepValues<std::remove_cvref_t<decltype(resolved)>, Scalar_>{
+                                    resolved,
+                                    step
+                                },
+                                internal::inputOf(uncertain)...
+                            );
+                        },
+                        resolved.inputs()
+                    );
+                }
+            );
         }
         else
         {
@@ -546,23 +551,28 @@ public:
         if constexpr (Switching)
         {
             assertParticlesRunUnder<P>();
-            return moveHybridParticles(rng, [&](auto const & model, auto const & method, auto const & predictBy) {
-                auto const call = internal::modelWith(std::cref(model.model()), inputs...);
-                auto const resolved = internal::resolveProcess(call, m_state.space());
-                return std::apply(
-                    [&](auto const &... uncertain) {
-                        return predictBy(
-                            method,
-                            model.noise(),
-                            internal::ProcessStepValues<
-                                std::remove_cvref_t<decltype(resolved)>,
-                                std::remove_cvref_t<decltype(model.timeStep())>>{resolved, model.timeStep()},
-                            internal::inputOf(uncertain)...
-                        );
-                    },
-                    resolved.inputs()
-                );
-            });
+            auto const & chainOverStep = m_steps.model().transition();
+            return moveHybridParticles(
+                rng,
+                chainOverStep,
+                [&](auto const & model, auto const & method, auto const & predictBy) {
+                    auto const call = internal::modelWith(std::cref(model.model()), inputs...);
+                    auto const resolved = internal::resolveProcess(call, m_state.space());
+                    return std::apply(
+                        [&](auto const &... uncertain) {
+                            return predictBy(
+                                method,
+                                model.noise(),
+                                internal::ProcessStepValues<
+                                    std::remove_cvref_t<decltype(resolved)>,
+                                    std::remove_cvref_t<decltype(model.timeStep())>>{resolved, model.timeStep()},
+                                internal::inputOf(uncertain)...
+                            );
+                        },
+                        resolved.inputs()
+                    );
+                }
+            );
         }
         else
         {
@@ -960,9 +970,9 @@ private:
      * \returns nothing, or NotPositiveDefinite if a mode the chain reaches predicts the sampled block
      * with a covariance that is not positive definite, with the state unchanged
      */
-    template <typename G, typename StepOf>
+    template <typename G, typename Chain, typename StepOf>
     [[nodiscard]] std::expected<void, NumericError>
-    moveHybridParticles(G & rng, StepOf const & stepOf)
+    moveHybridParticles(G & rng, Chain const & chain, StepOf const & stepOf)
     {
         using PinnedSpace = typename StateType::PinnedSpace;
         using PinnedSamples = SampleSet<PinnedSpace, Scalar_>;
@@ -988,7 +998,7 @@ private:
             m_posterior = m_state.m_conditionals;
         }
         auto const & model = m_steps.model();
-        auto const & transitions = model.chain().matrix();
+        auto const & transitions = chain.matrix();
         // Under the identity chain, each mode starts from its own component, as ImmRecursion's does.
         bool const mixes = !transitions.isIdentity(Scalar_(0));
         Eigen::Index const modes = modeCount();
@@ -1001,7 +1011,7 @@ private:
             auto const & prior = m_state.m_conditionals.conditional(i);
             auto & posterior = m_posterior.conditional(i);
             PinnedVector const pinned = m_state.particle(i);
-            ModesType predictedModes = mixes ? Emrys::predict(prior.modes(), model.chain()) : prior.modes();
+            ModesType predictedModes = mixes ? Emrys::predict(prior.modes(), chain) : prior.modes();
             auto const logTotal = predictedModes.logTotalWeight();
             if (!logTotal)
             {

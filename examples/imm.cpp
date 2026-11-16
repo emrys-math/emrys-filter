@@ -47,10 +47,13 @@ main()
     auto const cruise = Emrys::fixedStep(Emrys::ConstantVelocity<Position, Velocity>{cruiseDensity}, dt);
     auto const maneuver = Emrys::fixedStep(Emrys::ConstantVelocity<Position, Velocity>{maneuverDensity}, dt);
 
-    // The mode is a Markov chain. Row i of the transition matrix is the distribution of the next mode
-    // after mode i: a cruise lasts about 33 steps, a maneuver about 10. The switching model pairs the
-    // chain with one process model per mode, in the order of the mode's values.
-    auto const chain = Emrys::MarkovChain<Maneuver>::create(Eigen::Matrix2d{{0.97, 0.03}, {0.1, 0.9}}).value();
+    // The mode is a continuous-time Markov chain. Entry (i, j) of its rate matrix is the rate, per
+    // second, at which mode i switches to mode j: a cruise ends at the rate 0.03 /s, so it lasts
+    // about 33 s on average, and a maneuver ends at 0.1 /s, so it lasts about 10 s. The switching
+    // model pairs the chain with one process model per mode, in the order of the mode's values, and
+    // takes the chain over the models' step once: switching.transition() is the Markov chain whose
+    // row i is the distribution of the mode one step after mode i.
+    auto const chain = Emrys::ContinuousTimeMarkovChain<Maneuver>::create(Eigen::Matrix2d{{0, 0.03}, {0.1, 0}}).value();
     auto const switching = Emrys::SwitchingModel{chain, cruise, maneuver};
 
     // A fix measures the position with noise of 1 m^2 variance on each axis.
@@ -92,10 +95,10 @@ main()
         Eigen::Index mode = Emrys::drawSample(modePrior.toDensity().value(), rng);
         for (int k = 0; k < steps; ++k)
         {
-            // The true mode takes one step of the chain, a draw from chain.next(mode), and the true
-            // state moves by that mode's model: visit() calls the lambda with the process model that
-            // the mode follows.
-            mode = Emrys::simulate(mode, chain, rng);
+            // The true mode takes one step of the chain over dt, a draw from row `mode` of
+            // switching.transition(), and the true state moves by that mode's model: visit() calls
+            // the lambda with the process model that the mode follows.
+            mode = Emrys::simulate(mode, switching.transition(), rng);
             truth = switching.visit(mode, [&](auto const & motion) {
                 return Emrys::simulate<State>(truth, motion, rng);
             });

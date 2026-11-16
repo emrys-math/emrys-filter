@@ -10,6 +10,7 @@
 // center, through ImmRecursion's update given a block.
 
 #include <EmrysFilter/Distributions/Categorical.h>
+#include <EmrysFilter/Distributions/ContinuousTimeMarkovChain.h>
 #include <EmrysFilter/Distributions/GridGaussian.h>
 #include <EmrysFilter/Distributions/Upkeep.h>
 #include <EmrysFilter/Filters/KalmanFilter.h>
@@ -43,6 +44,7 @@
 using Emrys::additiveNoise;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
+using Emrys::ContinuousTimeMarkovChain;
 using Emrys::Gaussian;
 using Emrys::GaussianParams;
 using Emrys::given;
@@ -1243,7 +1245,7 @@ struct Steady
 struct Wander
 {};
 
-// The clock either holds its drift or wanders, and stays as it is with probability 0.9.
+// The clock either holds its drift or wanders, and leaves either at the rate 0.1 per unit of time.
 struct Clock : Emrys::Named<Steady, Wander>
 {};
 
@@ -1251,7 +1253,7 @@ auto
 makeSwitching()
 {
     return Emrys::SwitchingModel{
-        Emrys::MarkovChain<Clock>::persistent(0.9).value(),
+        ContinuousTimeMarkovChain<Clock>::persistent(0.1),
         ConstantVelocity<Bias, Drift>{biasDensity},
         ConstantVelocity<Bias, Drift>{1.0}
     };

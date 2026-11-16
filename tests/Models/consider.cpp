@@ -9,6 +9,7 @@
 // mode of an ImmFilter (Filters/ImmFilter.h). With the considered block unread and uncorrelated, the
 // update is the update of the rest alone.
 
+#include <EmrysFilter/Distributions/ContinuousTimeMarkovChain.h>
 #include <EmrysFilter/Distributions/Mixture.h>
 #include <EmrysFilter/Filters/ImmFilter.h>
 #include <EmrysFilter/Filters/KalmanFilter.h>
@@ -368,7 +369,7 @@ TEST(Consider, EachModeOfAnImmFilterKeepsTheConsideredBlock)
     };
     GaussianParams<State> const prior = makePrior();
     auto filter = Emrys::ImmFilter{
-        Emrys::SwitchingModel{Emrys::MarkovChain<Mode>::persistent(0.9).value(), walk(0.1), walk(1.0)},
+        Emrys::SwitchingModel{Emrys::ContinuousTimeMarkovChain<Mode>::persistent(0.1), walk(0.1), walk(1.0)},
         Emrys::HybridParams{
             Emrys::CategoricalParams<Mode>::fromWeights(Mode{}, Eigen::Array2d{0.5, 0.5}),
             std::vector<GaussianParams<State>>{prior, prior}

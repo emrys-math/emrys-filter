@@ -46,6 +46,17 @@ describe the code before that decision. §7 also gained a measurement per value 
 `switchingMeasurement<Path>()` (roadmap 17ze), with Q19 and Q20; its snippet is condensed from the
 tests.
 
+Q1 has since been decided: a `SwitchingModel` whose models are stepped by `predict(dt)` takes a
+`ContinuousTimeMarkovChain`, and a `MarkovChain` with them doesn't compile (§2). The examples that
+built such a model on a `MarkovChain` now give it the rates that the old chain's off-diagonal
+probabilities gave per one-second step: `MarkovChain<Maneuver>::persistent(0.95)` became
+`ContinuousTimeMarkovChain<Maneuver>::persistent(0.05)`. §7's memoryless chain has no continuous
+counterpart, so its IMM's model became fixed-step instead and keeps the `MarkovChain`. The printed
+numbers of §3, §6, §7, and §11 that came from such a chain are from 2026-11-04, by the per-step
+chain, and were not rerun: over a step of one second $e^{Q}$ differs from that chain's
+$\Pi = I + Q$ from the second order in the rates on, so the code now prints slightly different
+numbers. §6's gated example, whose number follows from the chain alone, was recomputed.
+
 The examples share these declarations, with the library's names unqualified, as under
 `using namespace Emrys`:
 
@@ -100,11 +111,14 @@ now in the code (§4). These decisions from
   Mixture noise, the mixture filter, IMM, and the grid of Kalman filters share one structure: a
   discrete variable and a Gaussian conditioned on it. Memoryless mixture noise is the IMM case where
   every row of $\Pi$ is the same, and a persistent outlier process is IMM on the measurement side.
-- **[switching-models].** A switching process model is a set of per-mode models plus $\Pi$, owned by
-  the filter. Every mode shares one state space; a mode that doesn't use a block holds it. Each
-  mode's model may predict by a method of its own, given by `withMethod()` or carried by a
-  fixed-step model, and by default every mode predicts by the filter's (Q7). The filter's
-  `method()` is that default, `ModelsMethod` when every model is fixed-step (Q14).
+- **[switching-models].** A switching process model is a set of per-mode models plus a chain over
+  their step, owned by the filter: a `ContinuousTimeMarkovChain`, moving the mode by
+  $\Pi = e^{Q \Delta t}$ over each prediction, or, with fixed-step models, a `MarkovChain`; a
+  `MarkovChain` with models stepped by `predict(dt)` doesn't compile (Q1). Every mode shares one
+  state space; a mode that doesn't use a block holds it. Each mode's model may predict by a method
+  of its own, given by `withMethod()` or carried by a fixed-step model, and by default every mode
+  predicts by the filter's (Q7). The filter's `method()` is that default, `ModelsMethod` when
+  every model is fixed-step (Q14).
 - **[discrete-spaces].** Modes are values of a discrete space, stored as flat indices with the last
   axis fastest, so independent per-axis chains combine by Kronecker product.
 - **[imm].** The hybrid state keeps exactly one component per mode under the mode weights, a
@@ -153,12 +167,12 @@ now in the code (§4). These decisions from
 | | `KalmanFilter` | `ImmFilter` |
 |---|---|---|
 | Params | `<Component, Model, Method, Recursion>` | `<Component, Model, Method, Allocator>`, the allocator the state's; no recursion parameter (Q18) |
-| Model | a process model | a `SwitchingModel`: a `MarkovChain` and one or more process models |
+| Model | a process model | a `SwitchingModel`: a chain on the modes, a `ContinuousTimeMarkovChain` or with fixed-step models a `MarkovChain` (§2), and one or more process models |
 | State | a `Component`, such as `GaussianParams<Space, Scalar>` | `HybridParams<Component, ModeSpace, Allocator>`, normally a `HybridGaussianParams<Space, ModeSpace>` |
 | Recursion [filters-and-recursions] | `KalmanRecursion` | `ImmRecursion`, with scratch for every mode; not reentrant |
 | Constructor | `(model, state, method = {})`, or `(recursion, state)` | `(model, state, method = {})`; asserts that the model and state have the same modes, and checks that every model writes every coordinate of the space once (at compile time where the space is fixed-size) |
 | Change the state | mutable `state()`, `setState()` | the same [state-access]: `setState()` also asserts the mode space, and the mutable `state()` takes upkeep such as `FloorModes` [autonomous-multiple-model] |
-| `predict(dt, inputs...)` | the Gaussian | mixes through $\Pi$, predicts each mode by its model, steps the chain; with the identity chain, no mixing (§5); `[[nodiscard]]`, returning nothing for Gaussians and a `std::expected` for square-root modes (§3a) |
+| `predict(dt, inputs...)` | the Gaussian | mixes through $\Pi = e^{Q \, \Delta t}$, predicts each mode by its model, moves the mode probabilities by $\Pi$; with the identity chain, no mixing (§5); `[[nodiscard]]`, returning nothing for Gaussians and a `std::expected` for square-root modes (§3a) |
 | `predict(inputs...)`, `predict(Steps{n})` | with fixed-step models [fixed-step-models] | the same, the chain stepping once per step |
 | `update(m, policy = reductions::collapse())` | reduces the branches to the new state | reduces each mode's branches, reweights the mode by $p(z \mid m)$, or under a gate by its passing branches' likelihood (§6) |
 | `update(m, policy)`, noise `byMode<Axis>()` | the memoryless mixture, by its weights | each mode uses only the noise component its `Axis` value names (§7) |
@@ -175,7 +189,7 @@ The method serves every mode whose model carries none of its own (§4), and defa
 through the class's one guide:
 
 ```cpp
-auto filter = ImmFilter{SwitchingModel{MarkovChain<Maneuver>::persistent(0.95).value(), cv(0.01), cv(4.0)},
+auto filter = ImmFilter{SwitchingModel{ContinuousTimeMarkovChain<Maneuver>::persistent(0.05), cv(0.01), cv(4.0)},
                         HybridParams{CategoricalParams<Maneuver>{}, initial}};
 // ImmFilter<Gaussian<State>, SwitchingModel<Maneuver, double, Maneuver, CV, CV>, Linearized, std::allocator<std::byte>>
 ```
@@ -265,43 +279,35 @@ MarkovChain<SensorMode>::memoryless(next.toDensity().value()).matrix();
 // 0.9 0.1
 ```
 
-### One step per prediction
+### The chain over the models' step
 
-The chain moves once per `predict()`, whatever `dt` is, including zero:
-
-```cpp
-// persistent(0.9), starting in Cruise with probability 1
-a.predict(1.0);                   // P(Turn) 0.1
-b.predict(0.5); b.predict(0.5);   // P(Turn) 0.18
-a.predict(0.0);                   // P(Turn) 0.18: a second step, though no time passed
-```
-
-A Kalman filter's `predict(0.0)` changes nothing, so a caller who predicts to a common time before
-each of several sensors' fixes gets one chain step per call here. With a fixed sensor rate the
-transition matrix is tuned to the rate, and this is the usual discrete-time IMM. With
-asynchronous sensors, or a rate that changes, the mode switching rate silently changes with
-them. The roadmap (step 5b) notes it, and the `SwitchingModel` comment now says it.
-
-Since step 15 [emissions] the library has the continuous-time chain this calls for,
-`ContinuousTimeMarkovChain`, a generator $Q$ whose `transition(dt)` is the `MarkovChain` with
-$\Pi = e^{Q \, \Delta t}$. `SwitchingModel` still takes only a `MarkovChain`, but the chain is
-mutable through `model().chain()`, so a caller can set it before each prediction:
+Since Q1 was decided, the chain moves the mode over the same step the models move the state
+[switching-models]. With models stepped by `predict(dt)`, the chain is a
+`ContinuousTimeMarkovChain`, a generator $Q$ of rates, and each prediction moves the mode by
+$\Pi = e^{Q \, \Delta t}$, `model().transition(dt)`:
 
 ```cpp
 auto const rates = ContinuousTimeMarkovChain<Maneuver>::persistent(0.1);  // per second
-auto const step = [&](auto & filter, double dt) {
-  filter.model().chain() = rates.transition(dt);
-  filter.predict(dt);
-};
-step(a, 1.0);                  // P(Turn) 0.0906
-step(b, 0.5); step(b, 0.5);    // P(Turn) 0.0906: the same, as a rate should give
-step(a, 0.0);                  // P(Turn) 0.0906: transition(0) is exactly the identity
+auto a = ImmFilter{SwitchingModel{rates, cv(0.01), cv(4.0)}, HybridParams{cruise, initial}};
+auto b = a;
+a.predict(1.0);                  // P(Turn) 0.0906
+b.predict(0.5); b.predict(0.5);  // P(Turn) 0.0906: the same, as a rate should give
+a.predict(0.0);                  // P(Turn) 0.0906: e^{0} is exactly the identity
 ```
 
-`transition(0.0)` comes out exactly the identity, so the IMM's identity check (§5) skips the
-mixing and leaves the probabilities alone: `predict(0.0)` is a no-op without a special case.
+(Printed on 2026-11-04 by the caller setting `model().chain() = rates.transition(dt)` before each
+prediction, which is the arithmetic `predict(dt)` now does. Not rerun.)
 
-> **Q1.** Give the chain a continuous-time form? Options: (a) document the step-per-predict rule
+`transition(0.0)` comes out exactly the identity, so the IMM's identity check (§5) skips the
+mixing and leaves the probabilities alone: `predict(0.0)`, to bring several sensors to a common
+time, is a no-op without a special case. With fixed-step models, `fixedStep(model, dt)`, the chain
+is a `MarkovChain`, one $\Pi$ per `predict()`, the usual discrete-time IMM with $\Pi$ tuned to the
+rate; a `ContinuousTimeMarkovChain` given there is taken over the models' step once. A
+`MarkovChain` with models stepped by `predict(dt)` doesn't compile: it moved the mode one step per
+call, whatever `dt` was, so with asynchronous sensors or a changing rate the switching rate
+silently changed with them.
+
+> ~~**Q1.** Give the chain a continuous-time form? Options: (a) document the step-per-predict rule
 > in the `predict()` comment and leave it; (b) a chain built from a rate matrix $Q$ (rows
 > summing to zero), with `SwitchingModel` taking either kind and computing $\Pi = e^{Q \, \Delta
 > t}$ on each prediction; for the 2 to 8 modes IMM uses, the exponential is cheap, and
@@ -318,7 +324,11 @@ mixing and leaves the probabilities alone: `predict(0.0)` is a no-op without a s
 > Its `persistent(rate)` takes a rate, not a sojourn time; the mean sojourn is its reciprocal.
 > *Update:* both chains now have `fromSojournTimes(sojourn, exits)`, which takes the mean sojourn
 > times and where each value goes on leaving. The `SwitchingModel` part is still open
-> (rechecked on 2026-11-04: `SwitchingModel` takes only a `MarkovChain`).
+> (rechecked on 2026-11-04: `SwitchingModel` takes only a `MarkovChain`).~~
+> *Decided [switching-models] (b), and stricter: the chain's kind follows the models'. Models
+> stepped by `predict(dt)` take a `ContinuousTimeMarkovChain`, and a `MarkovChain` with them is a
+> compile-time error; fixed-step models take a `MarkovChain`, or a `ContinuousTimeMarkovChain`
+> taken over their step.*
 
 ## 3. HybridParams and Hybrid
 
@@ -363,6 +373,8 @@ collapsed.marginal<Position>();                   // a view of a GaussianParams<
 auto const mixture = s.toMixture();
 mixture.toDensity()->logDensity(collapsed.mean());  // -0.389: the mixture density, for a likelihood or a test
 ```
+
+(Printed on 2026-11-04 with §7's per-step chain, before Q1 was decided. Not rerun.)
 
 `collapse<Path>()` is [reduction-policies]'s "collapse grouped by mode label". [reduction-policies]
 says that `Collapse` itself never groups; this is where grouping lives, on the hybrid state
@@ -476,26 +488,30 @@ a filter over it, and a `MixtureParams` of hybrids is the composition the librar
 the Markovian switching of [Blom and Bar-Shalom (1988)](../reference/bibliography.md#blom1988),
 whose jump Markov system lets the mode select the dynamics. The mode space comes first because
 the type has no continuous space ([component-first]), and the scalar second because it ends in a
-pack. It is normally deduced. Three ways to assign models:
+pack. It is normally deduced. The chain is a `ContinuousTimeMarkovChain`, of rates per unit of
+time, unless the models are fixed-step, when it is a `MarkovChain` over their step (§2). Three ways
+to assign models:
 
 ```cpp
-auto const chain =
-    MarkovChain<Mode>::independent(MarkovChain<Maneuver>::persistent(0.95).value(), MarkovChain<SensorMode>::persistent(0.8).value());
+auto const chain = ContinuousTimeMarkovChain<Mode>::independent(
+    ContinuousTimeMarkovChain<Maneuver>::persistent(0.05), ContinuousTimeMarkovChain<SensorMode>::persistent(0.2));
 
 auto perMode = SwitchingModel{chain, cv(0.01), cv(0.01), cv(4.0), cv(4.0)};   // modelIndex 0 1 2 3
 auto byManeuver = switchingModel<Maneuver>(chain, cv(0.01), cv(4.0));  // modelIndex 0 0 1 1
-auto shared = SwitchingModel{MarkovChain<SensorMode>::persistent(0.9).value(), cv(0.01)};  // every mode: model 0
+auto shared = SwitchingModel{ContinuousTimeMarkovChain<SensorMode>::persistent(0.1), cv(0.01)};  // every mode: model 0
 ```
 
 Selecting by axis keeps a two-model maneuver set at two models when a sensor axis is
 added to the mode, which is [imm]'s reason for it. `modelIndex(mode)` says which model a mode
 follows, `visit(mode, f)` calls `f` on it, and `model<I>()` and `chain()` are mutable, so a
-caller can retune between steps (§2 sets the chain that way). `partitions(space)` checks that every
+caller can retune between steps. `transition(dt)`, or `transition()` with fixed-step models, is the
+`MarkovChain` a prediction moves the mode by. `partitions(space)` checks that every
 model writes each coordinate of the space once, as the filter's constructor asserts.
 
 The models are all fixed-step models over one step [fixed-step-models], or none are. With fixed-step
 models the switching model is fixed-step too, its filter's `predict()` takes no time step, and each
-mode predicts by its own model's method:
+mode predicts by its own model's method. Its chain is a `MarkovChain`, which moves the mode once per
+step:
 
 ```cpp
 auto const cruise = fixedStep(cv(0.01), 1.0);
@@ -584,7 +600,7 @@ always does, and `withMethod()` gives one to a model that isn't fixed-step, as a
 argument only:
 
 ```cpp
-auto filter = ImmFilter{SwitchingModel{MarkovChain<Maneuver>::persistent(0.95).value(), cv(0.01),
+auto filter = ImmFilter{SwitchingModel{ContinuousTimeMarkovChain<Maneuver>::persistent(0.05), cv(0.01),
                                        withMethod(turn, methods::unscented())},
                         HybridParams{CategoricalParams<Maneuver>{}, initial}};
 // MethodType is Linearized: the cruise mode's; the turn mode predicts by Unscented
@@ -630,7 +646,9 @@ ImmFilter.h:314:9: error: static assertion failed due to requirement 'internal::
 The code takes the four steps of that section (interaction or mixing, mode-matched filtering,
 mode probability update, and combination) and departs in two ways: the combined estimate is not
 computed each cycle but read on demand as the state's `collapsed()`, and the mixing weights and
-mode probabilities are kept as logarithms.
+mode probabilities are kept as logarithms. $\Pi$ below is the chain over the step,
+`model().transition(dt)`: $e^{Q \, \Delta t}$ of a `ContinuousTimeMarkovChain`, or with
+fixed-step models the `MarkovChain` itself.
 
 1. **Mixing.** The predicted mode probabilities are $c_j = \sum_i \Pi_{ij} \mu_i$, and the
    probability that the target was in mode $i$ given that it is now in $j$ is
@@ -643,7 +661,8 @@ mode probabilities are kept as logarithms.
 2. **Per-mode prediction.** Each mixed component goes through its mode's process model with the
    filter's method, and the call's inputs go to every mode, each matched by its tag to what the
    mode's model reads [prediction-inputs].
-3. **Mode probabilities.** They become $c_j$, by `predict(modes, chain)`.
+3. **Mode probabilities.** They become $c_j$, by `predict(modes, transitions)` of that
+   `MarkovChain`.
 
 The mixed and predicted components are written into the recursion's scratch, from the state's
 allocator, and swapped into the state, so on a bounded space a prediction allocates nothing
@@ -654,15 +673,19 @@ to $10^{-12}$ in every mode's probability, mean, and covariance (condensed from
 `MatchesAHandComputedImmWithMarkovOutliers`).
 
 A mode the chain can't reach ($c_j = 0$) starts from its own component, which then has no weight
-anywhere. With $\Pi = \begin{pmatrix} 1 & 0 \\ 0.5 & 0.5 \end{pmatrix}$ from certain cruise,
+anywhere. With $\Pi = \begin{pmatrix} 1 & 0 \\ 0.5 & 0.5 \end{pmatrix}$ over the step from certain
+cruise (a continuous-time chain gives it with no rate out of cruise and a rate of $\ln 2$ out of a
+turn, over one second),
 `Turn` has probability 0 after the step, and its Gaussian was predicted by the agile model
 (position variance 15.33, against cruise's 14.00). An update still computes its likelihood, which
 contributes nothing.
 
-Since step 17c [autonomous-multiple-model], a chain whose matrix is exactly the identity skips the
-mixing: each mode's component is predicted as it is and the mode probabilities are left as they
-were, bitwise. The mixing would give the same components, and the same probabilities up to the
-rounding of the chain's step through exponentials and logarithms
+Since step 17c [autonomous-multiple-model], a chain whose matrix over the step is exactly the
+identity skips the mixing: each mode's component is predicted as it is and the mode probabilities
+are left as they were, bitwise. A `ContinuousTimeMarkovChain` that never moves gives exactly the
+identity over every step, and so does any continuous-time chain over a step of zero (§2). The
+mixing would give the same components, and the same probabilities up to the rounding of the
+chain's step through exponentials and logarithms
 (`AmmFilter.SkipsTheMixingAndAgreesWithTheFullCollapse`, against a chain with off-diagonal entries
 of $10^{-300}$). The check costs a comparison of the matrix per prediction. That is the autonomous
 multiple model estimator, §11.
@@ -687,7 +710,7 @@ The mode probabilities then go through Bayes' rule, $\mu_m \propto c_m \, p(z \m
 $\log p(z) = \log \sum_m c_m \, p(z \mid m)$, over every branch.
 
 A sideways maneuver of 3 m/s² from step 11 to 16, with exact position fixes, the
-`persistent(0.95)` filter of §1, and a cruise-only Kalman filter alongside:
+`persistent(0.05)` filter of §1, and a cruise-only Kalman filter alongside:
 
 ```cpp
 for (int k = 1; k <= 20; ++k) {
@@ -706,6 +729,9 @@ for (int k = 1; k <= 20; ++k) {
 // k 18    0.833  0.095    17.454    -3.796   -3.479  -3.848    0.275   0.032
 // k 20    0.461  0.012    13.449    -3.467   -3.010  -3.824    0.000   0.002
 ```
+
+(Printed on 2026-11-04 with `MarkovChain<Maneuver>::persistent(0.95)`, one step per prediction,
+before Q1 was decided. Not rerun; the numbers below are read from this printout.)
 
 One fix into the maneuver, the cruise mode's NIS is 16.5 against the agile mode's 3.7. The
 chain predicts a turn probability of 0.09, and the likelihood ratio of
@@ -748,6 +774,8 @@ for (int k = 1; k <= 3; ++k) {
 // 2 modes, accepted 1, log p(z) -3.445
 ```
 
+(Printed on 2026-11-04 with the per-step chain, before Q1 was decided. Not rerun.)
+
 The allocation tests build it by hand instead, `auto result = Update{allocator};` and a `reserve()`.
 
 > **Q15.** Forward `emptyUpdate<M>()` and `emptyAxisUpdate<M>()` from the filter, defaulting the
@@ -758,24 +786,30 @@ The allocation tests build it by hand instead, `auto result = Update{allocator};
 ### Gating and rejection
 
 A gate tests each mode's branches against that mode's own innovation covariance. Condensed from
-`RejectedModesLoseTheirProbability`: a confident mode and a vague one, both at the origin, and a
-fix 30 m away:
+`RejectedModesLoseTheirProbability`: a confident mode and a vague one, both at the origin, a chain
+`ContinuousTimeMarkovChain<Maneuver>::persistent(0.1)`, and a fix 30 m away:
 
 ```cpp
 auto const gated = filter.update(fix({30, 0}), reductions::gate(0.997));
 // accepted 1; per mode accepted 0, 1; P(Turn) 1
 // log p(z|m) -302.2, -8.954; log p(z) -9.647
 filter.predict(1.0);
-// P(Cruise) 0.1; the cruise Gaussian's mean x 29.93
+// P(Cruise) 0.0906; the cruise Gaussian's mean x 29.93
 ```
 
-The rejected mode keeps its prior Gaussian with probability zero, and the chain gives it 0.1
-back at the next prediction. Its stale Gaussian at the origin is not what comes back, though:
+The rejected mode keeps its prior Gaussian with probability zero, and the chain gives it
+$(1 - e^{-0.2}) / 2 = 0.0906$, the probability of a jump to it over the step, back at the next
+prediction, as the test checks. Its stale Gaussian at the origin is not what comes back, though:
 mixing weights mode $i$ by $\mu_i$, which is zero, so the revived cruise mode starts from the turn
 mode's Gaussian, near the fix. That is the right outcome, and worth a sentence in the class
 comment, which says only that "the chain can bring it back". When every mode rejects, the
 measurement is rejected and the state is unchanged, as in every filter [update-outcomes].
 On the identity chain nothing brings the mode back (§11).
+
+(The other numbers were printed on 2026-11-04 with `MarkovChain<Maneuver>::persistent(0.9)`,
+which gave the cruise mode 0.1. They hold under the new chain: the update comes before any
+prediction, and the revived mode's mean, mixed from the turn mode alone, does not depend on the
+chain.)
 
 The reported $\log p(z)$ includes the rejected mode's likelihood ($\log(0.5 e^{-302.2} + 0.5
 e^{-8.954}) = -9.647$), as the Kalman and mixture filters report the likelihood before the
@@ -841,7 +875,9 @@ for (...) {
 
 (Printed on 2026-11-04 by `update<SensorMode>(robustFix(z))`, which ran the same arithmetic as
 `update(markovFix(z))` does now: `updateByAxis()` is unchanged but for finding the axis in the
-noise. Not rerun for Q10.)
+noise. Not rerun for Q10. The chain was then the per-step
+`MarkovChain<Mode>::independent(persistent(0.95), persistent(0.8))`, whose rates §4's chain now
+gives; not rerun for Q1 either.)
 
 Each mode's single branch carries the noise component it used (`component`, 0 for the inlier
 modes and 1 for the outlier ones) and its mode label. The first biased fix is classified as an
@@ -861,21 +897,28 @@ identical rows, the IMM is the first-order generalized pseudo-Bayesian estimator
 GPB1 with a memoryless chain is a Kalman filter whose measurement noise is the mixture, collapsed
 after each update. With a
 memoryless chain on `SensorMode` matching the noise weights, a target at 10 m/s along x, and six
-exact fixes of which the fourth is 25 m off:
+exact fixes, one second apart, of which the fourth is 25 m off:
 
 ```cpp
 auto const rate = CategoricalParams<SensorMode>::fromWeights(0.9, 0.1);
 auto const memoryless = MarkovChain<SensorMode>::memoryless(rate.toDensity().value());
-auto imm = ImmFilter{SwitchingModel{memoryless, cv(0.01)}, HybridParams{rate, initial}};
+auto imm = ImmFilter{SwitchingModel{memoryless, fixedStep(cv(0.01), 1.0)}, HybridParams{rate, initial}};
 auto robust = KalmanFilter{cv(0.01), initial};
-// imm.update(markovFix(z)) and robust.update(markovFix(z)) at each fix:
+// imm.predict() and robust.predict(1.0), then imm.update(markovFix(z)) and robust.update(markovFix(z)):
 // P(Outlier)        0.0144 0.00599 0.00442 1 0.00559 0.00269
 // KF outlier weight 0.0144 0.00599 0.00442 1 0.00559 0.00269
 // max difference in collapsed mean and covariance 1.1e-16, in log p(z) 4.4e-16
 ```
 
 (Printed on 2026-11-04, with `update<SensorMode>(robustFix(z))` for the IMM and `robustFix(z)` for
-the Kalman filter; the first difference was 8.9e-16 on 2026-10-27; both are rounding.)
+the Kalman filter; the first difference was 8.9e-16 on 2026-10-27; both are rounding. The IMM's
+model was then `cv(0.01)`, predicted by `predict(1.0)`; not rerun.)
+
+A memoryless chain is a per-step chain: the mode at each fix is drawn afresh, however long since
+the last, and no continuous-time chain gives identical rows over every step. Since Q1 a
+`MarkovChain` takes fixed-step models, so the IMM's model here is `fixedStep(cv(0.01), 1.0)` and
+its `predict()` takes no time step, while the Kalman filter predicts `cv(0.01)` over the same
+second.
 
 Mixing with identical rows starts both modes from the same collapsed Gaussian, which is exactly
 what `Collapse` hands the Kalman filter. The test `NoiseByModeIsMemorylessWhereNoModeSpaceHasItsAxis`
@@ -938,7 +981,8 @@ if (!gaussian.update(fix(z))) { ... }          // 1 branch per mode
 // branch weights in each mode of update(robustFix): 0.986 0.014 at k 1, 0.998 0.002 at k 8
 ```
 
-(Printed on 2026-11-04, the first column by `update<SensorMode>(robustFix(z))`.)
+(Printed on 2026-11-04, the first column by `update<SensorMode>(robustFix(z))`, all three with the
+per-step chain, before Q1 was decided. Not rerun.)
 
 The second column is still legal: an IMM with a `SensorMode` axis that receives unmarked mixture
 noise double-models the outliers, and its `P(Outlier)` is then the chain drifting toward its
@@ -1001,7 +1045,9 @@ ImmFilter.h:683:13: error: static assertion failed due to requirement 'internal:
 
 Per `predict()` with $M$ modes: $M$ mixing collapses, each over up to $M$ Gaussians (modes of weight
 zero skipped), none on the identity chain, and $M$ predictions through the modes' models, each a
-full transform. Per `update()` with $K$ noise components: $M$ updates of $K$ branches each, with one
+full transform. A continuous-time chain adds the exponential of its $M \times M$ generator, by
+scaling and squaring, once per prediction; a fixed-step switching model's `MarkovChain` adds
+nothing. Per `update()` with $K$ noise components: $M$ updates of $K$ branches each, with one
 transform of the measurement function per mode [additive-noise]. Noise by mode axis updates each
 mode with only the noise component its value names (`internal::WithNoiseComponent`), one branch
 and one gain per mode; on 2026-10-27 it computed all $K$ branches and kept one.
@@ -1047,8 +1093,8 @@ which is why a `MixtureFilter` of hybrids runs its components in order.
 | noise by mode axis with the wrong number of components | at run time, debug only | `the noise needs one component per value of the mode axis` (§7) |
 | noise by an axis the mode space lacks, or by a block such as `Position` | at `update()` | `the measurement's noise is by a mode axis, byMode<Axis>(), that the filter's mode space does not have` (§7, Q10) |
 | unmarked mixture noise, on a filter with a sensor axis | never | the sensor axis follows the chain alone (§7, Q10) |
-| a chain whose rows don't sum to one | at construction, debug only | `each row of the transition matrix must sum to one` |
-| `predict(0.0)` to synchronize sensors | never | the chain takes a step (§2, Q1) |
+| a chain of a negative or non-finite weight or rate, or a `MarkovChain` row of zeros | at run time, from `create()` | none: `create()` returns `ChainError::Negative`, `NonFinite`, or `ZeroRow`; a row that doesn't sum to one is divided by its total, and a generator's diagonal is not read (§2) |
+| a `MarkovChain` with models stepped by `predict(dt)` | at construction of the model | `a MarkovChain moves the mode one step whatever the time step: give models stepped by a time step a ContinuousTimeMarkovChain, or make them fixed-step with fixedStep(model, dt)` (§2, Q1) |
 | `s.toDensity()->collapsed().marginal<Position>()`, a view of a temporary | at compile time | `call to deleted member function 'marginal'` (§3, [view-stamp]) |
 | an AMM over a product mode with one model per maneuver | at construction of the model | `give one process model per value of the axis that selects it, or no path for one model shared by every mode` (§11) |
 
@@ -1062,8 +1108,8 @@ have different modes") can only fire for run-time `Finite` axes of different siz
 - Every branch's `mode` is the flat index of its mode's discrete value, an `Eigen::Index` as
   [discrete-spaces] makes a mode [weighted-branches].
 - `predict()` takes any `TimeStep<Scalar>` since [time-steps]
-  (`filter.predict(std::chrono::milliseconds{500})` moves the chain one step and the Gaussians half
-  a second), converted once to the filter's scalar; [time-steps] has the rule. `update()` is
+  (`filter.predict(std::chrono::milliseconds{500})` moves the mode by $e^{Q/2}$ and the Gaussians
+  half a second), converted once to the filter's scalar; [time-steps] has the rule. `update()` is
   `[[nodiscard]]` since [innovation-cholesky], as in the other filters that condition a Gaussian.
 - ~~`Hybrid` has `moments()` on itself, which `GaussianMixtureParams` lacks.~~ Neither parameters type has them now: the moments and the
   collapses are the density's, `Hybrid` over `HybridParams`, since they read the components
@@ -1090,7 +1136,8 @@ When the mode is fixed for all time but unknown, it is a parameter to identify r
 that switches. The estimator for that case is a bank of Kalman filters, one per mode, each running
 on its own, and the probability that each mode is the one in force by Bayes' rule over their
 measurement likelihoods. `AmmFilter<Component, Model, Method, Allocator>` is that estimator, and [autonomous-multiple-model] makes it the IMM with $\Pi = I$: a class derived from
-`ImmFilter` that adds only constructors, which build the identity chain on the state's modes.
+`ImmFilter` that adds only constructors, which build the identity chain on the state's modes: a
+`ContinuousTimeMarkovChain` that never moves, or with fixed-step models the identity `MarkovChain`.
 
 It is the multiple model estimator that
 [Athans et al. (1977)](../reference/bibliography.md#athans1977), §V.B–C, restate and credit to
@@ -1103,7 +1150,7 @@ the paper was not read, so the docs cite it through Athans et al.
 
 ```cpp
 auto amm = AmmFilter{HybridParams{CategoricalParams<Maneuver>{}, initial}, cv(0.01), cv(4.0)};
-amm.model().chain().matrix();   // 1 0 0 1
+amm.model().transition(1.0).matrix();   // 1 0 0 1: e^{0}
 // derived from ImmFilter<Gaussian<State>, SwitchingModel<Maneuver, double, Maneuver, CV, CV>>
 
 auto const start = HybridParams{CategoricalParams<Maneuver>{}, initial};
@@ -1117,9 +1164,10 @@ The state comes first and the models last, because the models are a pack; the me
 given, comes before the state for the same reason, where the other filters' constructors take it
 last. The models are one per mode, in flat-index order, or one shared. A model per value of one
 axis of a product mode is not a constructor of the AMM; it is the IMM given
-`switchingModel<Maneuver>(MarkovChain<Mode>{}, cruise, turn)`, whose identity chain takes the
-same shortcut (the mode probabilities stay at 0.25 each through a prediction). Giving the AMM two
-models for four modes fails at the switching model's count check of §4.
+`switchingModel<Maneuver>(ContinuousTimeMarkovChain<Mode>{}, cruise, turn)`, whose chain never
+moves and so takes the same shortcut (the mode probabilities stay at 0.25 each through a
+prediction). Giving the AMM two models for four modes fails at the switching model's count check
+of §4.
 
 `AmmFilter.IsABankOfKalmanFilters` is the evidence for the equivalence: over
 six fixes each mode's Gaussian equals a `KalmanFilter`'s with that mode's model, and the mode
@@ -1134,7 +1182,7 @@ auto amm = AmmFilter{HybridParams{CategoricalParams<Maneuver>{}, initial}, cv(0.
 auto floored = AmmFilter{HybridParams{CategoricalParams<Maneuver>{}, initial}, cv(0.01), cv(4.0)};
 auto const floor = upkeep::floorModes(0.01);
 // each step: predict(1.0), update(fix(truth)), and for floored, floor(floored.state())
-//            AMM           floored         IMM persistent(0.95)
+//            AMM           floored         IMM persistent(0.05)
 //        P(Turn) error  P(Turn) error  P(Turn) error
 // k  9    0.000  0.000   0.010  0.000   0.032  0.000
 // k 12    0.007  3.334   0.870  0.861   0.950  0.937
@@ -1144,6 +1192,10 @@ auto const floor = upkeep::floorModes(0.01);
 // k 25    1.000  0.000   0.990  0.026   0.035  0.018
 // k 30    1.000  0.000   0.286  0.499   0.030  0.004
 ```
+
+(Printed on 2026-11-04. The AMM's chain is the identity either way; the IMM's columns came from
+`MarkovChain<Maneuver>::persistent(0.95)`, one step per prediction, before Q1 was decided, and were
+not rerun.)
 
 The AMM does what it is built for and no more. Through the cruise its turn mode's probability
 falls toward zero (it is kept as a logarithm, so it never underflows, but it needs several fixes
@@ -1198,7 +1250,8 @@ where it lives.
 
 - **Smoothing.** `predictJoint(dt, ...)` records each prediction as a `HybridPredictedJoint`:
   the mode probabilities before the step, each mode's Gaussian moved through its own model (not
-  the mixed one), the chain's matrix, and each mode's Gaussian moved through every
+  the mixed one), the chain's matrix over the step ($e^{Q \, \Delta t}$ of a continuous-time
+  chain), and each mode's Gaussian moved through every
   other mode's model (`throughOtherModels`, read by `predictedThrough(from, model)`), $M(M - 1)$
   more predictions per step, from which the smoother weighs the modes by the expectation
   correction of [Barber (2006)](../reference/bibliography.md#barber2006). `HybridGaussianHistory`
@@ -1234,8 +1287,9 @@ component. `MixtureParams::merged()` and `merge()` work on hybrids, keeping each
 
 ## Questions
 
-1. The chain steps once per `predict()`, even for `dt` = 0; a continuous-time rate chain? (§2;
-   (a) done, the rate chain exists since [emissions], `SwitchingModel` taking it still open)
+1. ~~The chain steps once per `predict()`, even for `dt` = 0; a continuous-time rate chain? (§2)~~
+   *Decided [switching-models]: the chain's kind follows the models', and a `MarkovChain` with
+   models stepped by `predict(dt)` doesn't compile.*
 2. A product `CategoricalParams` from per-dimension marginals, for the initial mode prior (§3).
 3. ~~`Hybrid::marginal<Path>()` keeping the modes (§3).~~ Decided: a range over the modes, with
    `copy()` to a `Hybrid` [element-marginals].

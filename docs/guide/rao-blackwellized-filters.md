@@ -746,10 +746,10 @@ struct Steady {};
 struct Wander {};
 struct Clock : Named<Steady, Wander> {};
 auto const clock = SwitchingModel{
-    MarkovChain<Clock>::persistent(0.9).value(), ConstantVelocity<Bias, Drift>{0.01}, ConstantVelocity<Bias, Drift>{1.0}};
+    ContinuousTimeMarkovChain<Clock>::persistent(0.1), ConstantVelocity<Bias, Drift>{0.01}, ConstantVelocity<Bias, Drift>{1.0}};
 auto const prior = HybridGaussian<Rest, Clock>{CategoricalParams<Clock>::fromWeights(Clock{}, Eigen::Vector2d{0.7, 0.3}), initial};
 auto filter = RbPointMassFilter{clock, grid, prior};  // PerPointCovariance, deduced from the model
-filter.predict(1.0);                        // each cell: mix, predict each mode, step the chain
+filter.predict(1.0);                        // each cell: mix, predict each mode, move the modes by e^{Q}
 filter.update(range(z, beacon));            // each cell: an IMM update given its center
 filter.update(delayed(z, beacon));          // noise byMode<Clock>(): the components are Clock's values
 filter.state().conditional(i);              // HybridGaussian<Rest, Clock>
@@ -1033,7 +1033,7 @@ per value of `Mode`:
 
 ```cpp
 auto const motion = SwitchingModel{
-    MarkovChain<Mode>::persistent(0.9).value(), ConstantVelocity<Position, Velocity>{0.01}, ConstantVelocity<Position, Velocity>{2.0}};
+    ContinuousTimeMarkovChain<Mode>::persistent(0.1), ConstantVelocity<Position, Velocity>{0.01}, ConstantVelocity<Position, Velocity>{2.0}};
 auto filter = RbParticleFilter{motion, particleGaussian<Position>(State{}, ParticleSet<Position>{positions}, hybrid)};
 filter.predict(rng, 1.0);                         // std::expected<void, NumericError>
 filter.update(makeRangeRate(z, beacon));          // each particle: an IMM update given its position
@@ -1043,8 +1043,10 @@ filter.state().modes();                           // P(Mode), summed over the pa
 ```
 
 The prediction is the IMM's and the marginalized particle filter's together. For each particle it
-mixes the modes' Gaussians through the chain as `ImmRecursion::predict()` does, and predicts the
-whole state given the particle through each mode's model, which gives the joint predictive a
+mixes the modes' Gaussians through the chain over the step, $e^{Q \Delta t}$ of the switching
+model's `ContinuousTimeMarkovChain` or the `MarkovChain` of fixed-step models, as
+`ImmRecursion::predict()` does, and predicts the whole state given the particle through each mode's
+model, which gives the joint predictive a
 mixture over the modes, $\sum_j \pi_j \, \mathcal{N}(m_j, P_j)$ with $\pi$ the chain's predicted
 mode probabilities. It draws the particle's new value from that mixture, a mode $k$ from $\pi$ by
 one uniform draw and then $p' = m_{k,p} \boxplus F_k z$, and conditions every mode's Gaussian over

@@ -35,8 +35,10 @@ prediction of each mode through every other mode's model, so §6's examples were
 maneuver one on a track this refresh defines. A kept `HybridPredictedJoint` can no longer be
 written `auto joint = HybridPredictedJoint<...>{}` (Q12), and a fixed-step model is spelled
 `fixedStep<State>(model, dt)` [space-storage]. The particle example of §8 was rerun on a track and
-seed it now states. The filters themselves are reviewed in
-[imm-filter.md](imm-filter.md), [particle-filter.md](particle-filter.md), and
+seed it now states. Since then imm-filter.md Q1 was decided: an IMM whose models are stepped by
+`predict(dt)` takes a `ContinuousTimeMarkovChain`, so §6's maneuver example now spells one, and
+its printed numbers, from the per-step chain, were not rerun (§6). The filters themselves are
+reviewed in [imm-filter.md](imm-filter.md), [particle-filter.md](particle-filter.md), and
 [hidden-markov-filter.md](hidden-markov-filter.md), and the mixture filter in `MixtureFilter.h`;
 this document covers only what they record and what is done with it.
 
@@ -295,7 +297,9 @@ history.push(filter.predictJoint(1.0));
 
 `ImmFilter::predictJoint(dt, joint, inputs...)` fills a
 `HybridPredictedJoint<State, Mode>`: the mode probabilities before the step, one `PredictedJoint`
-per mode, the chain's matrix, which the caller may change between steps, and
+per mode, the matrix of the chain over the step, `model().transition(dt)` ($e^{Q \, \Delta t}$ of
+the switching model's `ContinuousTimeMarkovChain`, or with fixed-step models the `MarkovChain`
+itself), so that a step whose length or chain the caller changes is recorded as it was taken, and
 `throughOtherModels`, each mode's filtered Gaussian moved through every other mode's model.
 `HybridGaussianHistory<State, Mode>` records copies of it, each with a smoothed `HybridGaussian`,
 and `smooth(filter.state())` runs the backward pass. The joint is filled in place so that one kept
@@ -305,7 +309,7 @@ the mixed Gaussian. With the cross predictions the mode probabilities need, that
 predictions for $n$ modes on top of the filter's.
 
 Each backward step runs the IMM in reverse. With $\mu_{t \mid t}$ the filtered mode probabilities
-and $\Pi$ the chain:
+and $\Pi$ the recorded chain over the step from $t$ to $t + 1$, with entries $p_{ij}$:
 
 - the backward transition $b_{ij} = p_{ji}\, \mu^j_{t \mid t} / e_i$, with
   $e_i = \sum_l p_{li}\, \mu^l_{t \mid t}$;
@@ -343,18 +347,21 @@ correction to 1e-10. That transcription checks that the code is the source. On a
 at step 20, the smoothed maneuver probability rises over steps 17 to 22, 0.998 at the turn's last
 step (`ImmSmootherPlacesAManeuverWhereTheFilterLags`), and over nine fixes of a slowly turning
 target, 512 mode sequences, it is within 0.03 of enumeration
-(`ImmSmootherModeProbabilitiesTrackEnumeration`).
+(`ImmSmootherModeProbabilitiesTrackEnumeration`). The 0.998 was measured with a per-step chain
+before imm-filter.md Q1 was decided, and not remeasured with the continuous-time chain the test now
+takes.
 
 The example below checks the source against the exact posterior on a harder track. A 1-D target
 moves at 1 m/s and then at 3 m/s from step 6, seen as $z_k = p_k + 0.4 \sin(2.3 k)$ with
 $R = 0.5$, under a quiet and an agile constant-velocity mode with
-`MarkovChain<Maneuver>::persistent(0.95)`. Over thirteen steps the exact posterior enumerates all
+`ContinuousTimeMarkovChain<Maneuver>::persistent(0.05)`, a step of one second. Over thirteen steps
+the exact posterior enumerates all
 $2^{13}$ mode sequences, with a Kalman filter and RTS smoother for each sequence, where $r_k$ is
 the model of the step into $k$:
 
 ```cpp
 auto filter = ImmFilter{
-    SwitchingModel{MarkovChain<Maneuver>::persistent(0.95).value(),
+    SwitchingModel{ContinuousTimeMarkovChain<Maneuver>::persistent(0.05),
                    ConstantVelocity<Position, Velocity>{0.01},
                    ConstantVelocity<Position, Velocity>{4.0}},
     HybridParams{CategoricalParams<Maneuver>{}, GaussianParams<State>{State{}, Eigen::Vector2d{0.0, 1.0}, initialCov}}};
@@ -382,6 +389,10 @@ history.smooth(filter.state());
 // 10      0.773  0.688            0.503  0.362            3.03  2.98              0.591
 // 12      0.498  0.347            0.498  0.347            3.21  3.11              0.498
 ```
+
+(Printed on 2026-11-04 with `MarkovChain<Maneuver>::persistent(0.95)`, one step per prediction,
+for the IMM and for the enumeration alike, before imm-filter.md Q1 was decided. Not rerun; the
+numbers in the paragraph below are read from this printout.)
 
 The last column is Kim's $\sum_i b_{ij}\, \mu^i_{t+1 \mid N}$, computed by hand from the same
 record. The filtered IMM is within 0.15 of exact (at the last step, which every smoother starts
@@ -432,6 +443,10 @@ maneuver track they were certain of the maneuver at steps 5 to 7 where enumerati
 | [Kim (1994)](../reference/bibliography.md#kim1994), $\sum_i b_{ij} \mu^i_{t+1 \mid N}$ | 0.10 | exact |
 | [Barber (2006)](../reference/bibliography.md#barber2006), mean approximation | 0.024 | exact |
 
+(Measured with the per-step chain `MarkovChain<Maneuver>::create({{0.9, 0.1}, {0.3, 0.7}})`, before
+imm-filter.md Q1 was decided. The test now takes the rates 0.1 and 0.3 over its one-second step,
+$e^{Q}$, and still checks Barber's error against 0.03; the errors above were not remeasured.)
+
 Kim's needs nothing new, being the total of the backward mixing weights, but it takes the mode at
 $t$ given the mode at $t+1$ to depend on the measurements up to $t$ alone, so it loses what the
 later fixes say about a maneuver through the continuous state, and the turning-target test fails
@@ -466,6 +481,10 @@ and Barber's the other way, so one test case does not settle the choice (Q12).
 > allocator constructor. `HybridPredictedJoint<State, Maneuver> joint;` works, as the Doxygen writes
 > it. Should the joint have a constructor, empty or from an allocator, as the IMM's update result
 > has?
+> *Update:* the numbers compared above, §6's example and the table of replacements, were measured
+> with per-step chains before imm-filter.md Q1 was decided. The example and the tests now use
+> continuous-time chains, so a comparison made for this question should be measured again with
+> them.
 
 `push()` here takes the joint by `const &` and always copies it, into a new node or into the
 oldest node of a full window. `GaussianHistory::push()` and `CategoricalHistory::push()` take their

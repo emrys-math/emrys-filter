@@ -22,13 +22,13 @@ using Emrys::additiveNoise;
 using Emrys::CategoricalParams;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
+using Emrys::ContinuousTimeMarkovChain;
 using Emrys::FixedStepModel;
 using Emrys::GaussianMixtureParams;
 using Emrys::GaussianParams;
 using Emrys::HybridParams;
 using Emrys::KalmanFilter;
 using Emrys::Linear;
-using Emrys::MarkovChain;
 using Emrys::Named;
 using Emrys::ScalarOf;
 using Emrys::Steps;
@@ -301,8 +301,10 @@ TEST(TimeSteps, GaussianMixtureFilterTakesDurationsAndAdvancesByACount)
     }
 }
 
-// An IMM over two modes predicts the same over a step in seconds and in milliseconds, and with
-// fixed-step models advances by a count as that many calls do, the chain stepping each time.
+// An IMM over two modes predicts the same over a step in seconds and in milliseconds, its modes
+// moved by the chain over the step, e^{Q dt}, which a duration gives as its seconds do; and with
+// fixed-step models, whose chain is the continuous one taken once over their step, it advances by a
+// count as that many calls do, the chain stepping each time.
 TEST(TimeSteps, ImmFilterTakesDurationsAndAdvancesByACount)
 {
     struct Cruise
@@ -314,21 +316,28 @@ TEST(TimeSteps, ImmFilterTakesDurationsAndAdvancesByACount)
     struct Maneuver : Named<Cruise, Turn>
     {};
 
-    auto const chain = MarkovChain<Maneuver>::create(Eigen::Matrix2d{{0.95, 0.05}, {0.1, 0.9}}).value();
+    auto const chain = ContinuousTimeMarkovChain<Maneuver>::create(Eigen::Matrix2d{{0, 0.5}, {1.0, 0}}).value();
     auto const conditionals = std::vector<GaussianParams<State>>{makeInitial(), makeInitial()};
     auto const initial =
         HybridParams{CategoricalParams<Maneuver>::fromWeights(Maneuver{}, Eigen::Array2d{0.6, 0.4}), conditionals};
     auto const quiet = makeModel();
     auto const agile = ConstantVelocity<Position, Velocity>{4.0};
 
-    auto seconds = Emrys::ImmFilter{SwitchingModel{chain, quiet, agile}, initial};
-    auto milliseconds = Emrys::ImmFilter{SwitchingModel{chain, quiet, agile}, initial};
+    auto const switching = SwitchingModel{chain, quiet, agile};
+    expectSame(switching.transition(timeStepInMilliseconds).matrix(), switching.transition(timeStep).matrix());
+    auto seconds = Emrys::ImmFilter{switching, initial};
+    auto milliseconds = Emrys::ImmFilter{switching, initial};
     seconds.predict(timeStep);
     milliseconds.predict(timeStepInMilliseconds);
     expectSame(
         milliseconds.state().modes().toDensity().value().probabilities(),
         seconds.state().modes().toDensity().value().probabilities()
     );
+    auto const moved = Emrys::predict(initial.modes(), switching.transition(timeStepInMilliseconds));
+    EXPECT_TRUE(milliseconds.state().modes().toDensity().value().probabilities().isApprox(
+        moved.toDensity().value().probabilities(),
+        1e-12
+    ));
     for (Index m = 0; m < 2; ++m)
     {
         expectSameGaussian(milliseconds.state().conditional(m), seconds.state().conditional(m));
@@ -338,6 +347,7 @@ TEST(TimeSteps, ImmFilterTakesDurationsAndAdvancesByACount)
         SwitchingModel{chain, FixedStepModel{quiet, State{}, timeStep}, FixedStepModel{agile, State{}, timeStep}},
         initial
     };
+    expectSame(stepped.model().transition().matrix(), chain.transition(timeStep).matrix());
     auto counted = stepped;
     for (int k = 0; k < 5; ++k)
     {
@@ -414,8 +424,7 @@ TEST(TimeSteps, ContinuousTimeChainsAndEmissionsTakeDurations)
     struct Regime : Named<Quiet, Busy>
     {};
 
-    auto const chain =
-        Emrys::ContinuousTimeMarkovChain<Regime>::create(Eigen::Matrix2d{{-0.4, 0.4}, {1.1, -1.1}}).value();
+    auto const chain = ContinuousTimeMarkovChain<Regime>::create(Eigen::Matrix2d{{-0.4, 0.4}, {1.1, -1.1}}).value();
     expectSame(chain.transition(250ms).matrix(), chain.transition(0.25).matrix());
 
     auto const initial = CategoricalParams<Regime>::fromWeights(Regime{}, Eigen::Vector2d{0.7, 0.3});

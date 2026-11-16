@@ -42,6 +42,18 @@ instead.
   `ChainError::NotAProbability` when the probability of staying is not in [0, 1], in place of
   asserting: write `MarkovChain<Maneuver>::persistent(0.95).value()` for
   `MarkovChain<Maneuver>::persistent(0.95)`, or handle the error.
+- **Breaking:** a `SwitchingModel` moves the mode over the same step as its models. With models
+  stepped by `predict(dt)`, its chain is a `ContinuousTimeMarkovChain`, and each prediction moves
+  the mode by $e^{Q \Delta t}$, where it moved one step of a `MarkovChain` whatever `dt` was; a
+  `MarkovChain` there is now a compile-time error. Write
+  `SwitchingModel{ContinuousTimeMarkovChain<Maneuver>::persistent(0.05), cruise, turn}` for
+  `SwitchingModel{MarkovChain<Maneuver>::persistent(0.95).value(), cruise, turn}`, with each rate
+  about the old probability of leaving divided by the step, or make the models fixed-step with
+  `fixedStep(model, dt)` to keep the `MarkovChain`. A `ContinuousTimeMarkovChain` given with
+  fixed-step models is taken over their step. `switchingModel<Axis>()` takes either chain the same
+  way, `transition(dt)` (or `transition()` with fixed-step models) returns the chain over a
+  prediction, and `predict(0.0)` no longer moves the mode. The IMM, the AMM, and the
+  Rao-Blackwellized filters follow.
 - `ChainError` gains `Negative`, `NonFinite`, `ZeroRow`, `ShortSojourn`, and `NotAProbability`, and
   prints in words.
 

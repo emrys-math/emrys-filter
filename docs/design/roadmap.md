@@ -937,7 +937,7 @@ one too):
 
 - [ ] hidden-markov-filter.md Q1 (the chain first in `HiddenMarkovFilter`), Q3 (an emission in
       another scalar), Q6 (`persistent()` takes a probability in one chain and a rate in the
-      other), and Q7 (the shape of `SwitchingModel` before it takes a continuous chain).
+      other).
 - [ ] particle-filter.md Q7, Q9, and Q10; Q3 under its unfavored option.
 - [ ] rao-blackwellized-filters.md Q1, Q3, Q4, Q8, Q11, Q13, Q14, Q16, and Q19.
 - [ ] smoothing.md Q8 (`ValueSequence::values` holds flat indices), whose favored answer is typed

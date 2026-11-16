@@ -10,6 +10,7 @@
 // prediction whose draw has no density.
 
 #include <EmrysFilter/Distributions/Categorical.h>
+#include <EmrysFilter/Distributions/ContinuousTimeMarkovChain.h>
 #include <EmrysFilter/Distributions/Gaussian.h>
 #include <EmrysFilter/Distributions/Hybrid.h>
 #include <EmrysFilter/Distributions/Upkeep.h>
@@ -47,6 +48,7 @@
 using Emrys::additiveNoise;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
+using Emrys::ContinuousTimeMarkovChain;
 using Emrys::drawParticleGaussian;
 using Emrys::GaussianParams;
 using Emrys::given;
@@ -1058,7 +1060,7 @@ struct Steady
 struct Maneuvering
 {};
 
-// The target holds its velocity or maneuvers, and stays as it is with probability 0.9.
+// The target holds its velocity or maneuvers, and leaves either at the rate 0.1 per unit of time.
 struct Mode : Emrys::Named<Steady, Maneuvering>
 {};
 
@@ -1067,10 +1069,10 @@ using Rest = ParticleGaussianParams<State, Position>::RestSpace;
 // The modes differ in their process noise, which moves the position, so a particle's draw of its
 // position tells them apart.
 auto
-makeSwitching(double stay = 0.9)
+makeSwitching()
 {
     return Emrys::SwitchingModel{
-        Emrys::MarkovChain<Mode>::persistent(stay).value(),
+        ContinuousTimeMarkovChain<Mode>::persistent(0.1),
         ConstantVelocity<Position, Velocity>{0.01},
         ConstantVelocity<Position, Velocity>{2.0}
     };
@@ -1296,7 +1298,7 @@ TEST(RbParticleFilter, HybridParticlesOfOneDynamicsMatchTheFilterOfOneGaussian)
 {
     auto rng = std::mt19937_64{32};
     auto const initial = drawParticleGaussian<Position, PerPointCovariance>(makeInitial(), 30, rng);
-    auto const chain = Emrys::MarkovChain<Mode>::create(Eigen::Matrix2d{{0.9, 0.1}, {0.3, 0.7}}).value();
+    auto const chain = ContinuousTimeMarkovChain<Mode>::create(Eigen::Matrix2d{{0, 0.1}, {0.3, 0}}).value();
     auto const priorModes = Emrys::CategoricalParams<Mode>::fromWeights(Mode{}, Eigen::Vector2d{0.6, 0.4});
     auto hybrids = std::vector<Emrys::HybridGaussianParams<Rest, Mode>>{};
     for (Eigen::Index i = 0; i < initial.size(); ++i)
@@ -1328,7 +1330,7 @@ TEST(RbParticleFilter, HybridParticlesOfOneDynamicsMatchTheFilterOfOneGaussian)
         ASSERT_TRUE(hybrid.update(makeFix(z)));
         ASSERT_TRUE(fixed.update(makeFix(z)));
         ASSERT_TRUE(plain.update(makeFix(z)));
-        modes = Emrys::predict(modes, chain);
+        modes = Emrys::predict(modes, chain.transition(timeStep));
         Eigen::ArrayXd const expectedModes = (modes.logWeights() - modes.logTotalWeight().value()).exp();
         auto const expectMatches = [&](auto const & filter) {
             for (Eigen::Index i = 0; i < plain.state().size(); ++i)
@@ -1399,7 +1401,7 @@ TEST(ParticleGaussian, HoldsAHybridPerParticle)
 // A mode whose prediction gives the position a covariance that isn't positive definite has no
 // density for the draw to be weighed by, so predict() returns NotPositiveDefinite and leaves the
 // particles and their hybrids as they were. Here the second mode has no process noise and starts
-// with its velocity known, and the identity chain keeps it from mixing with the first.
+// with its velocity known, and the chain that never moves keeps it from mixing with the first.
 TEST(RbParticleFilter, AHybridPredictionWithoutADensityLeavesTheState)
 {
     auto rng = std::mt19937_64{34};
@@ -1407,7 +1409,7 @@ TEST(RbParticleFilter, AHybridPredictionWithoutADensityLeavesTheState)
     prior.setConditional(1, GaussianParams<Rest>{Rest{}, Eigen::Vector2d{1, 0}, Eigen::Matrix2d::Zero()});
     auto filter = RbParticleFilter{
         Emrys::SwitchingModel{
-            Emrys::MarkovChain<Mode>::persistent(1.0).value(),
+            ContinuousTimeMarkovChain<Mode>{},
             ConstantVelocity<Position, Velocity>{0.01},
             ConstantVelocity<Position, Velocity>{0.0}
         },

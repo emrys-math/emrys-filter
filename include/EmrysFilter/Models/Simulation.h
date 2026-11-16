@@ -324,7 +324,8 @@ simulate(Eigen::MatrixBase<Derived> const & x, M const & model, G & rng, Args co
  * or hidden Markov model, as simulate() of a process model draws the true state's.
  *
  * \code
- * mode = simulate(mode, switching.chain(), rng);
+ * mode = simulate(mode, switching.transition(dt), rng);  // models stepped by dt
+ * mode = simulate(mode, switching.transition(), rng);    // fixed-step models
  * \endcode
  *
  * It makes one uniform draw against the running sum of the row, as drawSample() of a Categorical

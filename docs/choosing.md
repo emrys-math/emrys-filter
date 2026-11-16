@@ -80,8 +80,9 @@ use.
   weights by the mixture's density exactly.
 - **Outliers that come in runs**, such as a sensor that sticks or a bias that lasts several
   measurements: the same mixture with `.byMode<Sensor>()` after `additiveNoise()`, and an
-  `ImmFilter` whose mode space has a `Sensor` axis with a `MarkovChain` of how long the outliers
-  last. The filter learns from each measurement whether the sensor is in its outlier state. Any
+  `ImmFilter` whose mode space has a `Sensor` axis with a `ContinuousTimeMarkovChain` of how long
+  the outliers last, or a `MarkovChain` of how many measurements they last when the models are
+  fixed-step. The filter learns from each measurement whether the sensor is in its outlier state. Any
   other filter reads that noise as the memoryless mixture of the item above, so one measurement
   model serves both.
 - **Any other measurement error distribution**: a measurement model known only by its
@@ -109,9 +110,11 @@ use.
 - **One process model**, whatever its nonlinearity: the filters above.
 - **Switching during the run**, where the motion differs qualitatively from time to time, such as
   a target that alternates between straight flight and turns, or a vehicle that stops and starts:
-  `ImmFilter` over a `SwitchingModel`, one process model per mode, with a `MarkovChain` of the
-  switching probabilities. Its estimate at each step mixes the modes by their probabilities, and
-  a mode that was ruled out comes back when the chain lets it. A sensor that sees the state
+  `ImmFilter` over a `SwitchingModel`, one process model per mode, with a
+  `ContinuousTimeMarkovChain` of the switching rates, which each prediction takes over its time
+  step, or with fixed-step models a `MarkovChain` of the switching probabilities per step. Its
+  estimate at each step mixes the modes by their probabilities, and a mode that was ruled out comes
+  back when the chain lets it. A sensor that sees the state
   differently in some modes, with a bias or through another function, gives one measurement per
   value of a mode axis, `switchingMeasurement<Sensor>(nominal, biased)`, and each mode is updated by
   its own.
@@ -120,7 +123,7 @@ use.
   autonomous multiple model estimator, the same bank over the identity chain, so the mode
   probabilities converge on the model the measurements favor instead of mixing. Apply
   `upkeep::floorModes()` after each update so that no mode's probability falls to where it can never
-  recover. If the model might change after all, use the IMM with small switching probabilities.
+  recover. If the model might change after all, use the IMM with small switching rates.
 - **A discrete state only**, such as a mode, a count, or an arrival process with no continuous
   state: `HiddenMarkovFilter`.
 

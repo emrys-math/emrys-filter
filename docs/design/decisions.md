@@ -1492,32 +1492,32 @@ state is a `HybridGaussian`, and a branch's mode is a flat index into its mode s
 
 ### switching-models
 
-*A switching process model is a set of per-mode models plus Π.*
+*A switching process model is a set of per-mode models plus a chain over their step.*
 
-**Rule.** A `SwitchingModel` holds one process model per mode and a transition matrix Π, and is
-owned by the filter as a single process model is. All modes share one augmented state space; a
-mode that doesn't use a block holds it (for example, an acceleration held at zero with small
-noise). Modes whose models differ only in $Q$ reuse one transform of the transition. Each mode's
-model may predict by a method of its own (imm-filter.md Q7), and by default every mode predicts by
-the same one, the filter's. A model carries its own method as a fixed-step model always does, or
-through `withMethod(model, method)`, a wrapper only a switching model takes:
-`SwitchingModel{chain, cruise, withMethod(turn, methods::unscented())}`. Fixed-step models may
-differ in their methods (imm-filter.md Q14). The filter's `MethodType` and `method()` are the method
-of the modes that carry none of their own: `Linearized` by default, and `ModelsMethod`, the empty
-tag, when every model is fixed-step and no mode needs one.
+**Rule.** A `SwitchingModel` holds one process model per mode and a chain on the modes, and is
+owned by the filter as a single process model is. The chain's kind follows the models': with
+models stepped by a time step it is a `ContinuousTimeMarkovChain`, moving the mode by
+$\Pi = e^{Q \Delta t}$ over each prediction; with fixed-step models it is a `MarkovChain`, and a
+continuous-time chain given there is taken over their step once. A `MarkovChain` with models
+stepped by a time step doesn't compile. All modes share one state space; a mode that doesn't use a
+block holds it. Modes whose models differ only in $Q$ reuse one transform of the transition. Each
+mode's model predicts by the filter's method unless it carries its own, as a fixed-step model does
+or through `withMethod(model, method)`, a wrapper only a switching model takes; fixed-step models
+may differ in their methods. The filter's `method()` is the method of the modes that carry none:
+`Linearized` by default, and `ModelsMethod`, the empty tag, when every model is fixed-step.
 
-**Why.** Mixing Gaussians of different dimensions is messy, and a common space is the standard
-approach. A method per model, because how well a linearization serves depends on the model: a
-constant-velocity mode is affine and exact under `Linearized`, while a coordinated-turn mode beside
-it may need `Unscented`, and one method for both would run the affine mode through $2n + 1$ sigma
-points for nothing. The default is one method, because most switching models are variations of one
-motion and a user should name a second method only to mean it.
+**Why.** A common space is the standard approach; mixing Gaussians of different dimensions is
+messy. A method per model, because a constant-velocity mode is exact under `Linearized` while a
+coordinated-turn mode beside it may need `Unscented`. The chain follows the models' step because
+the mode and the state move over the same interval, as a process model's noise is discretized over
+it [continuous-time-noise].
 
-**Rejected.** Resizable spaces for dimensions that depend on the mode. One method for every mode,
-the filter's alone, which was the rule until imm-filter.md Q7. `withMethod()` as a process model
-that every filter takes, as a fixed-step model without the step: outside a switching model it only
-moves the filter's method into the model. The first model's method as the filter's `method()` when
-the modes' methods differ, which names one mode's method as if it were all of them.
+**Rejected.** A `MarkovChain` beside models stepped by a time step, one $\Pi$ per prediction
+whatever its step, the rule until imm-filter.md Q1: asynchronous sensors or a changing rate
+silently changed the switching rate, and `predict(0.0)` moved the mode. Resizable spaces for
+dimensions that depend on the mode. One method for every mode (until imm-filter.md Q7).
+`withMethod()` as a process model every filter takes: outside a switching model it only moves the
+filter's method into the model. The first model's method as the filter's `method()`.
 
 **Where.** `Models/SwitchingModel.h`; the modes' predictions in `Filters/ImmFilter.h` and
 `Filters/RbParticleFilter.h`.
@@ -2352,7 +2352,8 @@ measurement contradicts with a weight it can't be given consistently.
 
 **Rule.** The IMM's state is a `Hybrid`: mode weights over a discrete mode space and one component
 per mode. Its `SwitchingModel` holds a model per value of a mode axis, or one shared
-(`switchingModel<Maneuver>(chain, cruise, turn)`), and its chain moves once per prediction.
+(`switchingModel<Maneuver>(chain, cruise, turn)`), and its chain moves over the models' step
+[switching-models].
 `predict()` mixes each mode's Gaussian through the chain and predicts it by its mode's model;
 `update()` updates each mode, reduces with a policy that keeps one Gaussian (`Keep` doesn't
 compile), and reweights by $p(z \mid m)$, a rejected mode keeping its Gaussian at probability zero.

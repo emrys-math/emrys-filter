@@ -703,15 +703,25 @@ squareRootOtherScalar()
     sizeof(Emrys::SwitchingModel<Maneuver, double, Maneuver, decltype(makeFixed()), decltype(makeModel())>);
 #endif
 
-#if defined(SWITCHING_MODEL_COUNT)  // static_assert: SwitchingModel.h: give one process model per value of the axis
+#if defined(SWITCHING_PER_STEP_CHAIN)  // static_assert: SwitchingModel.h: a MarkovChain moves the mode one step
+// A MarkovChain moves the mode one step of the chain whatever the time step that moves the models.
 [[maybe_unused]] auto const switching =
-    Emrys::SwitchingModel{Emrys::MarkovChain<Maneuver>::persistent(0.9).value(), makeModel(), makeModel(), makeModel()};
+    Emrys::SwitchingModel{Emrys::MarkovChain<Maneuver>::persistent(0.9).value(), makeModel(), makeModel()};
+#endif
+
+#if defined(SWITCHING_MODEL_COUNT)  // static_assert: SwitchingModel.h: give one process model per value of the axis
+[[maybe_unused]] auto const switching = Emrys::SwitchingModel{
+    Emrys::ContinuousTimeMarkovChain<Maneuver>::persistent(0.1),
+    makeModel(),
+    makeModel(),
+    makeModel()
+};
 #endif
 
 #if defined(SWITCHING_AXIS_ONE_MODEL)  // static_assert: SwitchingModel.h: or no path for one model shared by every mode
 // One model where the path names a two-value axis is a forgotten model, not one shared by every mode.
 [[maybe_unused]] auto const switching = Emrys::switchingModel<Maneuver>(
-    Emrys::MarkovChain<Emrys::DiscreteProduct<Maneuver, Sensor>>::persistent(0.9).value(),
+    Emrys::ContinuousTimeMarkovChain<Emrys::DiscreteProduct<Maneuver, Sensor>>::persistent(0.1),
     makeModel()
 );
 #endif

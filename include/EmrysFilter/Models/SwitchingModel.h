@@ -1,13 +1,13 @@
 #pragma once
 
 /** \file
- * SwitchingModel (decisions.md [switching-models], [imm]): a Markov chain on a discrete mode space and the process
- * model each mode follows, one per mode, one per value of a mode axis through switchingModel(),
- * or one shared, and over a fixed step when every model is a FixedStepModel [fixed-step-models]. The
- * interacting multiple model filter's process model. withMethod() gives one mode's model a prediction
- * method of its own, ModelWithMethod. SwitchingMeasurement is the model's counterpart for an update:
- * one measurement per value of a mode axis, through switchingMeasurement(). Read Reduction.h next;
- * the design review is docs/guide/imm-filter.md.
+ * SwitchingModel (decisions.md [switching-models], [imm]): a Markov chain on a discrete mode space, continuous-time
+ * unless the models are fixed-step, and the process model each mode follows, one per mode, one per value of a mode axis
+ * through switchingModel(), or one shared, and over a fixed step when every model is a FixedStepModel
+ * [fixed-step-models]. The interacting multiple model filter's process model. withMethod() gives one mode's model a
+ * prediction method of its own, ModelWithMethod. SwitchingMeasurement is the model's counterpart for an update: one
+ * measurement per value of a mode axis, through switchingMeasurement(). Read Reduction.h next; the design review is
+ * docs/guide/imm-filter.md.
  */
 
 #include <algorithm>
@@ -20,6 +20,7 @@
 #include <EmrysFilter/Core/Macros.h>
 #include <EmrysFilter/Core/Math.h>
 #include <EmrysFilter/Distributions/Categorical.h>
+#include <EmrysFilter/Distributions/ContinuousTimeMarkovChain.h>
 #include <EmrysFilter/Models/MeasurementModel.h>
 #include <EmrysFilter/Models/ProcessModel.h>
 #include <EmrysFilter/Spaces/Discrete.h>
@@ -185,7 +186,14 @@ withMethod(Model model, Method method)
  *  - one model shared by every mode, when only the measurements depend on the mode:
  *    <tt>SwitchingModel{chain, model}</tt>.
  *
- * The chain moves the mode once per prediction, whatever its time step.
+ * The chain moves the mode over the same step as the models, so its kind follows theirs
+ * [switching-models]:
+ *  - with models stepped by a time step, the chain is a ContinuousTimeMarkovChain, and each
+ *    prediction over \f$ \Delta t \f$ moves the mode by \f$ \Pi = e^{Q \Delta t} \f$
+ *    (see transition()). A MarkovChain there is a compile-time error, since it would move the mode
+ *    one step whatever the time step;
+ *  - with fixed-step models, the chain is a MarkovChain, which moves the mode once per prediction.
+ *    A ContinuousTimeMarkovChain given there is taken over the models' step, once.
  *
  * Each mode predicts by the filter's method, unless its model carries a method of its own: a model
  * given to withMethod() does, so that a constant-velocity mode, affine and exact under Linearized,
@@ -207,7 +215,7 @@ withMethod(Model model, Method method)
  * \tparam Models      the process models, in the order of the axis's values, each of which may be a
  *                     ModelWithMethod
  *
- * \sa ImmFilter, MarkovChain, processModel(), withMethod()
+ * \sa ImmFilter, ContinuousTimeMarkovChain, MarkovChain, processModel(), withMethod()
  */
 template <DiscreteSpace ModeSpace_, RealScalar Scalar_, typename Path_, typename... Models>
 class SwitchingModel
@@ -222,9 +230,17 @@ class SwitchingModel
 
 public:
 
-    using Scalar = Scalar_;                              ///< the scalar type of the chain's probabilities
-    using ModeSpaceType = ModeSpace_;                    ///< the discrete mode space
-    using ChainType = MarkovChain<ModeSpace_, Scalar_>;  ///< the chain's type
+    /** Whether the models are fixed-step, bound to a space or not yet: then the chain is a
+     * MarkovChain over their step, and otherwise a ContinuousTimeMarkovChain.
+     */
+    static constexpr bool FixedSteps = ((isFixedStep<Models> || isUnboundStep<Models>) && ...);
+
+    using Scalar = Scalar_;            ///< the scalar type of the chain's probabilities or rates
+    using ModeSpaceType = ModeSpace_;  ///< the discrete mode space
+
+    /** The chain's type: a MarkovChain with fixed-step models, a ContinuousTimeMarkovChain otherwise. */
+    using ChainType = std::
+        conditional_t<FixedSteps, MarkovChain<ModeSpace_, Scalar_>, ContinuousTimeMarkovChain<ModeSpace_, Scalar_>>;
 
     /** Whether one model serves every mode: one model and no path, the path being the whole mode
      * space. One model with a path that names an axis is one per value of that axis, and its count
@@ -267,6 +283,30 @@ public:
         }
     }
 
+    /** The continuous-time chain \a chain taken over the step of the fixed-step \a models,
+     * \f$ \Pi = e^{Q \Delta t} \f$, and \a models, as the other constructor takes them.
+     */
+    SwitchingModel(ContinuousTimeMarkovChain<ModeSpace_, Scalar_> const & chain, Models... models)
+        requires FixedSteps
+        : SwitchingModel{chain.transition(firstStep(models...)), std::move(models)...}
+    {}
+
+    /** Refuses a MarkovChain with models stepped by a time step, which would move the mode one step
+     * of the chain whatever the time step.
+     */
+    template <typename Chain>
+        requires(!FixedSteps && std::is_same_v<Chain, MarkovChain<ModeSpace_, Scalar_>>)
+    SwitchingModel(Chain const & chain, Models const &... models)
+        : m_chain{chain.space()}
+        , m_models{models...}
+    {
+        static_assert(
+            sizeof(Chain) == 0,
+            "a MarkovChain moves the mode one step whatever the time step: give models stepped by a time step a "
+            "ContinuousTimeMarkovChain, or make them fixed-step with fixedStep(model, dt)"
+        );
+    }
+
     /** \a other with each of its models converted to this one's: how a filter binds a switching
      * model of fixedStep() results to its state's space. Implicit, as FixedStepModel's is, so that a
      * filter's constructor takes the switching model where its deduction guide names this type.
@@ -290,6 +330,24 @@ public:
     /** \returns the Markov chain on the modes, to change it */
     [[nodiscard]] ChainType &
     chain()
+    {
+        return m_chain;
+    }
+
+    /** \returns the chain over a prediction of \a dt, any TimeStep (see \ref Time):
+     * \f$ \Pi = e^{Q \Delta t} \f$ of the continuous-time chain
+     */
+    [[nodiscard]] MarkovChain<ModeSpace_, Scalar_>
+    transition(TimeStep<Scalar_> auto const & dt) const
+        requires(!FixedSteps)
+    {
+        return m_chain.transition(dt);
+    }
+
+    /** \returns the chain over one prediction of the fixed-step models: the chain itself */
+    [[nodiscard]] MarkovChain<ModeSpace_, Scalar_> const &
+    transition() const
+        requires FixedSteps
     {
         return m_chain;
     }
@@ -426,6 +484,14 @@ private:
         : SwitchingModel{other.chain(), Models(other.template model<I>())...}
     {}
 
+    /** \returns the step of the first of the fixed-step \a models, which they all share */
+    template <typename First, typename... Rest>
+    [[nodiscard]] static auto
+    firstStep(First const & first, Rest const &...)
+    {
+        return first.timeStep();
+    }
+
     /** Where the selecting axis sits in a mode's flat index. */
     struct Selector
     {
@@ -497,6 +563,10 @@ inline constexpr bool predictsBy<SwitchingModel<ModeSpace_, Scalar_, Path_, Mode
 template <typename ModeSpace, typename Scalar, typename... Models>
 SwitchingModel(MarkovChain<ModeSpace, Scalar>, Models...) -> SwitchingModel<ModeSpace, Scalar, ModeSpace, Models...>;
 
+template <typename ModeSpace, typename Scalar, typename... Models>
+SwitchingModel(ContinuousTimeMarkovChain<ModeSpace, Scalar>, Models...)
+    -> SwitchingModel<ModeSpace, Scalar, ModeSpace, Models...>;
+
 /// \endcond
 
 /** \ingroup Models
@@ -504,13 +574,24 @@ SwitchingModel(MarkovChain<ModeSpace, Scalar>, Models...) -> SwitchingModel<Mode
  * named by the path \a P (a tag or a TagPath) selects the process model: \a models has one per
  * value of that axis, in order. <tt>switchingModel<Maneuver>(chain, cruise, turn)</tt> on
  * a mode space <tt>DiscreteProduct<Maneuver, Sensor></tt> gives both sensor states of a maneuver
- * the same dynamics.
+ * the same dynamics. The chain is continuous-time unless the models are fixed-step, as
+ * SwitchingModel says.
  */
 template <typename P, typename ModeSpace, typename Scalar, typename... Models>
 [[nodiscard]] SwitchingModel<ModeSpace, Scalar, P, Models...>
-switchingModel(MarkovChain<ModeSpace, Scalar> chain, Models... models)
+switchingModel(ContinuousTimeMarkovChain<ModeSpace, Scalar> const & chain, Models... models)
 {
-    return {std::move(chain), std::move(models)...};
+    return {chain, std::move(models)...};
+}
+
+/** \ingroup Models
+ * \returns switchingModel() with a MarkovChain, for fixed-step \a models
+ */
+template <typename P, typename ModeSpace, typename Scalar, typename... Models>
+[[nodiscard]] SwitchingModel<ModeSpace, Scalar, P, Models...>
+switchingModel(MarkovChain<ModeSpace, Scalar> const & chain, Models... models)
+{
+    return SwitchingModel<ModeSpace, Scalar, P, Models...>{chain, std::move(models)...};
 }
 
 /** \ingroup Models

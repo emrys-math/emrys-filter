@@ -6,6 +6,7 @@
 // hybrids, track the covariance form's to rounding.
 // Expected values come from ImmFilter itself, which tests/Filters/imm_filter.cpp checks against a hand computation.
 #include <EmrysFilter/Distributions/Categorical.h>
+#include <EmrysFilter/Distributions/ContinuousTimeMarkovChain.h>
 #include <EmrysFilter/Distributions/Gaussian.h>
 #include <EmrysFilter/Distributions/Hybrid.h>
 #include <EmrysFilter/Distributions/Mixture.h>
@@ -34,6 +35,7 @@ using Emrys::additiveNoise;
 using Emrys::CategoricalParams;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
+using Emrys::ContinuousTimeMarkovChain;
 using Emrys::DiscreteProduct;
 using Emrys::Gaussian;
 using Emrys::GaussianMixtureParams;
@@ -44,7 +46,6 @@ using Emrys::HybridGaussianParams;
 using Emrys::ImmFilter;
 using Emrys::ImmRecursion;
 using Emrys::Linear;
-using Emrys::MarkovChain;
 using Emrys::MixtureFilter;
 using Emrys::MixtureParams;
 using Emrys::Named;
@@ -107,9 +108,9 @@ makeModel(double density)
 auto
 makeSwitching()
 {
-    auto const chain = MarkovChain<Mode>::independent(
-        MarkovChain<Maneuver>::persistent(0.95).value(),
-        MarkovChain<Sensor>::persistent(0.8).value()
+    auto const chain = ContinuousTimeMarkovChain<Mode>::independent(
+        ContinuousTimeMarkovChain<Maneuver>::persistent(0.05),
+        ContinuousTimeMarkovChain<Sensor>::persistent(0.2)
     );
     return switchingModel<Maneuver>(chain, makeModel(quiet), makeModel(agile));
 }

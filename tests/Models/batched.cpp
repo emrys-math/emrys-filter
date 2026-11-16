@@ -6,6 +6,7 @@
 // sigma-point transforms in Models/Transform.h, the factored one and the iterated posterior linearization
 // filter's included, call a batched model once over their points.
 
+#include <EmrysFilter/Distributions/ContinuousTimeMarkovChain.h>
 #include <EmrysFilter/Distributions/GridGaussian.h>
 #include <EmrysFilter/Distributions/ParticleGaussian.h>
 #include <EmrysFilter/Distributions/ParticleSet.h>
@@ -754,7 +755,7 @@ TEST(Batched, HybridParticlesCallABatchedModeOncePerTransform)
     };
     auto const positions = Eigen::Matrix<double, 2, 5>{{-3, 0, 2, 5, -1}, {1, -2, 0, 3, 4}};
     auto const state = Emrys::particleGaussian<Position>(State{}, ParticleSet<Position>{positions}, hybrid);
-    auto const chain = Emrys::MarkovChain<Mode>::persistent(0.9).value();
+    auto const chain = Emrys::ContinuousTimeMarkovChain<Mode>::persistent(0.2);
     auto byPoint = Emrys::RbParticleFilter{
         Emrys::SwitchingModel{chain, velocityModel(), velocityModel()},
         state,

@@ -274,9 +274,10 @@ struct GivenComponent
  * that the target was in mode \a i given that it is now in \a j. Each mixed component is then
  * predicted through its mode's process model, by the model's own method where it carries one
  * (withMethod(), FixedStepModel) and by the recursion's otherwise [switching-models], and the
- * mode probabilities move one step of the chain. When the chain is the identity, the mixing would give each mode its
- * own component, so predict() moves each as it is and leaves the probabilities. update() updates each mode's component
- * as a KalmanRecursion would and multiplies each mode's probability by
+ * mode probabilities move by the chain over the step: \f$ \Pi = e^{Q \Delta t} \f$ of the
+ * continuous-time chain, or with fixed-step models the MarkovChain. When the chain is the identity, the mixing would
+ * give each mode its own component, so predict() moves each as it is and leaves the probabilities. update() updates
+ * each mode's component as a KalmanRecursion would and multiplies each mode's probability by
  * \f$ p(z \mid m) \f$.
  *
  * The components may be in square-root form (decisions.md [gaussian-forms]): the mixing collapses
@@ -485,9 +486,9 @@ public:
         return m_model.partitions(space);
     }
 
-    /** Mixes \a state's components through the chain, moves each by \a dt, any TimeStep (see
-     * \ref Time), through its mode's process model, with \a inputs passed as in Emrys::predict(),
-     * and moves the mode probabilities one step of the chain.
+    /** Mixes \a state's components through the chain over \a dt, any TimeStep (see \ref Time),
+     * \f$ \Pi = e^{Q \Delta t} \f$, moves each by \a dt through its mode's process model, with
+     * \a inputs passed as in Emrys::predict(), and moves the mode probabilities by \f$ \Pi \f$.
      *
      * \returns nothing for Gaussians; for a square-root form, a \c std::expected with the error of
      *          the first mode that could not take the step (see KalmanRecursion::predict()), which
@@ -499,18 +500,7 @@ public:
     predict(StateType & state, TimeStep<Scalar> auto const & dt, Inputs const &... inputs)
     {
         Scalar const step = internal::toScalarTime<Scalar>(dt);
-        if constexpr (IsForm)
-        {
-            return moveModes(state, [&](ComponentType & moved, auto const & model, auto const & method) {
-                return internal::predictInPlace(method, moved, model, step, inputs...);
-            });
-        }
-        else
-        {
-            moveModes(state, [&](ComponentType const & mixed, auto const & model, auto const & method) {
-                return Emrys::predict(method, mixed, model, step, inputs...);
-            });
-        }
+        return predictOver(state, m_model.transition(step), step, inputs...);
     }
 
     /** Mixes \a state's components through the chain, moves each by its mode's fixed-step model's
@@ -522,15 +512,16 @@ public:
     [[nodiscard]] auto
     predict(StateType & state, Inputs const &... inputs)
     {
+        auto const & chainOverStep = m_model.transition();
         if constexpr (IsForm)
         {
-            return moveModes(state, [&](ComponentType & moved, auto const & model, auto const &) {
+            return moveModes(state, chainOverStep, [&](ComponentType & moved, auto const & model, auto const &) {
                 return internal::predictInPlace(moved, model, inputs...);
             });
         }
         else
         {
-            moveModes(state, [&](ComponentType const & mixed, auto const & model, auto const &) {
+            moveModes(state, chainOverStep, [&](ComponentType const & mixed, auto const & model, auto const &) {
                 return Emrys::predict(mixed, model, inputs...);
             });
         }
@@ -565,9 +556,11 @@ public:
     )
     {
         Scalar const step = internal::toScalarTime<Scalar>(dt);
+        auto const chainOverStep = m_model.transition(step);
         recordJoint(
             state,
             joint,
+            chainOverStep,
             [&](ComponentType const & filtered, auto const & model, auto const & method) {
                 return Emrys::predictJoint(method, filtered, model, step, inputs...);
             },
@@ -575,7 +568,7 @@ public:
                 return Emrys::predict(method, filtered, model, step, inputs...);
             }
         );
-        predict(state, step, inputs...);
+        predictOver(state, chainOverStep, step, inputs...);
     }
 
     /** Moves \a state forward as predict(state, inputs...) does with fixed-step models.
@@ -605,6 +598,7 @@ public:
         recordJoint(
             state,
             joint,
+            m_model.transition(),
             [&](ComponentType const & filtered, auto const & model, auto const &) {
                 return Emrys::predictJoint(filtered, model, inputs...);
             },
@@ -953,10 +947,11 @@ public:
     [[nodiscard]] JointType
     emptyJoint(StateType const & state) const
     {
+        Eigen::Index const modes = m_model.modeSpace().cardinality();
         auto joint = JointType{
             state.modes(),
             typename JointType::JointsType(state.get_allocator()),
-            m_model.chain().matrix(),
+            JointType::TransitionsType::Zero(modes, modes),
             typename JointType::PredictionsType(state.get_allocator())
         };
         joint.joints.reserve(std::size_t(state.size()));
@@ -981,18 +976,37 @@ private:
         }
     }
 
-    /** Mixes \a state's components through the chain, moves each mode's mixed component by
-     * \a predictMode with its mode's process model and method, and moves the mode probabilities one step of
-     * the chain: the body of both forms of predict(). For Gaussians \a predictMode returns the
-     * predicted component. For a square-root form it moves the component in place, in the state
-     * when the chain mixes nothing and in the scratch the mixed one is built in otherwise, and
-     * returns a \c std::expected; a mode it fails on keeps the component it was to move from.
+    /** predict(state, dt, inputs...) with \a chain, the chain over \a step, already computed */
+    template <typename Chain, typename... Inputs>
+    [[nodiscard]] auto
+    predictOver(StateType & state, Chain const & chain, Scalar step, Inputs const &... inputs)
+    {
+        if constexpr (IsForm)
+        {
+            return moveModes(state, chain, [&](ComponentType & moved, auto const & model, auto const & method) {
+                return internal::predictInPlace(method, moved, model, step, inputs...);
+            });
+        }
+        else
+        {
+            moveModes(state, chain, [&](ComponentType const & mixed, auto const & model, auto const & method) {
+                return Emrys::predict(method, mixed, model, step, inputs...);
+            });
+        }
+    }
+
+    /** Mixes \a state's components through \a chain, the chain over the step, moves each mode's
+     * mixed component by \a predictMode with its mode's process model and method, and moves the mode
+     * probabilities by \a chain: the body of both forms of predict(). For Gaussians \a predictMode
+     * returns the predicted component. For a square-root form it moves the component in place, in
+     * the state when the chain mixes nothing and in the scratch the mixed one is built in otherwise,
+     * and returns a \c std::expected; a mode it fails on keeps the component it was to move from.
      *
      * \returns nothing, or for a square-root form the first failed mode's error
      */
-    template <typename PredictMode>
+    template <typename Chain, typename PredictMode>
     [[nodiscard]] auto
-    moveModes(StateType & state, PredictMode const & predictMode)
+    moveModes(StateType & state, Chain const & chain, PredictMode const & predictMode)
     {
         if constexpr (IsForm)
         {
@@ -1005,6 +1019,7 @@ private:
             };
             moveModesBy(
                 state,
+                chain,
                 [&](Eigen::Index j, auto const & model, auto const & method) {
                     keepFirst(state.updateConditional(j, [&](ComponentType & own) {
                         return predictMode(own, model, method);
@@ -1021,6 +1036,7 @@ private:
         {
             moveModesBy(
                 state,
+                chain,
                 [&](Eigen::Index j, auto const & model, auto const & method) {
                     m_predicted.push_back(predictMode(state.conditional(j), model, method));
                 },
@@ -1035,13 +1051,13 @@ private:
      * nothing, and \a moveMixed, which moves mode \a j's mixed component otherwise. Both push to
      * the scratch for Gaussians; a square-root form's \a moveOwn moves the state's component.
      */
-    template <typename MoveOwn, typename MoveMixed>
+    template <typename Chain, typename MoveOwn, typename MoveMixed>
     void
-    moveModesBy(StateType & state, MoveOwn const & moveOwn, MoveMixed const & moveMixed)
+    moveModesBy(StateType & state, Chain const & chain, MoveOwn const & moveOwn, MoveMixed const & moveMixed)
     {
         Eigen::Index const count = state.size();
         auto const & logPrior = state.modes().logWeights();
-        auto const & transitions = m_model.chain().matrix();
+        auto const & transitions = chain.matrix();
         m_predicted.clear();
         if (transitions.isIdentity(Scalar(0)))
         {
@@ -1059,7 +1075,7 @@ private:
             }
             return;
         }
-        CategoricalParams<ModeSpaceType, Scalar> const predictedModes = Emrys::predict(state.modes(), m_model.chain());
+        CategoricalParams<ModeSpaceType, Scalar> const predictedModes = Emrys::predict(state.modes(), chain);
 
         auto const conditional = [&](Eigen::Index i) -> ComponentType const & {
             return state.conditional(i);
@@ -1086,23 +1102,24 @@ private:
         state.setModes(predictedModes);
     }
 
-    /** Fills \a joint with \a state before a prediction: the mode probabilities, the chain's
-     * matrix, each mode's component moved by \a predictMode through its own process model, as a
-     * PredictedJoint, and by \a predictThrough through every other mode's. The body of both forms
-     * of predictJoint(), before they predict.
+    /** Fills \a joint with \a state before a prediction: the mode probabilities, the matrix of
+     * \a chain, the chain over the step, each mode's component moved by \a predictMode through its
+     * own process model, as a PredictedJoint, and by \a predictThrough through every other mode's.
+     * The body of both forms of predictJoint(), before they predict.
      */
-    template <typename JointAllocator, typename PredictMode, typename PredictThrough>
+    template <typename JointAllocator, typename Chain, typename PredictMode, typename PredictThrough>
     void
     recordJoint(
         StateType const & state,
         HybridPredictedJoint<SpaceType, ModeSpaceType, Scalar, JointAllocator> & joint,
+        Chain const & chain,
         PredictMode const & predictMode,
         PredictThrough const & predictThrough
     ) const
     {
         Eigen::Index const count = state.size();
         joint.modes = state.modes();
-        joint.transitions = m_model.chain().matrix();
+        joint.transitions = chain.matrix();
         joint.joints.clear();
         joint.joints.reserve(std::size_t(count));
         joint.throughOtherModels.clear();
@@ -1316,7 +1333,8 @@ struct RecursionFor<Hybrid<Component_, ModeSpace_, HybridAllocator>, Model, Meth
  * that the target was in mode \a i given that it is now in \a j. Each mixed component is then
  * predicted through its mode's process model, by the model's own method where it carries one
  * (withMethod(), FixedStepModel) and by the filter's otherwise [switching-models], and the
- * mode probabilities move one step of the chain. update() updates each mode's component as a
+ * mode probabilities move by the chain over the step: \f$ \Pi = e^{Q \Delta t} \f$ of the
+ * continuous-time chain, or with fixed-step models the MarkovChain. update() updates each mode's component as a
  * KalmanFilter would and multiplies each mode's probability by \f$ p(z \mid m) \f$.
  *
  * The interacting multiple model algorithm of \ref Blom1988 "Blom and Bar-Shalom (1988)", as
@@ -1336,8 +1354,9 @@ struct RecursionFor<Hybrid<Component_, ModeSpace_, HybridAllocator>, Model, Meth
  *
  * \code
  * using Mode = DiscreteProduct<Maneuver, Sensor>;
- * auto const chain = MarkovChain<Mode>::independent(MarkovChain<Maneuver>::persistent(0.95).value(),
- *                                                   MarkovChain<Sensor>::persistent(0.8).value());
+ * using Chain = ContinuousTimeMarkovChain<Mode>;  // rates per unit of dt
+ * auto const chain = Chain::independent(ContinuousTimeMarkovChain<Maneuver>::persistent(0.05),
+ *                                       ContinuousTimeMarkovChain<Sensor>::persistent(0.2));
  * auto filter = ImmFilter{switchingModel<Maneuver>(chain, cruise, turn),
  *                  Hybrid{CategoricalParams<Mode>{}, initial}};
  * filter.predict(dt);
@@ -1351,7 +1370,8 @@ struct RecursionFor<Hybrid<Component_, ModeSpace_, HybridAllocator>, Model, Meth
  * A mode whose update the policy rejects keeps its prior component and gets probability zero,
  * from which the chain can bring it back at the next prediction. When every mode rejects the
  * measurement, it is rejected and the state is unchanged. With one mode the filter is a
- * KalmanFilter. With the identity chain, <tt>MarkovChain<Mode>{}</tt>, it is the autonomous
+ * KalmanFilter. With the chain that never moves, <tt>ContinuousTimeMarkovChain<Mode>{}</tt>, whose
+ * every step is the identity, it is the autonomous
  * multiple model estimator, which AmmFilter spells: each mode's mixing
  * weights put everything on its own component, so predict() skips the mixing and leaves the
  * mode probabilities as they are.
@@ -1504,9 +1524,9 @@ public:
         return m_recursion.method();
     }
 
-    /** Mixes the modes' components through the chain, moves each by \a dt, any TimeStep (see
-     * \ref Time), through its mode's process model, with \a inputs passed as in Emrys::predict(),
-     * and moves the mode probabilities one step of the chain.
+    /** Mixes the modes' components through the chain over \a dt, any TimeStep (see \ref Time),
+     * \f$ \Pi = e^{Q \Delta t} \f$, moves each by \a dt through its mode's process model, with
+     * \a inputs passed as in Emrys::predict(), and moves the mode probabilities by \f$ \Pi \f$.
      *
      * \returns nothing for Gaussians; for a square-root form, a \c std::expected that is empty
      *          when a mode could not take the step (see ImmRecursion::predict())

@@ -19,6 +19,7 @@ using Emrys::AmmFilter;
 using Emrys::CategoricalParams;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
+using Emrys::ContinuousTimeMarkovChain;
 using Emrys::Gaussian;
 using Emrys::GaussianMixtureFilter;
 using Emrys::GaussianMixtureParams;
@@ -301,7 +302,7 @@ TEST(FilterUpkeep, AMixtureFilterPrunesByItsUpkeep)
 TEST(FilterUpkeep, MultipleModelFiltersFloorByTheirUpkeep)
 {
     auto imm = ImmFilter{
-        SwitchingModel{MarkovChain<Regime>{}, makeModel(0.01), makeModel(4.0)},
+        SwitchingModel{ContinuousTimeMarkovChain<Regime>{}, makeModel(0.01), makeModel(4.0)},
         makeHybrid(1.0),
         upkeep::floorModes(0.01)
     };
@@ -347,7 +348,7 @@ TEST(FilterUpkeep, HiddenMarkovAndMixtureOfImmFiltersFloorByTheirUpkeep)
     prior.add(std::log(0.5), makeHybrid(1.0));
     prior.add(std::log(0.5), makeHybrid(0.995));
     auto mixture = MixtureFilter{
-        SwitchingModel{MarkovChain<Regime>{}, makeModel(0.01), makeModel(4.0)},
+        SwitchingModel{ContinuousTimeMarkovChain<Regime>{}, makeModel(0.01), makeModel(4.0)},
         prior,
         upkeep::floorModes(0.01)
     };

@@ -15,6 +15,7 @@
 // Models/ProcessModel.h, Filters/ImmFilter.h, Filters/MixtureFilter.h.
 
 #include <EmrysFilter/Distributions/Categorical.h>
+#include <EmrysFilter/Distributions/ContinuousTimeMarkovChain.h>
 #include <EmrysFilter/Distributions/Hybrid.h>
 #include <EmrysFilter/Distributions/Mixture.h>
 #include <EmrysFilter/Filters/ImmFilter.h>
@@ -401,7 +402,7 @@ TEST(SqrtFilters, PredictionsThroughASingularTransitionFail)
     auto root = SqrtKalmanFilter{exact, toSqrt(prior).value(), methods::unscented<0.5, 0.0>()};
     EXPECT_EQ(root.predict(1.0).error(), GaussianError::NotPositiveDefinite);
     auto imm = Emrys::ImmFilter{
-        Emrys::SwitchingModel{Emrys::MarkovChain<Single>{}, exact},
+        Emrys::SwitchingModel{Emrys::ContinuousTimeMarkovChain<Single>{}, exact},
         Emrys::HybridParams<Emrys::SqrtGaussian<Held>, Single>{
             Emrys::CategoricalParams<Single>{},
             toSqrt(prior).value()

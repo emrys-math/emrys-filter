@@ -12,6 +12,7 @@
 // Distributions/ParticleSet.h.
 
 #include <EmrysFilter/Distributions/Categorical.h>
+#include <EmrysFilter/Distributions/ContinuousTimeMarkovChain.h>
 #include <EmrysFilter/Distributions/Gaussian.h>
 #include <EmrysFilter/Distributions/GridGaussian.h>
 #include <EmrysFilter/Distributions/Hybrid.h>
@@ -46,6 +47,7 @@ using Emrys::additiveNoise;
 using Emrys::CategoricalParams;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
+using Emrys::ContinuousTimeMarkovChain;
 using Emrys::drawParticleGaussian;
 using Emrys::GaussianError;
 using Emrys::GaussianMixtureFilter;
@@ -56,7 +58,6 @@ using Emrys::ImmFilter;
 using Emrys::InfoFilter;
 using Emrys::KalmanFilter;
 using Emrys::Linear;
-using Emrys::MarkovChain;
 using Emrys::Named;
 using Emrys::ParticleSet;
 using Emrys::PerPointCovariance;
@@ -381,7 +382,7 @@ TEST(UpdateFailure, AnImmFilterKeepsItsState)
     {};
 
     auto filter = ImmFilter{
-        SwitchingModel{MarkovChain<Single>{}, makeModel()},
+        SwitchingModel{ContinuousTimeMarkovChain<Single>{}, makeModel()},
         HybridParams{CategoricalParams<Single>{}, makeKnownVelocity()}
     };
     auto const updated = filter.update(makeVelocityFix(methods::linearized(), 0.0));
@@ -393,7 +394,7 @@ TEST(UpdateFailure, AnImmFilterKeepsItsState)
     auto const factor = Matrix4{Vector4{2.0, 2.0, 0.0, 0.0}.asDiagonal()};
     auto const knownRoot = SqrtGaussianParams<State>{Vector4{1.0, 2.0, 0.5, -0.5}, factor};
     auto root = ImmFilter{
-        SwitchingModel{MarkovChain<Single>{}, makeModel()},
+        SwitchingModel{ContinuousTimeMarkovChain<Single>{}, makeModel()},
         Emrys::HybridParams<Emrys::SqrtGaussian<State>, Single>{CategoricalParams<Single>{}, knownRoot}
     };
     EXPECT_EQ(root.update(makeVelocityFix(methods::linearized(), 0.0)).error(), GaussianError::NotPositiveDefinite);
@@ -415,7 +416,7 @@ TEST(UpdateFailure, AnImmFilterKeepsItsState)
 
     auto hybrids = Emrys::MixtureParams<Emrys::HybridGaussian<State, Single>>{State{}};
     hybrids.add(0.0, HybridParams{CategoricalParams<Single>{}, makeKnownVelocity()});
-    auto mixture = Emrys::MixtureFilter{SwitchingModel{MarkovChain<Single>{}, makeModel()}, hybrids};
+    auto mixture = Emrys::MixtureFilter{SwitchingModel{ContinuousTimeMarkovChain<Single>{}, makeModel()}, hybrids};
     EXPECT_EQ(mixture.update(byMode).error(), GaussianError::NotPositiveDefinite);
 }
 

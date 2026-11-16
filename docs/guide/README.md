@@ -12,11 +12,11 @@ They are listed in reading order, and each builds on the ones before it.
 
 | # | Document | Status |
 |---|---|---|
-| 1 | [imm-filter.md](imm-filter.md): mode chains, hybrid states, mixing, Markov outliers, and the AMM | not yet reviewed; refreshed for roadmap 17z (models by `compose()`, error quotes rerun, §11's floor corrected to the 0.001 it printed); Q3, Q5, Q8, Q10 [imm], Q11, Q13, Q17 decided; Q4, Q7, Q9, Q14 done; Q1, Q2, Q6, Q12, Q15, Q16 open; Q18 open |
-| 2 | [hidden-markov-filter.md](hidden-markov-filter.md): the forward recursion, emissions, continuous-time chains, and modulated arrivals | written; not yet reviewed; refreshed for roadmap 17z (the `Sensor` tag restored, since the library no longer defines one; examples not rerun); Q4 decided; Q8 half settled (`simulate()` takes a chain); Q9 no longer reproduces; Q1 to Q3, Q5 to Q8, Q10 open |
+| 1 | [imm-filter.md](imm-filter.md): mode chains, hybrid states, mixing, Markov outliers, and the AMM | not yet reviewed; refreshed for roadmap 17z (models by `compose()`, error quotes rerun, §11's floor corrected to the 0.001 it printed); since then Q1 decided [switching-models], its examples' chains made continuous-time or their models fixed-step, the numbers printed with per-step chains not rerun; Q3, Q5, Q8, Q10 [imm], Q11, Q13, Q17 decided; Q4, Q7, Q9, Q14 done; Q2, Q6, Q12, Q15, Q16 open; Q18 open |
+| 2 | [hidden-markov-filter.md](hidden-markov-filter.md): the forward recursion, emissions, continuous-time chains, and modulated arrivals | written; not yet reviewed; refreshed for roadmap 17z (the `Sensor` tag restored, since the library no longer defines one; examples not rerun); Q4 decided, Q7 with imm-filter.md Q1 [switching-models]; Q8 half settled (`simulate()` takes a chain); Q9 no longer reproduces; Q1 to Q3, Q5, Q6, Q8, Q10 open |
 | 3 | [particle-filter.md](particle-filter.md): sampled prediction, likelihood weighting, resampling, and roughening | not yet reviewed; refreshed for roadmap 17z (models and likelihood-only measurements rewritten, §1, §3, §5, §11, §14 rerun with Clang; §8's tenth roughening not reproduced); Q6 [likelihood-measurements], Q8 [allocation], Q12, Q15 decided; Q1 to Q5, Q7, Q9 to Q11, Q13, Q14, Q16 open |
 | 4 | [rao-blackwellized-filters.md](rao-blackwellized-filters.md): point-mass, grid, and particle | not yet reviewed; refreshed for roadmap 17z (§6 and the misuse table rewritten, the prediction ignoring `affineIn()` where it refused `FactoredUnscented`, error quotes rerun with Clang); Q2, Q7, Q15, Q18 [allocation], Q27 [rb-particle-filter] decided; Q11 partly decided; Q1, Q3 to Q6, Q8 to Q10, Q12 to Q14, Q16, Q17, Q19 to Q26 open |
-| 5 | [smoothing.md](smoothing.md): the record of the forward pass and the backward passes over it | written; not yet reviewed; refreshed for roadmap 17z (models rewritten, §3 to §5 and §6's IMM columns rerun with Clang); Q4 decided; Q1 to Q3, Q5 to Q11 open; Q12 open |
+| 5 | [smoothing.md](smoothing.md): the record of the forward pass and the backward passes over it | written; not yet reviewed; refreshed for roadmap 17z (models rewritten, §3 to §5 and §6's IMM columns rerun with Clang; since then §6's chain made continuous-time for imm-filter.md Q1, its numbers not rerun); Q4 decided; Q1 to Q3, Q5 to Q11 open; Q12 open |
 
 When you write or finish reviewing a document, update its status here. A finished review moves
 out, as the roadmap's Documentation section says, and is deleted: Core and Spaces were the first,
@@ -105,7 +105,8 @@ comment saying what it verifies, so the tests are a map of the evidence. The dec
 ### 1. Interacting multiple model filter
 
 The hybrid state (`Hybrid`, `HybridGaussian`), switching process models by mode axis
-(`SwitchingModel`), `MarkovChain` and its Kronecker-product construction, mixing,
+(`SwitchingModel`) and the chain over their step (a `ContinuousTimeMarkovChain`, or with
+fixed-step models a `MarkovChain`), `MarkovChain` and its Kronecker-product construction, mixing,
 measurement-side outlier modes, and the autonomous multiple model filter, the IMM on the identity
 chain. `Spaces/Discrete.h` covers the mode spaces; `FloorModes` is `Upkeep.h`'s, the IMM smoother
 smoothing.md's, and mixtures of IMMs `MixtureFilter.h`'s.

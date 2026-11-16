@@ -458,15 +458,18 @@ fixed.predict();
 
 What a fixed-step filter gives up is the arrival step of §5, which needs the generator.
 
-> **Q7.** `SwitchingModel` takes only a `MarkovChain`, so an IMM whose modes switch in continuous
+> ~~**Q7.** `SwitchingModel` takes only a `MarkovChain`, so an IMM whose modes switch in continuous
 > time assigns `filter.model().chain() = generator.transition(dt)` before each irregular step
 > (both accessors have non-const overloads). Roadmap step 15 says "`SwitchingModel`
 > may later take this chain in place of $\Pi$". Is that for after 0.1, and should imm-filter.md
-> show the workaround?
+> show the workaround?~~
 >
-> **Scheduled:** the template's shape is decided first after the soft launch, since adding a chain
+> ~~**Scheduled:** the template's shape is decided first after the soft launch, since adding a chain
 > parameter later breaks more code; the continuous chain itself may follow (roadmap, "Launch", the
-> **breaking** guide questions).
+> **breaking** guide questions).~~ *Decided [switching-models] (imm-filter.md Q1): a
+> `SwitchingModel` with models stepped by `predict(dt)` takes a `ContinuousTimeMarkovChain` and
+> moves the mode by $e^{Q \Delta t}$, with no template parameter added, the chain's kind following
+> the models'; a `MarkovChain` with them doesn't compile.*
 
 ## 5. Modulated arrivals
 
@@ -679,8 +682,9 @@ rows do not sum to zero are assertions at run time.
    unbounded space; borrow them as the table does? (§3)
 6. **Q6.** `persistent()` takes a probability of staying on `MarkovChain` and a rate of leaving
    on `ContinuousTimeMarkovChain`; rename one? (§4)
-7. **Q7.** `SwitchingModel` takes no continuous-time chain; after 0.1, and document the
-   workaround in imm-filter.md? (§4)
+7. ~~**Q7.** `SwitchingModel` takes no continuous-time chain; after 0.1, and document the
+   workaround in imm-filter.md? (§4)~~ *Decided [switching-models] (imm-filter.md Q1): models
+   stepped by `predict(dt)` take a `ContinuousTimeMarkovChain`.*
 8. **Q8.** `simulate()` draws a chain's next value; the emission models have no draw of their observation; add one after 0.1? (§8)
 9. ~~**Q9.** GCC 14 `-Wmaybe-uninitialized` in `Categorical::fromLogWeights()` through the arrival
    step and the smoother. (§8)~~ *Settled: no longer reproduces as of 2026-11-04.*

@@ -8,6 +8,7 @@
 #include <EmrysFilter/Core/Allocation.h>
 #include <EmrysFilter/Filters/AmmFilter.h>
 #include <EmrysFilter/Distributions/Categorical.h>
+#include <EmrysFilter/Distributions/ContinuousTimeMarkovChain.h>
 #include <EmrysFilter/Distributions/Upkeep.h>
 #include <EmrysFilter/Distributions/Hybrid.h>
 #include <EmrysFilter/Distributions/Mixture.h>
@@ -32,6 +33,7 @@ using namespace EmrysTest::Allocation;
 using Emrys::AmmFilter;
 using Emrys::Capacity;
 using Emrys::CategoricalParams;
+using Emrys::ContinuousTimeMarkovChain;
 using Emrys::FixedStepModel;
 using Emrys::GaussianMixtureFilter;
 using Emrys::GaussianMixtureHistory;
@@ -43,7 +45,6 @@ using Emrys::HybridGaussianParams;
 using Emrys::HybridPredictedJoint;
 using Emrys::ImmFilter;
 using Emrys::Lag;
-using Emrys::MarkovChain;
 using Emrys::MixtureFilter;
 using Emrys::MixtureParams;
 using Emrys::switchingModel;
@@ -154,9 +155,9 @@ TEST(Allocation, ImmFilterWithMixtureNoiseStepsWithinItsResource)
 {
     auto resource = CountingResource{arenaBytes};
     auto const allocator = Pmr{&resource};
-    auto const chain = MarkovChain<Mode>::independent(
-        MarkovChain<Maneuver>::persistent(0.95).value(),
-        MarkovChain<Sensor>::persistent(0.8).value()
+    auto const chain = ContinuousTimeMarkovChain<Mode>::independent(
+        ContinuousTimeMarkovChain<Maneuver>::persistent(0.05),
+        ContinuousTimeMarkovChain<Sensor>::persistent(0.2)
     );
     auto initial = HybridGaussianParams<State, Mode, double, Pmr>{CategoricalParams<Mode>{}, makeInitial(), allocator};
     auto filter = ImmFilter{switchingModel<Maneuver>(chain, makeModel(0.01), makeModel(4.0)), std::move(initial)};
@@ -213,9 +214,9 @@ expectImmFilterStepsWithinItsResource(Quiet const & quiet, Agile const & agile)
 {
     auto resource = CountingResource{arenaBytes};
     auto const allocator = Pmr{&resource};
-    auto const chain = MarkovChain<Mode>::independent(
-        MarkovChain<Maneuver>::persistent(0.95).value(),
-        MarkovChain<Sensor>::persistent(0.8).value()
+    auto const chain = ContinuousTimeMarkovChain<Mode>::independent(
+        ContinuousTimeMarkovChain<Maneuver>::persistent(0.05),
+        ContinuousTimeMarkovChain<Sensor>::persistent(0.2)
     );
     auto initial = HybridGaussianParams<State, Mode, double, Pmr>{CategoricalParams<Mode>{}, makeInitial(), allocator};
     auto filter = ImmFilter{switchingModel<Maneuver>(chain, quiet, agile), std::move(initial)};
@@ -264,9 +265,9 @@ TEST(Allocation, ImmFilterScratchFollowsAPropagatingAllocator)
 {
     using Allocator = Propagating<std::byte>;
     using HybridState = HybridGaussianParams<State, Mode, double, Allocator>;
-    auto const chain = MarkovChain<Mode>::independent(
-        MarkovChain<Maneuver>::persistent(0.95).value(),
-        MarkovChain<Sensor>::persistent(0.8).value()
+    auto const chain = ContinuousTimeMarkovChain<Mode>::independent(
+        ContinuousTimeMarkovChain<Maneuver>::persistent(0.05),
+        ContinuousTimeMarkovChain<Sensor>::persistent(0.2)
     );
     auto filter = ImmFilter{
         switchingModel<Maneuver>(chain, makeModel(0.01), makeModel(4.0)),
@@ -331,9 +332,9 @@ TEST(Allocation, MixtureOfImmsScratchFollowsAPropagatingAllocator)
 {
     using Allocator = Propagating<std::byte>;
     using HybridState = HybridGaussianParams<State, Mode, double, Allocator>;
-    auto const chain = MarkovChain<Mode>::independent(
-        MarkovChain<Maneuver>::persistent(0.95).value(),
-        MarkovChain<Sensor>::persistent(0.8).value()
+    auto const chain = ContinuousTimeMarkovChain<Mode>::independent(
+        ContinuousTimeMarkovChain<Maneuver>::persistent(0.05),
+        ContinuousTimeMarkovChain<Sensor>::persistent(0.2)
     );
     auto const makePrior = [](Allocator const & allocator) {
         auto prior = MixtureParams<HybridGaussian<State, Mode, double, Allocator>, Allocator>{allocator};
@@ -401,9 +402,9 @@ expectMixtureOfImmsStepsWithinItsResource(Quiet const & quiet, Agile const & agi
 {
     auto resource = CountingResource{arenaBytes};
     auto const allocator = Pmr{&resource};
-    auto const chain = MarkovChain<Mode>::independent(
-        MarkovChain<Maneuver>::persistent(0.95).value(),
-        MarkovChain<Sensor>::persistent(0.8).value()
+    auto const chain = ContinuousTimeMarkovChain<Mode>::independent(
+        ContinuousTimeMarkovChain<Maneuver>::persistent(0.05),
+        ContinuousTimeMarkovChain<Sensor>::persistent(0.2)
     );
     using HybridState = HybridGaussianParams<State, Mode, double, Pmr>;
     auto prior = MixtureParams<HybridGaussian<State, Mode, double, Pmr>, Pmr>{Capacity{2}, allocator};
@@ -475,9 +476,9 @@ expectImmSmoothingWithinItsResource(Quiet const & quiet, Agile const & agile)
     static constexpr Eigen::Index lag = 5;
     auto resource = CountingResource{arenaBytes};
     auto const allocator = Pmr{&resource};
-    auto const chain = MarkovChain<Mode>::independent(
-        MarkovChain<Maneuver>::persistent(0.95).value(),
-        MarkovChain<Sensor>::persistent(0.8).value()
+    auto const chain = ContinuousTimeMarkovChain<Mode>::independent(
+        ContinuousTimeMarkovChain<Maneuver>::persistent(0.05),
+        ContinuousTimeMarkovChain<Sensor>::persistent(0.2)
     );
     auto initial = HybridGaussianParams<State, Mode, double, Pmr>{CategoricalParams<Mode>{}, makeInitial(), allocator};
     auto filter = ImmFilter{switchingModel<Maneuver>(chain, quiet, agile), std::move(initial)};
@@ -488,7 +489,7 @@ expectImmSmoothingWithinItsResource(Quiet const & quiet, Agile const & agile)
     auto joint = Joint{
         CategoricalParams<Mode>{},
         typename Joint::JointsType(allocator),
-        chain.matrix(),
+        chain.transition(timeStep).matrix(),
         typename Joint::PredictionsType(allocator)
     };
     joint.joints.reserve(4);

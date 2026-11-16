@@ -96,7 +96,7 @@ makeFix(auto method, auto noise)
 makeImm()
 {
     return Emrys::ImmFilter{
-        Emrys::SwitchingModel{Emrys::MarkovChain<Maneuver>::persistent(0.9).value(), makeModel(), makeModel()},
+        Emrys::SwitchingModel{Emrys::ContinuousTimeMarkovChain<Maneuver>::persistent(0.1), makeModel(), makeModel()},
         Emrys::HybridParams{
             Emrys::CategoricalParams<Maneuver>::fromWeights(Maneuver{}, Eigen::Vector2d{0.5, 0.5}),
             makeInitial()
@@ -337,7 +337,7 @@ struct InOrder
 mixtureOfImmsInParallel()
 {
     auto bank = Emrys::MixtureFilter{
-        Emrys::SwitchingModel{Emrys::MarkovChain<Maneuver>::persistent(0.9).value(), makeModel(), makeModel()},
+        Emrys::SwitchingModel{Emrys::ContinuousTimeMarkovChain<Maneuver>::persistent(0.1), makeModel(), makeModel()},
         Emrys::MixtureParams<Emrys::Hybrid<Emrys::Gaussian<State>, Maneuver>>{}
     };
     bank.predict(InOrder{}, 1.0);
@@ -366,7 +366,7 @@ rbPointMassHybridInParallel()
     using Rest = typename decltype(grid)::RestSpace;
     auto filter = Emrys::RbPointMassFilter{
         Emrys::SwitchingModel{
-            Emrys::MarkovChain<Maneuver>::persistent(0.9).value(),
+            Emrys::ContinuousTimeMarkovChain<Maneuver>::persistent(0.1),
             Emrys::RandomWalk<Velocity>{0.1},
             Emrys::RandomWalk<Velocity>{1.0}
         },
@@ -401,7 +401,7 @@ rbParticleHybridInParallel()
     using Rest = typename Emrys::ParticleGaussianParams<State, Position>::RestSpace;
     auto filter = Emrys::RbParticleFilter{
         Emrys::SwitchingModel{
-            Emrys::MarkovChain<Maneuver>::persistent(0.9).value(),
+            Emrys::ContinuousTimeMarkovChain<Maneuver>::persistent(0.1),
             Emrys::ConstantVelocity<Position, Velocity>{0.1},
             Emrys::ConstantVelocity<Position, Velocity>{1.0}
         },
@@ -614,7 +614,7 @@ fixedStepGivenAStep()
 sqrtImmGates()
 {
     auto filter = Emrys::ImmFilter{
-        Emrys::SwitchingModel{Emrys::MarkovChain<Maneuver>::persistent(0.9).value(), makeModel(), makeModel()},
+        Emrys::SwitchingModel{Emrys::ContinuousTimeMarkovChain<Maneuver>::persistent(0.1), makeModel(), makeModel()},
         Emrys::HybridParams{
             Emrys::CategoricalParams<Maneuver>::fromWeights(Maneuver{}, Eigen::Vector2d{0.5, 0.5}),
             Emrys::SqrtGaussianParams<State>{State{}, Eigen::Vector4d::Zero(), Eigen::Matrix4d::Identity()}
