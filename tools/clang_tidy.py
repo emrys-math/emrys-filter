@@ -7,10 +7,12 @@ static analyzer makes when a path that starts in our code ends in Eigen's, is le
 the negative compile tests' files, which without a case compile only what their cases share. The
 build needs only to be configured: its compile_commands.json is read, and the module map arguments
 that CMake adds, which name files the build writes, are dropped. Prints each finding and a count by
-check; exit status 1 when there is one.
+check; exit status 1 when there is one. With --shard K/N, only every Nth unit from the Kth of
+those analyzed, in the order of their paths, so that N runs together analyze each unit once.
 
     python tools/clang_tidy.py build/clang
     python tools/clang_tidy.py build/clang -j 2 --clang-tidy clang-tidy-21 tests/Filters
+    python tools/clang_tidy.py build/clang --shard 2/4
 """
 import argparse
 import collections
@@ -56,6 +58,14 @@ def units(build, selected):
     return kept
 
 
+def shard(text):
+    """The (K, N) of a --shard K/N, with 1 <= K <= N."""
+    match = re.fullmatch(r'(\d+)/(\d+)', text)
+    if not match or not 1 <= int(match.group(1)) <= int(match.group(2)):
+        raise argparse.ArgumentTypeError(f'expected K/N with 1 <= K <= N, not {text!r}')
+    return int(match.group(1)), int(match.group(2))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('build', type=pathlib.Path, help='a configured build directory, such as build/clang')
@@ -63,10 +73,13 @@ def main():
     parser.add_argument('-j', '--jobs', type=int, default=int(os.environ.get('EMRYS_FILTER_TIDY_JOBS', 3)),
                         help='units analyzed at once; each takes up to 4 GB (default 3)')
     parser.add_argument('--clang-tidy', default='clang-tidy', help='the clang-tidy to run')
+    parser.add_argument('--shard', type=shard, default=(1, 1),
+                        help='K/N: analyze the Kth of N equal shares of the units (default 1/1)')
     arguments = parser.parse_args()
 
     selected = [p.replace('\\', '/').rstrip('/') for p in arguments.paths]
-    kept = units(arguments.build.resolve(), selected)
+    index, count = arguments.shard
+    kept = sorted(units(arguments.build.resolve(), selected), key=lambda unit: unit[0])[index - 1::count]
     if not kept:
         print('No translation unit to analyze.')
         return 1
