@@ -869,6 +869,13 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       accompany a graduate course are what JOSS reviews for, and a paper is what puts a library
       on a syllabus; and `docs/research.md`'s open problems sent to advisors in the ISIF and
       FUSION community directly, since each is scoped for a graduate student.
+- [ ] Two README badges beside the DOI and the OpenSSF Best Practices badge, each added only once
+      it is true: JOSS's, when the paper above is accepted, since it is the one badge that stands
+      for peer review; and Repology's "Packaging status" (`repology.org/badge/vertical-allrepos/
+      emrys-filter.svg`), once the vcpkg and Conan submissions are accepted, in place of a badge per
+      registry. Repology tracks both Vcpkg and ConanCenter (checked 2026-11-16) and adds any later
+      registry or distribution without a README edit; if the two registries name the package
+      differently, Repology's maintainers merge them on request.
 - [ ] The agent story as a second launch, after the main one so that neither post explains the
       other: the skill in `skills/` submitted to the skills directories and written up on its
       own. It waits for the evaluation under agents other than Claude Code (Agent-friendly use
