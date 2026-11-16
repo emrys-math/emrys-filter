@@ -451,12 +451,17 @@ jobs:
 
   # clang-tidy, with the checks in .clang-tidy, over every test, example, and benchmark, through
   # which it analyzes the headers [static-analysis]. It parses each translation unit as a compile
-  # does and builds nothing, so the clang preset is only configured.
+  # does and builds nothing, so the clang preset is only configured. The units are dealt by path
+  # among four jobs, which a full run divides about evenly.
   clang-tidy:
-    name: clang-tidy (Linux)
+    name: clang-tidy ${{ matrix.shard }}/4 (Linux)
     if: inputs.clang_tidy
     runs-on: ubuntu-24.04
-    timeout-minutes: 240
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
 
@@ -476,4 +481,6 @@ jobs:
 
       # Two translation units at a time fit in the runner's memory, as in the builds.
       - name: Analyze
-        run: python3 tools/clang_tidy.py build/clang -j 2 --clang-tidy "clang-tidy-$LLVM_VERSION"
+        run: >-
+          python3 tools/clang_tidy.py build/clang -j 2 --clang-tidy "clang-tidy-$LLVM_VERSION"
+          --shard ${{ matrix.shard }}/4
