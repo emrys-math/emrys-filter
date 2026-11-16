@@ -11,6 +11,10 @@ instead.
 - `SECURITY.md`: how to report a vulnerability privately, and what counts as one. Among them is
   undefined behavior, or a call that never returns, caused by a floating-point value passed to the
   library, NaN and infinities included, in a build with `NDEBUG`.
+- `CategoricalParams<Mode>::independent(maneuver, sensor)` builds the distribution on a
+  `DiscreteProduct` whose axes are independent from one distribution per axis, as
+  `MarkovChain<Mode>::independent()` builds the chain, so an IMM's mode prior is no longer written
+  in flat-index order; `independent(space, axes...)` takes the space, for a run-time cardinality.
 
 ### Changed
 

@@ -383,18 +383,24 @@ modes' components, so the result is still one component per value.
 
 The usual starting point is "every mode starts at the same Gaussian", with mode probabilities
 that aren't uniform. `CategoricalParams<Mode>{}` is uniform, which for a sensor axis means a 50%
-prior on outliers. A product prior from per-axis marginals has to be written out by hand,
-in flat-index order:
+prior on outliers. A prior whose axes are independent is built from one distribution per axis
+by `independent()`, as the chain is, with no weight written in flat-index order (Q2):
 
 ```cpp
 // P(Turn) 0.1, P(Outlier) 0.05, independent
-auto const prior =
-    CategoricalParams<Mode>::fromWeights(0.9 * 0.95, 0.9 * 0.05, 0.1 * 0.95, 0.1 * 0.05);
+auto const prior = CategoricalParams<Mode>::independent(CategoricalParams<Maneuver>::fromWeights(0.9, 0.1),
+                                                        CategoricalParams<SensorMode>::fromWeights(0.95, 0.05));
+// 0.855 0.045 0.095 0.005: in flat-index order, the last axis fastest
 // a HybridGaussianParams<State, Mode>; deduce through HybridParams, not the alias [filters-and-recursions]
 auto state = HybridParams{prior, initial};
 ```
 
-> **Q2.** Give `CategoricalParams` on a `DiscreteProduct` a constructor from one `CategoricalParams`
+> **Q2.** *Done: `CategoricalParams<Mode>::independent(maneuverPrior, sensorPrior)`, and
+> `independent(space, axes...)` for a space with a run-time cardinality, after the chain's
+> factory. A prior whose axes depend on one another is still written value by value.*
+> `stationary()` is no substitute for it: a `persistent()` chain is symmetric, so its stationary
+> distribution is uniform, and the product of such chains gives the 50% outlier prior that
+> `CategoricalParams<Mode>{}` gives. ~~Give `CategoricalParams` on a `DiscreteProduct` a constructor from one `CategoricalParams`
 > per dimension, their product, as `MarkovChain` already has for chains:
 > `CategoricalParams<Mode>{Mode{}, maneuverPrior, sensorPrior}`? It removes the one place a user
 > writes flat-index arithmetic to set up an IMM. A `stationary(chain)` that returns the chain's
@@ -404,7 +410,7 @@ auto state = HybridParams{prior, initial};
 > gives the product prior too, so long as the prior wanted is each axis's stationary one. The
 > product constructor is still open.
 > *Update:* `MarkovChain`'s product is now the factory `independent()`, so the prior's would be
-> `CategoricalParams<Mode>::independent(maneuverPrior, sensorPrior)`.
+> `CategoricalParams<Mode>::independent(maneuverPrior, sensorPrior)`.~~
 
 The hybrid state's `marginal<Position>()` [element-marginals] is a range over the modes: each
 element holds the mode's log-weight and its component's `GaussianMarginal`, read in place, and
@@ -1290,7 +1296,8 @@ component. `MixtureParams::merged()` and `merge()` work on hybrids, keeping each
 1. ~~The chain steps once per `predict()`, even for `dt` = 0; a continuous-time rate chain? (§2)~~
    *Decided [switching-models]: the chain's kind follows the models', and a `MarkovChain` with
    models stepped by `predict(dt)` doesn't compile.*
-2. A product `CategoricalParams` from per-dimension marginals, for the initial mode prior (§3).
+2. ~~A product `CategoricalParams` from per-dimension marginals, for the initial mode prior (§3).~~
+   *Done: `CategoricalParams<Mode>::independent(maneuver, sensor)`.*
 3. ~~`Hybrid::marginal<Path>()` keeping the modes (§3).~~ Decided: a range over the modes, with
    `copy()` to a `Hybrid` [element-marginals].
 4. ~~The class comment still names the grid of Kalman filters as a user (§3).~~ Done: it names

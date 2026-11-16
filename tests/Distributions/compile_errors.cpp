@@ -713,6 +713,14 @@ using Rest = typename Emrys::ParticleGaussianParams<State, Position>::RestSpace;
 );
 #endif
 
+#if defined(CATEGORICAL_AXES_OUT_OF_ORDER)  // static_assert: Categorical.h: give one distribution per axis of the
+[[maybe_unused]] auto const prior = Emrys::CategoricalParams<Mode>::independent(
+    Mode{},
+    Emrys::CategoricalParams<Sensor>::fromWeights(0.9, 0.1),
+    Emrys::CategoricalParams<Maneuver>::fromWeights(0.9, 0.1)
+);
+#endif
+
 #if defined(CONTINUOUS_CHAINS_OUT_OF_ORDER)  // static_assert: ContinuousTimeMarkovChain.h: give one chain per axis of
 [[maybe_unused]] auto const chain = Emrys::ContinuousTimeMarkovChain<Mode>::independent(
     Mode{},

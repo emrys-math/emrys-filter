@@ -2,8 +2,8 @@
 
 /** \file
  * The distribution over a discrete space (decisions.md [discrete-spaces], [params-and-density]): CategoricalParams, one
- * weight per value, written freely and updated by Bayes' rule, with marginals and conditionals by axis; and
- * Categorical, the view its toDensity() returns once the weights define a distribution, with
+ * weight per value, written freely or built from independent axes and updated by Bayes' rule, with marginals and
+ * conditionals by axis; and Categorical, the view its toDensity() returns once the weights define a distribution, with
  * probabilities by value and by named event. MarkovChain moves the parameters a step, built
  * from transition weights, as independent chains on the axes of a product, as persistent or
  * memoryless, or from mean sojourn times and exit weights, and ChainError says why values fail to
@@ -273,6 +273,15 @@ movedLogWeights(Array const & logWeights, Kernel const & kernel)
  * p = predict(p, chain);                   // one step of a MarkovChain
  * \endcode
  *
+ * On a DiscreteProduct whose axes are independent, independent() builds the weights from one
+ * distribution per axis, so that no weight is written in flat-index order:
+ *
+ * \code
+ * auto const maneuver = CategoricalParams<Maneuver>::fromWeights(0.9, 0.1);
+ * auto const sensor = CategoricalParams<Sensor>::fromWeights(0.95, 0.05);
+ * auto const prior = CategoricalParams<Mode>::independent(maneuver, sensor);  // 0.855 0.045 0.095 0.005
+ * \endcode
+ *
  * The array holds one weight per value: inline up to the space's \c MaxCardinality, as a mean
  * stores its coordinates, and on the heap only for an unbounded space.
  *
@@ -352,6 +361,61 @@ public:
         Eigen::Index i = 0;
         ((array(i++) = Scalar_(weights)), ...);
         return fromWeights(Space_{}, array);
+    }
+
+    /** \returns the distribution on the DiscreteProduct \a space whose axes are independent, each
+     * distributed by its own parameters in \a axes, one per axis in order: the product of their
+     * weights, \f$ w_v = \prod_k w_{k, v_k} \f$ at the value \f$ v \f$ with coordinates
+     * \f$ v_k \f$, computed as a sum of log-weights. The marginal of each axis is that axis's
+     * parameters, scaled by the other axes' total weights. A prior whose axes depend on one
+     * another, such as outliers that are likelier during a turn, is written value by value with
+     * fromWeights() or setWeight().
+     */
+    template <DiscreteSpace... Axes>
+        requires(
+            internal::IsDiscreteProduct<Space_>
+            && sizeof...(Axes) == std::tuple_size_v<internal::DiscreteProductAxes<Space_>>
+        )
+    [[nodiscard]] static CategoricalParams
+    independent(Space_ space, CategoricalParams<Axes, Scalar_> const &... axes)
+    {
+        static_assert(
+            std::is_same_v<std::tuple<Axes...>, internal::DiscreteProductAxes<Space_>>,
+            "give one distribution per axis of the product, in order"
+        );
+        Eigen::Index const n = space.cardinality();
+        ArrayType logWeights = ArrayType::Zero(n);
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+            (
+                [&] {
+                    Eigen::Index const count = space.template axis<I>().cardinality();
+                    Eigen::Index const stride = space.template stride<I>();
+                    EMRYS_FILTER_ASSERT(
+                        axes.cardinality() == count && "each distribution must have its axis's cardinality"
+                    );
+                    for (Eigen::Index v = 0; v < n; ++v)
+                    {
+                        logWeights(v) += axes.logWeight((v / stride) % count);
+                    }
+                }(),
+                ...
+            );
+        }(std::index_sequence_for<Axes...>{});
+        return CategoricalParams{std::move(space), logWeights};
+    }
+
+    /** \returns independent() on a DiscreteProduct that is a FixedSizeSpace, named as the template
+     * argument: <tt>CategoricalParams<Mode>::independent(maneuver, sensor)</tt>
+     */
+    template <DiscreteSpace... Axes>
+        requires(
+            FixedSizeSpace<Space_> && internal::IsDiscreteProduct<Space_>
+            && sizeof...(Axes) == std::tuple_size_v<internal::DiscreteProductAxes<Space_>>
+        )
+    [[nodiscard]] static CategoricalParams
+    independent(CategoricalParams<Axes, Scalar_> const &... axes)
+    {
+        return independent(Space_{}, axes...);
     }
 
     /** \returns the discrete space */

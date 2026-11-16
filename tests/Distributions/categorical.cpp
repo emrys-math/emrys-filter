@@ -1,10 +1,10 @@
 // Discrete spaces and the distributions over them (step 5a, [discrete-spaces], [density-names], [params-and-density]):
 // DiscreteSpace and DiscreteProduct cardinalities and named values; CategoricalParams, whose weights are written
-// unchecked and checked once by toDensity(), and the Categorical view it returns; normalization,
-// entropy, events, marginals, conditionals by path, Bayes updates, run-time cardinality, and
-// sampling, a batch or one draw at a time [allocation]; MarkovChain prediction, chains from
-// transition weights, with independent axes of a product, and from mean sojourn times and exit
-// weights, the ChainError of values that fail to define one, and stationary distributions.
+// unchecked or built from independent axes, and checked once by toDensity(), and the Categorical view it returns;
+// normalization, entropy, events, marginals, conditionals by path, Bayes updates, run-time cardinality, and sampling, a
+// batch or one draw at a time [allocation]; MarkovChain prediction, chains from transition weights, with independent
+// axes of a product, and from mean sojourn times and exit weights, the ChainError of values that fail to define one,
+// and stationary distributions.
 
 #include <EmrysFilter/Distributions/Categorical.h>
 #include <EmrysFilter/Spaces/Discrete.h>
@@ -349,6 +349,51 @@ TEST(Categorical, NestedDimensionsByPath)
     auto const givenAOutlier = p.conditional<TagPath<SensorA, Outlier>>();
     static_assert(std::is_same_v<decltype(givenAOutlier), CategoricalParams<DiscreteProduct<Maneuver, SensorB>> const>);
     EXPECT_TRUE(probabilitiesOf(givenAOutlier).isApprox(Eigen::Array4d{3, 4, 7, 8} / 22));
+}
+
+// independent() on a product multiplies one distribution per axis into the weight of each value, in
+// flat-index order with the last axis fastest; each marginal gives back its axis's distribution, the
+// total weight is the product of the axes' totals, and a nested axis or a run-time cardinality is
+// placed by the product's own strides. The expected weights are the products written out by hand.
+TEST(Categorical, IndependentAxesOfAProduct)
+{
+    auto const maneuver = CategoricalParams<Maneuver>::fromWeights(0.9, 0.1);
+    auto const sensor = CategoricalParams<Sensor>::fromWeights(0.95, 0.05);
+    auto const prior = CategoricalParams<Mode>::independent(maneuver, sensor);
+    EXPECT_TRUE(probabilitiesOf(prior).isApprox(Eigen::Array4d{0.9 * 0.95, 0.9 * 0.05, 0.1 * 0.95, 0.1 * 0.05}));
+    EXPECT_TRUE(probabilitiesOf(prior.marginal<Maneuver>()).isApprox(probabilitiesOf(maneuver)));
+    EXPECT_TRUE(probabilitiesOf(prior.marginal<Sensor>()).isApprox(probabilitiesOf(sensor)));
+    auto const spaced = CategoricalParams<Mode>::independent(Mode{}, maneuver, sensor);
+    EXPECT_TRUE(spaced.logWeights().isApprox(prior.logWeights()));
+
+    // Weights that don't sum to one multiply, far below the double range too, and a zero stays zero.
+    auto const scaled = CategoricalParams{Maneuver{}, Eigen::Array2d{std::log(8.0) - 5000, std::log(2.0) - 5000}};
+    auto const ruledOut = CategoricalParams<Sensor>::fromWeights(3.0, 0.0);
+    auto const product = CategoricalParams<Mode>::independent(scaled, ruledOut);
+    EXPECT_NEAR(product.logTotalWeight().value(), std::log(10.0 * 3.0) - 5000, 1e-12);
+    EXPECT_EQ(product.logWeight(valueOf<Mode, Turn, Outlier>()), -inf);
+    EXPECT_TRUE(probabilitiesOf(product).isApprox(Eigen::Array4d{0.8, 0, 0.2, 0}));
+
+    // An axis that is itself a product takes its flat index, and conditioning on the other axis
+    // gives it back.
+    auto const sensors = CategoricalParams<Sensors>::fromWeights(1.0, 2.0, 3.0, 4.0);
+    auto const nested = CategoricalParams<Nested>::independent(maneuver, sensors);
+    EXPECT_TRUE(probabilitiesOf(nested.conditional<Turn>()).isApprox(probabilitiesOf(sensors)));
+    EXPECT_TRUE(probabilitiesOf(nested.marginal<SensorB>()).isApprox(Eigen::Array2d{4, 6} / 10));
+
+    // A run-time cardinality comes from the space given.
+    struct Cells : Finite<Eigen::Dynamic>
+    {
+        using Finite::Finite;
+    };
+
+    using Grid = DiscreteProduct<Maneuver, Cells>;
+    auto const cells = CategoricalParams<Cells>::fromWeights(Cells{3}, Eigen::Array3d{1, 2, 1});
+    auto const grid = CategoricalParams<Grid>::independent(Grid{Maneuver{}, Cells{3}}, maneuver, cells);
+    EXPECT_EQ(grid.cardinality(), 6);
+    EXPECT_TRUE(
+        probabilitiesOf(grid).isApprox((Eigen::Array<double, 6, 1>{} << 0.9, 1.8, 0.9, 0.1, 0.2, 0.1).finished() / 4)
+    );
 }
 
 // update(logLikelihoods) multiplies in the likelihoods, normalizes, and returns the log-evidence,
