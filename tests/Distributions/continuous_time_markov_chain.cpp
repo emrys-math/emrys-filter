@@ -1,5 +1,5 @@
 // The continuous-time chain on a discrete space (step 15, [emissions]): ContinuousTimeMarkovChain built
-// from a generator, as persistent, from mean dwell times and exit weights, and from independent axes
+// from a generator, as persistent, from mean sojourn times and exit weights, and from independent axes
 // of a product by the Kronecker sum; its transition over an interval through the matrix exponential;
 // predict() over an interval; and its stationary distribution.
 // Header under test: Distributions/ContinuousTimeMarkovChain.h.
@@ -125,19 +125,19 @@ TEST(ContinuousTimeMarkovChain, PredictMovesOverTheInterval)
     EXPECT_NEAR(stationary.probability<Turn>(), a / (a + b), 1e-12);
 }
 
-// fromDwellTimes() leaves value i at the rate 1/tau_i, so the exponential time there has mean
+// fromSojournTimes() leaves value i at the rate 1/tau_i, so the exponential time there has mean
 // tau_i, and splits the rate by the exit weights: the generator is computed by hand. Without exit
 // weights it splits evenly, as persistent() does with each value's own rate.
-TEST(ContinuousTimeMarkovChain, FromDwellTimes)
+TEST(ContinuousTimeMarkovChain, FromSojournTimes)
 {
     auto const exits = Eigen::Matrix2d{{0, 1}, {1, 0}};
-    auto const chain = ContinuousTimeMarkovChain<Maneuver>::fromDwellTimes(Eigen::Vector2d{20.0, 2.5}, exits);
+    auto const chain = ContinuousTimeMarkovChain<Maneuver>::fromSojournTimes(Eigen::Vector2d{20.0, 2.5}, exits);
     EXPECT_TRUE(chain.generator().isApprox(Eigen::Matrix2d{{-0.05, 0.05}, {0.4, -0.4}}, 1e-15));
 
-    auto const even = ContinuousTimeMarkovChain<Finite<3>>::fromDwellTimes(Eigen::Vector3d{0.5, 0.5, 0.5});
+    auto const even = ContinuousTimeMarkovChain<Finite<3>>::fromSojournTimes(Eigen::Vector3d{0.5, 0.5, 0.5});
     EXPECT_TRUE(even.generator().isApprox(ContinuousTimeMarkovChain<Finite<3>>::persistent(2.0).generator(), 1e-15));
 
-    auto const flight = ContinuousTimeMarkovChain<Finite<3>>::fromDwellTimes(
+    auto const flight = ContinuousTimeMarkovChain<Finite<3>>::fromSojournTimes(
         Eigen::Vector3d{30.0, 8.0, 4.0},
         Eigen::Matrix3d{{0, 2, 1}, {1, 0, 0}, {1, 0, 0}}
     );
@@ -148,7 +148,7 @@ TEST(ContinuousTimeMarkovChain, FromDwellTimes)
 
 // stationary() gives the probabilities that pi Q = 0: (b, a) / (a + b) for the two-state chain,
 // the same as the stationary distribution of its transition over any interval, and the time
-// fractions 15 : 8/3 : 2/3 of the three-value chain of FromDwellTimes, its visits 1/2, 1/3, 1/6
+// fractions 15 : 8/3 : 2/3 of the three-value chain of FromSojournTimes, its visits 1/2, 1/3, 1/6
 // times its mean times 30, 8, 4. A chain that never moves is Reducible.
 TEST(ContinuousTimeMarkovChain, Stationary)
 {
@@ -164,7 +164,7 @@ TEST(ContinuousTimeMarkovChain, Stationary)
     ASSERT_TRUE(stepped);
     EXPECT_TRUE(stepped->toDensity().value().probabilities().isApprox(p, 1e-14));
 
-    auto const flight = ContinuousTimeMarkovChain<Finite<3>>::fromDwellTimes(
+    auto const flight = ContinuousTimeMarkovChain<Finite<3>>::fromSojournTimes(
         Eigen::Vector3d{30.0, 8.0, 4.0},
         Eigen::Matrix3d{{0, 2, 1}, {1, 0, 0}, {1, 0, 0}}
     );

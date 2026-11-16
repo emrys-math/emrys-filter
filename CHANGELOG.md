@@ -12,6 +12,14 @@ instead.
   undefined behavior, or a call that never returns, caused by a floating-point value passed to the
   library, NaN and infinities included, in a build with `NDEBUG`.
 
+### Changed
+
+- **Breaking:** `MarkovChain::fromDwellTimes()` and `ContinuousTimeMarkovChain::fromDwellTimes()`
+  are renamed `fromSojournTimes()`, with the same arguments: write
+  `MarkovChain<Mode>::fromSojournTimes(tau, exits)` for `MarkovChain<Mode>::fromDwellTimes(tau, exits)`.
+  Sojourn time is the tracking literature's name for the time spent in a mode, and a dwell is
+  already a radar's look at one position.
+
 ### Fixed
 
 - `UpdateBranch::component` and `FilterBranch::component` are 0 in a default-constructed branch,

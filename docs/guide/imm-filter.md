@@ -210,9 +210,9 @@ matrix, 144 bytes.
 | `MarkovChain{space, matrix}` | that matrix; asserts its shape, that it is nonnegative, and that rows sum to one (to `dummy_precision`) |
 | `MarkovChain<S>::persistent(stay, space = {})` | stays with probability `stay`, otherwise moves to any other value equally |
 | `MarkovChain<S>::memoryless(next)` | every row is `next`: the value at each step is independent of the last |
-| `MarkovChain<S>::fromDwellTimes(dwell, exits, space = {})` | stays a mean of $\tau_i$ steps at value $i$, $\Pi_{ii} = 1 - 1/\tau_i$, and leaves for $j$ in proportion to `exits(i, j)`; without `exits`, to every other value equally |
+| `MarkovChain<S>::fromSojournTimes(sojourn, exits, space = {})` | stays a mean of $\tau_i$ steps at value $i$, $\Pi_{ii} = 1 - 1/\tau_i$, and leaves for $j$ in proportion to `exits(i, j)`; without `exits`, to every other value equally |
 | `MarkovChain<Product>{space, chains...}` | one chain per axis, in order: their Kronecker product |
-| `ContinuousTimeMarkovChain<S>::transition(dt)` | $e^{Q \, \Delta t}$ from a rate matrix ([emissions]; below), which also has a `fromDwellTimes()`, with dwell times in seconds |
+| `ContinuousTimeMarkovChain<S>::transition(dt)` | $e^{Q \, \Delta t}$ from a rate matrix ([emissions]; below), which also has a `fromSojournTimes()`, with sojourn times in seconds |
 
 `matrix()` and `transition(from, to)` read it, by flat index. `predict(params, chain)` takes
 one step, keeping the total weight, $p'_j = \sum_i p_i \Pi_{ij}$. `stationary(chain)`, for
@@ -226,7 +226,7 @@ probability $1 - 10^{-12}$ and finds reducibility exactly from the zero structur
 ```cpp
 // a cruise lasts 30 steps, a turn 8, a dive 4; a cruise ends in a turn twice as often as in a dive
 auto const exits = Eigen::Matrix3d{{0, 2, 1}, {1, 0, 0}, {1, 0, 0}};
-auto const flight = MarkovChain<Flight>::fromDwellTimes(Eigen::Vector3d{30, 8, 4}, exits);
+auto const flight = MarkovChain<Flight>::fromSojournTimes(Eigen::Vector3d{30, 8, 4}, exits);
 stationary(flight)->toDensity()->probabilities();  // 0.818 0.145 0.0364: 9/11, 8/55, 2/55
 ```
 
@@ -312,7 +312,7 @@ mixing and leaves the probabilities alone: `predict(0.0)` is a no-op without a s
 > whose filter would take `predict(dt)` and step the chain by $e^{Q \, \Delta t}$, as
 > `HiddenMarkovFilter` already decides between `predict()` and `predict(dt)` by its chain's kind.
 > Its `persistent(rate)` takes a rate, not a sojourn time; the mean sojourn is its reciprocal.
-> *Update:* both chains now have `fromDwellTimes(dwell, exits)`, which takes the mean sojourn
+> *Update:* both chains now have `fromSojournTimes(sojourn, exits)`, which takes the mean sojourn
 > times and where each value goes on leaving. The `SwitchingModel` part is still open
 > (rechecked on 2026-11-04: `SwitchingModel` takes only a `MarkovChain`).
 

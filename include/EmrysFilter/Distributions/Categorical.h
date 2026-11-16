@@ -6,7 +6,7 @@
  * Categorical, the view its toDensity() returns once the weights define a distribution, with
  * probabilities by value and by named event. MarkovChain moves the parameters a step, built
  * directly, from independent chains on the axes of a product, as persistent or memoryless, or
- * from mean dwell times and exit weights; predict() moves them, stationary() gives the chain's
+ * from mean sojourn times and exit weights; predict() moves them, stationary() gives the chain's
  * stationary distribution as a prior, and drawSamples() draws from the density. Read
  * ContinuousTimeMarkovChain.h next.
  */
@@ -53,28 +53,31 @@ namespace internal
 {
 
 /** \returns the generator of the chain that stays at value \f$ i \f$ for a mean time of
- * \f$ \tau_i \f$, \a dwellTimes, and leaves it for each other value \f$ j \f$ in proportion to
+ * \f$ \tau_i \f$, \a sojournTimes, and leaves it for each other value \f$ j \f$ in proportion to
  * \f$ w_{ij} \f$, \a exitWeights: \f$ G_{ii} = -1/\tau_i \f$ and
  * \f$ G_{ij} = w_{ij} / (\tau_i \sum_{k} w_{ik}) \f$. An infinite \f$ \tau_i \f$ never leaves,
  * and its row of weights may be zero.
  */
-template <typename Scalar, typename Matrix, typename DwellTimes, typename ExitWeights>
+template <typename Scalar, typename Matrix, typename SojournTimes, typename ExitWeights>
 [[nodiscard]] Matrix
-dwellGenerator(Eigen::MatrixBase<DwellTimes> const & dwellTimes, Eigen::MatrixBase<ExitWeights> const & exitWeights)
+sojournGenerator(
+    Eigen::MatrixBase<SojournTimes> const & sojournTimes,
+    Eigen::MatrixBase<ExitWeights> const & exitWeights
+)
 {
     Eigen::Index const n = exitWeights.rows();
     EMRYS_FILTER_ASSERT(
-        dwellTimes.size() == n && exitWeights.cols() == n && "give a dwell time and a row of exit weights per value"
+        sojournTimes.size() == n && exitWeights.cols() == n && "give a sojourn time and a row of exit weights per value"
     );
     auto generator = Matrix{};
     generator.resize(n, n);
     for (Eigen::Index i = 0; i < n; ++i)
     {
-        Scalar const dwell = Scalar(dwellTimes(i));
-        EMRYS_FILTER_ASSERT(dwell > Scalar(0) && "a dwell time must be positive");
+        Scalar const sojourn = Scalar(sojournTimes(i));
+        EMRYS_FILTER_ASSERT(sojourn > Scalar(0) && "a sojourn time must be positive");
         EMRYS_FILTER_ASSERT(exitWeights(i, i) == 0 && "a value's weight of exiting to itself must be zero");
         EMRYS_FILTER_ASSERT((exitWeights.row(i).array() >= 0).all() && "exit weights must be nonnegative");
-        Scalar const leave = Scalar(1) / dwell;
+        Scalar const leave = Scalar(1) / sojourn;
         Scalar const total = Scalar(exitWeights.row(i).sum());
         EMRYS_FILTER_ASSERT(
             (leave == Scalar(0) || total > Scalar(0)) && "a value that is left needs a value to exit to"
@@ -811,13 +814,13 @@ private:
  * \endcode
  *
  * A chain is often known by how long it stays at each value and where it goes when it leaves.
- * fromDwellTimes() builds it from both, and stationary() gives the distribution it settles into,
+ * fromSojournTimes() builds it from both, and stationary() gives the distribution it settles into,
  * the prior for a mode that has run long before the first measurement:
  *
  * \code
  * // a cruise lasts 30 steps, a turn 8, a dive 4; a cruise ends in a turn twice as often as in a dive
  * auto const exits = Eigen::Matrix3d{{0, 2, 1}, {1, 0, 0}, {1, 0, 0}};
- * auto const chain = MarkovChain<Flight>::fromDwellTimes(Eigen::Vector3d{30, 8, 4}, exits);
+ * auto const chain = MarkovChain<Flight>::fromSojournTimes(Eigen::Vector3d{30, 8, 4}, exits);
  * auto const prior = stationary(chain);  // 9/11, 8/55, 2/55, or a ChainError
  * \endcode
  *
@@ -956,7 +959,7 @@ public:
     }
 
     /** \returns the chain on \a space that stays at value \f$ i \f$ for a mean of \f$ \tau_i \f$
-     * steps, \a dwellTimes, and on leaving moves to each other value \f$ j \f$ in proportion to
+     * steps, \a sojournTimes, and on leaving moves to each other value \f$ j \f$ in proportion to
      * \f$ w_{ij} \f$, \a exitWeights: \f$ \Pi_{ii} = 1 - 1/\tau_i \f$ and
      * \f$ \Pi_{ij} = w_{ij} / (\tau_i \sum_k w_{ik}) \f$.
      *
@@ -964,35 +967,35 @@ public:
      * [geometric](https://en.wikipedia.org/wiki/Geometric_distribution) with mean
      * \f$ 1 / (1 - \Pi_{ii}) \f$, so each \f$ \tau_i \f$ is at least one, and an infinite one never
      * leaves. The exit weights are nonnegative, need not sum to one, and are zero on the diagonal;
-     * a value that is left needs one that isn't zero. A dwell time in seconds with a fixed step
-     * is ContinuousTimeMarkovChain::fromDwellTimes() and its transition() over the step, which is
+     * a value that is left needs one that isn't zero. A sojourn time in seconds with a fixed step
+     * is ContinuousTimeMarkovChain::fromSojournTimes() and its transition() over the step, which is
      * exact where \f$ 1 - \Delta t / \tau_i \f$ is not.
      */
-    template <typename DwellTimes, typename ExitWeights>
+    template <typename SojournTimes, typename ExitWeights>
     [[nodiscard]] static MarkovChain
-    fromDwellTimes(
-        Eigen::MatrixBase<DwellTimes> const & dwellTimes,
+    fromSojournTimes(
+        Eigen::MatrixBase<SojournTimes> const & sojournTimes,
         Eigen::MatrixBase<ExitWeights> const & exitWeights,
         Space_ space = {}
     )
     {
-        EMRYS_FILTER_ASSERT((dwellTimes.array() >= 1).all() && "a dwell time is at least one step");
-        MatrixType transitions = internal::dwellGenerator<Scalar, MatrixType>(dwellTimes, exitWeights);
+        EMRYS_FILTER_ASSERT((sojournTimes.array() >= 1).all() && "a sojourn time is at least one step");
+        MatrixType transitions = internal::sojournGenerator<Scalar, MatrixType>(sojournTimes, exitWeights);
         transitions.diagonal().array() += Scalar(1);
-        EMRYS_FILTER_ASSERT(transitions.rows() == space.cardinality() && "give a dwell time per value");
+        EMRYS_FILTER_ASSERT(transitions.rows() == space.cardinality() && "give a sojourn time per value");
         return MarkovChain{std::move(space), std::move(transitions)};
     }
 
     /** \returns the chain on \a space that stays at value \f$ i \f$ for a mean of \f$ \tau_i \f$
-     * steps, \a dwellTimes, and on leaving moves to any other value with equal probability: the
-     * other fromDwellTimes() with every exit weight one
+     * steps, \a sojournTimes, and on leaving moves to any other value with equal probability: the
+     * other fromSojournTimes() with every exit weight one
      */
-    template <typename DwellTimes>
+    template <typename SojournTimes>
     [[nodiscard]] static MarkovChain
-    fromDwellTimes(Eigen::MatrixBase<DwellTimes> const & dwellTimes, Space_ space = {})
+    fromSojournTimes(Eigen::MatrixBase<SojournTimes> const & sojournTimes, Space_ space = {})
     {
         Eigen::Index const n = space.cardinality();
-        return fromDwellTimes(dwellTimes, MatrixType::Ones(n, n) - MatrixType::Identity(n, n), std::move(space));
+        return fromSojournTimes(sojournTimes, MatrixType::Ones(n, n) - MatrixType::Identity(n, n), std::move(space));
     }
 
     /** \returns the discrete space */

@@ -27,7 +27,7 @@ compilers print the same digits throughout. The scratch programs are outside the
 an example has a hand computation, the text gives it. This refresh found every number unchanged
 since the refresh of 2026-10-27, and these changes to the API: a fixed-size space is named rather than passed, so
 `CategoricalParams<S>::fromWeights(weights)` and `GaussianParams<S>{mean, covariance}` leave it out
-[space-storage]; `ContinuousTimeMarkovChain` gained `fromDwellTimes()` and the free `stationary()`
+[space-storage]; `ContinuousTimeMarkovChain` gained `fromSojournTimes()` and the free `stationary()`
 (§4); `EmissionTable::observe()` of a temporary is deleted (§3, Q4); `PoissonEmission`'s count is an
 integer (§3); a starting state need not be normalized (§1); and GCC no longer warns in the
 arrival step or the smoother (Q9). The document was refreshed for roadmap 17z
@@ -326,7 +326,7 @@ auto const swapped = PoissonEmission<Load>{rates, 0.5, 3};
 ```
 
 Both hold the value fixed over the interval. Over a `ContinuousTimeMarkovChain`, which may jump
-inside it, they are the approximation for intervals short beside the chain's holding times; §5
+inside it, they are the approximation for intervals short beside the chain's sojourn times; §5
 gives the exact observation and measures the approximation's error.
 
 > **Q5.** `EmissionTable` borrows its matrix through `observe()`, but `PoissonEmission`,
@@ -352,12 +352,12 @@ row-major for a fixed space. It is built in four ways, each with a counterpart o
 | `{space, generator}` | nonnegative off the diagonal, rows summing to zero (to `dummy_precision`, times the largest leaving rate if above one) | `{space, matrix}`, rows summing to one |
 | `::persistent(rate, space = {})` | leaves at `rate`, to each other value at `rate / (n - 1)` | `::persistent(stay)`: stays with probability `stay` |
 | `{product, axisChains...}` on a `DiscreteProduct` | the [Kronecker sum](https://en.wikipedia.org/wiki/Kronecker_sum) of the axes' generators | the Kronecker product of the axes' matrices |
-| `::fromDwellTimes(tau, [exitWeights], space = {})` | $Q_{ii} = -1/\tau_i$, $Q_{ij} = w_{ij} / (\tau_i \sum_k w_{ik})$; evenly without weights; an infinite $\tau_i$ never leaves | `::fromDwellTimes()`, $\Pi_{ii} = 1 - 1/\tau_i$ in steps |
+| `::fromSojournTimes(tau, [exitWeights], space = {})` | $Q_{ii} = -1/\tau_i$, $Q_{ij} = w_{ij} / (\tau_i \sum_k w_{ik})$; evenly without weights; an infinite $\tau_i$ never leaves | `::fromSojournTimes()`, $\Pi_{ii} = 1 - 1/\tau_i$ in steps |
 
-The dwell times are the chain's mean holding times, in the unit of the steps later given to
+The sojourn times are the chain's mean times at each value, in the unit of the steps later given to
 `transition()` (seconds for a `std::chrono` duration), and the exit weights, normalized, its jump
-probabilities, so `fromDwellTimes(Eigen::Vector2d{1 / a, 1 / b})` is the two-state chain below
-exactly; `FromDwellTimes` checks three generators by hand. The free `stationary(chain)` returns the
+probabilities, so `fromSojournTimes(Eigen::Vector2d{1 / a, 1 / b})` is the two-state chain below
+exactly; `FromSojournTimes` checks three generators by hand. The free `stationary(chain)` returns the
 distribution $\pi$ with $\pi Q = 0$ as a `CategoricalParams`, the prior for a chain that has run
 long before the first measurement, or `ChainError::Reducible` when some value can't reach another,
 as for a chain that never moves. It is the algorithm of
@@ -380,7 +380,7 @@ axes' transitions, which is `MarkovChain`'s product constructor (`ProductIsTheKr
 > such as `persistent(leaveRate)` or `leaving(rate)`?
 >
 > **Scheduled:** first after the soft launch, since a rename breaks code (roadmap, "Launch", the
-> **breaking** guide questions). `fromDwellTimes()`, a mean time per value on
+> **breaking** guide questions). `fromSojournTimes()`, a mean time per value on
 > both chains, is a third spelling with neither reading, so one answer keeps `persistent()` as it
 > is and points to it.
 

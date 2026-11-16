@@ -357,7 +357,7 @@ private:
  * \f$ \log p(n \mid v) = n \log(\lambda_v \Delta t) - \lambda_v \Delta t - \log n! \f$.
  * It treats the value as fixed over the interval. A ContinuousTimeMarkovChain may jump inside it,
  * so for a Markov-modulated Poisson process this is the approximation for intervals short beside
- * the chain's holding times; ArrivalInterval observes one exactly.
+ * the chain's sojourn times; ArrivalInterval observes one exactly.
  *
  * \tparam Space   the discrete space
  * \tparam Scalar_ scalar type of the rates, \c double by default

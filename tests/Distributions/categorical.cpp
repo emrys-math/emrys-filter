@@ -3,7 +3,7 @@
 // unchecked and checked once by toDensity(), and the Categorical view it returns; normalization,
 // entropy, events, marginals, conditionals by path, Bayes updates, run-time cardinality, and
 // sampling, a batch or one draw at a time [allocation]; MarkovChain prediction, with independent axes of
-// a product, chains from mean dwell times and exit weights, and stationary distributions.
+// a product, chains from mean sojourn times and exit weights, and stationary distributions.
 
 #include <EmrysFilter/Distributions/Categorical.h>
 #include <EmrysFilter/Spaces/Discrete.h>
@@ -489,39 +489,39 @@ TEST(MarkovChain, IndependentDimensionsOfAProduct)
     );
 }
 
-// fromDwellTimes() stays at value i with probability 1 - 1/tau_i, so that the geometric number of
+// fromSojournTimes() stays at value i with probability 1 - 1/tau_i, so that the geometric number of
 // steps there has mean tau_i, and splits the rest by the exit weights: the matrices are computed
-// by hand. Without exit weights it splits evenly, and an infinite dwell time never leaves.
-TEST(MarkovChain, FromDwellTimes)
+// by hand. Without exit weights it splits evenly, and an infinite sojourn time never leaves.
+TEST(MarkovChain, FromSojournTimes)
 {
-    MarkovChain const two = MarkovChain<Maneuver>::fromDwellTimes(Eigen::Vector2d{20, 5});
+    MarkovChain const two = MarkovChain<Maneuver>::fromSojournTimes(Eigen::Vector2d{20, 5});
     EXPECT_TRUE(two.matrix().isApprox(Eigen::Matrix2d{{0.95, 0.05}, {0.2, 0.8}}, 1e-15));
 
     auto const exits = Eigen::Matrix3d{{0, 2, 1}, {1, 0, 0}, {1, 0, 0}};
-    MarkovChain const flight = MarkovChain<Cell>::fromDwellTimes(Eigen::Vector3d{30, 8, 4}, exits);
+    MarkovChain const flight = MarkovChain<Cell>::fromSojournTimes(Eigen::Vector3d{30, 8, 4}, exits);
     auto const expected =
         Eigen::Matrix3d{{1 - 1.0 / 30, 2.0 / 90, 1.0 / 90}, {1.0 / 8, 1 - 1.0 / 8, 0}, {1.0 / 4, 0, 1 - 1.0 / 4}};
     EXPECT_TRUE(flight.matrix().isApprox(expected, 1e-15));
 
     // Even exits are persistent() with each value's own stay probability.
-    MarkovChain const even = MarkovChain<Cell>::fromDwellTimes(Eigen::Vector3d{10, 10, 10});
+    MarkovChain const even = MarkovChain<Cell>::fromSojournTimes(Eigen::Vector3d{10, 10, 10});
     EXPECT_TRUE(even.matrix().isApprox(MarkovChain<Cell>::persistent(0.9).matrix(), 1e-15));
 
-    // An infinite dwell time is absorbing, and its row of exit weights may be zero.
+    // An infinite sojourn time is absorbing, and its row of exit weights may be zero.
     auto const oneWay = Eigen::Matrix2d{{0, 1}, {0, 0}};
-    MarkovChain const absorbing = MarkovChain<Maneuver>::fromDwellTimes(Eigen::Vector2d{4, inf}, oneWay);
+    MarkovChain const absorbing = MarkovChain<Maneuver>::fromSojournTimes(Eigen::Vector2d{4, inf}, oneWay);
     EXPECT_TRUE(absorbing.matrix().isApprox(Eigen::Matrix2d{{0.75, 0.25}, {0, 1}}, 1e-15));
 }
 
 // stationary() gives the probabilities that one step leaves alone. For the three-value chain of
-// FromDwellTimes the jump chain visits the values 1/2, 1/3, and 1/6 of the time and the chain stays
+// FromSojournTimes the jump chain visits the values 1/2, 1/3, and 1/6 of the time and the chain stays
 // 30, 8, and 4 steps per visit, so the stationary probabilities are 15 : 8/3 : 2/3, or 9/11, 8/55,
 // and 2/55. The two-value chain's are (b, a) / (a + b) in closed form, kept to the last digits
 // when a and b are 1e-12, where a direct solve of pi (P - I) = 0 loses about twelve.
 TEST(MarkovChain, Stationary)
 {
     auto const exits = Eigen::Matrix3d{{0, 2, 1}, {1, 0, 0}, {1, 0, 0}};
-    MarkovChain const flight = MarkovChain<Cell>::fromDwellTimes(Eigen::Vector3d{30, 8, 4}, exits);
+    MarkovChain const flight = MarkovChain<Cell>::fromSojournTimes(Eigen::Vector3d{30, 8, 4}, exits);
     auto const prior = stationary(flight);
     ASSERT_TRUE(prior);
     auto const p = probabilitiesOf(*prior);

@@ -2,7 +2,7 @@
 
 /** \file
  * The continuous-time chain on a discrete space: ContinuousTimeMarkovChain, built from a generator
- * of rates, from independent chains on the axes of a product, as persistent, or from mean dwell
+ * of rates, from independent chains on the axes of a product, as persistent, or from mean sojourn
  * times and exit weights; its transition over an interval as a MarkovChain, through the matrix
  * exponential; predict() over an interval; and stationary(), its stationary distribution
  * (decisions.md [emissions]). Models/Emission.h's ArrivalInterval observes a Markov-modulated
@@ -182,44 +182,44 @@ public:
     }
 
     /** \returns the chain on \a space that stays at value \f$ i \f$ for a mean time of
-     * \f$ \tau_i \f$, \a dwellTimes, and on leaving jumps to each other value \f$ j \f$ in
+     * \f$ \tau_i \f$, \a sojournTimes, and on leaving jumps to each other value \f$ j \f$ in
      * proportion to \f$ w_{ij} \f$, \a exitWeights: \f$ Q_{ii} = -1/\tau_i \f$ and
      * \f$ Q_{ij} = w_{ij} / (\tau_i \sum_k w_{ik}) \f$.
      *
      * The time at a value is [exponential](https://en.wikipedia.org/wiki/Exponential_distribution)
      * with mean \f$ -1/Q_{ii} \f$, and the jump that ends it goes to \f$ j \f$ with probability
-     * \f$ Q_{ij} / -Q_{ii} \f$, the holding times and jump chain of a
+     * \f$ Q_{ij} / -Q_{ii} \f$, the sojourn times and jump chain of a
      * [continuous-time chain](https://en.wikipedia.org/wiki/Continuous-time_Markov_chain), so these
-     * are exactly the chain's mean dwell times and jump probabilities. The dwell times are in the
+     * are exactly the chain's mean sojourn times and jump probabilities. The sojourn times are in the
      * unit of the time steps given to transition(), seconds for a \c std::chrono::duration (see
      * \ref Time), and positive; an infinite one never leaves. The exit weights are nonnegative,
      * need not sum to one, and are zero on the diagonal; a value that is left needs one that isn't
      * zero.
      */
-    template <typename DwellTimes, typename ExitWeights>
+    template <typename SojournTimes, typename ExitWeights>
     [[nodiscard]] static ContinuousTimeMarkovChain
-    fromDwellTimes(
-        Eigen::MatrixBase<DwellTimes> const & dwellTimes,
+    fromSojournTimes(
+        Eigen::MatrixBase<SojournTimes> const & sojournTimes,
         Eigen::MatrixBase<ExitWeights> const & exitWeights,
         Space_ space = {}
     )
     {
         Eigen::Index const n = space.cardinality();
-        MatrixType generator = internal::dwellGenerator<Scalar, MatrixType>(dwellTimes, exitWeights);
-        EMRYS_FILTER_ASSERT(generator.rows() == n && "give a dwell time per value");
+        MatrixType generator = internal::sojournGenerator<Scalar, MatrixType>(sojournTimes, exitWeights);
+        EMRYS_FILTER_ASSERT(generator.rows() == n && "give a sojourn time per value");
         return ContinuousTimeMarkovChain{std::move(space), std::move(generator)};
     }
 
     /** \returns the chain on \a space that stays at value \f$ i \f$ for a mean time of
-     * \f$ \tau_i \f$, \a dwellTimes, and on leaving jumps to any other value with equal
-     * probability: the other fromDwellTimes() with every exit weight one
+     * \f$ \tau_i \f$, \a sojournTimes, and on leaving jumps to any other value with equal
+     * probability: the other fromSojournTimes() with every exit weight one
      */
-    template <typename DwellTimes>
+    template <typename SojournTimes>
     [[nodiscard]] static ContinuousTimeMarkovChain
-    fromDwellTimes(Eigen::MatrixBase<DwellTimes> const & dwellTimes, Space_ space = {})
+    fromSojournTimes(Eigen::MatrixBase<SojournTimes> const & sojournTimes, Space_ space = {})
     {
         Eigen::Index const n = space.cardinality();
-        return fromDwellTimes(dwellTimes, MatrixType::Ones(n, n) - MatrixType::Identity(n, n), std::move(space));
+        return fromSojournTimes(sojournTimes, MatrixType::Ones(n, n) - MatrixType::Identity(n, n), std::move(space));
     }
 
     /** \returns the discrete space */
