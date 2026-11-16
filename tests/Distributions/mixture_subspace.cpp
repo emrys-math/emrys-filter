@@ -368,6 +368,9 @@ TEST(GaussianMixtureMarginalDeathTest, ReadAfterStructuralChange)
         },
         message
     );
+    // clang-tidy, which defines __clang_analyzer__, would report the read after the move that the
+    // test makes on purpose, at the read's line in the header.
+#    ifndef __clang_analyzer__
     EXPECT_DEATH(
         {
             auto stolen = std::move(mixture);
@@ -375,6 +378,7 @@ TEST(GaussianMixtureMarginalDeathTest, ReadAfterStructuralChange)
         },
         message
     );
+#    endif
 }
 
 // A marginal taken from the factorized view holds a copy of the view after the view itself is

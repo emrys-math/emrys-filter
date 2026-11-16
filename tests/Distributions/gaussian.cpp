@@ -649,6 +649,9 @@ TEST_F(GaussianDeathTest, ReadAfterMove)
 {
     auto mg = make();
     auto const g = mg.toDensity();
+    // clang-tidy, which defines __clang_analyzer__, would report the read after the move that the
+    // test makes on purpose, at the read's line in the header.
+#    ifndef __clang_analyzer__
     EXPECT_DEATH(
         {
             auto stolen = std::move(mg);
@@ -656,6 +659,7 @@ TEST_F(GaussianDeathTest, ReadAfterMove)
         },
         "changed while a view"
     );
+#    endif
     EXPECT_DEATH(
         {
             mg = make();

@@ -2,8 +2,9 @@
 (decisions.md [static-analysis]).
 
 The headers are analyzed through the translation units that include them, so a finding in a header
-is reported once however many units reach it. A finding in a file outside the repository, which the
-static analyzer makes when a path that starts in our code ends in Eigen's, is left out, and so are
+is reported once however many units reach it. A finding in a file outside the repository or inside
+the build directory, which the static analyzer makes when a path that starts in our code ends in
+Eigen's, is left out, and so are
 the negative compile tests' files, which without a case compile only what their cases share. The
 build needs only to be configured: its compile_commands.json is read, and the module map arguments
 that CMake adds, which name files the build writes, are dropped. Prints each finding and a count by
@@ -94,6 +95,9 @@ def main():
                                 capture_output=True, encoding='utf-8', errors='replace')
         return path, result, time.monotonic() - start
 
+    # The build directory, when inside the repository as in CI, holds Eigen and GoogleTest.
+    fetched = relative(arguments.build)
+    fetched = None if fetched in (None, '.') else fetched + '/'
     findings = {}
     failed = []
     with concurrent.futures.ThreadPoolExecutor(arguments.jobs) as pool:
@@ -106,7 +110,7 @@ def main():
                     continue
                 reported = True
                 where = relative(match.group(1))
-                if where is None:
+                if where is None or (fetched is not None and where.startswith(fetched)):
                     continue
                 key = (where, int(match.group(2)), int(match.group(3)), match.group(6))
                 findings.setdefault(key, match.group(5))

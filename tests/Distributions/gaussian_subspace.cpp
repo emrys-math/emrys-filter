@@ -261,6 +261,9 @@ TEST(GaussianMarginalDeathTest, ReadAfterStructuralChange)
         },
         "changed size or structure while a marginal"
     );
+    // clang-tidy, which defines __clang_analyzer__, would report the read after the move that the
+    // test makes on purpose, at the read's line in the header.
+#    ifndef __clang_analyzer__
     EXPECT_DEATH(
         {
             auto stolen = std::move(mg);
@@ -268,6 +271,7 @@ TEST(GaussianMarginalDeathTest, ReadAfterStructuralChange)
         },
         "changed size or structure while a marginal"
     );
+#    endif
     EXPECT_DEATH(
         {
             mg = OpenGaussian{3};
