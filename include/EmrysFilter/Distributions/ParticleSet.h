@@ -2081,6 +2081,7 @@ silvermanBandwidth(P && policy, ParticleSet<Space, Scalar, Allocator> const & pa
 }  // namespace Emrys
 
 // KernelDensity completes ParticleSet::toDensity(); it includes this header first.
+// NOLINTNEXTLINE(misc-header-include-cycle): the cycle is this completion, which #pragma once ends
 #include <EmrysFilter/Distributions/KernelDensity.h>
 
 #ifndef EMRYS_FILTER_NO_IO

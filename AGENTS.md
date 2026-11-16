@@ -88,7 +88,9 @@ AddressSanitizer and UndefinedBehaviorSanitizer), `gcc-no-exceptions` (`-fno-exc
 `tools/coverage.py` [coverage];
 the vcpkg port in `packaging/vcpkg/`, installed from the checkout by `tools/vcpkg_test_port.py` and
 used by `examples/consumer`; the Conan recipe in `packaging/conan/`, created from the checkout by
-`tools/conan_test_recipe.py` with GCC 14 and Clang 21; a
+`tools/conan_test_recipe.py` with GCC 14 and Clang 21; the static analysis of the headers by
+clang-tidy through every test, example, and benchmark, `tools/clang_tidy.py` over a configured
+`clang` build, which takes about an hour locally [static-analysis]; a
 clang-format check, a header-layer check, a check that each claimed compile error has a negative
 test (`tools/check_compile_errors.py`), and a Doxygen build that fails on any warning, followed by a
 check over its XML that each policy namespace holds only its kind (`tools/check_policies.py`). The tests, examples, and benchmarks build with warnings as errors

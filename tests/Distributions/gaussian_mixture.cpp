@@ -1024,6 +1024,7 @@ TEST(GaussianMixture, ViewsCopyAndMoveFreely)
     {
         auto g = mixture.toDensity().value();
         auto const copy = g;
+        // NOLINTNEXTLINE(performance-move-const-arg): the test moves the view to show it moves as it copies
         auto const moved = std::move(g);
         EXPECT_EQ(copy.logDensity(Eigen::Vector2d::Zero()), moved.logDensity(Eigen::Vector2d::Zero()));
     }

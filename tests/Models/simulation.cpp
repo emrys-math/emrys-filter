@@ -23,7 +23,6 @@
 
 using Emrys::additiveNoise;
 using Emrys::block;
-using Emrys::BlockRows;
 using Emrys::compose;
 using Emrys::Composite;
 using Emrys::Constant;
@@ -38,8 +37,6 @@ using Emrys::RadiansPi;
 using Emrys::RandomWalk;
 using Emrys::reads;
 using Emrys::simulate;
-
-namespace methods = Emrys::methods;
 
 namespace
 {

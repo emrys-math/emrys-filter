@@ -41,9 +41,9 @@ namespace internal
 template <typename Matrix>
 struct InfoSums
 {
-    Matrix first;   ///< the sum of the first matrix, such as \f$ F \f$
-    Matrix second;  ///< the sum of the second matrix, such as \f$ F^T Q^{-1} F \f$
-    bool valid;     ///< whether every state's terms were formed
+    Matrix first;       ///< the sum of the first matrix, such as \f$ F \f$
+    Matrix second;      ///< the sum of the second matrix, such as \f$ F^T Q^{-1} F \f$
+    bool valid = true;  ///< whether every state's terms were formed
 };
 
 /** \returns \a a and \a b added: the combination of two ranges' InfoSums. */

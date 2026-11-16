@@ -122,7 +122,7 @@ TEST(ResizableSpace, RuntimeIndices)
     EXPECT_EQ((idx<TagPath<Landmarks, Orientation>>(map, 0)), 5);
 
     // A fixed block keeps its compile-time size, and the constant idx() agrees.
-    auto const pose = x(idx<Pose>(map));
+    [[maybe_unused]] auto const pose = x(idx<Pose>(map));
     static_assert(decltype(pose)::RowsAtCompileTime == 3);
     EXPECT_EQ(Eigen::VectorXd{x(Emrys::idx<Map, Landmarks>())}, Eigen::VectorXd{x(idx<Landmarks>(map))});
 }

@@ -887,6 +887,7 @@ template <typename Space, typename Part>
 [[nodiscard]] Part const &
 noiseFactor(Space const &, Part const & part)
 {
+    // NOLINTNEXTLINE(bugprone-return-const-ref-from-parameter): the identity case of the overloads
     return part;
 }
 

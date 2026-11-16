@@ -24,7 +24,6 @@ using namespace EmrysTest::Allocation;
 using Emrys::FixedStepModel;
 using Emrys::InfoFilter;
 using Emrys::InfoGaussianParams;
-using Emrys::SqrtGaussianParams;
 using Emrys::SqrtInfoFilter;
 using Emrys::SqrtInfoGaussianParams;
 using Emrys::SqrtKalmanFilter;

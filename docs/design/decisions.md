@@ -123,6 +123,7 @@ Read the index, then the decisions your change touches.
 | [benchmarks](#benchmarks) | Speed is benchmarked in this repository against hand-rolled Eigen |
 | [coverage](#coverage) | Full coverage is instantiation, region, and axis coverage, measured per instantiation (region, entity, and compile-error coverage built; axes Verification) |
 | [check-stages](#check-stages) | Checks run in stages chosen by what each can catch, and the diff decides which a change needs |
+| [static-analysis](#static-analysis) | clang-tidy analyzes the headers through every test, example, and benchmark, before each release |
 | [splitting-hooks](#splitting-hooks) | Splitting by nonlinearity is our own work, kept outside the library, with the library supplying the hooks (the action outside the library; hooks not built: step 16b) |
 | [distributed-fusion](#distributed-fusion) | Distributed fusion is factor operations and filter steps here, node bookkeeping in the tracker, and no project of its own (not built: step 16c) |
 | [eigen-partner](#eigen-partner) | The library is a partner to Eigen, not part of it |
@@ -2700,7 +2701,7 @@ check. The axis checklist is not built yet (roadmap, Verification).
 `ci` (before a release). A check's stage is set by what it alone can catch: Clang and the checks
 that take seconds at `land`; the other compiler families, the negative compile tests, the
 sanitizers, Doxygen, and coverage at `pr`; the builds only CI runs (no exceptions, libc++, arm64,
-macOS, Cortex-M) at `ci`. A check moves to an earlier stage when the change touches what only it
+macOS, Cortex-M) and the static analysis [static-analysis] at `ci`. A check moves to an earlier stage when the change touches what only it
 tests, as a deduction guide does MSVC, a claimed compile error Clang's negative compile tests, or a
 `throw` the build without exceptions, and a check is skipped when the change touches nothing it
 tests. `tools/required_checks.py` holds the rules and reads the diff. The negative compile tests
@@ -2723,6 +2724,34 @@ until 2026-11-12, which made `land` pay for them on each header change.
 
 **Where.** `tools/required_checks.py`, `tests/compile_errors.cmake`, `CMakePresets.json`, and
 AGENTS.md's "Build and test".
+
+### static-analysis
+
+*clang-tidy analyzes the headers through every test, example, and benchmark, before each release.*
+
+**Rule.** clang-tidy runs the checks in `.clang-tidy`: the `bugprone`, `cert`, `clang-analyzer`
+(Clang's static analyzer), `misc`, `performance`, and `portability` families, less the checks that
+report what the library does on purpose, each listed there with its reason, and a few single
+checks (members left uninitialized, `[[nodiscard]]`, duplicate includes). A header is analyzed
+through the translation units that include it, so a template is analyzed in each instantiation the
+tests make [coverage], and findings are reported in the headers, tests, examples, and benchmarks,
+not in Eigen or GoogleTest. Every finding is fixed, or, where the code means it, suppressed at its
+line with `NOLINTNEXTLINE(check)` and the reason. It runs at `ci`, before a release, and at `pr`
+when `.clang-tidy` or its runner changes [check-stages].
+
+**Why.** It finds what the compilers' warnings don't: a member left uninitialized, a read after a
+move, a reference that can dangle, a dead store. Its first run found two public result types whose
+`component` was uninitialized when default-constructed. The OpenSSF Best Practices badge requires
+a static analysis tool run before each release. A run costs about as much as compiling the tests,
+70 minutes three units at a time (117 units, measured 2026-11-16), so it waits with the CI builds.
+
+**Rejected.** cppcheck, whose parser lags C++20 and C++23 and Eigen's templates. CodeQL, whose C++
+queries look for untrusted input, which the library does not read, and whose front end is untried
+here on C++23 and Eigen 5. Analyzing one unit that includes every header, which takes 30 s but sees
+no template instantiated. Running at `land` or `pr`, which would add an hour to every change.
+
+**Where.** `.clang-tidy`, `tools/clang_tidy.py`, CI's `clang-tidy` job, and
+`tools/required_checks.py`.
 
 ### splitting-hooks
 

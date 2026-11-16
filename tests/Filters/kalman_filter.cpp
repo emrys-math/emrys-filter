@@ -29,7 +29,6 @@
 #include <cmath>
 #include <numbers>
 #include <optional>
-#include <optional>
 #include <random>
 #include <type_traits>
 #include <utility>
@@ -37,7 +36,6 @@
 #include <vector>
 
 using Emrys::additiveNoise;
-using Emrys::compose;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
 using Emrys::Gaussian;

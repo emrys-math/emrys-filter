@@ -15,7 +15,6 @@
 #include <cmath>
 #include <cstddef>
 #include <optional>
-#include <expected>
 #include <span>
 #include <type_traits>
 #include <utility>

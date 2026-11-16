@@ -31,7 +31,6 @@
 #include <vector>
 
 using Emrys::additiveNoise;
-using Emrys::compose;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
 using Emrys::Gaussian;
@@ -45,7 +44,6 @@ using Emrys::Lag;
 using Emrys::Linear;
 using Emrys::ScalarOf;
 
-namespace methods = Emrys::methods;
 namespace reductions = Emrys::reductions;
 
 namespace

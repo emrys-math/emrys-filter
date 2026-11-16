@@ -55,8 +55,8 @@ struct UpdateBranch
     Scalar logWeight;                         ///< log of its posterior probability among the branches of one update
     GaussianParams<Space, Scalar> posterior;  ///< the state conditioned on the observation under this branch
     Innovation<MeasurementSpace, Scalar> innovation;  ///< the observation's residual under it and its covariance
-    Eigen::Index mode = 0;   ///< flat index of the mode's discrete value, set by the IMM; update() gives 0
-    Eigen::Index component;  ///< index of the noise component, such as inlier or outlier
+    Eigen::Index mode = 0;       ///< flat index of the mode's discrete value, set by the IMM; update() gives 0
+    Eigen::Index component = 0;  ///< index of the noise component, such as inlier or outlier
 
     /** the linearizations the update made: 1, except under the Iterated method */
     std::size_t iterations = 1;
@@ -208,7 +208,7 @@ struct FilterBranch
     Scalar logWeight;  ///< log of its posterior probability among the branches of one update
     Innovation<MeasurementSpace, Scalar> innovation;  ///< the observation's residual under it and its covariance
     Eigen::Index mode = 0;       ///< flat index of the mode's discrete value, as UpdateBranch::mode
-    Eigen::Index component;      ///< index of the noise component, such as inlier or outlier
+    Eigen::Index component = 0;  ///< index of the noise component, such as inlier or outlier
     std::size_t iterations = 1;  ///< the linearizations made, as UpdateBranch::iterations
     bool converged = true;       ///< as UpdateBranch::converged
 

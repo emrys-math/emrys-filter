@@ -417,7 +417,7 @@ TEST(Product, ConditionalOnAWholeFactorDropsIt)
                   std::remove_const_t<decltype(heading)>,
                   Product<Composite<Heading, Speed>, double, Uniform<Heading>, Gamma<Speed>>>);
     EXPECT_NEAR(heading.logDensity(Eigen::Vector2d{0.3, 1.5}), -std::log(2 * pi) + speedLogDensity(1.5), 1e-13);
-    auto const speed = prior.conditional<Pose>(Eigen::Vector3d{1.0, 2.0, 0.0});
+    [[maybe_unused]] auto const speed = prior.conditional<Pose>(Eigen::Vector3d{1.0, 2.0, 0.0});
     static_assert(std::is_same_v<decltype(speed), Gamma<Speed> const>);
 }
 

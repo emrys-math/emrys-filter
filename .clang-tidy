@@ -1,0 +1,67 @@
+# The static analysis of the headers, through the tests, examples, and benchmarks that include them
+# (decisions.md [static-analysis]); tools/clang_tidy.py runs it. Each family is on but the checks
+# below, which report what the library does on purpose:
+#
+#   bugprone-branch-clone                      if constexpr branches alike for different types
+#   bugprone-crtp-constructor-accessibility    CRTP bases a user's class derives from
+#   bugprone-easily-swappable-parameters       adjacent values of one type, as numerics take
+#   bugprone-exception-escape                  allocation failure is the allocator's [embedded-builds]
+#   bugprone-implicit-widening-of-multiplication-result, bugprone-integer-division,
+#   bugprone-narrowing-conversions             index arithmetic the tests write on purpose
+#   bugprone-unchecked-optional-access         caches whose presence an earlier call ensures
+#   bugprone-unused-return-value               [[nodiscard]], which the compiler checks, and (void)
+#   cert-err58-cpp                             GoogleTest's static test registrations
+#   cert-msc32-c, cert-msc51-cpp               seeded generators, for results that repeat
+#   cert-oop54-cpp                             assignments that are safe on themselves
+#   misc-const-correctness, misc-include-cleaner, misc-no-recursion,
+#   misc-non-private-member-variables-in-classes, misc-use-internal-linkage
+#                                              style that style.md sets otherwise
+#   misc-redundant-expression                  NaN tests (x == x) and instantiated constants
+#   performance-enum-size                      error enums keep the standard's int
+#   performance-no-automatic-move              returns of a value a lambda captured by reference
+#   performance-noexcept-swap                  member swaps that assert, not std::swap overloads
+#   performance-unnecessary-copy-initialization, performance-unnecessary-value-param
+#                                              stored arguments by value (style.md) and test copies
+#   portability-avoid-pragma-once              every header uses #pragma once
+#
+# A finding the code means is suppressed where it is reported, with NOLINTNEXTLINE(check) and the
+# reason.
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-branch-clone,
+  -bugprone-crtp-constructor-accessibility,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape,
+  -bugprone-implicit-widening-of-multiplication-result,
+  -bugprone-integer-division,
+  -bugprone-narrowing-conversions,
+  -bugprone-unchecked-optional-access,
+  -bugprone-unused-return-value,
+  cert-*,
+  -cert-err58-cpp,
+  -cert-msc32-c,
+  -cert-msc51-cpp,
+  -cert-oop54-cpp,
+  clang-analyzer-*,
+  misc-*,
+  -misc-const-correctness,
+  -misc-include-cleaner,
+  -misc-no-recursion,
+  -misc-non-private-member-variables-in-classes,
+  -misc-redundant-expression,
+  -misc-use-internal-linkage,
+  performance-*,
+  -performance-enum-size,
+  -performance-no-automatic-move,
+  -performance-noexcept-swap,
+  -performance-unnecessary-copy-initialization,
+  -performance-unnecessary-value-param,
+  portability-*,
+  -portability-avoid-pragma-once,
+  cppcoreguidelines-pro-type-member-init,
+  modernize-use-nodiscard,
+  readability-duplicate-include,
+  readability-misleading-indentation
+HeaderFilterRegex: '.*[\\/]include[\\/]EmrysFilter[\\/].*'
+SystemHeaders: false

@@ -29,7 +29,6 @@
 #include <vector>
 
 using Emrys::additiveNoise;
-using Emrys::compose;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
 using Emrys::GaussianMixtureFilter;
@@ -158,7 +157,7 @@ predictByHand(Moments4 const & x)
 struct UpdatedByHand
 {
     Moments4 posterior;
-    double logLikelihood;
+    double logLikelihood = 0;
 };
 
 // The Kalman update of a position fix whose noise has mean `offset` and covariance `noise`.

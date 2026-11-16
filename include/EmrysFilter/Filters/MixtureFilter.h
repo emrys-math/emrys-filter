@@ -1208,7 +1208,7 @@ private:
         static constexpr bool HoldsSeveral = true;  ///< a policy may add any number
 
         MixtureFilter & filter;  ///< the filter whose posterior is filled
-        Eigen::Index prior;      ///< the state's component the branches came from
+        Eigen::Index prior = 0;  ///< the state's component the branches came from
         Scalar logWeight;        ///< its normalized log-weight plus its update's log-likelihood
         bool added = false;      ///< whether the policy added a component
 

@@ -400,6 +400,7 @@ private:
      * index \a mode follows
      */
     template <typename F>
+    // NOLINTNEXTLINE(modernize-use-nodiscard): returns what f returns, which may be void, as visit() does
     decltype(auto)
     visitEntry(Eigen::Index mode, F const & f) const
     {

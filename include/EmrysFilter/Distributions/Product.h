@@ -601,6 +601,7 @@ struct EachBlockOf<Space, WholeSpace>
     [[nodiscard]] static Space const &
     in(Space const & space)
     {
+        // NOLINTNEXTLINE(bugprone-return-const-ref-from-parameter): the identity case; callers hold a space
         return space;
     }
 

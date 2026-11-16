@@ -28,7 +28,6 @@
 #if EMRYS_FILTER_TEST_STANDARD_POLICIES
 
 using Emrys::additiveNoise;
-using Emrys::compose;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
 using Emrys::GaussianMixtureParams;
@@ -41,7 +40,6 @@ using Emrys::SharedCovariance;
 
 namespace execution = Emrys::execution;
 namespace methods = Emrys::methods;
-namespace resamplers = Emrys::resamplers;
 
 namespace
 {

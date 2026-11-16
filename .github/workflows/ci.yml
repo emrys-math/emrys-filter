@@ -60,6 +60,10 @@ on:
         description: clang-format check
         type: boolean
         default: false
+      clang_tidy:
+        description: clang-tidy static analysis of the headers through every test and example
+        type: boolean
+        default: false
       vcpkg:
         description: The vcpkg port, installed from the checkout and used by examples/consumer
         type: boolean
@@ -435,3 +439,32 @@ jobs:
 
       - name: Check formatting
         run: git ls-files '*.h' '*.cpp' | xargs "clang-format-$LLVM_VERSION" --dry-run --Werror
+
+  # clang-tidy, with the checks in .clang-tidy, over every test, example, and benchmark, through
+  # which it analyzes the headers [static-analysis]. It parses each translation unit as a compile
+  # does and builds nothing, so the clang preset is only configured.
+  clang-tidy:
+    name: clang-tidy (Linux)
+    if: inputs.clang_tidy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libtbb-dev
+          wget -q https://apt.llvm.org/llvm.sh
+          sudo bash llvm.sh "$LLVM_VERSION"
+          sudo apt-get install -y "clang-tidy-$LLVM_VERSION"
+          mkdir -p "$HOME/bin"
+          ln -s "$(command -v clang++-$LLVM_VERSION)" "$HOME/bin/clang++"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: Configure
+        run: cmake --preset clang
+
+      # Two translation units at a time fit in the runner's memory, as in the builds.
+      - name: Analyze
+        run: python3 tools/clang_tidy.py build/clang -j 2 --clang-tidy "clang-tidy-$LLVM_VERSION"

@@ -37,7 +37,6 @@
 #include <vector>
 
 using Emrys::CategoricalParams;
-using Emrys::compose;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
 using Emrys::Finite;

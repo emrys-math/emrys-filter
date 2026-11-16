@@ -20,8 +20,6 @@
 using Emrys::GaussianParams;
 using Emrys::Linear;
 
-namespace resamplers = Emrys::resamplers;
-
 namespace
 {
 
@@ -87,8 +85,8 @@ TYPED_TEST_SUITE(SamplingTest, Configs);
 // covariance in norm.
 TYPED_TEST(SamplingTest, SampleMomentsConverge)
 {
-    auto const mg = this->make();
-    auto const g = mg.toDensity();
+    auto const gaussianParams = this->make();
+    auto const g = gaussianParams.toDensity();
     ASSERT_TRUE(g.has_value());
     auto rng = std::mt19937_64{7};
     constexpr Eigen::Index count = 40000;
@@ -100,10 +98,10 @@ TYPED_TEST(SamplingTest, SampleMomentsConverge)
     Eigen::VectorXd const mean = x.rowwise().mean();
     Eigen::MatrixXd const centered = x.colwise() - mean;
     Eigen::MatrixXd const cov = centered * centered.transpose() / double(count - 1);
-    Eigen::MatrixXd const p = mg.covarianceLower().template cast<double>();
+    Eigen::MatrixXd const p = gaussianParams.covarianceLower().template cast<double>();
     for (Eigen::Index i = 0; i < this->n; ++i)
     {
-        EXPECT_NEAR(mean(i), double(mg.mean()(i)), 5 * std::sqrt(p(i, i) / double(count))) << "mean " << i;
+        EXPECT_NEAR(mean(i), double(gaussianParams.mean()(i)), 5 * std::sqrt(p(i, i) / double(count))) << "mean " << i;
     }
     EXPECT_LT((cov - p).norm(), 0.05 * p.norm());
 }
@@ -113,8 +111,8 @@ TYPED_TEST(SamplingTest, SampleMomentsConverge)
 TYPED_TEST(SamplingTest, LogDensityMatchesGaussian)
 {
     using Scalar = typename TestFixture::Scalar;
-    auto const mg = this->make();
-    auto const g = mg.toDensity();
+    auto const gaussianParams = this->make();
+    auto const g = gaussianParams.toDensity();
     auto rng = std::mt19937_64{11};
     auto const drawn = Emrys::drawSamplesWithLogDensity(*g, 50, rng);
     ASSERT_EQ(drawn.logDensity.size(), 50);
@@ -130,8 +128,8 @@ TYPED_TEST(SamplingTest, LogDensityMatchesGaussian)
 // gives the same samples.
 TYPED_TEST(SamplingTest, BothVersionsDrawTheSameSamples)
 {
-    auto const mg = this->make();
-    auto const g = mg.toDensity();
+    auto const gaussianParams = this->make();
+    auto const g = gaussianParams.toDensity();
     auto a = std::mt19937_64{3};
     auto b = std::mt19937_64{3};
     EXPECT_EQ(Emrys::drawSamples(*g, 20, a), Emrys::drawSamplesWithLogDensity(*g, 20, b).samples);
@@ -141,9 +139,9 @@ TYPED_TEST(SamplingTest, BothVersionsDrawTheSameSamples)
 // log-weights: the importance-sampling use.
 TEST(Sampling, FeedsParticleSet)
 {
-    auto const mg = GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), Eigen::Matrix2d::Identity()};
+    auto const gaussianParams = GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), Eigen::Matrix2d::Identity()};
     auto rng = std::mt19937_64{5};
-    auto const drawn = Emrys::drawSamplesWithLogDensity(mg.toDensity().value(), 10, rng);
+    auto const drawn = Emrys::drawSamplesWithLogDensity(gaussianParams.toDensity().value(), 10, rng);
     // Importance weights for a uniform target, as a particle filter proposal would use.
     auto const set = Emrys::ParticleSet<Emrys::Linear<2>>{drawn.samples, -drawn.logDensity};
     EXPECT_EQ(set.size(), 10);
@@ -153,9 +151,10 @@ TEST(Sampling, FeedsParticleSet)
 // Asking for zero samples returns an n-by-0 matrix, not an error.
 TEST(Sampling, ZeroSamples)
 {
-    auto const mg = GaussianParams<Linear<Eigen::Dynamic>>{Eigen::Vector3d::Zero(), Eigen::Matrix3d::Identity()};
+    auto const gaussianParams =
+        GaussianParams<Linear<Eigen::Dynamic>>{Eigen::Vector3d::Zero(), Eigen::Matrix3d::Identity()};
     auto rng = std::mt19937_64{5};
-    auto const samples = Emrys::drawSamples(mg.toDensity().value(), 0, rng);
+    auto const samples = Emrys::drawSamples(gaussianParams.toDensity().value(), 0, rng);
     EXPECT_EQ(samples.rows(), 3);
     EXPECT_EQ(samples.cols(), 0);
 }

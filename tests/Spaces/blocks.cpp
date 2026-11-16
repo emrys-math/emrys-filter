@@ -101,7 +101,7 @@ TEST(Blocks, PathsAreValues)
     static_assert(
         std::is_same_v<Emrys::internal::PathOf<decltype(path<Ownship, Position>)>, TagPath<Ownship, Position>>
     );
-    auto const renamed = Emrys::on<Range>(path<Ownship, Position>);
+    [[maybe_unused]] auto const renamed = Emrys::on<Range>(path<Ownship, Position>);
     static_assert(std::is_same_v<decltype(renamed), Emrys::internal::OnPath<TagPath<Ownship, Position>, Range> const>);
 }
 

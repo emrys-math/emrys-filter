@@ -611,6 +611,9 @@ TEST(ParticleSetDeathTest, ReadAfterMove)
 {
     auto set = makeWeighted({1.0, 2.0});
     auto const kde = set.toDensity(Eigen::Matrix2d::Identity());
+    // clang-tidy, which defines __clang_analyzer__, would report the read after the move that the
+    // test makes on purpose, at the read's line in the header.
+#    ifndef __clang_analyzer__
     EXPECT_DEATH(
         {
             auto stolen = std::move(set);
@@ -618,6 +621,7 @@ TEST(ParticleSetDeathTest, ReadAfterMove)
         },
         "changed while a view"
     );
+#    endif
 }
 
 // A log-weight read past the last particle dies, as every other read by index does.

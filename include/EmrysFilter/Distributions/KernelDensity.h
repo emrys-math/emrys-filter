@@ -23,6 +23,7 @@
 #include <EmrysFilter/Core/Stamp.h>
 #include <EmrysFilter/Core/Weights.h>
 #include <EmrysFilter/Distributions/Gaussian.h>
+// NOLINTNEXTLINE(misc-header-include-cycle): ParticleSet.h includes this header last, to complete toDensity()
 #include <EmrysFilter/Distributions/ParticleSet.h>
 #include <EmrysFilter/Distributions/SampleSet.h>
 #include <EmrysFilter/Distributions/Sampling.h>

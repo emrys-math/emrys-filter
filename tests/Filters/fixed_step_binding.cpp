@@ -18,7 +18,6 @@ using Emrys::Composite;
 using Emrys::ConstantVelocity;
 using Emrys::FixedStepModel;
 using Emrys::GaussianParams;
-using Emrys::Hybrid;
 using Emrys::HybridParams;
 using Emrys::KalmanFilter;
 using Emrys::Linear;
