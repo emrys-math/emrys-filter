@@ -1336,8 +1336,8 @@ struct RecursionFor<Hybrid<Component_, ModeSpace_, HybridAllocator>, Model, Meth
  *
  * \code
  * using Mode = DiscreteProduct<Maneuver, Sensor>;
- * auto const chain = MarkovChain<Mode>{MarkovChain<Maneuver>::persistent(0.95),
- *                                      MarkovChain<Sensor>::persistent(0.8)};
+ * auto const chain = MarkovChain<Mode>::independent(MarkovChain<Maneuver>::persistent(0.95),
+ *                                                   MarkovChain<Sensor>::persistent(0.8));
  * auto filter = ImmFilter{switchingModel<Maneuver>(chain, cruise, turn),
  *                  Hybrid{CategoricalParams<Mode>{}, initial}};
  * filter.predict(dt);

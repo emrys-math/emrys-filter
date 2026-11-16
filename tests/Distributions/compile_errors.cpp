@@ -706,19 +706,19 @@ using Rest = typename Emrys::ParticleGaussianParams<State, Position>::RestSpace;
 #endif
 
 #if defined(MARKOV_CHAINS_OUT_OF_ORDER)  // static_assert: Categorical.h: give one chain per axis of the product, in
-[[maybe_unused]] auto const chain = Emrys::MarkovChain<Mode>{
+[[maybe_unused]] auto const chain = Emrys::MarkovChain<Mode>::independent(
     Mode{},
     Emrys::MarkovChain<Sensor>::persistent(0.9),
     Emrys::MarkovChain<Maneuver>::persistent(0.9)
-};
+);
 #endif
 
 #if defined(CONTINUOUS_CHAINS_OUT_OF_ORDER)  // static_assert: ContinuousTimeMarkovChain.h: give one chain per axis of
-[[maybe_unused]] auto const chain = Emrys::ContinuousTimeMarkovChain<Mode>{
+[[maybe_unused]] auto const chain = Emrys::ContinuousTimeMarkovChain<Mode>::independent(
     Mode{},
     Emrys::ContinuousTimeMarkovChain<Sensor>::persistent(1.0),
     Emrys::ContinuousTimeMarkovChain<Maneuver>::persistent(1.0)
-};
+);
 #endif
 
 #if defined(KULLBACK_LEIBLER_WITHOUT_CLOSED_FORM)  // static_assert: Divergence.h: kullbackLeibler(p, q) has a closed

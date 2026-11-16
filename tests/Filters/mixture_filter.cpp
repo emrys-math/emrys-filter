@@ -107,7 +107,8 @@ makeModel(double density)
 auto
 makeSwitching()
 {
-    auto const chain = MarkovChain<Mode>{MarkovChain<Maneuver>::persistent(0.95), MarkovChain<Sensor>::persistent(0.8)};
+    auto const chain =
+        MarkovChain<Mode>::independent(MarkovChain<Maneuver>::persistent(0.95), MarkovChain<Sensor>::persistent(0.8));
     return switchingModel<Maneuver>(chain, makeModel(quiet), makeModel(agile));
 }
 

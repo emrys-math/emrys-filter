@@ -351,7 +351,7 @@ row-major for a fixed space. It is built in four ways, each with a counterpart o
 | `ContinuousTimeMarkovChain<S>{}` | every rate zero: never moves | `MarkovChain<S>{}`, the identity |
 | `{space, generator}` | nonnegative off the diagonal, rows summing to zero (to `dummy_precision`, times the largest leaving rate if above one) | `{space, matrix}`, rows summing to one |
 | `::persistent(rate, space = {})` | leaves at `rate`, to each other value at `rate / (n - 1)` | `::persistent(stay)`: stays with probability `stay` |
-| `{product, axisChains...}` on a `DiscreteProduct` | the [Kronecker sum](https://en.wikipedia.org/wiki/Kronecker_sum) of the axes' generators | the Kronecker product of the axes' matrices |
+| `::independent([product,] axisChains...)` on a `DiscreteProduct` | the [Kronecker sum](https://en.wikipedia.org/wiki/Kronecker_sum) of the axes' generators | the Kronecker product of the axes' matrices |
 | `::fromSojournTimes(tau, [exitWeights], space = {})` | $Q_{ii} = -1/\tau_i$, $Q_{ij} = w_{ij} / (\tau_i \sum_k w_{ik})$; evenly without weights; an infinite $\tau_i$ never leaves | `::fromSojournTimes()`, $\Pi_{ii} = 1 - 1/\tau_i$ in steps |
 
 The sojourn times are the chain's mean times at each value, in the unit of the steps later given to
@@ -369,7 +369,7 @@ distribution of the transition over 0.7, to `1e-14`.
 The product is a sum, not a product, because two independent axes never jump at the same
 instant: the product chain's rate of moving from one mode to another is the rate of one axis
 jumping while the others stay. Over any interval its transition is the Kronecker product of the
-axes' transitions, which is `MarkovChain`'s product constructor (`ProductIsTheKroneckerSum`, to
+axes' transitions, which is `MarkovChain::independent()` (`ProductIsTheKroneckerSum`, to
 `1e-12`).
 
 > **Q6.** `MarkovChain::persistent(0.7)` takes the probability of *staying*, and
@@ -432,7 +432,7 @@ struct Sensor : Named<Inlier, Outlier> {};
 using Mode = DiscreteProduct<Maneuver, Sensor>;
 
 auto const sensor = ContinuousTimeMarkovChain<Sensor>::persistent(2.0);
-auto const mode = ContinuousTimeMarkovChain<Mode>{maneuver, sensor};
+auto const mode = ContinuousTimeMarkovChain<Mode>::independent(maneuver, sensor);
 // mode.generator() =
 // -2.3    2  0.3    0
 //    2 -2.3    0  0.3

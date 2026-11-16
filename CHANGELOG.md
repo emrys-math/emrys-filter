@@ -19,6 +19,12 @@ instead.
   `MarkovChain<Mode>::fromSojournTimes(tau, exits)` for `MarkovChain<Mode>::fromDwellTimes(tau, exits)`.
   Sojourn time is the tracking literature's name for the time spent in a mode, and a dwell is
   already a radar's look at one position.
+- **Breaking:** the chain on a `DiscreteProduct` whose axes move independently is built by the
+  factory `independent()`, not a constructor, for `MarkovChain` and `ContinuousTimeMarkovChain`:
+  write `MarkovChain<Mode>::independent(maneuver, sensor)` for `MarkovChain<Mode>{maneuver, sensor}`,
+  and `MarkovChain<Mode>::independent(space, maneuver, sensor)` for
+  `MarkovChain<Mode>{space, maneuver, sensor}`. A constructor now takes only what the chain
+  stores, and the factories compute it.
 
 ### Fixed
 

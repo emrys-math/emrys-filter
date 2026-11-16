@@ -211,7 +211,7 @@ matrix, 144 bytes.
 | `MarkovChain<S>::persistent(stay, space = {})` | stays with probability `stay`, otherwise moves to any other value equally |
 | `MarkovChain<S>::memoryless(next)` | every row is `next`: the value at each step is independent of the last |
 | `MarkovChain<S>::fromSojournTimes(sojourn, exits, space = {})` | stays a mean of $\tau_i$ steps at value $i$, $\Pi_{ii} = 1 - 1/\tau_i$, and leaves for $j$ in proportion to `exits(i, j)`; without `exits`, to every other value equally |
-| `MarkovChain<Product>{space, chains...}` | one chain per axis, in order: their Kronecker product |
+| `MarkovChain<Product>::independent([space,] chains...)` | one chain per axis, in order: their Kronecker product |
 | `ContinuousTimeMarkovChain<S>::transition(dt)` | $e^{Q \, \Delta t}$ from a rate matrix ([emissions]; below), which also has a `fromSojournTimes()`, with sojourn times in seconds |
 
 `matrix()` and `transition(from, to)` read it, by flat index. `predict(params, chain)` takes
@@ -234,7 +234,7 @@ A maneuver regime and a sensor state that switch independently:
 
 ```cpp
 auto const maneuver = MarkovChain<Maneuver>{Eigen::Matrix2d{{0.95, 0.05}, {0.10, 0.90}}};
-auto const chain = MarkovChain<Mode>{maneuver, MarkovChain<SensorMode>::persistent(0.8)};
+auto const chain = MarkovChain<Mode>::independent(maneuver, MarkovChain<SensorMode>::persistent(0.8));
 chain.matrix();
 // 0.76 0.19 0.04 0.01      from (Cruise, Inlier)
 // 0.19 0.76 0.01 0.04      from (Cruise, Outlier)
@@ -387,6 +387,8 @@ auto state = HybridParams{prior, initial};
 > *Update:* `stationary(chain)` exists, for both kinds of chain (§2). For independent axes it
 > gives the product prior too, so long as the prior wanted is each axis's stationary one. The
 > product constructor is still open.
+> *Update:* `MarkovChain`'s product is now the factory `independent()`, so the prior's would be
+> `CategoricalParams<Mode>::independent(maneuverPrior, sensorPrior)`.
 
 The hybrid state's `marginal<Position>()` [element-marginals] is a range over the modes: each
 element holds the mode's log-weight and its component's `GaussianMarginal`, read in place, and
@@ -474,7 +476,7 @@ pack. It is normally deduced. Three ways to assign models:
 
 ```cpp
 auto const chain =
-    MarkovChain<Mode>{MarkovChain<Maneuver>::persistent(0.95), MarkovChain<SensorMode>::persistent(0.8)};
+    MarkovChain<Mode>::independent(MarkovChain<Maneuver>::persistent(0.95), MarkovChain<SensorMode>::persistent(0.8));
 
 auto perMode = SwitchingModel{chain, cv(0.01), cv(0.01), cv(4.0), cv(4.0)};   // modelIndex 0 1 2 3
 auto byManeuver = switchingModel<Maneuver>(chain, cv(0.01), cv(4.0));  // modelIndex 0 0 1 1

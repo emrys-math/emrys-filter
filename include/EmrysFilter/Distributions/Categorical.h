@@ -5,7 +5,7 @@
  * weight per value, written freely and updated by Bayes' rule, with marginals and conditionals by axis; and
  * Categorical, the view its toDensity() returns once the weights define a distribution, with
  * probabilities by value and by named event. MarkovChain moves the parameters a step, built
- * directly, from independent chains on the axes of a product, as persistent or memoryless, or
+ * directly, as independent chains on the axes of a product, as persistent or memoryless, or
  * from mean sojourn times and exit weights; predict() moves them, stationary() gives the chain's
  * stationary distribution as a prior, and drawSamples() draws from the density. Read
  * ContinuousTimeMarkovChain.h next.
@@ -810,7 +810,7 @@ private:
  * \code
  * MarkovChain const maneuver = MarkovChain<Maneuver>::persistent(0.95);
  * MarkovChain const sensor = MarkovChain<Sensor>::persistent(0.8);
- * auto const mode = MarkovChain<Mode>{maneuver, sensor};
+ * auto const mode = MarkovChain<Mode>::independent(maneuver, sensor);
  * \endcode
  *
  * A chain is often known by how long it stays at each value and where it goes when it leaves.
@@ -883,23 +883,25 @@ public:
         : MarkovChain{Space_{}, std::forward<Transitions>(transitions)}
     {}
 
-    /** The chain on the DiscreteProduct \a space whose axes move independently, each by its own chain
-     * in \a chains, one per axis in order. Its matrix is their Kronecker product.
+    /** \returns the chain on the DiscreteProduct \a space whose axes move independently, each by its
+     * own chain in \a chains, one per axis in order: the product chain, whose matrix is their
+     * Kronecker product
      */
     template <DiscreteSpace... Axes>
         requires(
             internal::IsDiscreteProduct<Space_>
             && sizeof...(Axes) == std::tuple_size_v<internal::DiscreteProductAxes<Space_>>
         )
-    MarkovChain(Space_ space, MarkovChain<Axes, Scalar_> const &... chains)
-        : m_space{std::move(space)}
+    [[nodiscard]] static MarkovChain
+    independent(Space_ space, MarkovChain<Axes, Scalar_> const &... chains)
     {
         static_assert(
             std::is_same_v<std::tuple<Axes...>, internal::DiscreteProductAxes<Space_>>,
             "give one chain per axis of the product, in order"
         );
-        Eigen::Index const n = m_space.cardinality();
-        m_transitions = MatrixType::Ones(n, n);
+        auto result = MarkovChain{std::move(space)};
+        Eigen::Index const n = result.m_space.cardinality();
+        result.m_transitions.setOnes(n, n);
         Eigen::Index stride = n;
         (
             [&] {
@@ -909,26 +911,29 @@ public:
                 {
                     for (Eigen::Index j = 0; j < n; ++j)
                     {
-                        m_transitions(i, j) *= chains.matrix()((i / stride) % count, (j / stride) % count);
+                        result.m_transitions(i, j) *= chains.matrix()((i / stride) % count, (j / stride) % count);
                     }
                 }
             }(),
             ...
         );
         EMRYS_FILTER_ASSERT(stride == 1 && "each chain must have its axis's cardinality");
+        return result;
     }
 
-    /** The chain on a DiscreteProduct that is a FixedSizeSpace, named as the template argument,
-     * whose axes move independently by \a chains: <tt>MarkovChain<Mode>{maneuver, sensor}</tt>.
+    /** \returns independent() on a DiscreteProduct that is a FixedSizeSpace, named as the template
+     * argument: <tt>MarkovChain<Mode>::independent(maneuver, sensor)</tt>
      */
     template <DiscreteSpace... Axes>
         requires(
             FixedSizeSpace<Space_> && internal::IsDiscreteProduct<Space_>
             && sizeof...(Axes) == std::tuple_size_v<internal::DiscreteProductAxes<Space_>>
         )
-    explicit MarkovChain(MarkovChain<Axes, Scalar_> const &... chains)
-        : MarkovChain{Space_{}, chains...}
-    {}
+    [[nodiscard]] static MarkovChain
+    independent(MarkovChain<Axes, Scalar_> const &... chains)
+    {
+        return independent(Space_{}, chains...);
+    }
 
     /** \returns the chain on \a space that stays at its value with probability \a stay and
      * otherwise moves to any other value with equal probability

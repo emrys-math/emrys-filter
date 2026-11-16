@@ -82,12 +82,12 @@ TEST(ContinuousTimeMarkovChain, PersistentLeavesAtItsRate)
 
 // Independent axes never jump together, so the product chain's generator is the Kronecker sum
 // Q_m ⊗ I + I ⊗ Q_s, and its transition over any interval is the Kronecker product of the axes'
-// transitions, which the discrete MarkovChain's product constructor builds.
+// transitions, which the discrete MarkovChain::independent() builds.
 TEST(ContinuousTimeMarkovChain, ProductIsTheKroneckerSum)
 {
     auto const maneuver = ContinuousTimeMarkovChain<Maneuver>{Eigen::Matrix2d{{-0.1, 0.1}, {0.4, -0.4}}};
     auto const sensor = ContinuousTimeMarkovChain<Sensor>{Eigen::Matrix2d{{-2.0, 2.0}, {5.0, -5.0}}};
-    auto const mode = ContinuousTimeMarkovChain<Mode>{maneuver, sensor};
+    auto const mode = ContinuousTimeMarkovChain<Mode>::independent(maneuver, sensor);
 
     Eigen::Matrix4d expected = Eigen::Matrix4d::Zero();
     for (int i = 0; i < 4; ++i)
@@ -104,7 +104,7 @@ TEST(ContinuousTimeMarkovChain, ProductIsTheKroneckerSum)
     EXPECT_TRUE(mode.generator().isApprox(expected, 1e-15));
 
     double const t = 0.7;
-    auto const product = MarkovChain<Mode>{maneuver.transition(t), sensor.transition(t)};
+    auto const product = MarkovChain<Mode>::independent(maneuver.transition(t), sensor.transition(t));
     EXPECT_TRUE(mode.transition(t).matrix().isApprox(product.matrix(), 1e-12));
 }
 

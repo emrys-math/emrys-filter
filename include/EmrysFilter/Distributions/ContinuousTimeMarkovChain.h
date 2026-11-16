@@ -47,7 +47,7 @@ namespace Emrys
  * \code
  * ContinuousTimeMarkovChain const maneuver = ContinuousTimeMarkovChain<Maneuver>::persistent(0.1);
  * ContinuousTimeMarkovChain const sensor = ContinuousTimeMarkovChain<Sensor>::persistent(2.0);
- * auto const mode = ContinuousTimeMarkovChain<Mode>{maneuver, sensor};
+ * auto const mode = ContinuousTimeMarkovChain<Mode>::independent(maneuver, sensor);
  * p = predict(p, mode, 0.5);   // p e^{Q/2}
  * \endcode
  *
@@ -113,35 +113,25 @@ public:
         : ContinuousTimeMarkovChain{Space_{}, std::forward<Generator>(generator)}
     {}
 
-    /** The chain on a DiscreteProduct that is a FixedSizeSpace, named as the template argument,
-     * whose axes move independently by \a chains.
-     */
-    template <DiscreteSpace... Axes>
-        requires(
-            FixedSizeSpace<Space_> && internal::IsDiscreteProduct<Space_>
-            && sizeof...(Axes) == std::tuple_size_v<internal::DiscreteProductAxes<Space_>>
-        )
-    explicit ContinuousTimeMarkovChain(ContinuousTimeMarkovChain<Axes, Scalar_> const &... chains)
-        : ContinuousTimeMarkovChain{Space_{}, chains...}
-    {}
-
-    /** The chain on the DiscreteProduct \a space whose axes move independently, each by its own chain
-     * in \a chains, one per axis in order. Its generator is their Kronecker sum.
+    /** \returns the chain on the DiscreteProduct \a space whose axes move independently, each by its
+     * own chain in \a chains, one per axis in order: the product chain, whose generator is their
+     * Kronecker sum
      */
     template <DiscreteSpace... Axes>
         requires(
             internal::IsDiscreteProduct<Space_>
             && sizeof...(Axes) == std::tuple_size_v<internal::DiscreteProductAxes<Space_>>
         )
-    ContinuousTimeMarkovChain(Space_ space, ContinuousTimeMarkovChain<Axes, Scalar_> const &... chains)
-        : m_space{std::move(space)}
+    [[nodiscard]] static ContinuousTimeMarkovChain
+    independent(Space_ space, ContinuousTimeMarkovChain<Axes, Scalar_> const &... chains)
     {
         static_assert(
             std::is_same_v<std::tuple<Axes...>, internal::DiscreteProductAxes<Space_>>,
             "give one chain per axis of the product, in order"
         );
-        Eigen::Index const n = m_space.cardinality();
-        m_generator = MatrixType::Zero(n, n);
+        auto result = ContinuousTimeMarkovChain{std::move(space)};
+        Eigen::Index const n = result.m_space.cardinality();
+        MatrixType & generator = result.m_generator;
         Eigen::Index stride = n;
         (
             [&] {
@@ -155,13 +145,28 @@ public:
                     Eigen::Index const base = i - from * stride;
                     for (Eigen::Index to = 0; to < count; ++to)
                     {
-                        m_generator(i, base + to * stride) += chains.generator()(from, to);
+                        generator(i, base + to * stride) += chains.generator()(from, to);
                     }
                 }
             }(),
             ...
         );
         EMRYS_FILTER_ASSERT(stride == 1 && "each chain must have its axis's cardinality");
+        return result;
+    }
+
+    /** \returns independent() on a DiscreteProduct that is a FixedSizeSpace, named as the template
+     * argument: <tt>ContinuousTimeMarkovChain<Mode>::independent(maneuver, sensor)</tt>
+     */
+    template <DiscreteSpace... Axes>
+        requires(
+            FixedSizeSpace<Space_> && internal::IsDiscreteProduct<Space_>
+            && sizeof...(Axes) == std::tuple_size_v<internal::DiscreteProductAxes<Space_>>
+        )
+    [[nodiscard]] static ContinuousTimeMarkovChain
+    independent(ContinuousTimeMarkovChain<Axes, Scalar_> const &... chains)
+    {
+        return independent(Space_{}, chains...);
     }
 
     /** \returns the chain on \a space that leaves its value at the rate \a rate and jumps to any

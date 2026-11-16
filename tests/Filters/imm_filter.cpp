@@ -436,7 +436,7 @@ TEST(ImmFilter, MatchesAHandComputedImmWithMarkovOutliers)
 {
     auto const maneuverChain = MarkovChain<Maneuver>{Eigen::Matrix2d{{0.95, 0.05}, {0.1, 0.9}}};
     auto const sensorChain = MarkovChain<Sensor>{Eigen::Matrix2d{{0.9, 0.1}, {0.4, 0.6}}};
-    auto const chain = MarkovChain<Mode>{maneuverChain, sensorChain};
+    auto const chain = MarkovChain<Mode>::independent(maneuverChain, sensorChain);
 
     auto const means = std::vector<Vector4>{{0, 0, 1, 0}, {0.5, 0, 1, 0.2}, {0, 1, 0.5, 0.5}, {1, -1, 1, 0}};
     auto const variances = std::vector<Vector4>{{4, 4, 1, 1}, {2, 3, 1, 2}, {5, 4, 2, 1}, {4, 2, 1, 1}};
@@ -551,7 +551,7 @@ TEST(ImmFilter, UpdatesEachModeByTheMeasurementItsValueSelects)
 {
     auto const maneuverChain = MarkovChain{Maneuver{}, Eigen::Matrix2d{{0.95, 0.05}, {0.1, 0.9}}};
     auto const sensorChain = MarkovChain{Sensor{}, Eigen::Matrix2d{{0.9, 0.1}, {0.4, 0.6}}};
-    auto const chain = MarkovChain<Mode>{Mode{}, maneuverChain, sensorChain};
+    auto const chain = MarkovChain<Mode>::independent(Mode{}, maneuverChain, sensorChain);
     auto const means = std::vector<Vector4>{{0, 0, 1, 0}, {0.5, 0, 1, 0.2}, {0, 1, 0.5, 0.5}, {1, -1, 1, 0}};
     auto const variances = std::vector<Vector4>{{4, 4, 1, 1}, {2, 3, 1, 2}, {5, 4, 2, 1}, {4, 2, 1, 1}};
     auto conditionals = std::vector<GaussianParams<State>>{};
@@ -645,7 +645,7 @@ TEST(ImmFilter, FixedStepModelsFixTheStepAndTheMethod)
 
     auto const maneuverChain = MarkovChain<Maneuver>{Eigen::Matrix2d{{0.95, 0.05}, {0.1, 0.9}}};
     auto const sensorChain = MarkovChain<Sensor>{Eigen::Matrix2d{{0.9, 0.1}, {0.4, 0.6}}};
-    auto const chain = MarkovChain<Mode>{maneuverChain, sensorChain};
+    auto const chain = MarkovChain<Mode>::independent(maneuverChain, sensorChain);
     auto conditionals = std::vector<GaussianParams<State>>{};
     for (int m = 0; m < 4; ++m)
     {

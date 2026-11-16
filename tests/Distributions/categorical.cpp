@@ -457,7 +457,7 @@ TEST(MarkovChain, IndependentDimensionsOfAProduct)
 {
     auto const maneuver = MarkovChain<Maneuver>{Eigen::Matrix2d{{0.95, 0.05}, {0.2, 0.8}}};
     auto const sensor = MarkovChain<Sensor>{Eigen::Matrix2d{{0.9, 0.1}, {0.5, 0.5}}};
-    auto const mode = MarkovChain<Mode>{maneuver, sensor};
+    auto const mode = MarkovChain<Mode>::independent(maneuver, sensor);
     for (Eigen::Index i = 0; i < 4; ++i)
     {
         for (Eigen::Index j = 0; j < 4; ++j)
@@ -539,7 +539,7 @@ TEST(MarkovChain, Stationary)
     // A product of independent axes settles into the product of the axes' stationary distributions.
     auto const maneuver = MarkovChain<Maneuver>{Eigen::Matrix2d{{0.95, 0.05}, {0.2, 0.8}}};
     auto const sensor = MarkovChain<Sensor>{Eigen::Matrix2d{{0.9, 0.1}, {0.5, 0.5}}};
-    auto const mode = stationary(MarkovChain<Mode>{maneuver, sensor});
+    auto const mode = stationary(MarkovChain<Mode>::independent(maneuver, sensor));
     ASSERT_TRUE(mode);
     Eigen::Array2d const pm = probabilitiesOf(stationary(maneuver).value());
     Eigen::Array2d const ps = probabilitiesOf(stationary(sensor).value());
@@ -581,8 +581,11 @@ TEST(Categorical, RunTimeCardinality)
     CategoricalParams<Cells> const cells = p.marginal<Cells>();
     EXPECT_EQ(cells.cardinality(), 3);
     EXPECT_TRUE(probabilitiesOf(cells).isApproxToConstant(1.0 / 3));
-    auto const chain =
-        MarkovChain<Grid>{grid, MarkovChain<Maneuver>::persistent(0.9), MarkovChain<Cells>::persistent(0.5, Cells{3})};
+    auto const chain = MarkovChain<Grid>::independent(
+        grid,
+        MarkovChain<Maneuver>::persistent(0.9),
+        MarkovChain<Cells>::persistent(0.5, Cells{3})
+    );
     EXPECT_TRUE(probabilitiesOf(predict(p, chain)).isApproxToConstant(1.0 / 6));
 }
 
