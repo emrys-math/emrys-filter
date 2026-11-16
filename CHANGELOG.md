@@ -6,6 +6,12 @@ instead.
 
 ## [Unreleased]
 
+### Added
+
+- `SECURITY.md`: how to report a vulnerability privately, and what counts as one. Among them is
+  undefined behavior, or a call that never returns, caused by a floating-point value passed to the
+  library, NaN and infinities included, in a build with `NDEBUG`.
+
 ## [0.1.0] - 2026-11-13
 
 The first release: a header-only C++23 library on Eigen 5.0 for sequential Bayesian estimation,

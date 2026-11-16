@@ -11,6 +11,8 @@ body:
         number you expected and why; `simulate()` and the NIS and NEES monitors in
         `docs/usage.md`, "Checking an estimator", give one. A precondition failure
         (`EMRYS_FILTER_ASSERT`) that names a wrong input is not a bug unless the input is right.
+        A memory error, or a call that never returns, caused by the values passed in is a
+        vulnerability: report it privately, as `SECURITY.md` says, and not here.
   - type: textarea
     id: happened
     attributes:

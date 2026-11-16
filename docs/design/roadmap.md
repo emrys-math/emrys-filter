@@ -825,14 +825,15 @@ Getting the word out, once the front door is done: the README's comparison table
 are what a reader checks in the first hour, and a thread that finds them wrong is the launch.
 
 - [ ] `CODE_OF_CONDUCT.md`, before the advertised launch.
-- [ ] `SECURITY.md`, before the advertised launch, with private vulnerability reporting turned on
-      (GitHub offers it only on a public repository). The library has no files, sockets, parsing,
-      or credentials, so the policy is about the code it compiles into a program: report
-      privately undefined behavior that a call meeting every documented precondition reaches, a
-      crash on an input documented as returning a `std::expected` error, and packaging that
-      fetches or runs something other than it declares; report as a bug a diverging filter, a
-      failed `EMRYS_FILTER_ASSERT` precondition (gone under `NDEBUG`, so the caller's to meet),
-      and defects in Eigen or a compiler. Fixes go onto `dev` only while the library is pre-1.0.
+- [ ] Private vulnerability reporting turned on (Settings, Advanced Security), which the link in
+      `SECURITY.md` needs; it was off on 2026-11-16.
+- [ ] The code checked against [value-preconditions], before the advertised launch:
+      `SECURITY.md` names a breach as a vulnerability, but nothing has audited for one yet. Read
+      each `EMRYS_FILTER_ASSERT` on a floating-point value, and each loop or index computed from
+      one, for what follows when the assertion is compiled out; then add tests that pass NaN and
+      infinities to each filter's predict and update, each resampler, each distribution's
+      factory and draw (the standard rejection samplers, `std::gamma_distribution` among them,
+      included), and the mixture reductions, run in a build with `NDEBUG` under the sanitizers.
 - [ ] The review of every algorithm against its source, before the advertised launch (decided
       2026-11-16): every entry of `docs/reference/bibliography.md`, those the steps above add
       included, read in full, and every algorithm in the headers checked against the equations it

@@ -102,7 +102,9 @@ uniform01(G & rng)
 }
 
 /** Fills \a ancestors by inverting the cumulative weights at positions \c u(j),
- * which must be nondecreasing in [0, 1). Zero-weight indices are never chosen.
+ * which must be nondecreasing in [0, 1). Zero-weight indices are never chosen. The walk stops at
+ * the last positive weight rather than at the weights' sum, so NaN weights still give ancestors in
+ * range when the assertions are compiled out [value-preconditions].
  */
 template <typename Scalar, typename Positions>
 void
