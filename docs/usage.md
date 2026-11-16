@@ -1003,7 +1003,7 @@ that costs, and is the test of the probability and covariance you choose.
 
 - Splitting a Gaussian where a model is too nonlinear for it, fusion of estimates, out-of-sequence
   measurements, and consensus filters.
-- The ensemble Kalman filter, deferred past the first release.
+- The ensemble Kalman filter.
 - Built-in process models for a coordinated turn and for a gyroscope: the examples write these
   themselves.
 - Batched functions throughout. Every method takes a function marked `batched(f)`
