@@ -32,6 +32,7 @@ Read the index, then the decisions your change touches.
 | [allocation](#allocation) | Allocation happens only where it's needed, once, and the caller controls it |
 | [forwarded-matrices](#forwarded-matrices) | A function that stores a matrix argument forwards it; one that reads it takes `MatrixBase const &` |
 | [embedded-builds](#embedded-builds) | The library builds warning-free, without exceptions, and for Cortex-M |
+| [value-preconditions](#value-preconditions) | No floating-point value reaches undefined behavior or a loop that does not end, whether or not an assertion checks it |
 | [borrowed-intermediates](#borrowed-intermediates) | Inside a step, intermediates are borrowed; what a step returns is owned or written in place |
 | [execution-policies](#execution-policies) | A loop over a count takes an execution policy as its first argument, `execution::sequential` by default |
 | [view-stamp](#view-stamp) | A view checks its parameters' modification stamp when read, in builds with assertions, and no view is made of a temporary; every build keeps the stamp |
@@ -213,6 +214,36 @@ a heap branch for scratch over `EIGEN_STACK_ALLOCATION_LIMIT`, which no fixed si
 
 **Where.** `CMakeLists.txt` (`EMRYS_FILTER_WARNINGS`), `CMakePresets.json` (`gcc-no-exceptions`),
 `benchmarks/cortex_m/`, `.github/workflows/ci.yml`.
+
+### value-preconditions
+
+*No floating-point value reaches undefined behavior or a loop that does not end, whether or not an
+assertion checks it.*
+
+**Rule.** Every floating-point value a function receives, finite or not, and every value the
+library computes from it, leaves the program defined in a build without assertions: no
+out-of-bounds access, no conversion of a non-finite or out-of-range value to an integer, no loop
+whose end depends on a comparison that NaN makes false, and no allocation beyond the sizes the
+program chose. The result may be NaN or a meaningless estimate, and a documented check returns
+its `std::expected` error. An `EMRYS_FILTER_ASSERT` on such a value reports it in a Debug build,
+and the code after it stays in bounds and terminates when the assertion is false. Sizes, indices,
+and types stay preconditions that the calling program meets, as with Eigen. A breach is a
+vulnerability under `SECURITY.md`.
+
+**Why.** The values come from sensors and messages, which the program may not control and cannot
+cheaply screen: it can't tell before an update that every likelihood weight will underflow, or
+that a covariance will stop being positive definite. A deployed program defines `NDEBUG`, so the
+code after the assertion is all that stands between a spoofed measurement and a corrupted heap or
+a stalled control loop. A NaN estimate is visible to the program's own checks (a gate, NIS,
+`isFinite()`), and a corrupted heap or a hang is not. The program chooses its sizes and indices,
+and checking each in every build would cost what Eigen does not pay either.
+
+**Rejected.** Treating every assertion as the caller's precondition: it leaves a release build
+undefined on inputs no caller can screen. Checking every value in every build and returning an
+error: a check per element in the inner loops, where a propagated NaN is harmless.
+
+**Where.** `SECURITY.md`; `Core/Resampling.h`, whose cumulative walk is bounded by the last
+positive weight rather than by the weights' sum.
 
 ### borrowed-intermediates
 
