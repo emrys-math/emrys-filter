@@ -5,8 +5,9 @@
  * weight per value, written freely and updated by Bayes' rule, with marginals and conditionals by axis; and
  * Categorical, the view its toDensity() returns once the weights define a distribution, with
  * probabilities by value and by named event. MarkovChain moves the parameters a step, built
- * directly, as independent chains on the axes of a product, as persistent or memoryless, or
- * from mean sojourn times and exit weights; predict() moves them, stationary() gives the chain's
+ * from transition weights, as independent chains on the axes of a product, as persistent or
+ * memoryless, or from mean sojourn times and exit weights, and ChainError says why values fail to
+ * define one; predict() moves them, stationary() gives the chain's
  * stationary distribution as a prior, and drawSamples() draws from the density. Read
  * ContinuousTimeMarkovChain.h next.
  */
@@ -39,14 +40,23 @@ class CategoricalParams;
 template <DiscreteSpace Space_, RealScalar Scalar_>
 class Categorical;
 
+template <DiscreteSpace Space_, RealScalar Scalar_>
+class ContinuousTimeMarkovChain;
+
 /** \ingroup Distributions
- * Reasons a Markov chain has no single stationary distribution.
+ * Reasons values fail to define a Markov chain, or a chain has no single stationary
+ * distribution.
  *
- * \sa stationary()
+ * \sa MarkovChain::create(), ContinuousTimeMarkovChain::create(), stationary()
  */
 enum class ChainError
 {
-    Reducible,  ///< some value can't be reached from some other, so the chain is not irreducible
+    Reducible,        ///< some value can't be reached from some other, so the chain is not irreducible
+    Negative,         ///< a weight or rate is negative
+    NonFinite,        ///< a weight or rate is NaN or infinite, or a sojourn time is NaN
+    ZeroRow,          ///< a value has nowhere to go: its row of weights, or of exit weights if it is left, is all zero
+    ShortSojourn,     ///< a sojourn time is not positive, or a discrete chain's is shorter than one step
+    NotAProbability,  ///< a probability of staying is not in [0, 1]
 };
 
 namespace internal
@@ -55,11 +65,12 @@ namespace internal
 /** \returns the generator of the chain that stays at value \f$ i \f$ for a mean time of
  * \f$ \tau_i \f$, \a sojournTimes, and leaves it for each other value \f$ j \f$ in proportion to
  * \f$ w_{ij} \f$, \a exitWeights: \f$ G_{ii} = -1/\tau_i \f$ and
- * \f$ G_{ij} = w_{ij} / (\tau_i \sum_{k} w_{ik}) \f$. An infinite \f$ \tau_i \f$ never leaves,
- * and its row of weights may be zero.
+ * \f$ G_{ij} = w_{ij} / (\tau_i \sum_{k \ne i} w_{ik}) \f$; or the ChainError of the values. The
+ * diagonal of the weights is not read. An infinite \f$ \tau_i \f$ never leaves, and its row of
+ * weights may be zero.
  */
 template <typename Scalar, typename Matrix, typename SojournTimes, typename ExitWeights>
-[[nodiscard]] Matrix
+[[nodiscard]] std::expected<Matrix, ChainError>
 sojournGenerator(
     Eigen::MatrixBase<SojournTimes> const & sojournTimes,
     Eigen::MatrixBase<ExitWeights> const & exitWeights
@@ -69,26 +80,41 @@ sojournGenerator(
     EMRYS_FILTER_ASSERT(
         sojournTimes.size() == n && exitWeights.cols() == n && "give a sojourn time and a row of exit weights per value"
     );
-    auto generator = Matrix{};
-    generator.resize(n, n);
+    Matrix generator = castScalar<Scalar>(exitWeights.derived());
+    generator.diagonal().setZero();
+    bool sojournNaN = false;
+    for (Eigen::Index i = 0; i < n; ++i)
+    {
+        sojournNaN = sojournNaN || isNaN(Scalar(sojournTimes(i)));
+    }
+    if (sojournNaN || !allFinite(generator))
+    {
+        return std::unexpected{ChainError::NonFinite};
+    }
+    if ((generator.array() < Scalar(0)).any())
+    {
+        return std::unexpected{ChainError::Negative};
+    }
     for (Eigen::Index i = 0; i < n; ++i)
     {
         Scalar const sojourn = Scalar(sojournTimes(i));
-        EMRYS_FILTER_ASSERT(sojourn > Scalar(0) && "a sojourn time must be positive");
-        EMRYS_FILTER_ASSERT(exitWeights(i, i) == 0 && "a value's weight of exiting to itself must be zero");
-        EMRYS_FILTER_ASSERT((exitWeights.row(i).array() >= 0).all() && "exit weights must be nonnegative");
+        if (!(sojourn > Scalar(0)))
+        {
+            return std::unexpected{ChainError::ShortSojourn};
+        }
         Scalar const leave = Scalar(1) / sojourn;
-        Scalar const total = Scalar(exitWeights.row(i).sum());
-        EMRYS_FILTER_ASSERT(
-            (leave == Scalar(0) || total > Scalar(0)) && "a value that is left needs a value to exit to"
-        );
+        Scalar const total = generator.row(i).sum();
         if (leave == Scalar(0))
         {
             generator.row(i).setZero();
         }
+        else if (total > Scalar(0))
+        {
+            generator.row(i) *= leave / total;
+        }
         else
         {
-            generator.row(i) = exitWeights.row(i).template cast<Scalar>() * Scalar(leave / total);
+            return std::unexpected{ChainError::ZeroRow};
         }
         generator(i, i) = -leave;
     }
@@ -803,13 +829,24 @@ private:
  * from and a column per value moved to, so \f$ \Pi_{ij} = P(j \mid i) \f$ and each row sums to
  * one. predict() moves a Categorical one step: \f$ p'_j = \sum_i p_i \Pi_{ij} \f$.
  *
+ * create() builds a chain from a matrix of weights, each row normalized, and so from a transition
+ * matrix too. A matrix, probability, or sojourn time is often estimated or computed at run time,
+ * so create(), persistent(), and fromSojournTimes() check their values and return a ChainError if
+ * they fail to define a chain;
+ * the constructor that takes a matrix is private, and the public one builds the chain that never
+ * moves [checked-factories]:
+ *
+ * \code
+ * auto const maneuver = MarkovChain<Maneuver>::create(Eigen::Matrix2d{{19, 1}, {1, 9}});  // or a ChainError
+ * \endcode
+ *
  * A chain on a DiscreteProduct can be built from independent chains on its axes, whose matrix is
  * their [Kronecker product](https://en.wikipedia.org/wiki/Kronecker_product), as a maneuver
  * regime and a sensor's outlier state switch independently:
  *
  * \code
- * MarkovChain const maneuver = MarkovChain<Maneuver>::persistent(0.95);
- * MarkovChain const sensor = MarkovChain<Sensor>::persistent(0.8);
+ * MarkovChain const maneuver = MarkovChain<Maneuver>::persistent(0.95).value();
+ * MarkovChain const sensor = MarkovChain<Sensor>::persistent(0.8).value();
  * auto const mode = MarkovChain<Mode>::independent(maneuver, sensor);
  * \endcode
  *
@@ -820,7 +857,7 @@ private:
  * \code
  * // a cruise lasts 30 steps, a turn 8, a dive 4; a cruise ends in a turn twice as often as in a dive
  * auto const exits = Eigen::Matrix3d{{0, 2, 1}, {1, 0, 0}, {1, 0, 0}};
- * auto const chain = MarkovChain<Flight>::fromSojournTimes(Eigen::Vector3d{30, 8, 4}, exits);
+ * auto const chain = MarkovChain<Flight>::fromSojournTimes(Eigen::Vector3d{30, 8, 4}, exits).value();
  * auto const prior = stationary(chain);  // 9/11, 8/55, 2/55, or a ChainError
  * \endcode
  *
@@ -852,36 +889,48 @@ public:
         , m_transitions{MatrixType::Identity(m_space.cardinality(), m_space.cardinality())}
     {}
 
-    /** The chain on \a space with transition matrix \a transitions: nonnegative, with each row
-     * summing to one.
+    /** \returns the chain on \a space that moves from value \f$ i \f$ to value \f$ j \f$ in
+     * proportion to \f$ w_{ij} \f$, \a weights, a row per value moved from and a column per value
+     * moved to: \f$ \Pi_{ij} = w_{ij} / \sum_k w_{ik} \f$; or a ChainError if a weight is negative
+     * or not finite, or a row is all zero.
+     *
+     * Rows of probabilities are weights that sum to one, so a transition matrix is its own
+     * weights, and one written to a few digits needs no rounding to sum to one. The matrix is
+     * cast to the chain's scalar.
      */
-    template <MatrixExpression Transitions>
-    MarkovChain(Space_ space, Transitions && transitions)
-        : m_space{std::move(space)}
-        , m_transitions{internal::castScalar<Scalar>(std::forward<Transitions>(transitions))}
+    template <MatrixExpression Weights>
+    [[nodiscard]] static std::expected<MarkovChain, ChainError>
+    create(Weights && weights, Space_ space = {})
     {
+        Eigen::Index const n = space.cardinality();
+        MatrixType transitions = internal::castScalar<Scalar>(std::forward<Weights>(weights));
         EMRYS_FILTER_ASSERT(
-            m_transitions.rows() == m_space.cardinality() && m_transitions.cols() == m_space.cardinality()
+            transitions.rows() == n && transitions.cols() == n
             && "the transition matrix has a row and a column per value"
         );
-        EMRYS_FILTER_ASSERT(
-            (m_transitions.array() >= Scalar(0)).all() && "transition probabilities must be nonnegative"
-        );
-        EMRYS_FILTER_ASSERT(
-            ((m_transitions.rowwise().sum().array() - Scalar(1)).abs() <= Eigen::NumTraits<Scalar>::dummy_precision())
-                .all()
-            && "each row of the transition matrix must sum to one"
-        );
+        if (!allFinite(transitions))
+        {
+            return std::unexpected{ChainError::NonFinite};
+        }
+        if ((transitions.array() < Scalar(0)).any())
+        {
+            return std::unexpected{ChainError::Negative};
+        }
+        for (Eigen::Index i = 0; i < n; ++i)
+        {
+            Scalar const total = transitions.row(i).sum();
+            if (!(total > Scalar(0)))
+            {
+                return std::unexpected{ChainError::ZeroRow};
+            }
+            if (!isFinite(total))
+            {
+                return std::unexpected{ChainError::NonFinite};
+            }
+            transitions.row(i) /= total;
+        }
+        return MarkovChain{std::move(space), std::move(transitions)};
     }
-
-    /** The chain on a FixedSizeSpace, named as the template argument, with transition matrix
-     * \a transitions: <tt>MarkovChain<Maneuver>{matrix}</tt> (decisions.md [space-storage]).
-     */
-    template <MatrixExpression Transitions>
-        requires FixedSizeSpace<Space_>
-    explicit MarkovChain(Transitions && transitions)
-        : MarkovChain{Space_{}, std::forward<Transitions>(transitions)}
-    {}
 
     /** \returns the chain on the DiscreteProduct \a space whose axes move independently, each by its
      * own chain in \a chains, one per axis in order: the product chain, whose matrix is their
@@ -936,12 +985,16 @@ public:
     }
 
     /** \returns the chain on \a space that stays at its value with probability \a stay and
-     * otherwise moves to any other value with equal probability
+     * otherwise moves to any other value with equal probability, or ChainError::NotAProbability
+     * if \a stay is not in [0, 1], NaN included
      */
-    [[nodiscard]] static MarkovChain
+    [[nodiscard]] static std::expected<MarkovChain, ChainError>
     persistent(Scalar stay, Space_ space = {})
     {
-        EMRYS_FILTER_ASSERT(stay >= Scalar(0) && stay <= Scalar(1) && "the probability must be in [0, 1]");
+        if (!(stay >= Scalar(0) && stay <= Scalar(1)))
+        {
+            return std::unexpected{ChainError::NotAProbability};
+        }
         Eigen::Index const n = space.cardinality();
         auto result = MarkovChain{std::move(space)};
         if (n > 1)
@@ -966,37 +1019,47 @@ public:
     /** \returns the chain on \a space that stays at value \f$ i \f$ for a mean of \f$ \tau_i \f$
      * steps, \a sojournTimes, and on leaving moves to each other value \f$ j \f$ in proportion to
      * \f$ w_{ij} \f$, \a exitWeights: \f$ \Pi_{ii} = 1 - 1/\tau_i \f$ and
-     * \f$ \Pi_{ij} = w_{ij} / (\tau_i \sum_k w_{ik}) \f$.
+     * \f$ \Pi_{ij} = w_{ij} / (\tau_i \sum_{k \ne i} w_{ik}) \f$; or a ChainError if a sojourn time
+     * is NaN or shorter than one step, an exit weight is negative or not finite, or a value that is
+     * left has no exit weight that isn't zero.
      *
      * The number of steps at a value, counting the step that reached it, is
      * [geometric](https://en.wikipedia.org/wiki/Geometric_distribution) with mean
      * \f$ 1 / (1 - \Pi_{ii}) \f$, so each \f$ \tau_i \f$ is at least one, and an infinite one never
-     * leaves. The exit weights are nonnegative, need not sum to one, and are zero on the diagonal;
-     * a value that is left needs one that isn't zero. A sojourn time in seconds with a fixed step
-     * is ContinuousTimeMarkovChain::fromSojournTimes() and its transition() over the step, which is
+     * leaves. The exit weights need not sum to one, and their diagonal is not read: how long a
+     * value is kept is its sojourn time's to say. A sojourn time in seconds with a fixed step is
+     * ContinuousTimeMarkovChain::fromSojournTimes() and its transition() over the step, which is
      * exact where \f$ 1 - \Delta t / \tau_i \f$ is not.
      */
     template <typename SojournTimes, typename ExitWeights>
-    [[nodiscard]] static MarkovChain
+    [[nodiscard]] static std::expected<MarkovChain, ChainError>
     fromSojournTimes(
         Eigen::MatrixBase<SojournTimes> const & sojournTimes,
         Eigen::MatrixBase<ExitWeights> const & exitWeights,
         Space_ space = {}
     )
     {
-        EMRYS_FILTER_ASSERT((sojournTimes.array() >= 1).all() && "a sojourn time is at least one step");
-        MatrixType transitions = internal::sojournGenerator<Scalar, MatrixType>(sojournTimes, exitWeights);
-        transitions.diagonal().array() += Scalar(1);
-        EMRYS_FILTER_ASSERT(transitions.rows() == space.cardinality() && "give a sojourn time per value");
-        return MarkovChain{std::move(space), std::move(transitions)};
+        EMRYS_FILTER_ASSERT(exitWeights.rows() == space.cardinality() && "give a sojourn time per value");
+        std::expected<MatrixType, ChainError> transitions =
+            internal::sojournGenerator<Scalar, MatrixType>(sojournTimes, exitWeights);
+        if (!transitions)
+        {
+            return std::unexpected{transitions.error()};
+        }
+        if (!(transitions->diagonal().array() >= Scalar(-1)).all())
+        {
+            return std::unexpected{ChainError::ShortSojourn};
+        }
+        transitions->diagonal().array() += Scalar(1);
+        return MarkovChain{std::move(space), *std::move(transitions)};
     }
 
     /** \returns the chain on \a space that stays at value \f$ i \f$ for a mean of \f$ \tau_i \f$
      * steps, \a sojournTimes, and on leaving moves to any other value with equal probability: the
-     * other fromSojournTimes() with every exit weight one
+     * other fromSojournTimes() with every exit weight one, or its ChainError
      */
     template <typename SojournTimes>
-    [[nodiscard]] static MarkovChain
+    [[nodiscard]] static std::expected<MarkovChain, ChainError>
     fromSojournTimes(Eigen::MatrixBase<SojournTimes> const & sojournTimes, Space_ space = {})
     {
         Eigen::Index const n = space.cardinality();
@@ -1037,15 +1100,18 @@ public:
 
 private:
 
+    template <DiscreteSpace, RealScalar>
+    friend class ContinuousTimeMarkovChain;
+
+    /** The chain on \a space with the checked transition matrix \a transitions [checked-factories]. */
+    MarkovChain(Space_ space, MatrixType transitions)
+        : m_space{std::move(space)}
+        , m_transitions{std::move(transitions)}
+    {}
+
     Space_ m_space;            ///< the discrete space
     MatrixType m_transitions;  ///< the transition matrix \f$ \Pi \f$
 };
-
-/// \cond DEDUCTION_GUIDES
-template <DiscreteSpace Space, MatrixExpression Transitions>
-MarkovChain(Space, Transitions &&) -> MarkovChain<Space, typename std::remove_cvref_t<Transitions>::Scalar>;
-
-/// \endcond
 
 /** \ingroup Distributions
  * \returns \a prior moved one step by \a chain: \f$ w'_j = \sum_i w_i \Pi_{ij} \f$, the
@@ -1137,6 +1203,34 @@ namespace Emrys
 
 namespace internal
 {
+
+/** Describes a ChainError in words. */
+inline void
+describe(std::ostream & stream, ChainError error, Indent indent)
+{
+    stream << indent;
+    switch (error)
+    {
+        case ChainError::Reducible:
+            stream << "some value can't be reached from some other";
+            break;
+        case ChainError::Negative:
+            stream << "a weight or rate is negative";
+            break;
+        case ChainError::NonFinite:
+            stream << "a weight, rate, or sojourn time is not finite";
+            break;
+        case ChainError::ZeroRow:
+            stream << "a value has no weight to move by";
+            break;
+        case ChainError::ShortSojourn:
+            stream << "a sojourn time is too short";
+            break;
+        case ChainError::NotAProbability:
+            stream << "a probability is not in [0, 1]";
+            break;
+    }
+}
 
 /** Describes \a categorical: its value count and each value's probability. */
 template <typename Space_, typename Scalar_>

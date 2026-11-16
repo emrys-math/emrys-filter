@@ -174,7 +174,7 @@ TEST(AmmFilter, IsABankOfKalmanFilters)
 TEST(AmmFilter, SkipsTheMixingAndAgreesWithTheFullCollapse)
 {
     auto filter = AmmFilter{makeInitial(), makeModel(quiet), makeModel(agile)};
-    auto const nearlyIdentity = MarkovChain<Regime>{Eigen::Matrix2d{{1.0, 1e-300}, {1e-300, 1.0}}};
+    auto const nearlyIdentity = MarkovChain<Regime>::create(Eigen::Matrix2d{{1.0, 1e-300}, {1e-300, 1.0}}).value();
     auto imm = ImmFilter{SwitchingModel{nearlyIdentity, makeModel(quiet), makeModel(agile)}, makeInitial()};
     for (int k = 1; k <= 6; ++k)
     {

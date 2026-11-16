@@ -327,6 +327,12 @@ TEST(Printing, ErrorsPrintInWords)
     EXPECT_EQ(printed(Emrys::StudentTError::NonFiniteScale), "the scale matrix is not finite");
     EXPECT_EQ(printed(Emrys::StudentTError::NotPositiveDegreesOfFreedom), "the degrees of freedom are not positive");
     EXPECT_EQ(printed(Emrys::StudentTError::NonFiniteDegreesOfFreedom), "the degrees of freedom are not finite");
+    EXPECT_EQ(printed(Emrys::ChainError::Reducible), "some value can't be reached from some other");
+    EXPECT_EQ(printed(Emrys::ChainError::Negative), "a weight or rate is negative");
+    EXPECT_EQ(printed(Emrys::ChainError::NonFinite), "a weight, rate, or sojourn time is not finite");
+    EXPECT_EQ(printed(Emrys::ChainError::ZeroRow), "a value has no weight to move by");
+    EXPECT_EQ(printed(Emrys::ChainError::ShortSojourn), "a sojourn time is too short");
+    EXPECT_EQ(printed(Emrys::ChainError::NotAProbability), "a probability is not in [0, 1]");
     EXPECT_EQ(printed(FitError::Degenerate), "the source has no spread in some direction");
     EXPECT_EQ(std::format("{}", FitError::InvalidWeights), "the weights cannot be normalized");
 }

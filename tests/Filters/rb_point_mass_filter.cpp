@@ -1251,7 +1251,7 @@ auto
 makeSwitching()
 {
     return Emrys::SwitchingModel{
-        Emrys::MarkovChain<Clock>::persistent(0.9),
+        Emrys::MarkovChain<Clock>::persistent(0.9).value(),
         ConstantVelocity<Bias, Drift>{biasDensity},
         ConstantVelocity<Bias, Drift>{1.0}
     };

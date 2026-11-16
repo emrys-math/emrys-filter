@@ -580,7 +580,7 @@ constexpr double agile = 4.0;
 
 // A chain that leaves cruise less readily than it leaves a maneuver, so that a swapped index in
 // the backward transition shows.
-MarkovChain<Maneuver> const chain{Maneuver{}, Eigen::Matrix2d{{0.9, 0.1}, {0.3, 0.7}}};
+MarkovChain<Maneuver> const chain = MarkovChain<Maneuver>::create(Eigen::Matrix2d{{0.9, 0.1}, {0.3, 0.7}}).value();
 
 auto
 makeSwitching()
@@ -674,7 +674,7 @@ TEST(Smoothing, ImmSmootherKeepsAModeNeverEntered)
 {
     auto filter = ImmFilter{
         SwitchingModel{
-            MarkovChain<Maneuver>{Eigen::Matrix2d::Identity()},
+            MarkovChain<Maneuver>::create(Eigen::Matrix2d::Identity()).value(),
             ConstantVelocity<Position, Velocity>{quiet},
             ConstantVelocity<Position, Velocity>{agile}
         },
@@ -701,7 +701,7 @@ TEST(Smoothing, ImmSmootherKeepsAModeNeverEntered)
     // prediction mixes it from its own Gaussian alone and leaves its probability at zero.
     auto leaving = ImmFilter{
         SwitchingModel{
-            MarkovChain<Maneuver>{Eigen::Matrix2d{{1.0, 0.0}, {0.5, 0.5}}},
+            MarkovChain<Maneuver>::create(Eigen::Matrix2d{{1.0, 0.0}, {0.5, 0.5}}).value(),
             ConstantVelocity<Position, Velocity>{quiet},
             ConstantVelocity<Position, Velocity>{agile}
         },
@@ -884,7 +884,7 @@ TEST(Smoothing, ImmSmootherKeepsAFixedModesProbability)
 {
     auto filter = ImmFilter{
         SwitchingModel{
-            MarkovChain<Maneuver>{Eigen::Matrix2d::Identity()},
+            MarkovChain<Maneuver>::create(Eigen::Matrix2d::Identity()).value(),
             ConstantVelocity<Position, Velocity>{quiet},
             ConstantVelocity<Position, Velocity>{agile}
         },
@@ -920,7 +920,7 @@ TEST(Smoothing, ImmSmootherLeavesTheBackwardTransitionWhereNoPredictionHasADensi
     Eigen::Matrix3d const p{{0.0, 0.5, 0.5}, {0.6, 0.0, 0.4}, {0.3, 0.7, 0.0}};
     auto filter = ImmFilter{
         SwitchingModel{
-            MarkovChain<ThreeManeuvers>{p},
+            MarkovChain<ThreeManeuvers>::create(p).value(),
             ConstantVelocity<Position, Velocity>{quiet},
             ConstantVelocity<Position, Velocity>{agile},
             ConstantVelocity<Position, Velocity>{1.0}
@@ -1061,7 +1061,7 @@ TEST(Smoothing, ImmSmootherPlacesAManeuverWhereTheFilterLags)
         return makeFix(truthAt(k) + error);
     };
     auto filter = ImmFilter{
-        SwitchingModel{MarkovChain<Maneuver>::persistent(0.95), makeModel(quiet), makeModel(agile)},
+        SwitchingModel{MarkovChain<Maneuver>::persistent(0.95).value(), makeModel(quiet), makeModel(agile)},
         HybridParams{
             CategoricalParams<Maneuver>{},
             GaussianParams<State>{State{}, Vector4{0.0, 0.0, 1.0, 0.0}, Matrix4{Matrix4::Identity()}}
@@ -1220,7 +1220,7 @@ everyHiddenSequence()
 // products and sums.
 TEST(Smoothing, HiddenMarkovSmootherMatchesEnumeration)
 {
-    auto const hiddenChain = MarkovChain<Hidden>{hiddenTransitions};
+    auto const hiddenChain = MarkovChain<Hidden>::create(hiddenTransitions).value();
     auto const table = EmissionTable{Hidden{}, Seen{}, hiddenEmissions};
     auto filter = HiddenMarkovFilter{hiddenChain, CategoricalParams<Hidden>::fromWeights(Hidden{}, hiddenInitial)};
     auto history = CategoricalHistory<Hidden>{};
@@ -1288,7 +1288,7 @@ TEST(Smoothing, HiddenMarkovSmootherMatchesEnumeration)
 TEST(Smoothing, HiddenMarkovSmootherWithIdentityEmissionsIsCertain)
 {
     using Space = Finite<4>;
-    auto const fourChain = MarkovChain<Space>::persistent(0.6);
+    auto const fourChain = MarkovChain<Space>::persistent(0.6).value();
     auto const identity = EmissionTable{Space{}, Space{}, Eigen::Matrix4d::Identity()};
     auto filter = HiddenMarkovFilter{fourChain};
     auto history = CategoricalHistory<Space>{};
@@ -1323,7 +1323,7 @@ TEST(Smoothing, AValueNeverEnteredIsNeverOnThePath)
     auto const closed = Eigen::Matrix3d{{0.7, 0.3, 0.0}, {0.4, 0.6, 0.0}, {0.5, 0.5, 0.0}};
     auto const table = EmissionTable{Hidden{}, Seen{}, hiddenEmissions};
     auto filter = HiddenMarkovFilter{
-        MarkovChain<Hidden>{closed},
+        MarkovChain<Hidden>::create(closed).value(),
         CategoricalParams<Hidden>::fromWeights(Hidden{}, Eigen::Vector3d{0.5, 0.5, 0.0})
     };
     auto history = CategoricalHistory<Hidden>{};
@@ -1357,7 +1357,7 @@ TEST(Smoothing, AValueNeverEnteredIsNeverOnThePath)
 // tail of the full path; the test checks only that it has the window's length.
 TEST(Smoothing, HiddenMarkovFixedLagMatchesFixedIntervalOverTheWindow)
 {
-    auto const hiddenChain = MarkovChain<Hidden>{hiddenTransitions};
+    auto const hiddenChain = MarkovChain<Hidden>::create(hiddenTransitions).value();
     auto const table = EmissionTable{Hidden{}, Seen{}, hiddenEmissions};
     auto filter = HiddenMarkovFilter{hiddenChain, CategoricalParams<Hidden>::fromWeights(Hidden{}, hiddenInitial)};
     auto full = CategoricalHistory<Hidden>{};
@@ -1404,7 +1404,7 @@ TEST(Smoothing, ModulatedPoissonSmootherMatchesEnumeration)
     auto const generator = Eigen::Matrix2d{{-0.4, 0.4}, {1.1, -1.1}};
     auto const rates = Eigen::Array2d{0.5, 6.0};
     auto const gaps = std::array<double, 9>{0.37, 1.12, 0.05, 2.4, 0.81, 0.3, 1.9, 0.14, 0.63};
-    auto const regimeChain = ContinuousTimeMarkovChain<Regime>{generator};
+    auto const regimeChain = ContinuousTimeMarkovChain<Regime>::create(generator).value();
     auto filter =
         HiddenMarkovFilter{regimeChain, CategoricalParams<Regime>::fromWeights(Regime{}, Eigen::Vector2d{0.7, 0.3})};
     auto history = CategoricalHistory<Regime>{};

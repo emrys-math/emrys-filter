@@ -185,7 +185,7 @@ TEST(FixedStepBinding, AMixtureFilterBindsTheStepToItsComponents)
 // each to the state's space, as the switching model of FixedStepModel built by hand.
 TEST(FixedStepBinding, SwitchingFiltersBindEachModel)
 {
-    auto const chain = MarkovChain<Maneuver>{Eigen::Matrix2d{{0.95, 0.05}, {0.1, 0.9}}};
+    auto const chain = MarkovChain<Maneuver>::create(Eigen::Matrix2d{{0.95, 0.05}, {0.1, 0.9}}).value();
     auto const quiet = Emrys::fixedStep(makeModel(), timeStep);
     auto const agile = Emrys::fixedStep(makeModel(4.0), timeStep);
     auto const unbound = SwitchingModel{chain, quiet, agile};

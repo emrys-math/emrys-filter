@@ -175,7 +175,7 @@ The method serves every mode whose model carries none of its own (§4), and defa
 through the class's one guide:
 
 ```cpp
-auto filter = ImmFilter{SwitchingModel{MarkovChain<Maneuver>::persistent(0.95), cv(0.01), cv(4.0)},
+auto filter = ImmFilter{SwitchingModel{MarkovChain<Maneuver>::persistent(0.95).value(), cv(0.01), cv(4.0)},
                         HybridParams{CategoricalParams<Maneuver>{}, initial}};
 // ImmFilter<Gaussian<State>, SwitchingModel<Maneuver, double, Maneuver, CV, CV>, Linearized, std::allocator<std::byte>>
 ```
@@ -204,13 +204,17 @@ $\Pi_{ij} = P(j \mid i)$: a row per value moved from, a column per value moved t
 fixed-size under the same rule as `CategoricalParams`'s: `MarkovChain<Mode>` is a 4 × 4 row-major
 matrix, 144 bytes.
 
+`create()`, `persistent()`, and `fromSojournTimes()` return a `std::expected` with a `ChainError`,
+since a matrix, probability, or sojourn time is often estimated at run time [checked-factories];
+the constructor that takes a matrix is private.
+
 | Built by | Gives |
 |---|---|
 | `MarkovChain<S>{}`, `MarkovChain{space}` | the identity: never moves |
-| `MarkovChain{space, matrix}` | that matrix; asserts its shape, that it is nonnegative, and that rows sum to one (to `dummy_precision`) |
-| `MarkovChain<S>::persistent(stay, space = {})` | stays with probability `stay`, otherwise moves to any other value equally |
+| `MarkovChain<S>::create(weights, space = {})` | each row of `weights` divided by its total, so a transition matrix gives itself; asserts the shape, and returns `ChainError::Negative`, `NonFinite`, or `ZeroRow` |
+| `MarkovChain<S>::persistent(stay, space = {})` | stays with probability `stay`, otherwise moves to any other value equally; `ChainError::NotAProbability` if `stay` is not in [0, 1] |
 | `MarkovChain<S>::memoryless(next)` | every row is `next`: the value at each step is independent of the last |
-| `MarkovChain<S>::fromSojournTimes(sojourn, exits, space = {})` | stays a mean of $\tau_i$ steps at value $i$, $\Pi_{ii} = 1 - 1/\tau_i$, and leaves for $j$ in proportion to `exits(i, j)`; without `exits`, to every other value equally |
+| `MarkovChain<S>::fromSojournTimes(sojourn, exits, space = {})` | stays a mean of $\tau_i$ steps at value $i$, $\Pi_{ii} = 1 - 1/\tau_i$, and leaves for $j$ in proportion to `exits(i, j)`, whose diagonal is not read; without `exits`, to every other value equally; a `ChainError` too, `ShortSojourn` for a $\tau_i$ below one |
 | `MarkovChain<Product>::independent([space,] chains...)` | one chain per axis, in order: their Kronecker product |
 | `ContinuousTimeMarkovChain<S>::transition(dt)` | $e^{Q \, \Delta t}$ from a rate matrix ([emissions]; below), which also has a `fromSojournTimes()`, with sojourn times in seconds |
 
@@ -226,15 +230,15 @@ probability $1 - 10^{-12}$ and finds reducibility exactly from the zero structur
 ```cpp
 // a cruise lasts 30 steps, a turn 8, a dive 4; a cruise ends in a turn twice as often as in a dive
 auto const exits = Eigen::Matrix3d{{0, 2, 1}, {1, 0, 0}, {1, 0, 0}};
-auto const flight = MarkovChain<Flight>::fromSojournTimes(Eigen::Vector3d{30, 8, 4}, exits);
+auto const flight = MarkovChain<Flight>::fromSojournTimes(Eigen::Vector3d{30, 8, 4}, exits).value();
 stationary(flight)->toDensity()->probabilities();  // 0.818 0.145 0.0364: 9/11, 8/55, 2/55
 ```
 
 A maneuver regime and a sensor state that switch independently:
 
 ```cpp
-auto const maneuver = MarkovChain<Maneuver>{Eigen::Matrix2d{{0.95, 0.05}, {0.10, 0.90}}};
-auto const chain = MarkovChain<Mode>::independent(maneuver, MarkovChain<SensorMode>::persistent(0.8));
+auto const maneuver = MarkovChain<Maneuver>::create(Eigen::Matrix2d{{0.95, 0.05}, {0.10, 0.90}}).value();
+auto const chain = MarkovChain<Mode>::independent(maneuver, MarkovChain<SensorMode>::persistent(0.8).value());
 chain.matrix();
 // 0.76 0.19 0.04 0.01      from (Cruise, Inlier)
 // 0.19 0.76 0.01 0.04      from (Cruise, Outlier)
@@ -476,11 +480,11 @@ pack. It is normally deduced. Three ways to assign models:
 
 ```cpp
 auto const chain =
-    MarkovChain<Mode>::independent(MarkovChain<Maneuver>::persistent(0.95), MarkovChain<SensorMode>::persistent(0.8));
+    MarkovChain<Mode>::independent(MarkovChain<Maneuver>::persistent(0.95).value(), MarkovChain<SensorMode>::persistent(0.8).value());
 
 auto perMode = SwitchingModel{chain, cv(0.01), cv(0.01), cv(4.0), cv(4.0)};   // modelIndex 0 1 2 3
 auto byManeuver = switchingModel<Maneuver>(chain, cv(0.01), cv(4.0));  // modelIndex 0 0 1 1
-auto shared = SwitchingModel{MarkovChain<SensorMode>::persistent(0.9), cv(0.01)};  // every mode: model 0
+auto shared = SwitchingModel{MarkovChain<SensorMode>::persistent(0.9).value(), cv(0.01)};  // every mode: model 0
 ```
 
 Selecting by axis keeps a two-model maneuver set at two models when a sensor axis is
@@ -496,7 +500,7 @@ mode predicts by its own model's method:
 ```cpp
 auto const cruise = fixedStep(cv(0.01), 1.0);
 auto const turn = fixedStep(cv(4.0), 1.0);
-auto filter = ImmFilter{SwitchingModel{MarkovChain<Maneuver>::persistent(0.95), cruise, turn},
+auto filter = ImmFilter{SwitchingModel{MarkovChain<Maneuver>::persistent(0.95).value(), cruise, turn},
                         HybridParams{CategoricalParams<Maneuver>{}, initial}};
 filter.predict();            // one step; MethodType is ModelsMethod, each mode predicting by its model's
 filter.predict(Steps{3});    // three steps, the chain stepping each time
@@ -580,7 +584,7 @@ always does, and `withMethod()` gives one to a model that isn't fixed-step, as a
 argument only:
 
 ```cpp
-auto filter = ImmFilter{SwitchingModel{MarkovChain<Maneuver>::persistent(0.95), cv(0.01),
+auto filter = ImmFilter{SwitchingModel{MarkovChain<Maneuver>::persistent(0.95).value(), cv(0.01),
                                        withMethod(turn, methods::unscented())},
                         HybridParams{CategoricalParams<Maneuver>{}, initial}};
 // MethodType is Linearized: the cruise mode's; the turn mode predicts by Unscented
@@ -597,7 +601,7 @@ Fixed-step models may now differ in their methods, and the filter takes none:
 ```cpp
 auto const cruise = fixedStep(cv(0.01), 1.0);
 auto const turn = fixedStep(cv(4.0), 1.0, methods::unscented());
-auto filter = ImmFilter{SwitchingModel{MarkovChain<Maneuver>::persistent(0.95), cruise, turn}, ...};
+auto filter = ImmFilter{SwitchingModel{MarkovChain<Maneuver>::persistent(0.95).value(), cruise, turn}, ...};
 filter.predict();  // cruise by Linearized, turn by Unscented; MethodType is ModelsMethod
 ```
 
@@ -1067,9 +1071,10 @@ have different modes") can only fire for run-time `Finite` axes of different siz
 - Transitions are read by flat index (`transition(from, to)`). A by-name form,
   `transition<Cruise, Turn>()` on a `Named` chain, would follow the library's by-tag rule; it is
   the question [tag-addressing] answers for the positional discrete accessors: they stay.
-- `MarkovChain{space, matrix}` takes its scalar from the matrix, so an `Eigen::Matrix2f` gives a
+- ~~`MarkovChain{space, matrix}` takes its scalar from the matrix, so an `Eigen::Matrix2f` gives a
   `float` chain, which then fails to combine with a `double` state with an error about
-  `predict()`. Rare enough to leave.
+  `predict()`. Rare enough to leave.~~ `create()` casts the matrix to the chain's scalar, `double`
+  unless named, so an `Eigen::Matrix2f` gives a `double` chain.
 - The GCC 14 `-Wmaybe-uninitialized` warning in `GaussianParams`'s move constructor, which every IMM
   example showed on 2026-10-18, is gone, and so is the one in `Categorical::fromLogWeights()` that
   the `FloorModes` examples showed on 2026-10-27: the scratch program of this refresh, every example

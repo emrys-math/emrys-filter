@@ -335,7 +335,8 @@ TEST(Simulate, AFixedSizeSpaceNeedsNoInstance)
 // its transition() over the interval, in any time type.
 TEST(SimulateChain, DrawsTheNextValueFromTheRow)
 {
-    auto const chain = Emrys::MarkovChain<Gear>{Eigen::Matrix3d{{0.7, 0.2, 0.1}, {0.0, 0.5, 0.5}, {0.3, 0.0, 0.7}}};
+    auto const chain =
+        Emrys::MarkovChain<Gear>::create(Eigen::Matrix3d{{0.7, 0.2, 0.1}, {0.0, 0.5, 0.5}, {0.3, 0.0, 0.7}}).value();
     auto byChain = std::mt19937_64{3};
     auto byRow = std::mt19937_64{3};
     Eigen::Index value = 0;
@@ -348,8 +349,10 @@ TEST(SimulateChain, DrawsTheNextValueFromTheRow)
         value = next;
     }
 
-    auto const continuous =
-        Emrys::ContinuousTimeMarkovChain<Gear>{Eigen::Matrix3d{{-1.0, 0.5, 0.5}, {0.2, -0.4, 0.2}, {0.0, 1.0, -1.0}}};
+    auto const continuous = Emrys::ContinuousTimeMarkovChain<Gear>::create(
+                                Eigen::Matrix3d{{-1.0, 0.5, 0.5}, {0.2, -0.4, 0.2}, {0.0, 1.0, -1.0}}
+    )
+                                .value();
     auto inSeconds = std::mt19937_64{4};
     auto inMilliseconds = std::mt19937_64{4};
     auto stepped = std::mt19937_64{4};

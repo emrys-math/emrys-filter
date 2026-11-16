@@ -78,12 +78,12 @@ struct NanEmission
 // The filter deduces its space, chain, and scalar from the chain, with or without a starting state.
 TEST(HiddenMarkovFilter, DeducesFromTheChain)
 {
-    auto const chain = MarkovChain<Weather>::persistent(0.7);
+    auto const chain = MarkovChain<Weather>::persistent(0.7).value();
     auto const fromState = HiddenMarkovFilter{chain, CategoricalParams<Weather>{}};
     auto const uniform = HiddenMarkovFilter{chain};
     static_assert(std::is_same_v<decltype(fromState), HiddenMarkovFilter<Weather, MarkovChain<Weather>, double> const>);
     static_assert(std::is_same_v<decltype(uniform), decltype(fromState)>);
-    auto const rates = ContinuousTimeMarkovChain<Weather>{Eigen::Matrix2d{{-1.0, 1.0}, {1.0, -1.0}}};
+    auto const rates = ContinuousTimeMarkovChain<Weather>::create(Eigen::Matrix2d{{-1.0, 1.0}, {1.0, -1.0}}).value();
     auto const continuous = HiddenMarkovFilter{rates};
     static_assert(std::is_same_v<
                   decltype(continuous),
@@ -96,10 +96,10 @@ TEST(HiddenMarkovFilter, DeducesFromTheChain)
 // state where it is: from certain dry weather, the chain predicts rain with 0.1.
 TEST(HiddenMarkovFilter, ReplacesItsStateAndChain)
 {
-    auto filter = HiddenMarkovFilter{MarkovChain<Weather>::persistent(0.7)};
-    EXPECT_EQ(std::as_const(filter).chain().matrix(), MarkovChain<Weather>::persistent(0.7).matrix());
+    auto filter = HiddenMarkovFilter{MarkovChain<Weather>::persistent(0.7).value()};
+    EXPECT_EQ(std::as_const(filter).chain().matrix(), MarkovChain<Weather>::persistent(0.7).value().matrix());
     filter.setState(CategoricalParams<Weather>::fromWeights(Weather{}, Eigen::Vector2d{1.0, 0.0}));
-    filter.chain() = MarkovChain<Weather>::persistent(0.9);
+    filter.chain() = MarkovChain<Weather>::persistent(0.9).value();
     filter.predict();
     EXPECT_DOUBLE_EQ(filter.state().toDensity().value().probability<Rain>(), 0.9);
 
@@ -115,7 +115,7 @@ TEST(HiddenMarkovFilter, ReplacesItsStateAndChain)
 // posterior of rain is 6.21/7.03. The log-evidence is the sum of the two days'.
 TEST(HiddenMarkovFilter, MatchesAHandComputedForwardPass)
 {
-    auto filter = HiddenMarkovFilter{MarkovChain<Weather>::persistent(0.7)};
+    auto filter = HiddenMarkovFilter{MarkovChain<Weather>::persistent(0.7).value()};
     auto const umbrella = umbrellaTable.observe(Sighting::index<Umbrella>());
 
     auto const first = filter.update(umbrella);
@@ -142,7 +142,7 @@ TEST(HiddenMarkovFilter, MatchesAHandComputedForwardPass)
 TEST(HiddenMarkovFilter, ChecksTheStateWeightsAtTheUpdate)
 {
     auto const umbrella = umbrellaTable.observe(Sighting::index<Umbrella>());
-    auto const chain = MarkovChain<Weather>::persistent(0.7);
+    auto const chain = MarkovChain<Weather>::persistent(0.7).value();
     auto weighted =
         HiddenMarkovFilter{chain, CategoricalParams<Weather>::fromWeights(Weather{}, Eigen::Vector2d{5, 5})};
     auto const evidence = weighted.update(umbrella);
@@ -163,7 +163,7 @@ TEST(HiddenMarkovFilter, ChecksTheStateWeightsAtTheUpdate)
 TEST(HiddenMarkovFilter, IdentityEmissionRecoversTheSequence)
 {
     using Space = Finite<4>;
-    auto const chain = MarkovChain<Space>::persistent(0.6);
+    auto const chain = MarkovChain<Space>::persistent(0.6).value();
     auto const identity = EmissionTable{Space{}, Space{}, Eigen::Matrix4d::Identity()};
     auto filter = HiddenMarkovFilter{chain};
     auto rng = std::mt19937{7};
@@ -192,7 +192,7 @@ TEST(HiddenMarkovFilter, ImpossibleMeasurementIsRejected)
 {
     auto const onlyUmbrellas = EmissionTable{Weather{}, Sighting{}, Eigen::Matrix2d{{1.0, 0.0}, {1.0, 0.0}}};
     auto filter = HiddenMarkovFilter{
-        MarkovChain<Weather>::persistent(0.7),
+        MarkovChain<Weather>::persistent(0.7).value(),
         CategoricalParams<Weather>::fromWeights(Weather{}, Eigen::Vector2d{0.2, 0.8})
     };
     auto const before = filter.state().logWeights();
@@ -233,7 +233,7 @@ TEST(HiddenMarkovFilter, RunTimeCardinality)
     auto const space = Space{3};
     auto const emission = Eigen::MatrixXd{{0.5, 0.5}, {0.9, 0.1}, {0.2, 0.8}};
     auto const table = EmissionTable{space, Finite<2>{}, emission};
-    auto const chain = MarkovChain<Space>::persistent(0.8, space);
+    auto const chain = MarkovChain<Space>::persistent(0.8, space).value();
     auto filter = HiddenMarkovFilter{chain};
     Eigen::VectorXd reference = Eigen::VectorXd::Constant(3, 1.0 / 3.0);
     double logEvidence = 0;
@@ -270,7 +270,7 @@ int const mmppClosingGap = 63;
 // arrival; and its state is the normalized row vector of that product so far.
 TEST(HiddenMarkovFilter, ModulatedPoissonMatchesTheClosedFormLikelihood)
 {
-    auto const chain = ContinuousTimeMarkovChain<Weather>{mmppGenerator};
+    auto const chain = ContinuousTimeMarkovChain<Weather>::create(mmppGenerator).value();
     auto const initial = CategoricalParams<Weather>::fromWeights(Weather{}, Eigen::Vector2d{0.7, 0.3});
     auto filter = HiddenMarkovFilter{chain, initial};
 
@@ -301,7 +301,7 @@ TEST(HiddenMarkovFilter, ModulatedPoissonMatchesTheClosedFormLikelihood)
 // ratio of 6.6 for a tenfold refinement, which is that first order.
 TEST(HiddenMarkovFilter, CountedArrivalsConvergeToTheExactFilter)
 {
-    auto const chain = ContinuousTimeMarkovChain<Weather>{mmppGenerator};
+    auto const chain = ContinuousTimeMarkovChain<Weather>::create(mmppGenerator).value();
     auto const initial = CategoricalParams<Weather>::fromWeights(Weather{}, Eigen::Vector2d{0.7, 0.3});
     auto exact = HiddenMarkovFilter{chain, initial};
     for (int const gap : mmppGaps)

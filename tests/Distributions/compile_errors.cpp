@@ -708,8 +708,8 @@ using Rest = typename Emrys::ParticleGaussianParams<State, Position>::RestSpace;
 #if defined(MARKOV_CHAINS_OUT_OF_ORDER)  // static_assert: Categorical.h: give one chain per axis of the product, in
 [[maybe_unused]] auto const chain = Emrys::MarkovChain<Mode>::independent(
     Mode{},
-    Emrys::MarkovChain<Sensor>::persistent(0.9),
-    Emrys::MarkovChain<Maneuver>::persistent(0.9)
+    Emrys::MarkovChain<Sensor>::persistent(0.9).value(),
+    Emrys::MarkovChain<Maneuver>::persistent(0.9).value()
 );
 #endif
 

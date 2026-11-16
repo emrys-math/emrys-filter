@@ -705,13 +705,13 @@ squareRootOtherScalar()
 
 #if defined(SWITCHING_MODEL_COUNT)  // static_assert: SwitchingModel.h: give one process model per value of the axis
 [[maybe_unused]] auto const switching =
-    Emrys::SwitchingModel{Emrys::MarkovChain<Maneuver>::persistent(0.9), makeModel(), makeModel(), makeModel()};
+    Emrys::SwitchingModel{Emrys::MarkovChain<Maneuver>::persistent(0.9).value(), makeModel(), makeModel(), makeModel()};
 #endif
 
 #if defined(SWITCHING_AXIS_ONE_MODEL)  // static_assert: SwitchingModel.h: or no path for one model shared by every mode
 // One model where the path names a two-value axis is a forgotten model, not one shared by every mode.
 [[maybe_unused]] auto const switching = Emrys::switchingModel<Maneuver>(
-    Emrys::MarkovChain<Emrys::DiscreteProduct<Maneuver, Sensor>>::persistent(0.9),
+    Emrys::MarkovChain<Emrys::DiscreteProduct<Maneuver, Sensor>>::persistent(0.9).value(),
     makeModel()
 );
 #endif

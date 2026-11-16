@@ -314,7 +314,7 @@ TEST(TimeSteps, ImmFilterTakesDurationsAndAdvancesByACount)
     struct Maneuver : Named<Cruise, Turn>
     {};
 
-    auto const chain = MarkovChain<Maneuver>{Eigen::Matrix2d{{0.95, 0.05}, {0.1, 0.9}}};
+    auto const chain = MarkovChain<Maneuver>::create(Eigen::Matrix2d{{0.95, 0.05}, {0.1, 0.9}}).value();
     auto const conditionals = std::vector<GaussianParams<State>>{makeInitial(), makeInitial()};
     auto const initial =
         HybridParams{CategoricalParams<Maneuver>::fromWeights(Maneuver{}, Eigen::Array2d{0.6, 0.4}), conditionals};
@@ -414,7 +414,8 @@ TEST(TimeSteps, ContinuousTimeChainsAndEmissionsTakeDurations)
     struct Regime : Named<Quiet, Busy>
     {};
 
-    auto const chain = Emrys::ContinuousTimeMarkovChain<Regime>{Eigen::Matrix2d{{-0.4, 0.4}, {1.1, -1.1}}};
+    auto const chain =
+        Emrys::ContinuousTimeMarkovChain<Regime>::create(Eigen::Matrix2d{{-0.4, 0.4}, {1.1, -1.1}}).value();
     expectSame(chain.transition(250ms).matrix(), chain.transition(0.25).matrix());
 
     auto const initial = CategoricalParams<Regime>::fromWeights(Regime{}, Eigen::Vector2d{0.7, 0.3});

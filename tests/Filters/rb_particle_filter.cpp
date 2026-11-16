@@ -1070,7 +1070,7 @@ auto
 makeSwitching(double stay = 0.9)
 {
     return Emrys::SwitchingModel{
-        Emrys::MarkovChain<Mode>::persistent(stay),
+        Emrys::MarkovChain<Mode>::persistent(stay).value(),
         ConstantVelocity<Position, Velocity>{0.01},
         ConstantVelocity<Position, Velocity>{2.0}
     };
@@ -1296,7 +1296,7 @@ TEST(RbParticleFilter, HybridParticlesOfOneDynamicsMatchTheFilterOfOneGaussian)
 {
     auto rng = std::mt19937_64{32};
     auto const initial = drawParticleGaussian<Position, PerPointCovariance>(makeInitial(), 30, rng);
-    auto const chain = Emrys::MarkovChain<Mode>{Eigen::Matrix2d{{0.9, 0.1}, {0.3, 0.7}}};
+    auto const chain = Emrys::MarkovChain<Mode>::create(Eigen::Matrix2d{{0.9, 0.1}, {0.3, 0.7}}).value();
     auto const priorModes = Emrys::CategoricalParams<Mode>::fromWeights(Mode{}, Eigen::Vector2d{0.6, 0.4});
     auto hybrids = std::vector<Emrys::HybridGaussianParams<Rest, Mode>>{};
     for (Eigen::Index i = 0; i < initial.size(); ++i)
@@ -1407,7 +1407,7 @@ TEST(RbParticleFilter, AHybridPredictionWithoutADensityLeavesTheState)
     prior.setConditional(1, GaussianParams<Rest>{Rest{}, Eigen::Vector2d{1, 0}, Eigen::Matrix2d::Zero()});
     auto filter = RbParticleFilter{
         Emrys::SwitchingModel{
-            Emrys::MarkovChain<Mode>::persistent(1.0),
+            Emrys::MarkovChain<Mode>::persistent(1.0).value(),
             ConstantVelocity<Position, Velocity>{0.01},
             ConstantVelocity<Position, Velocity>{0.0}
         },

@@ -208,7 +208,7 @@ TEST(Emission, ArrivalIntervalIsTheModulatedStep)
 {
     auto const generator = Eigen::Matrix2d{{-0.4, 0.4}, {1.5, -1.5}};
     auto const rates = Eigen::Array2d{0.2, 6.0};
-    auto const chain = ContinuousTimeMarkovChain<Weather>{generator};
+    auto const chain = ContinuousTimeMarkovChain<Weather>::create(generator).value();
     auto const prior = CategoricalParams<Weather>::fromWeights(Weather{}, Eigen::Vector2d{0.3, 0.7});
     double const tau = 0.8;
     Eigen::Matrix2d const survival =

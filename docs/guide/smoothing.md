@@ -354,7 +354,7 @@ the model of the step into $k$:
 
 ```cpp
 auto filter = ImmFilter{
-    SwitchingModel{MarkovChain<Maneuver>::persistent(0.95),
+    SwitchingModel{MarkovChain<Maneuver>::persistent(0.95).value(),
                    ConstantVelocity<Position, Velocity>{0.01},
                    ConstantVelocity<Position, Velocity>{4.0}},
     HybridParams{CategoricalParams<Maneuver>{}, GaussianParams<State>{State{}, Eigen::Vector2d{0.0, 1.0}, initialCov}}};
@@ -684,9 +684,9 @@ against enumeration of the 32 weather sequences:
 struct Weather : Named<Sunny, Rainy> {};
 struct Seen : Named<Dry, Umbrella> {};
 
-auto filter = HiddenMarkovFilter{MarkovChain<Weather>{transitions},          // {{0.8, 0.2}, {0.4, 0.6}}
+auto filter = HiddenMarkovFilter{MarkovChain<Weather>::create(transitions).value(),  // {{0.8, 0.2}, {0.4, 0.6}}
                                  CategoricalParams<Weather>::fromWeights(initial)};  // {0.5, 0.5}
-auto const table = EmissionTable{Weather{}, Seen{}, emissions};                         // {{0.9, 0.1}, {0.3, 0.7}}
+auto const table = EmissionTable{Weather{}, Seen{}, emissions};                      // {{0.9, 0.1}, {0.3, 0.7}}
 auto history = CategoricalHistory<Weather>{};
 static_cast<void>(filter.update(table.observe(seen[0])));                     // seen: 0 1 1 0 1
 for (std::size_t k = 1; k < seen.size(); ++k)

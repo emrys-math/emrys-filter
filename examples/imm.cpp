@@ -50,7 +50,7 @@ main()
     // The mode is a Markov chain. Row i of the transition matrix is the distribution of the next mode
     // after mode i: a cruise lasts about 33 steps, a maneuver about 10. The switching model pairs the
     // chain with one process model per mode, in the order of the mode's values.
-    auto const chain = Emrys::MarkovChain<Maneuver>{Eigen::Matrix2d{{0.97, 0.03}, {0.1, 0.9}}};
+    auto const chain = Emrys::MarkovChain<Maneuver>::create(Eigen::Matrix2d{{0.97, 0.03}, {0.1, 0.9}}).value();
     auto const switching = Emrys::SwitchingModel{chain, cruise, maneuver};
 
     // A fix measures the position with noise of 1 m^2 variance on each axis.

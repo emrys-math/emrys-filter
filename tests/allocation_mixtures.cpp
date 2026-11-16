@@ -154,8 +154,10 @@ TEST(Allocation, ImmFilterWithMixtureNoiseStepsWithinItsResource)
 {
     auto resource = CountingResource{arenaBytes};
     auto const allocator = Pmr{&resource};
-    auto const chain =
-        MarkovChain<Mode>::independent(MarkovChain<Maneuver>::persistent(0.95), MarkovChain<Sensor>::persistent(0.8));
+    auto const chain = MarkovChain<Mode>::independent(
+        MarkovChain<Maneuver>::persistent(0.95).value(),
+        MarkovChain<Sensor>::persistent(0.8).value()
+    );
     auto initial = HybridGaussianParams<State, Mode, double, Pmr>{CategoricalParams<Mode>{}, makeInitial(), allocator};
     auto filter = ImmFilter{switchingModel<Maneuver>(chain, makeModel(0.01), makeModel(4.0)), std::move(initial)};
     auto z = Eigen::Vector2d{};
@@ -211,8 +213,10 @@ expectImmFilterStepsWithinItsResource(Quiet const & quiet, Agile const & agile)
 {
     auto resource = CountingResource{arenaBytes};
     auto const allocator = Pmr{&resource};
-    auto const chain =
-        MarkovChain<Mode>::independent(MarkovChain<Maneuver>::persistent(0.95), MarkovChain<Sensor>::persistent(0.8));
+    auto const chain = MarkovChain<Mode>::independent(
+        MarkovChain<Maneuver>::persistent(0.95).value(),
+        MarkovChain<Sensor>::persistent(0.8).value()
+    );
     auto initial = HybridGaussianParams<State, Mode, double, Pmr>{CategoricalParams<Mode>{}, makeInitial(), allocator};
     auto filter = ImmFilter{switchingModel<Maneuver>(chain, quiet, agile), std::move(initial)};
     EXPECT_EQ(filter.get_allocator(), allocator);
@@ -260,8 +264,10 @@ TEST(Allocation, ImmFilterScratchFollowsAPropagatingAllocator)
 {
     using Allocator = Propagating<std::byte>;
     using HybridState = HybridGaussianParams<State, Mode, double, Allocator>;
-    auto const chain =
-        MarkovChain<Mode>::independent(MarkovChain<Maneuver>::persistent(0.95), MarkovChain<Sensor>::persistent(0.8));
+    auto const chain = MarkovChain<Mode>::independent(
+        MarkovChain<Maneuver>::persistent(0.95).value(),
+        MarkovChain<Sensor>::persistent(0.8).value()
+    );
     auto filter = ImmFilter{
         switchingModel<Maneuver>(chain, makeModel(0.01), makeModel(4.0)),
         HybridState{CategoricalParams<Mode>{}, makeInitial(), Allocator{1}}
@@ -325,8 +331,10 @@ TEST(Allocation, MixtureOfImmsScratchFollowsAPropagatingAllocator)
 {
     using Allocator = Propagating<std::byte>;
     using HybridState = HybridGaussianParams<State, Mode, double, Allocator>;
-    auto const chain =
-        MarkovChain<Mode>::independent(MarkovChain<Maneuver>::persistent(0.95), MarkovChain<Sensor>::persistent(0.8));
+    auto const chain = MarkovChain<Mode>::independent(
+        MarkovChain<Maneuver>::persistent(0.95).value(),
+        MarkovChain<Sensor>::persistent(0.8).value()
+    );
     auto const makePrior = [](Allocator const & allocator) {
         auto prior = MixtureParams<HybridGaussian<State, Mode, double, Allocator>, Allocator>{allocator};
         prior.add(std::log(0.6), HybridState{CategoricalParams<Mode>{}, makeInitial(), allocator});
@@ -393,8 +401,10 @@ expectMixtureOfImmsStepsWithinItsResource(Quiet const & quiet, Agile const & agi
 {
     auto resource = CountingResource{arenaBytes};
     auto const allocator = Pmr{&resource};
-    auto const chain =
-        MarkovChain<Mode>::independent(MarkovChain<Maneuver>::persistent(0.95), MarkovChain<Sensor>::persistent(0.8));
+    auto const chain = MarkovChain<Mode>::independent(
+        MarkovChain<Maneuver>::persistent(0.95).value(),
+        MarkovChain<Sensor>::persistent(0.8).value()
+    );
     using HybridState = HybridGaussianParams<State, Mode, double, Pmr>;
     auto prior = MixtureParams<HybridGaussian<State, Mode, double, Pmr>, Pmr>{Capacity{2}, allocator};
     prior.add(std::log(0.6), HybridState{CategoricalParams<Mode>{}, makeInitial(), allocator});
@@ -465,8 +475,10 @@ expectImmSmoothingWithinItsResource(Quiet const & quiet, Agile const & agile)
     static constexpr Eigen::Index lag = 5;
     auto resource = CountingResource{arenaBytes};
     auto const allocator = Pmr{&resource};
-    auto const chain =
-        MarkovChain<Mode>::independent(MarkovChain<Maneuver>::persistent(0.95), MarkovChain<Sensor>::persistent(0.8));
+    auto const chain = MarkovChain<Mode>::independent(
+        MarkovChain<Maneuver>::persistent(0.95).value(),
+        MarkovChain<Sensor>::persistent(0.8).value()
+    );
     auto initial = HybridGaussianParams<State, Mode, double, Pmr>{CategoricalParams<Mode>{}, makeInitial(), allocator};
     auto filter = ImmFilter{switchingModel<Maneuver>(chain, quiet, agile), std::move(initial)};
     using Update = typename decltype(filter.update(makeFix(fixAt(0))))::value_type;

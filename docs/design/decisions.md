@@ -861,9 +861,9 @@ nothing, `FixedSizeSpace` (empty and default-constructible), is named as a templ
 than passed, by `plus`, `minus`, `normalizeValues`, `normalizeDifferences`, `simulate`, `transform`,
 `linearized`, `unscented`, `logLikelihoods`, `logLikelihood`, `valueOf`, `pointGrid`, `regularGrid`
 (`regularGrid<State, Position>(first, spacing, counts)`), `CategoricalParams::fromWeights`, and the
-constructors of `MarkovChain` and `ContinuousTimeMarkovChain` (`MarkovChain<Maneuver>{matrix}`), as
-the constructors that size their space from the vectors already leave it out. A fixed step names no
-space: `fixedStep(model, dt)` leaves it to the filter it is given [fixed-step-models].
+chain factories, whose space comes last and defaults (`MarkovChain<Maneuver>::create(matrix)`),
+as the constructors that size their space from the vectors already leave it out. A fixed step
+names no space: `fixedStep(model, dt)` leaves it to the filter it is given [fixed-step-models].
 
 **Why.** The library is meant to be as lean as Eigen's fixed-size types: a `std::tuple` of empty
 leaves added 8 bytes to a `GaussianParams`. A per-element copy is only a resizable space's counts,
@@ -1241,8 +1241,11 @@ constructor is public only where building cannot fail.*
 
 **Rule.** `Gamma`, `Uniform`, and `StudentT` are built by a static `create()` (and named factories
 such as `Gamma::exponential()`) that checks the values and returns a `std::expected` with the type's
-own error enum; the constructor that takes checked values is private. A constructor that cannot
-fail, such as `Uniform(space)` over whole periods, stays public. What the types already decide stays
+own error enum; the constructor that takes checked values is private. `MarkovChain` and
+`ContinuousTimeMarkovChain` follow the rule too, with `ChainError`: `create()` takes transition
+weights, each row normalized, or rates, the diagonal set from them; `fromSojournTimes()` checks
+its sojourn times and exit weights, and `MarkovChain::persistent()` its probability. A constructor that cannot fail, such as `Uniform(space)`
+over whole periods or the chain that never moves, stays public. What the types already decide stays
 an assertion or a `static_assert`. Each error prints in words [printing-and-simulation].
 
 **Why.** The constructors asserted on values a user often computes at run time, a rate from data or
@@ -1254,7 +1257,8 @@ constructor that can't fail needs no factory, which keeps `Uniform<Heading>{}` s
 freedom: one flat enum lets a caller switch on one type, at the cost of two cases that repeat a
 `GaussianError`'s.
 
-**Where.** `Distributions/Gamma.h`, `Distributions/Uniform.h`, `Distributions/StudentT.h`.
+**Where.** `Distributions/Gamma.h`, `Distributions/Uniform.h`, `Distributions/StudentT.h`,
+`Distributions/Categorical.h`, `Distributions/ContinuousTimeMarkovChain.h`.
 
 ### product-factors
 

@@ -2,8 +2,9 @@
 // DiscreteSpace and DiscreteProduct cardinalities and named values; CategoricalParams, whose weights are written
 // unchecked and checked once by toDensity(), and the Categorical view it returns; normalization,
 // entropy, events, marginals, conditionals by path, Bayes updates, run-time cardinality, and
-// sampling, a batch or one draw at a time [allocation]; MarkovChain prediction, with independent axes of
-// a product, chains from mean sojourn times and exit weights, and stationary distributions.
+// sampling, a batch or one draw at a time [allocation]; MarkovChain prediction, chains from
+// transition weights, with independent axes of a product, and from mean sojourn times and exit
+// weights, the ChainError of values that fail to define one, and stationary distributions.
 
 #include <EmrysFilter/Distributions/Categorical.h>
 #include <EmrysFilter/Spaces/Discrete.h>
@@ -398,7 +399,7 @@ TEST(Categorical, ReweightsBeforeOneNormalization)
 // the distribution certain of i; a transition of probability zero has log-weight minus infinity.
 TEST(MarkovChain, NextIsARowOfTheMatrix)
 {
-    auto const chain = MarkovChain<Maneuver>{Eigen::Matrix2d{{0.97, 0.03}, {1.0, 0.0}}};
+    auto const chain = MarkovChain<Maneuver>::create(Eigen::Matrix2d{{0.97, 0.03}, {1.0, 0.0}}).value();
     CategoricalParams<Maneuver> const fromCruise = chain.next(0);
     EXPECT_TRUE(probabilitiesOf(fromCruise).isApprox(Eigen::Array2d{0.97, 0.03}, 1e-15));
     auto const certain = CategoricalParams<Maneuver>::fromWeights(1.0, 0.0);
@@ -412,7 +413,7 @@ TEST(MarkovChain, NextIsARowOfTheMatrix)
 // predict() applies one step and keeps the total weight, and memoryless(q) forgets the start.
 TEST(MarkovChain, PredictsOneStep)
 {
-    MarkovChain const chain = MarkovChain<Maneuver>::persistent(0.9);
+    MarkovChain const chain = MarkovChain<Maneuver>::persistent(0.9).value();
     EXPECT_TRUE(chain.matrix().isApprox(Eigen::Matrix2d{{0.9, 0.1}, {0.1, 0.9}}));
     auto const p = CategoricalParams<Maneuver>::fromWeights(Maneuver{}, Eigen::Vector2d{0.7, 0.3});
     CategoricalParams<Maneuver> const next = predict(p, chain);
@@ -422,7 +423,7 @@ TEST(MarkovChain, PredictsOneStep)
     auto const scaled = CategoricalParams{Maneuver{}, Eigen::Array2d{std::log(0.7) - 5000, std::log(0.3) - 5000}};
     EXPECT_TRUE((predict(scaled, chain).logWeights() + 5000).isApprox(next.logWeights(), 1e-12));
 
-    MarkovChain<Cell> const three = MarkovChain<Cell>::persistent(0.6);
+    MarkovChain<Cell> const three = MarkovChain<Cell>::persistent(0.6).value();
     EXPECT_TRUE(three.matrix().isApprox(Eigen::Matrix3d{{0.6, 0.2, 0.2}, {0.2, 0.6, 0.2}, {0.2, 0.2, 0.6}}));
 
     // A memoryless chain forgets where it started.
@@ -439,14 +440,14 @@ TEST(MarkovChain, MovesRvalueTransitions)
     using Chain = MarkovChain<Finite<Eigen::Dynamic>>;
     Chain::MatrixType transitions = Eigen::Matrix2d{{0.9, 0.1}, {0.3, 0.7}};  // row-major, as stored
     double const * data = transitions.data();
-    auto const moved = Chain{Finite<Eigen::Dynamic>{2}, std::move(transitions)};
+    auto const moved = Chain::create(std::move(transitions), Finite<Eigen::Dynamic>{2}).value();
     EXPECT_EQ(moved.matrix().data(), data);
 
     // Another scalar is cast, and an lvalue is copied.
     Eigen::MatrixXf const single = Eigen::Matrix2f{{0.5f, 0.5f}, {0.25f, 0.75f}};
-    auto const cast = Chain{Finite<Eigen::Dynamic>{2}, single};
+    auto const cast = Chain::create(single, Finite<Eigen::Dynamic>{2}).value();
     EXPECT_DOUBLE_EQ(cast.transition(1, 1), 0.75);
-    auto const copied = Chain{Finite<Eigen::Dynamic>{2}, moved.matrix()};
+    auto const copied = Chain::create(moved.matrix(), Finite<Eigen::Dynamic>{2}).value();
     EXPECT_NE(copied.matrix().data(), moved.matrix().data());
     EXPECT_EQ(copied.matrix(), moved.matrix());
 }
@@ -455,8 +456,8 @@ TEST(MarkovChain, MovesRvalueTransitions)
 // and an independent prior stays independent with each marginal moved by its own chain.
 TEST(MarkovChain, IndependentDimensionsOfAProduct)
 {
-    auto const maneuver = MarkovChain<Maneuver>{Eigen::Matrix2d{{0.95, 0.05}, {0.2, 0.8}}};
-    auto const sensor = MarkovChain<Sensor>{Eigen::Matrix2d{{0.9, 0.1}, {0.5, 0.5}}};
+    auto const maneuver = MarkovChain<Maneuver>::create(Eigen::Matrix2d{{0.95, 0.05}, {0.2, 0.8}}).value();
+    auto const sensor = MarkovChain<Sensor>::create(Eigen::Matrix2d{{0.9, 0.1}, {0.5, 0.5}}).value();
     auto const mode = MarkovChain<Mode>::independent(maneuver, sensor);
     for (Eigen::Index i = 0; i < 4; ++i)
     {
@@ -494,23 +495,84 @@ TEST(MarkovChain, IndependentDimensionsOfAProduct)
 // by hand. Without exit weights it splits evenly, and an infinite sojourn time never leaves.
 TEST(MarkovChain, FromSojournTimes)
 {
-    MarkovChain const two = MarkovChain<Maneuver>::fromSojournTimes(Eigen::Vector2d{20, 5});
+    MarkovChain const two = MarkovChain<Maneuver>::fromSojournTimes(Eigen::Vector2d{20, 5}).value();
     EXPECT_TRUE(two.matrix().isApprox(Eigen::Matrix2d{{0.95, 0.05}, {0.2, 0.8}}, 1e-15));
 
     auto const exits = Eigen::Matrix3d{{0, 2, 1}, {1, 0, 0}, {1, 0, 0}};
-    MarkovChain const flight = MarkovChain<Cell>::fromSojournTimes(Eigen::Vector3d{30, 8, 4}, exits);
+    MarkovChain const flight = MarkovChain<Cell>::fromSojournTimes(Eigen::Vector3d{30, 8, 4}, exits).value();
     auto const expected =
         Eigen::Matrix3d{{1 - 1.0 / 30, 2.0 / 90, 1.0 / 90}, {1.0 / 8, 1 - 1.0 / 8, 0}, {1.0 / 4, 0, 1 - 1.0 / 4}};
     EXPECT_TRUE(flight.matrix().isApprox(expected, 1e-15));
 
     // Even exits are persistent() with each value's own stay probability.
-    MarkovChain const even = MarkovChain<Cell>::fromSojournTimes(Eigen::Vector3d{10, 10, 10});
-    EXPECT_TRUE(even.matrix().isApprox(MarkovChain<Cell>::persistent(0.9).matrix(), 1e-15));
+    MarkovChain const even = MarkovChain<Cell>::fromSojournTimes(Eigen::Vector3d{10, 10, 10}).value();
+    EXPECT_TRUE(even.matrix().isApprox(MarkovChain<Cell>::persistent(0.9).value().matrix(), 1e-15));
 
     // An infinite sojourn time is absorbing, and its row of exit weights may be zero.
     auto const oneWay = Eigen::Matrix2d{{0, 1}, {0, 0}};
-    MarkovChain const absorbing = MarkovChain<Maneuver>::fromSojournTimes(Eigen::Vector2d{4, inf}, oneWay);
+    MarkovChain const absorbing = MarkovChain<Maneuver>::fromSojournTimes(Eigen::Vector2d{4, inf}, oneWay).value();
     EXPECT_TRUE(absorbing.matrix().isApprox(Eigen::Matrix2d{{0.75, 0.25}, {0, 1}}, 1e-15));
+
+    // The diagonal of the exit weights is not read.
+    auto const withDiagonal = Eigen::Matrix3d{{5, 2, 1}, {1, 7, 0}, {1, 0, 0.5}};
+    EXPECT_EQ(
+        MarkovChain<Cell>::fromSojournTimes(Eigen::Vector3d{30, 8, 4}, withDiagonal).value().matrix(),
+        flight.matrix()
+    );
+}
+
+// create() divides each row by its total, so weights in any proportion, and a matrix of
+// probabilities written to three digits, give rows that sum to one; it casts the matrix to the
+// chain's scalar.
+TEST(MarkovChain, CreateNormalizesEachRow)
+{
+    auto const chain = MarkovChain<Maneuver>::create(Eigen::Matrix2d{{19, 1}, {1, 9}}).value();
+    EXPECT_TRUE(chain.matrix().isApprox(Eigen::Matrix2d{{0.95, 0.05}, {0.1, 0.9}}, 1e-15));
+
+    auto const thirds = Eigen::Matrix3d{{0.333, 0.333, 0.333}, {0.5, 0.25, 0.25}, {0, 0, 1}};
+    auto const rounded = MarkovChain<Cell>::create(thirds).value();
+    EXPECT_NEAR(rounded.transition(0, 2), 1.0 / 3, 1e-15);
+    EXPECT_EQ(rounded.transition(2, 2), 1.0);
+    EXPECT_TRUE((rounded.matrix().rowwise().sum().array() - 1).abs().maxCoeff() < 1e-15);
+
+    auto const fromFloat = MarkovChain<Maneuver>::create(Eigen::Matrix2f{{0.5f, 0.5f}, {0.25f, 0.75f}}).value();
+    static_assert(std::is_same_v<decltype(fromFloat)::Scalar, double>);
+    EXPECT_EQ(fromFloat.transition(1, 1), 0.75);
+}
+
+// create(), persistent(), and fromSojournTimes() return the ChainError of values that fail to
+// define a chain: a negative weight, a weight or sojourn time that is NaN, an infinite weight, a
+// value with nowhere to go, a probability of staying outside [0, 1], and a sojourn time shorter
+// than one step.
+TEST(MarkovChain, FactoriesCheckTheirValues)
+{
+    EXPECT_EQ(MarkovChain<Maneuver>::persistent(1.5).error(), ChainError::NotAProbability);
+    EXPECT_EQ(MarkovChain<Maneuver>::persistent(-0.1).error(), ChainError::NotAProbability);
+    EXPECT_EQ(MarkovChain<Maneuver>::persistent(NAN).error(), ChainError::NotAProbability);
+    EXPECT_EQ(MarkovChain<Maneuver>::persistent(1.0).value().matrix(), MarkovChain<Maneuver>{}.matrix());
+    EXPECT_TRUE(MarkovChain<Maneuver>::persistent(0.0));
+
+    EXPECT_EQ(MarkovChain<Maneuver>::create(Eigen::Matrix2d{{1.1, -0.1}, {0.5, 0.5}}).error(), ChainError::Negative);
+    EXPECT_EQ(MarkovChain<Maneuver>::create(Eigen::Matrix2d{{NAN, 1}, {0.5, 0.5}}).error(), ChainError::NonFinite);
+    EXPECT_EQ(MarkovChain<Maneuver>::create(Eigen::Matrix2d{{inf, 1}, {0.5, 0.5}}).error(), ChainError::NonFinite);
+    EXPECT_EQ(MarkovChain<Maneuver>::create(Eigen::Matrix2d{{0.5, 0.5}, {0, 0}}).error(), ChainError::ZeroRow);
+
+    auto const exits = Eigen::Matrix2d{{0, 1}, {1, 0}};
+    EXPECT_EQ(
+        MarkovChain<Maneuver>::fromSojournTimes(Eigen::Vector2d{0.5, 4}, exits).error(),
+        ChainError::ShortSojourn
+    );
+    EXPECT_EQ(MarkovChain<Maneuver>::fromSojournTimes(Eigen::Vector2d{-4, 4}).error(), ChainError::ShortSojourn);
+    EXPECT_EQ(MarkovChain<Maneuver>::fromSojournTimes(Eigen::Vector2d{NAN, 4}).error(), ChainError::NonFinite);
+    EXPECT_EQ(
+        MarkovChain<Maneuver>::fromSojournTimes(Eigen::Vector2d{4, 4}, Eigen::Matrix2d{{0, -1}, {1, 0}}).error(),
+        ChainError::Negative
+    );
+    EXPECT_EQ(
+        MarkovChain<Maneuver>::fromSojournTimes(Eigen::Vector2d{4, 4}, Eigen::Matrix2d{{0, 1}, {0, 0}}).error(),
+        ChainError::ZeroRow
+    );
+    EXPECT_TRUE(MarkovChain<Maneuver>::fromSojournTimes(Eigen::Vector2d{1, 1}, exits));
 }
 
 // stationary() gives the probabilities that one step leaves alone. For the three-value chain of
@@ -521,7 +583,7 @@ TEST(MarkovChain, FromSojournTimes)
 TEST(MarkovChain, Stationary)
 {
     auto const exits = Eigen::Matrix3d{{0, 2, 1}, {1, 0, 0}, {1, 0, 0}};
-    MarkovChain const flight = MarkovChain<Cell>::fromSojournTimes(Eigen::Vector3d{30, 8, 4}, exits);
+    MarkovChain const flight = MarkovChain<Cell>::fromSojournTimes(Eigen::Vector3d{30, 8, 4}, exits).value();
     auto const prior = stationary(flight);
     ASSERT_TRUE(prior);
     auto const p = probabilitiesOf(*prior);
@@ -530,15 +592,15 @@ TEST(MarkovChain, Stationary)
 
     double const a = 1e-12;
     double const b = 3e-12;
-    auto const sticky = MarkovChain<Maneuver>{Eigen::Matrix2d{{1 - a, a}, {b, 1 - b}}};
+    auto const sticky = MarkovChain<Maneuver>::create(Eigen::Matrix2d{{1 - a, a}, {b, 1 - b}}).value();
     auto const settled = stationary(sticky);
     ASSERT_TRUE(settled);
     EXPECT_NEAR(probabilitiesOf(*settled)(0), 0.75, 1e-15);
     EXPECT_NEAR(probabilitiesOf(*settled)(1), 0.25, 1e-15);
 
     // A product of independent axes settles into the product of the axes' stationary distributions.
-    auto const maneuver = MarkovChain<Maneuver>{Eigen::Matrix2d{{0.95, 0.05}, {0.2, 0.8}}};
-    auto const sensor = MarkovChain<Sensor>{Eigen::Matrix2d{{0.9, 0.1}, {0.5, 0.5}}};
+    auto const maneuver = MarkovChain<Maneuver>::create(Eigen::Matrix2d{{0.95, 0.05}, {0.2, 0.8}}).value();
+    auto const sensor = MarkovChain<Sensor>::create(Eigen::Matrix2d{{0.9, 0.1}, {0.5, 0.5}}).value();
     auto const mode = stationary(MarkovChain<Mode>::independent(maneuver, sensor));
     ASSERT_TRUE(mode);
     Eigen::Array2d const pm = probabilitiesOf(stationary(maneuver).value());
@@ -558,9 +620,9 @@ TEST(MarkovChain, Stationary)
 TEST(MarkovChain, StationaryOfAReducibleChain)
 {
     EXPECT_EQ(stationary(MarkovChain<Maneuver>{}).error(), ChainError::Reducible);
-    auto const transient = MarkovChain<Maneuver>{Eigen::Matrix2d{{1, 0}, {0.5, 0.5}}};
+    auto const transient = MarkovChain<Maneuver>::create(Eigen::Matrix2d{{1, 0}, {0.5, 0.5}}).value();
     EXPECT_EQ(stationary(transient).error(), ChainError::Reducible);
-    auto const leaving = MarkovChain<Maneuver>{Eigen::Matrix2d{{0.5, 0.5}, {0, 1}}};
+    auto const leaving = MarkovChain<Maneuver>::create(Eigen::Matrix2d{{0.5, 0.5}, {0, 1}}).value();
     EXPECT_EQ(stationary(leaving).error(), ChainError::Reducible);
 }
 
@@ -583,8 +645,8 @@ TEST(Categorical, RunTimeCardinality)
     EXPECT_TRUE(probabilitiesOf(cells).isApproxToConstant(1.0 / 3));
     auto const chain = MarkovChain<Grid>::independent(
         grid,
-        MarkovChain<Maneuver>::persistent(0.9),
-        MarkovChain<Cells>::persistent(0.5, Cells{3})
+        MarkovChain<Maneuver>::persistent(0.9).value(),
+        MarkovChain<Cells>::persistent(0.5, Cells{3}).value()
     );
     EXPECT_TRUE(probabilitiesOf(predict(p, chain)).isApproxToConstant(1.0 / 6));
 }

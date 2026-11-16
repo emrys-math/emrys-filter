@@ -227,7 +227,7 @@ TEST(Allocation, GaussianAndCategoricalHistoriesAreAllocatorAware)
     expectHistoryIsAllocatorAware(gaussian);
 
     using Space = Emrys::Finite<3>;
-    auto hidden = Emrys::HiddenMarkovFilter{MarkovChain<Space>::persistent(0.8)};
+    auto hidden = Emrys::HiddenMarkovFilter{MarkovChain<Space>::persistent(0.8).value()};
     auto categorical = Emrys::CategoricalHistory<Space, double, Pmr>{Lag{2}, allocator};
     for (int k = 0; k < 3; ++k)
     {
@@ -591,7 +591,7 @@ TEST(Allocation, HiddenMarkovFilterAndSmootherStepWithoutAllocating)
     using Space = Emrys::Finite<3>;
     auto const emissions = Eigen::Matrix<double, 3, 2>{{0.9, 0.1}, {0.4, 0.6}, {0.15, 0.85}};
     auto const table = Emrys::EmissionTable{Space{}, Emrys::Finite<2>{}, emissions};
-    auto const chain = MarkovChain<Space>::persistent(0.8);
+    auto const chain = MarkovChain<Space>::persistent(0.8).value();
 
     auto discrete = Emrys::HiddenMarkovFilter{chain};
     expectStepsAllocateNothing([&](int k) {

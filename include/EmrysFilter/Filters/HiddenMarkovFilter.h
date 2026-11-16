@@ -111,7 +111,7 @@ private:
  * filter. update() takes any EmissionModel.
  *
  * \code
- * auto filter = HiddenMarkovFilter{MarkovChain<Weather>::persistent(0.7), CategoricalParams<Weather>{}};
+ * auto filter = HiddenMarkovFilter{MarkovChain<Weather>::persistent(0.7).value(), CategoricalParams<Weather>{}};
  * filter.predict();
  * auto const updated = filter.update(table.observe(Activity::index<Walk>()));   // or a WeightError
  * filter.state().toDensity()->probability<Rainy>();

@@ -434,8 +434,8 @@ TEST(ImmFilter, OneModeIsAKalmanFilter)
 // a plain Gaussian fix updates every mode alike.
 TEST(ImmFilter, MatchesAHandComputedImmWithMarkovOutliers)
 {
-    auto const maneuverChain = MarkovChain<Maneuver>{Eigen::Matrix2d{{0.95, 0.05}, {0.1, 0.9}}};
-    auto const sensorChain = MarkovChain<Sensor>{Eigen::Matrix2d{{0.9, 0.1}, {0.4, 0.6}}};
+    auto const maneuverChain = MarkovChain<Maneuver>::create(Eigen::Matrix2d{{0.95, 0.05}, {0.1, 0.9}}).value();
+    auto const sensorChain = MarkovChain<Sensor>::create(Eigen::Matrix2d{{0.9, 0.1}, {0.4, 0.6}}).value();
     auto const chain = MarkovChain<Mode>::independent(maneuverChain, sensorChain);
 
     auto const means = std::vector<Vector4>{{0, 0, 1, 0}, {0.5, 0, 1, 0.2}, {0, 1, 0.5, 0.5}, {1, -1, 1, 0}};
@@ -549,8 +549,8 @@ TEST(ImmFilter, NoiseByModeIsMemorylessWhereNoModeSpaceHasItsAxis)
 // that returns its result.
 TEST(ImmFilter, UpdatesEachModeByTheMeasurementItsValueSelects)
 {
-    auto const maneuverChain = MarkovChain{Maneuver{}, Eigen::Matrix2d{{0.95, 0.05}, {0.1, 0.9}}};
-    auto const sensorChain = MarkovChain{Sensor{}, Eigen::Matrix2d{{0.9, 0.1}, {0.4, 0.6}}};
+    auto const maneuverChain = MarkovChain<Maneuver>::create(Eigen::Matrix2d{{0.95, 0.05}, {0.1, 0.9}}).value();
+    auto const sensorChain = MarkovChain<Sensor>::create(Eigen::Matrix2d{{0.9, 0.1}, {0.4, 0.6}}).value();
     auto const chain = MarkovChain<Mode>::independent(Mode{}, maneuverChain, sensorChain);
     auto const means = std::vector<Vector4>{{0, 0, 1, 0}, {0.5, 0, 1, 0.2}, {0, 1, 0.5, 0.5}, {1, -1, 1, 0}};
     auto const variances = std::vector<Vector4>{{4, 4, 1, 1}, {2, 3, 1, 2}, {5, 4, 2, 1}, {4, 2, 1, 1}};
@@ -643,8 +643,8 @@ TEST(ImmFilter, FixedStepModelsFixTheStepAndTheMethod)
 {
     using Emrys::FixedStepModel;
 
-    auto const maneuverChain = MarkovChain<Maneuver>{Eigen::Matrix2d{{0.95, 0.05}, {0.1, 0.9}}};
-    auto const sensorChain = MarkovChain<Sensor>{Eigen::Matrix2d{{0.9, 0.1}, {0.4, 0.6}}};
+    auto const maneuverChain = MarkovChain<Maneuver>::create(Eigen::Matrix2d{{0.95, 0.05}, {0.1, 0.9}}).value();
+    auto const sensorChain = MarkovChain<Sensor>::create(Eigen::Matrix2d{{0.9, 0.1}, {0.4, 0.6}}).value();
     auto const chain = MarkovChain<Mode>::independent(maneuverChain, sensorChain);
     auto conditionals = std::vector<GaussianParams<State>>{};
     for (int m = 0; m < 4; ++m)
@@ -757,7 +757,7 @@ TEST(ImmFilter, EachModePredictsByItsOwnMethod)
     static_assert(std::is_same_v<decltype(fixed)::MethodType, Emrys::ModelsMethod>);
     auto mixing = ImmFilter{
         SwitchingModel{
-            MarkovChain<Maneuver>::persistent(0.9),
+            MarkovChain<Maneuver>::persistent(0.9).value(),
             makeModel(quiet),
             withMethod(makeDragModel(agile), methods::unscented())
         },
@@ -811,7 +811,7 @@ TEST(ImmFilter, EachModePredictsByItsOwnMethod)
 // state(), fail the update with their WeightError before any mode is updated ([update-outcomes]).
 TEST(ImmFilter, ReturnsTheErrorOfModeProbabilitiesThatCannotBeNormalized)
 {
-    MarkovChain const chain = MarkovChain<Maneuver>::persistent(0.9);
+    MarkovChain const chain = MarkovChain<Maneuver>::persistent(0.9).value();
     auto const conditionals = std::vector<GaussianParams<State>>{
         makeGaussian(Vector4::Zero(), Vector4{0.5, 0.5, 0.1, 0.1}),
         makeGaussian(Vector4::Zero(), Vector4{400, 400, 1, 1})
@@ -833,7 +833,7 @@ TEST(ImmFilter, ReturnsTheErrorOfModeProbabilitiesThatCannotBeNormalized)
 TEST(ImmFilter, RejectedModesLoseTheirProbability)
 {
     // A confident mode near the origin and a vague one: a fix 30 m away fails the gate only in the first.
-    MarkovChain const chain = MarkovChain<Maneuver>::persistent(0.9);
+    MarkovChain const chain = MarkovChain<Maneuver>::persistent(0.9).value();
     auto const conditionals = std::vector<GaussianParams<State>>{
         makeGaussian(Vector4::Zero(), Vector4{0.5, 0.5, 0.1, 0.1}),
         makeGaussian(Vector4::Zero(), Vector4{400, 400, 1, 1})
@@ -880,7 +880,7 @@ TEST(ImmFilter, DetectsAManeuver)
 
     GaussianParams<State> const initial = makeGaussian(Vector4{0, 0, 10, 0}, Vector4{10, 10, 4, 4});
     auto imm = ImmFilter{
-        SwitchingModel{MarkovChain<Maneuver>::persistent(0.95), makeModel(quiet), makeModel(agile)},
+        SwitchingModel{MarkovChain<Maneuver>::persistent(0.95).value(), makeModel(quiet), makeModel(agile)},
         HybridParams{CategoricalParams<Maneuver>{}, initial}
     };
     auto cruiseOnly = KalmanFilter{makeModel(quiet), initial};
@@ -935,7 +935,7 @@ TEST(ImmFilter, RidesOutABurstOfOutliers)
     auto const noiseFactor = Eigen::LLT<Eigen::Matrix2d>{R};
     GaussianParams<State> const initial = makeGaussian(Vector4{0, 0, 10, 0}, Vector4{10, 10, 4, 4});
     auto filter = ImmFilter{
-        SwitchingModel{MarkovChain<Sensor>::persistent(0.9), makeModel(quiet)},
+        SwitchingModel{MarkovChain<Sensor>::persistent(0.9).value(), makeModel(quiet)},
         HybridParams{CategoricalParams<Sensor>::fromWeights(Sensor{}, Eigen::Vector2d{0.95, 0.05}), initial}
     };
     auto plain = KalmanFilter{makeModel(quiet), initial};

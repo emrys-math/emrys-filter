@@ -25,6 +25,25 @@ instead.
   and `MarkovChain<Mode>::independent(space, maneuver, sensor)` for
   `MarkovChain<Mode>{space, maneuver, sensor}`. A constructor now takes only what the chain
   stores, and the factories compute it.
+- **Breaking:** `MarkovChain` and `ContinuousTimeMarkovChain` are built from a matrix by
+  `create()`, which checks it and returns a `std::expected` with a `ChainError`; the constructor
+  that took a matrix is private. Write `MarkovChain<Maneuver>::create(matrix).value()` for
+  `MarkovChain<Maneuver>{matrix}`, `MarkovChain<Maneuver>::create(matrix, space)` for
+  `MarkovChain{space, matrix}`, and the same for `ContinuousTimeMarkovChain`; handle the error
+  where the matrix is computed at run time. `MarkovChain::create()` divides each row by its total,
+  so it takes weights in any proportion as well as probabilities, which no longer need to sum to
+  one to `dummy_precision`. `ContinuousTimeMarkovChain::create()` reads only the rates off the
+  diagonal and sets each diagonal entry to minus its row's total. Both cast the matrix to the
+  chain's scalar, `double` unless named, where the constructor took the matrix's.
+- **Breaking:** `fromSojournTimes()` returns a `std::expected` with a `ChainError` in place of
+  asserting: write `.value()` after it, or handle the error. The diagonal of its exit weights is
+  no longer read, where it had to be zero.
+- **Breaking:** `MarkovChain::persistent()` returns a `std::expected` with
+  `ChainError::NotAProbability` when the probability of staying is not in [0, 1], in place of
+  asserting: write `MarkovChain<Maneuver>::persistent(0.95).value()` for
+  `MarkovChain<Maneuver>::persistent(0.95)`, or handle the error.
+- `ChainError` gains `Negative`, `NonFinite`, `ZeroRow`, `ShortSojourn`, and `NotAProbability`, and
+  prints in words.
 
 ### Fixed
 

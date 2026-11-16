@@ -9,6 +9,7 @@
  * Poisson process through it. Read Statistics.h next.
  */
 
+#include <expected>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -39,6 +40,11 @@ namespace Emrys
  * scaling and squaring method of \ref Higham2005 "Higham (2005)", and
  * predict() moves a CategoricalParams over the interval exactly, as each process model discretizes its
  * own noise [continuous-time-noise].
+ *
+ * create() builds a chain from its rates off the diagonal, and fromSojournTimes() from mean
+ * sojourn times; both check their values and return a ChainError if they fail to define a chain.
+ * The constructor that takes a generator is private, and the public one builds the chain that
+ * never moves [checked-factories].
  *
  * A chain on a DiscreteProduct can be built from independent chains on its axes. Its generator is
  * their [Kronecker sum](https://en.wikipedia.org/wiki/Kronecker_sum), the rate of one axis
@@ -75,43 +81,39 @@ public:
         , m_generator{MatrixType::Zero(m_space.cardinality(), m_space.cardinality())}
     {}
 
-    /** The chain on \a space with generator \a generator: nonnegative off the diagonal, with each
-     * row summing to zero.
+    /** \returns the chain on \a space that jumps from value \f$ i \f$ to value \f$ j \ne i \f$ at
+     * the rate \f$ Q_{ij} \f$, \a rates, a row per value moved from and a column per value moved
+     * to, with \f$ Q_{ii} = -\sum_{j \ne i} Q_{ij} \f$; or a ChainError if a rate is negative or
+     * not finite.
+     *
+     * The diagonal of \a rates is not read, so a generator is its own rates, and one written to a
+     * few digits needs no rounding to sum to zero. The matrix is cast to the chain's scalar.
      */
-    template <MatrixExpression Generator>
-    ContinuousTimeMarkovChain(Space_ space, Generator && generator)
-        : m_space{std::move(space)}
-        , m_generator{internal::castScalar<Scalar>(std::forward<Generator>(generator))}
+    template <MatrixExpression Rates>
+    [[nodiscard]] static std::expected<ContinuousTimeMarkovChain, ChainError>
+    create(Rates && rates, Space_ space = {})
     {
+        Eigen::Index const n = space.cardinality();
+        MatrixType generator = internal::castScalar<Scalar>(std::forward<Rates>(rates));
         EMRYS_FILTER_ASSERT(
-            m_generator.rows() == m_space.cardinality() && m_generator.cols() == m_space.cardinality()
-            && "the generator has a row and a column per value"
+            generator.rows() == n && generator.cols() == n && "the generator has a row and a column per value"
         );
-        [[maybe_unused]] Scalar scale = 0;
-        for (Eigen::Index i = 0; i < m_generator.rows(); ++i)
+        generator.diagonal().setZero();
+        if (!allFinite(generator))
         {
-            for (Eigen::Index j = 0; j < m_generator.cols(); ++j)
-            {
-                EMRYS_FILTER_ASSERT((i == j || m_generator(i, j) >= Scalar(0)) && "rates must be nonnegative");
-            }
-            scale = Eigen::numext::maxi(scale, Scalar(-m_generator(i, i)));
+            return std::unexpected{ChainError::NonFinite};
         }
-        EMRYS_FILTER_ASSERT(
-            (m_generator.rowwise().sum().array().abs()
-             <= Eigen::NumTraits<Scalar>::dummy_precision() * Eigen::numext::maxi(scale, Scalar(1)))
-                .all()
-            && "each row of the generator must sum to zero"
-        );
+        if ((generator.array() < Scalar(0)).any())
+        {
+            return std::unexpected{ChainError::Negative};
+        }
+        generator.diagonal() = -generator.rowwise().sum();
+        if (!allFinite(generator))
+        {
+            return std::unexpected{ChainError::NonFinite};
+        }
+        return ContinuousTimeMarkovChain{std::move(space), std::move(generator)};
     }
-
-    /** The chain on a FixedSizeSpace, named as the template argument, with generator \a generator:
-     * <tt>ContinuousTimeMarkovChain<Maneuver>{rates}</tt> (decisions.md [space-storage]).
-     */
-    template <MatrixExpression Generator>
-        requires FixedSizeSpace<Space_>
-    explicit ContinuousTimeMarkovChain(Generator && generator)
-        : ContinuousTimeMarkovChain{Space_{}, std::forward<Generator>(generator)}
-    {}
 
     /** \returns the chain on the DiscreteProduct \a space whose axes move independently, each by its
      * own chain in \a chains, one per axis in order: the product chain, whose generator is their
@@ -197,30 +199,32 @@ public:
      * [continuous-time chain](https://en.wikipedia.org/wiki/Continuous-time_Markov_chain), so these
      * are exactly the chain's mean sojourn times and jump probabilities. The sojourn times are in the
      * unit of the time steps given to transition(), seconds for a \c std::chrono::duration (see
-     * \ref Time), and positive; an infinite one never leaves. The exit weights are nonnegative,
-     * need not sum to one, and are zero on the diagonal; a value that is left needs one that isn't
-     * zero.
+     * \ref Time), and positive; an infinite one never leaves. The exit weights need not sum to one,
+     * and their diagonal is not read. A ChainError says why the values fail: a sojourn time that is
+     * NaN or not positive, an exit weight that is negative or not finite, or a value that is left
+     * with no exit weight that isn't zero.
      */
     template <typename SojournTimes, typename ExitWeights>
-    [[nodiscard]] static ContinuousTimeMarkovChain
+    [[nodiscard]] static std::expected<ContinuousTimeMarkovChain, ChainError>
     fromSojournTimes(
         Eigen::MatrixBase<SojournTimes> const & sojournTimes,
         Eigen::MatrixBase<ExitWeights> const & exitWeights,
         Space_ space = {}
     )
     {
-        Eigen::Index const n = space.cardinality();
-        MatrixType generator = internal::sojournGenerator<Scalar, MatrixType>(sojournTimes, exitWeights);
-        EMRYS_FILTER_ASSERT(generator.rows() == n && "give a sojourn time per value");
-        return ContinuousTimeMarkovChain{std::move(space), std::move(generator)};
+        EMRYS_FILTER_ASSERT(exitWeights.rows() == space.cardinality() && "give a sojourn time per value");
+        return internal::sojournGenerator<Scalar, MatrixType>(sojournTimes, exitWeights)
+            .transform([&](MatrixType && generator) {
+                return ContinuousTimeMarkovChain{std::move(space), std::move(generator)};
+            });
     }
 
     /** \returns the chain on \a space that stays at value \f$ i \f$ for a mean time of
      * \f$ \tau_i \f$, \a sojournTimes, and on leaving jumps to any other value with equal
-     * probability: the other fromSojournTimes() with every exit weight one
+     * probability: the other fromSojournTimes() with every exit weight one, or its ChainError
      */
     template <typename SojournTimes>
-    [[nodiscard]] static ContinuousTimeMarkovChain
+    [[nodiscard]] static std::expected<ContinuousTimeMarkovChain, ChainError>
     fromSojournTimes(Eigen::MatrixBase<SojournTimes> const & sojournTimes, Space_ space = {})
     {
         Eigen::Index const n = space.cardinality();
@@ -268,16 +272,15 @@ public:
 
 private:
 
+    /** The chain on \a space with the checked generator \a generator [checked-factories]. */
+    ContinuousTimeMarkovChain(Space_ space, MatrixType generator)
+        : m_space{std::move(space)}
+        , m_generator{std::move(generator)}
+    {}
+
     Space_ m_space;          ///< the discrete space
     MatrixType m_generator;  ///< the generator \f$ Q \f$
 };
-
-/// \cond DEDUCTION_GUIDES
-template <DiscreteSpace Space, MatrixExpression Generator>
-ContinuousTimeMarkovChain(Space, Generator &&)
-    -> ContinuousTimeMarkovChain<Space, typename std::remove_cvref_t<Generator>::Scalar>;
-
-/// \endcond
 
 /** \ingroup Distributions
  * \returns \a prior moved over an interval of \a dt by \a chain: \f$ p' = p\, e^{Q \Delta t} \f$

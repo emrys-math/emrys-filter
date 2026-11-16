@@ -162,7 +162,7 @@ struct NoUmbrella {};
 struct Sighting : Named<Umbrella, NoUmbrella> {};
 
 auto const table = EmissionTable{Weather{}, Sighting{}, Eigen::Matrix2d{{0.9, 0.1}, {0.2, 0.8}}};
-auto filter = HiddenMarkovFilter{MarkovChain<Weather>::persistent(0.7)};  // uniform start
+auto filter = HiddenMarkovFilter{MarkovChain<Weather>::persistent(0.7).value()};  // uniform start
 auto const umbrella = table.observe(Sighting::index<Umbrella>());
 auto const none = table.observe(Sighting::index<NoUmbrella>());
 
@@ -346,13 +346,13 @@ so $-Q_{ii}$ is the rate of leaving $i$. Its type is `MarkovChain`'s matrix type
 row-major for a fixed space. It is built in four ways, each with a counterpart on `MarkovChain`
 (imm-filter.md §2):
 
-| `ContinuousTimeMarkovChain` | asserts or builds | `MarkovChain` counterpart |
+| `ContinuousTimeMarkovChain` | builds | `MarkovChain` counterpart |
 |---|---|---|
 | `ContinuousTimeMarkovChain<S>{}` | every rate zero: never moves | `MarkovChain<S>{}`, the identity |
-| `{space, generator}` | nonnegative off the diagonal, rows summing to zero (to `dummy_precision`, times the largest leaving rate if above one) | `{space, matrix}`, rows summing to one |
+| `::create(rates, space = {})` | the rates off the diagonal, each diagonal entry minus its row's total, so a generator gives itself; `ChainError::Negative` or `NonFinite` | `::create(weights)`, each row divided by its total |
 | `::persistent(rate, space = {})` | leaves at `rate`, to each other value at `rate / (n - 1)` | `::persistent(stay)`: stays with probability `stay` |
 | `::independent([product,] axisChains...)` on a `DiscreteProduct` | the [Kronecker sum](https://en.wikipedia.org/wiki/Kronecker_sum) of the axes' generators | the Kronecker product of the axes' matrices |
-| `::fromSojournTimes(tau, [exitWeights], space = {})` | $Q_{ii} = -1/\tau_i$, $Q_{ij} = w_{ij} / (\tau_i \sum_k w_{ik})$; evenly without weights; an infinite $\tau_i$ never leaves | `::fromSojournTimes()`, $\Pi_{ii} = 1 - 1/\tau_i$ in steps |
+| `::fromSojournTimes(tau, [exitWeights], space = {})` | $Q_{ii} = -1/\tau_i$, $Q_{ij} = w_{ij} / (\tau_i \sum_{k \ne i} w_{ik})$; evenly without weights; an infinite $\tau_i$ never leaves; a `ChainError` | `::fromSojournTimes()`, $\Pi_{ii} = 1 - 1/\tau_i$ in steps |
 
 The sojourn times are the chain's mean times at each value, in the unit of the steps later given to
 `transition()` (seconds for a `std::chrono` duration), and the exit weights, normalized, its jump
@@ -400,7 +400,7 @@ struct Maneuver : Named<Cruise, Turn> {};
 
 double const a = 0.3;  // cruise -> turn
 double const b = 1.2;  // turn -> cruise
-auto const maneuver = ContinuousTimeMarkovChain<Maneuver>{Eigen::Matrix2d{{-a, a}, {b, -b}}};
+auto const maneuver = ContinuousTimeMarkovChain<Maneuver>::create(Eigen::Matrix2d{{-a, a}, {b, -b}}).value();
 MarkovChain const step = maneuver.transition(0.5);
 // e^{Q/2} =
 // 0.894473 0.105527
@@ -498,7 +498,7 @@ state unchanged.
 ```cpp
 auto const generator = Eigen::Matrix2d{{-0.4, 0.4}, {1.1, -1.1}};
 auto const rates = Eigen::Array2d{0.5, 6.0};
-auto const chain = ContinuousTimeMarkovChain<Load>{generator};
+auto const chain = ContinuousTimeMarkovChain<Load>::create(generator).value();
 auto const initial = CategoricalParams<Load>::fromWeights(0.7, 0.3);
 
 auto exact = HiddenMarkovFilter{chain, initial};
@@ -574,7 +574,7 @@ distributions rather than Rabiner's backward variables, so the history keeps no 
 Continuing §2's three days:
 
 ```cpp
-auto filter = HiddenMarkovFilter{MarkovChain<Weather>::persistent(0.7)};
+auto filter = HiddenMarkovFilter{MarkovChain<Weather>::persistent(0.7).value()};
 auto history = CategoricalHistory<Weather>{};
 static_cast<void>(filter.update(table.observe(Sighting::index<Umbrella>())));
 for (auto const z : {Sighting::index<Umbrella>(), Sighting::index<NoUmbrella>()})
@@ -605,7 +605,7 @@ chain and over the arrival process.
 Predicting with the wrong chain's step fails to compile, with the constraint named:
 
 ```cpp
-auto discrete = HiddenMarkovFilter{MarkovChain<Weather>::persistent(0.7)};
+auto discrete = HiddenMarkovFilter{MarkovChain<Weather>::persistent(0.7).value()};
 discrete.predict(0.5);
 // clang: error: no matching member function for call to 'predict'
 //   note: candidate template ignored: constraints not satisfied [with dt:auto = double]

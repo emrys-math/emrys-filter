@@ -368,7 +368,7 @@ TEST(Consider, EachModeOfAnImmFilterKeepsTheConsideredBlock)
     };
     GaussianParams<State> const prior = makePrior();
     auto filter = Emrys::ImmFilter{
-        Emrys::SwitchingModel{Emrys::MarkovChain<Mode>::persistent(0.9), walk(0.1), walk(1.0)},
+        Emrys::SwitchingModel{Emrys::MarkovChain<Mode>::persistent(0.9).value(), walk(0.1), walk(1.0)},
         Emrys::HybridParams{
             Emrys::CategoricalParams<Mode>::fromWeights(Mode{}, Eigen::Array2d{0.5, 0.5}),
             std::vector<GaussianParams<State>>{prior, prior}

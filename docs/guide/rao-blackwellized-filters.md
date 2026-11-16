@@ -746,7 +746,7 @@ struct Steady {};
 struct Wander {};
 struct Clock : Named<Steady, Wander> {};
 auto const clock = SwitchingModel{
-    MarkovChain<Clock>::persistent(0.9), ConstantVelocity<Bias, Drift>{0.01}, ConstantVelocity<Bias, Drift>{1.0}};
+    MarkovChain<Clock>::persistent(0.9).value(), ConstantVelocity<Bias, Drift>{0.01}, ConstantVelocity<Bias, Drift>{1.0}};
 auto const prior = HybridGaussian<Rest, Clock>{CategoricalParams<Clock>::fromWeights(Clock{}, Eigen::Vector2d{0.7, 0.3}), initial};
 auto filter = RbPointMassFilter{clock, grid, prior};  // PerPointCovariance, deduced from the model
 filter.predict(1.0);                        // each cell: mix, predict each mode, step the chain
@@ -1033,7 +1033,7 @@ per value of `Mode`:
 
 ```cpp
 auto const motion = SwitchingModel{
-    MarkovChain<Mode>::persistent(0.9), ConstantVelocity<Position, Velocity>{0.01}, ConstantVelocity<Position, Velocity>{2.0}};
+    MarkovChain<Mode>::persistent(0.9).value(), ConstantVelocity<Position, Velocity>{0.01}, ConstantVelocity<Position, Velocity>{2.0}};
 auto filter = RbParticleFilter{motion, particleGaussian<Position>(State{}, ParticleSet<Position>{positions}, hybrid)};
 filter.predict(rng, 1.0);                         // std::expected<void, NumericError>
 filter.update(makeRangeRate(z, beacon));          // each particle: an IMM update given its position

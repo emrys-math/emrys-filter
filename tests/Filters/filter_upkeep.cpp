@@ -333,7 +333,7 @@ TEST(FilterUpkeep, MultipleModelFiltersFloorByTheirUpkeep)
 TEST(FilterUpkeep, HiddenMarkovAndMixtureOfImmFiltersFloorByTheirUpkeep)
 {
     auto hmm = HiddenMarkovFilter{
-        MarkovChain<Regime>::persistent(1.0),
+        MarkovChain<Regime>::persistent(1.0).value(),
         CategoricalParams<Regime>::fromWeights(1.0, 0.0),
         upkeep::floorModes(0.01)
     };
@@ -376,7 +376,8 @@ TEST(FilterUpkeep, EveryFilterTakesAnUpkeep)
     EXPECT_FALSE(*resampled);  // equal weights
 
     int calls = 0;
-    auto hmm = HiddenMarkovFilter{MarkovChain<Regime>::persistent(0.9), CategoricalParams<Regime>{}, Count{&calls}};
+    auto hmm =
+        HiddenMarkovFilter{MarkovChain<Regime>::persistent(0.9).value(), CategoricalParams<Regime>{}, Count{&calls}};
     static_assert(std::is_same_v<decltype(hmm)::UpkeepType, Count>);
     auto info = InfoFilter{makeModel(), Emrys::toInfo(makeInitial()).value(), Count{&calls}};
     static_assert(std::is_same_v<decltype(info)::UpkeepType, Count>);
