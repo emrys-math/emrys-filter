@@ -241,6 +241,11 @@ the decision, and history belongs in the commit message. An open question goes i
 
 ## Tests
 
+- A change that adds or changes behavior adds or changes the tests for it in the same commit. A new
+  public entity is instantiated by a test, each of its regions runs in some test, and a generic one
+  is tested across its axes [coverage]; a new claimed compile error gets a negative compile test. A
+  bug fix adds a test that fails without the fix. A change that only renames or moves code keeps
+  the tests passing and changes them only to follow the rename.
 - Tests are not Doxygen input. Every test file opens with a plain comment saying what it covers,
   the headers under test, and the roadmap step and decisions it is the evidence for, and every
   `TEST` has a plain comment before it saying what it verifies and, where the name does not say,

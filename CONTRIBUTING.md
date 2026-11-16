@@ -30,6 +30,12 @@ issue so that nobody else starts the same one.
 
 ## Code
 
+Every pull request that adds or changes behavior adds or changes the tests for it, in the same
+commit. A new feature comes with tests that instantiate each public entity it adds and run each
+of its code paths, and a bug fix comes with a test that fails without the fix. The rule in full is
+in the Tests section of [docs/design/style.md](docs/design/style.md); a pull request without the
+tests it needs is not merged.
+
 Build and test with `cmake --workflow --preset clang` (or `gcc`, or `msvc` from an x64 Visual
 Studio developer environment, since every preset uses Ninja); CI runs all three,
 clang-format, a header-layer check, and a Doxygen build that fails on any warning, when a
