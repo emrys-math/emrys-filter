@@ -1058,19 +1058,23 @@ transform of the measurement function per mode [additive-noise]. Noise by mode a
 mode with only the noise component its value names (`internal::WithNoiseComponent`), one branch
 and one gain per mode; on 2026-10-27 it computed all $K$ branches and kept one.
 
-[switching-models] says "modes whose models differ only in Q reuse one transform of the transition".
-That isn't built: every mode transforms through its own model even when two modes differ only in
-noise density, as in every example here. With `Linearized` and models whose functions return their
-Jacobians, as the built-in models' do, the transform is a matrix product and the cost is negligible;
-with `Unscented` it doubles the prediction cost of a two-model IMM. The roadmap lists it under "left
-for later".
+Every mode transforms through its own model, even when two modes differ only in noise density, as
+in every example here, and no transform can be shared between them: mode $j$ starts from its own
+mixed component, whose weights $\mu_{i \mid j}$ depend on $j$ (§5), so the two transforms have
+different inputs. With `Unscented` the sigma points differ, and the prediction of a two-model IMM
+costs two transforms; with `Linearized` only a linear transition's $F$ is the same in both, and
+$F \Sigma_j F^T$ is not. The inputs agree only when every row of $\Pi$ is the same, memoryless
+switching, which is §7's mixture noise rather than an IMM. With models whose functions return their
+Jacobians, as the built-in models' do, the linearized transform is a matrix product and its cost
+negligible.
 
-> **Q12.** Amend [switching-models] to say the shared transform is an optimization not yet written,
-> so the decision doesn't describe code that doesn't exist? It would need the switching model to
+> **Q12.** *Decided [switching-models]: the sentence is deleted, and the shared transform
+> rejected, for the reason above.* ~~Amend [switching-models] to say the shared transform is an
+> optimization not yet written, so the decision doesn't describe code that doesn't exist? It would need the switching model to
 > know that two models share a transition. Since roadmap 17z a model's function returns its
 > Jacobian with each value [returned-jacobians], so the transition is known per model at each call,
 > but not before it; telling that two models share a function, such as two `ConstantVelocity` that
-> differ only in their spectral density, is the part still missing.
+> differ only in their spectral density, is the part still missing.~~
 
 Allocation [allocation]: the recursion keeps two buffers of mode components, the predicted and the
 posterior, from the state's allocator, and swaps them with the state's, so neither step builds a
@@ -1317,8 +1321,9 @@ component. `MixtureParams::merged()` and `merge()` work on hybrids, keeping each
 11. ~~`update<Path>()` with Gaussian noise: a `static_assert` that names the cause (§7; it now fails
     to compile, with `no member named 'size'`).~~ *Decided in the code (roadmap 17z): a
     `static_assert` names it.*
-12. [switching-models] describes a shared transform for modes differing only in Q that isn't built
-    (§8).
+12. ~~[switching-models] describes a shared transform for modes differing only in Q that isn't built
+    (§8).~~ *Decided [switching-models]: deleted, since each mode transforms its own mixed
+    component.*
 13. ~~[component-first] says the square-root and information forms are components; [gaussian-forms]
     and the code say not (§3a).~~ *Decided: the square-root form is one.*
 14. ~~Fixed-step models with different methods: allow them, or check in `SwitchingModel` with a

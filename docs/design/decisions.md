@@ -1494,13 +1494,12 @@ state is a `HybridGaussian`, and a branch's mode is a flat index into its mode s
 
 *A switching process model is a set of per-mode models plus a chain over their step.*
 
-**Rule.** A `SwitchingModel` holds one process model per mode and a chain on the modes, and is
-owned by the filter as a single process model is. The chain's kind follows the models': with
-models stepped by a time step it is a `ContinuousTimeMarkovChain`, moving the mode by
+**Rule.** A `SwitchingModel` holds one process model per mode and a chain on the modes, and is owned
+by the filter as a single process model is. The chain's kind follows the models': with models
+stepped by a time step it is a `ContinuousTimeMarkovChain`, moving the mode by
 $\Pi = e^{Q \Delta t}$ over each prediction; with fixed-step models it is a `MarkovChain`, and a
 continuous-time chain given there is taken over their step once. A `MarkovChain` with models
-stepped by a time step doesn't compile. All modes share one state space; a mode that doesn't use a
-block holds it. Modes whose models differ only in $Q$ reuse one transform of the transition. Each
+stepped by a time step doesn't compile. All modes share one state space; a mode that doesn't use a block holds it. Each
 mode's model predicts by the filter's method unless it carries its own, as a fixed-step model does
 or through `withMethod(model, method)`, a wrapper only a switching model takes; fixed-step models
 may differ in their methods. The filter's `method()` is the method of the modes that carry none:
@@ -1513,11 +1512,12 @@ the mode and the state move over the same interval, as a process model's noise i
 it [continuous-time-noise].
 
 **Rejected.** A `MarkovChain` beside models stepped by a time step, one $\Pi$ per prediction
-whatever its step, the rule until imm-filter.md Q1: asynchronous sensors or a changing rate
-silently changed the switching rate, and `predict(0.0)` moved the mode. Resizable spaces for
-dimensions that depend on the mode. One method for every mode (until imm-filter.md Q7).
-`withMethod()` as a process model every filter takes: outside a switching model it only moves the
-filter's method into the model. The first model's method as the filter's `method()`.
+whatever its step, the rule until imm-filter.md Q1: asynchronous sensors or a changing rate silently
+changed the switching rate, and `predict(0.0)` moved the mode. Resizable spaces for dimensions that
+depend on the mode. One method for every mode (until imm-filter.md Q7). `withMethod()` as a process
+model every filter takes: outside a switching model it only moves the filter's method into the
+model. The first model's method as the filter's `method()`. A transform shared by modes differing
+only in $Q$ (until imm-filter.md Q12, never built): each mode transforms its own mixed component.
 
 **Where.** `Models/SwitchingModel.h`; the modes' predictions in `Filters/ImmFilter.h` and
 `Filters/RbParticleFilter.h`.
