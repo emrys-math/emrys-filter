@@ -842,8 +842,17 @@ Getting the word out, once the front door is done: the README's comparison table
 are what a reader checks in the first hour, and a thread that finds them wrong is the launch.
 
 - [ ] `CODE_OF_CONDUCT.md`, before the advertised launch.
-- [ ] Private vulnerability reporting turned on (Settings, Advanced Security), which the link in
-      `SECURITY.md` needs; it was off on 2026-11-16.
+- [ ] The OpenSSF Best Practices badge at the passing level, beside the DOI in the README, added
+      in the 0.2.0 release (decided 2026-11-16). The project is registered on bestpractices.dev
+      and its criteria answered before then; the badge waits for 0.2.0 because clang-tidy first
+      runs before that release, so the static analysis criterion is true of the release the badge
+      appears in, and not of 0.1.0. Every passing criterion the repository can meet was met on
+      2026-11-16, private vulnerability reporting and secret scanning with push protection
+      included. The answers to `know_secure_design` and `know_common_errors` say that the
+      maintainer is not a security specialist and learned the security design from the coding
+      agents it was worked out with, and name the checks that hold it: the sanitizers,
+      clang-tidy, and [value-preconditions]. Until the audit below is done, they don't claim the
+      code was checked against it.
 - [ ] The code checked against [value-preconditions], before the advertised launch:
       `SECURITY.md` names a breach as a vulnerability, but nothing has audited for one yet. Read
       each `EMRYS_FILTER_ASSERT` on a floating-point value, and each loop or index computed from
