@@ -716,7 +716,7 @@ TEST(ExpectedSquaredError, MixtureMatchesTheSampleAverage)
     double const expected = expectedSquaredError(*density, truth, metric);
 
     auto rng = std::mt19937{51};
-    auto const samples = drawSamples(*density, 100'000, rng);
+    auto const samples = drawSamples(*density, 100'000, rng).collect();
     Eigen::ArrayXd const errors =
         (metric.matrix() * (samples.colwise() - truth)).colwise().squaredNorm().transpose().array();
     double const mean = errors.mean();

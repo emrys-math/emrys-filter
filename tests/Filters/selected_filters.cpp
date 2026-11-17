@@ -303,7 +303,7 @@ TEST(SelectedFilters, AParticleFilterStepsAsTheTaggedBlocks)
 {
     auto draws = std::mt19937_64{5};
     auto const prior = mapPrior();
-    Eigen::MatrixXd const states = Emrys::drawSamples(prior.toDensity().value(), 50, draws);
+    Eigen::MatrixXd const states = Emrys::drawSamples(prior.toDensity().value(), 50, draws).collect();
     auto selected = Emrys::ParticleFilter{selectedMotion(), Emrys::ParticleSet<Map>{mapPrior().space(), states}};
     auto byTag = Emrys::ParticleFilter{taggedMotion(), Emrys::ParticleSet<Tagged>{Tagged{}, states}};
     auto selectedRng = std::mt19937_64{7};
@@ -356,7 +356,7 @@ TEST(SelectedFilters, AParticleFilterMovesParticlesByABatchedFunctionThatWritesA
         compose(RandomWalk<Position>{0.2}, RandomWalk<Heading>{0.01}, driftOf(path<Landmarks>[1]), batchedDrift);
     auto draws = std::mt19937_64{5};
     auto const prior = mapPrior();
-    Eigen::MatrixXd const states = Emrys::drawSamples(prior.toDensity().value(), 50, draws);
+    Eigen::MatrixXd const states = Emrys::drawSamples(prior.toDensity().value(), 50, draws).collect();
     auto byPoint = Emrys::ParticleFilter{selectedMotion(), Emrys::ParticleSet<Map>{prior.space(), states}};
     auto batched = Emrys::ParticleFilter{byBatch, Emrys::ParticleSet<Map>{prior.space(), states}};
     auto first = std::mt19937_64{11};

@@ -219,7 +219,7 @@ TYPED_TEST(KernelDensityTest, SampleMomentsConverge)
     ASSERT_TRUE(kde.has_value());
     auto rng = std::mt19937_64{13};
     constexpr Eigen::Index count = 40000;
-    auto const samples = Emrys::drawSamples(*kde, count, rng);
+    auto const samples = Emrys::drawSamples(*kde, count, rng).collect();
     ASSERT_EQ(samples.rows(), this->n);
     ASSERT_EQ(samples.cols(), count);
 
@@ -265,8 +265,8 @@ TYPED_TEST(KernelDensityTest, SampledLogDensityMatchesEstimate)
     auto const kde = set.toDensity(this->makeBandwidth());
     auto a = std::mt19937_64{17};
     auto b = std::mt19937_64{17};
-    auto const drawn = Emrys::drawSamplesWithLogDensity(*kde, 20, a);
-    EXPECT_EQ(drawn.samples, Emrys::drawSamples(*kde, 20, b));
+    auto const drawn = Emrys::drawSamplesWithLogDensity(*kde, 20, a).collect();
+    EXPECT_EQ(drawn.samples, Emrys::drawSamples(*kde, 20, b).collect());
     ASSERT_EQ(drawn.logDensity.size(), 20);
     for (Eigen::Index j = 0; j < 20; ++j)
     {
@@ -285,6 +285,6 @@ TEST(KernelDensity, SamplesStayNearWeightedParticles)
     auto const set = ParticleSet<Linear<2>>{states, Eigen::Array3d{-inf, 0.0, -inf}};
     auto const kde = set.toDensity(Eigen::Matrix2d::Identity() * 1e-4);
     auto rng = std::mt19937_64{19};
-    auto const samples = Emrys::drawSamples(*kde, 100, rng, Emrys::resamplers::systematic());
+    auto const samples = Emrys::drawSamples(*kde, 100, rng, Emrys::resamplers::systematic()).collect();
     EXPECT_LT((samples.colwise() - states.col(1)).cwiseAbs().maxCoeff(), 0.1);
 }

@@ -90,12 +90,12 @@ TEST(GaussianSpace, SamplesStayInRange)
     auto const g = StateGaussian{State{}, Eigen::Vector4d{0.0, 0.0, pi - 0.05, 0.1}, makeCov()};
     auto const view = g.toDensity();
     auto rng = std::mt19937_64{3};
-    auto const samples = Emrys::drawSamples(*view, 2000, rng);
+    auto const samples = Emrys::drawSamples(*view, 2000, rng).collect();
     EXPECT_TRUE((samples.row(2).array() >= -pi).all() && (samples.row(2).array() < pi).all());
     EXPECT_GT((samples.row(2).array() < 0.0).count(), 100);  // some wrapped past π
 
     auto again = std::mt19937_64{3};
-    auto const drawn = Emrys::drawSamplesWithLogDensity(*view, 50, again);
+    auto const drawn = Emrys::drawSamplesWithLogDensity(*view, 50, again).collect();
     for (Eigen::Index j = 0; j < 50; ++j)
     {
         EXPECT_NEAR(drawn.logDensity(j), view->logDensity(drawn.samples.col(j)), 1e-12) << "sample " << j;

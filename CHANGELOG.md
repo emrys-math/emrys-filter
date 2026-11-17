@@ -107,6 +107,11 @@ instead.
   the axes cannot take the root of the blocks the measurement reads; it was a compile error. A
   transform or prediction still refuses such axes, and so does an update whose model's `affineIn()`
   names some of the blocks read.
+- `ParticleSet{drawSamples(prior, count, rng), allocator}` and `ParticleFilter{model,
+  drawSamples(prior, count, rng)}` build the particles from the draws, read straight into the
+  set's own storage, which on a bounded space allocates nothing outside the set's allocator;
+  `particles.assign(drawSamples(prior, count, rng))` redraws a set in place, and
+  `drawParticleSet(prior, count, rng, allocator)` returns the set.
 - `SECURITY.md`: how to report a vulnerability privately, and what counts as one. Among them is
   undefined behavior, or a call that never returns, caused by a floating-point value passed to the
   library, NaN and infinities included, in a build with `NDEBUG`.
@@ -205,6 +210,17 @@ instead.
   least-squares fit to the first measurements, and says when to convert once the state is
   determined. It and [docs/usage.md](docs/usage.md) now say that `InfoFilter` can't predict
   until the measurements determine every direction, where `SqrtInfoFilter` can.
+- **Breaking:** `drawSamples(density, n, rng)` and `drawSamplesWithLogDensity()` return `Draws`, a
+  range that draws from `rng` as it is read, each element one `drawSample()` (or
+  `drawSampleWithLogDensity()`) of the density, so a stream of single draws and the range give
+  the same draws from one seed, and reading it allocates nothing on a bounded space. Where a
+  matrix was used, write `drawSamples(density, n, rng).collect()`, which returns the
+  `SampleSet` (a `SamplesWithLogDensity`, or a categorical distribution's vector of indices); for
+  one draw, write `drawSample(density, rng)`. The policy forms of a kernel density's and a
+  mixture's `drawSamplesWithLogDensity(policy, density, n, rng)` are
+  `drawSamplesWithLogDensity(density, n, rng).collect(policy)`. A range holds a density passed as
+  an lvalue by reference, so that density must outlive it. The draws from a seed differ from
+  before, since each draw now takes its own normals.
 - **Breaking:** a filter over a hybrid takes the mode chain and the motion as its first two
   arguments, `ImmFilter{chain, motion, prior}`, and so do `MixtureFilter`, `RbParticleFilter`,
   and `RbPointMassFilter` (`RbPointMassFilter{chain, motion, grid, conditional}`). The motion is

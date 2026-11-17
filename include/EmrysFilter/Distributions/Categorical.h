@@ -8,7 +8,8 @@
  * from transition weights, as independent chains on the axes of a product, as persistent or
  * memoryless, or from mean sojourn times and exit weights, and ChainError says why values fail to
  * define one; predict() moves them, stationary() gives the chain's
- * stationary distribution as a prior, and drawSamples() draws from the density. Read
+ * stationary distribution as a prior, and drawSample() draws from the density, and drawSamples() a
+ * range of its draws. Read
  * ContinuousTimeMarkovChain.h next.
  */
 
@@ -27,6 +28,7 @@
 #include <EmrysFilter/Core/Print.h>
 #include <EmrysFilter/Core/Stamp.h>
 #include <EmrysFilter/Core/Weights.h>
+#include <EmrysFilter/Distributions/Draws.h>
 #include <EmrysFilter/Distributions/Params.h>
 #include <EmrysFilter/Spaces/Discrete.h>
 #include <EmrysFilter/Spaces/Space.h>
@@ -1217,32 +1219,11 @@ stationary(MarkovChain<Space, Scalar> const & chain)
 }
 
 /** \ingroup Distributions
- * \returns \a n independent draws from \a distribution, each a value's flat index, by
- * <tt>std::discrete_distribution</tt> over the probabilities
- */
-template <typename Scalar, typename Space, std::uniform_random_bit_generator G>
-[[nodiscard]] std::vector<Eigen::Index>
-drawSamples(Categorical<Space, Scalar> const & distribution, Eigen::Index n, G & rng)
-{
-    static_assert(std::floating_point<Scalar>, "sampling requires a standard floating-point scalar");
-    EMRYS_FILTER_ASSERT(n >= 0);
-    typename Categorical<Space, Scalar>::ArrayType const probabilities = distribution.probabilities();
-    auto draw =
-        std::discrete_distribution<Eigen::Index>{probabilities.data(), probabilities.data() + probabilities.size()};
-    std::size_t const count = std::size_t(n);
-    auto samples = std::vector<Eigen::Index>(count);
-    for (auto & sample : samples)
-    {
-        sample = draw(rng);
-    }
-    return samples;
-}
-
-/** \ingroup Distributions
  * \returns one draw from \a distribution, a value's flat index: the stream of draws that
  * drawSample() of a %Gaussian is. It compares one uniform draw with the running sum of the
  * probabilities, since <tt>std::discrete_distribution</tt> copies them onto the heap, so it
- * allocates nothing, and is not the sequence drawSamples() gives from the same generator.
+ * allocates nothing. drawSamples() reads a range of these draws, which collect() gives as a vector
+ * of indices.
  */
 template <typename Scalar, typename Space, std::uniform_random_bit_generator G>
 [[nodiscard]] Eigen::Index

@@ -231,7 +231,7 @@ TEST(FixedStepBinding, ParticleFiltersBindTheStepToTheSpaceTheyMove)
 {
     auto rng = std::mt19937_64{3};
     auto const initial = makeInitial();
-    auto const particles = Emrys::ParticleSet<State>{State{}, Emrys::drawSamples(initial.toDensity().value(), 50, rng)};
+    auto const particles = Emrys::ParticleSet<State>{Emrys::drawSamples(initial.toDensity().value(), 50, rng)};
     auto particleFilter = Emrys::ParticleFilter{Emrys::fixedStep(makeModel(), timeStep), particles};
     static_assert(std::is_same_v<decltype(particleFilter)::ModelType, FixedStepModel<State, Motion>>);
     particleFilter.predict(rng);

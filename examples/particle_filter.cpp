@@ -93,9 +93,8 @@ main()
     {
         // The filter starts from equally weighted particles drawn from the prior, and the true
         // position is one more draw from it.
-        auto filter =
-            Emrys::ParticleFilter{motion, Emrys::ParticleSet<State>{Emrys::drawSamples(priorDensity, count, rng)}};
-        Emrys::ValueVector<State> truth = Emrys::drawSamples(priorDensity, 1, rng);
+        auto filter = Emrys::ParticleFilter{motion, Emrys::drawSamples(priorDensity, count, rng)};
+        Emrys::ValueVector<State> truth = Emrys::drawSample(priorDensity, rng);
 
         // The weight of the particles above the beacons' line, where their y coordinate, row 1 of
         // the states, is positive. The updates keep the weights valid, so normalizedWeights() can't

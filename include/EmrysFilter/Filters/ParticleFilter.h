@@ -276,6 +276,17 @@ public:
         reserveScratch();
     }
 
+    /** A filter with process model \a model, initial particles read from \a draws, the range
+     * drawSamples() returns, which must not be empty, into the state's storage, and upkeep \a upkeep:
+     * <tt>ParticleFilter{model, drawSamples(prior, count, rng)}</tt>. It takes the range rather than
+     * what made it, so it holds for any argument drawSamples() takes.
+     */
+    template <typename R>
+        requires internal::ValueDraws<R> && std::constructible_from<StateType, R &&>
+    ParticleFilter(std::type_identity_t<Model_> model, R && draws, std::type_identity_t<Upkeep_> upkeep = {})
+        : ParticleFilter{std::move(model), StateType{std::forward<R>(draws)}, std::move(upkeep)}
+    {}
+
     /** \returns the allocator of the particles and scratch */
     [[nodiscard]] allocator_type
     get_allocator() const
@@ -718,6 +729,22 @@ ParticleFilter(Model, ParticleSet<Space, Scalar, Allocator>)
 template <typename Space, typename Model, typename Scalar, typename Allocator, typename U>
 ParticleFilter(Model, ParticleSet<Space, Scalar, Allocator>, U)
     -> ParticleFilter<Space, internal::BoundStep<Model, Space, Scalar>, Scalar, Allocator, U>;
+
+template <typename Model, typename R>
+    requires internal::ValueDraws<R>
+ParticleFilter(Model, R &&) -> ParticleFilter<
+    typename std::remove_cvref_t<R>::SpaceType,
+    internal::BoundStep<Model, typename std::remove_cvref_t<R>::SpaceType, typename std::remove_cvref_t<R>::Scalar>,
+    typename std::remove_cvref_t<R>::Scalar>;
+
+template <typename Model, typename R, typename U>
+    requires internal::ValueDraws<R>
+ParticleFilter(Model, R &&, U) -> ParticleFilter<
+    typename std::remove_cvref_t<R>::SpaceType,
+    internal::BoundStep<Model, typename std::remove_cvref_t<R>::SpaceType, typename std::remove_cvref_t<R>::Scalar>,
+    typename std::remove_cvref_t<R>::Scalar,
+    DefaultAllocator,
+    U>;
 /// \endcond
 
 }  // namespace Emrys

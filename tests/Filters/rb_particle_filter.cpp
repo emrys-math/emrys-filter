@@ -937,10 +937,8 @@ runPlain(unsigned seed, Eigen::Index count, bool velocity)
 {
     auto rng = std::mt19937_64{seed};
     auto const initial = makeInitial();
-    auto filter = ParticleFilter{
-        makeModel(),
-        ParticleSet<State>{State{}, Emrys::drawSamples(initial.toDensity().value(), count, rng)}
-    };
+    auto filter =
+        ParticleFilter{makeModel(), ParticleSet<State>{Emrys::drawSamples(initial.toDensity().value(), count, rng)}};
     return runLinear(
         filter,
         [](auto const & state) {

@@ -114,7 +114,7 @@ holdsHalfLine()
  * \tparam Space_   space of the coordinates (see \ref Spaces)
  * \tparam Scalar_  scalar type, \c double by default
  *
- * \sa drawSamples(Gamma const &, Eigen::Index, G &)
+ * \sa drawSample(Gamma const &, G &)
  */
 template <Space Space_, RealScalar Scalar_ = double>
 class Gamma
@@ -463,50 +463,9 @@ private:
 };
 
 /** \ingroup Distributions
- * \returns \a n independent draws from \a gamma, one per column, by <tt>std::gamma_distribution</tt>
- * on each coordinate.
- *
- * \sa drawSamplesWithLogDensity(Gamma const &, Eigen::Index, G &)
- */
-template <typename Scalar, typename Space, std::uniform_random_bit_generator G>
-[[nodiscard]] SampleSet<Space, Scalar>
-drawSamples(Gamma<Space, Scalar> const & gamma, Eigen::Index n, G & rng)
-{
-    static_assert(std::floating_point<Scalar>, "sampling requires a standard floating-point scalar");
-    EMRYS_FILTER_ASSERT(n >= 0);
-    using Distribution = std::gamma_distribution<Scalar>;
-    constexpr int maxDimension = Gamma<Space, Scalar>::MaxValueDimensionAtCompileTime;
-    // One distribution per coordinate, inline for a bounded space (see \ref Allocation).
-    using Distributions = std::conditional_t<
-        maxDimension == Eigen::Dynamic,
-        std::vector<Distribution>,
-        std::array<Distribution, std::size_t(maxDimension == Eigen::Dynamic ? 0 : maxDimension)>>;
-    Eigen::Index const d = gamma.valueDimension();
-    auto distributions = Distributions();
-    if constexpr (maxDimension == Eigen::Dynamic)
-    {
-        distributions.resize(std::size_t(d));
-    }
-    for (Eigen::Index i = 0; i < d; ++i)
-    {
-        distributions[std::size_t(i)] = Distribution{gamma.shape()(i), gamma.scale()(i)};
-    }
-    auto samples = SampleSet<Space, Scalar>{d, n};
-    for (Eigen::Index j = 0; j < n; ++j)
-    {
-        for (Eigen::Index i = 0; i < d; ++i)
-        {
-            samples(i, j) = distributions[std::size_t(i)](rng);
-        }
-    }
-    return samples;
-}
-
-/** \ingroup Distributions
  * \returns one draw from \a gamma, by <tt>std::gamma_distribution</tt> on each coordinate, in a
  * vector sized by the space: the stream of draws that drawSample() of a %Gaussian is. It makes each
- * coordinate's distribution afresh, where drawSamples() keeps one per coordinate, with whatever
- * state it carries, from draw to draw.
+ * coordinate's distribution afresh, so that one call takes nothing from the last.
  */
 template <typename Scalar, typename Space, std::uniform_random_bit_generator G>
 [[nodiscard]] typename Moments<Space, Scalar>::VectorType
@@ -520,24 +479,6 @@ drawSample(Gamma<Space, Scalar> const & gamma, G & rng)
         sample(i) = std::gamma_distribution<Scalar>{gamma.shape()(i), gamma.scale()(i)}(rng);
     }
     return sample;
-}
-
-/** \ingroup Distributions
- * \returns \a n independent draws from \a gamma, one per column, with the log-density at each.
- *
- * \sa drawSamples(Gamma const &, Eigen::Index, G &)
- */
-template <typename Scalar, typename Space, std::uniform_random_bit_generator G>
-[[nodiscard]] SamplesWithLogDensity<Space, Scalar>
-drawSamplesWithLogDensity(Gamma<Space, Scalar> const & gamma, Eigen::Index n, G & rng)
-{
-    auto result = SamplesWithLogDensity<Space, Scalar>{drawSamples(gamma, n, rng), {}};
-    result.logDensity.resize(n);
-    for (Eigen::Index j = 0; j < n; ++j)
-    {
-        result.logDensity(j) = gamma.logDensity(result.samples.col(j));
-    }
-    return result;
 }
 
 /** \ingroup Distributions

@@ -1058,7 +1058,7 @@ TEST(SpacePlusMinus, DistributionsUseTheSpacesOwnOperations)
 
     // Samples are drawn in the difference space and moved by plus(), so they stay positive.
     auto rng = std::mt19937_64{7};
-    auto const samples = Emrys::drawSamples(*density, 200, rng);
+    auto const samples = Emrys::drawSamples(*density, 200, rng).collect();
     EXPECT_TRUE((samples.array() > 0.0).all());
 
     // A conditional moves the target's mean by plus(): 2 e^{K r} with K = 0.5 and r = 1.
@@ -1114,7 +1114,7 @@ TEST(SpaceConcept, FreeFunctionsInTheSpacesNamespaceAreNotFound)
     auto const g = GaussianParams<Track>{Track{}, Eigen::Vector3d{1.0, 2.0, 3.0}, Eigen::Matrix3d::Identity()};
     auto const density = g.toDensity().value();
     auto rng = std::mt19937_64{5};
-    auto const samples = Emrys::drawSamples(density, 50, rng);
+    auto const samples = Emrys::drawSamples(density, 50, rng).collect();
     EXPECT_LT(samples.row(2).maxCoeff(), pi);
     EXPECT_GE(samples.row(2).minCoeff(), -pi);
     EXPECT_TRUE(std::isfinite(density.logDensity(Eigen::Vector3d{1.0, 2.0, 3.0 - 2 * pi})));

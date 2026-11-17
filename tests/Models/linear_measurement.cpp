@@ -279,7 +279,7 @@ TEST(LinearMeasurement, WeighsAndSimulatesAsTheFunctionDoes)
     auto rng = std::mt19937_64{3};
     auto const prior = makePrior();
     // The prior's covariance is positive definite by construction, so toDensity() can't fail here.
-    Eigen::Matrix<double, 5, 20> const states = Emrys::drawSamples(prior.toDensity().value(), 20, rng);
+    Eigen::Matrix<double, 5, 20> const states = Emrys::drawSamples(prior.toDensity().value(), 20, rng).collect();
     auto const a = Emrys::logLikelihoods(observe(linear, reading), State{}, states);
     auto const b = Emrys::logLikelihoods(observe(function, reading), State{}, states);
     EXPECT_LT((a - b).matrix().norm(), 1e-12);
@@ -601,7 +601,7 @@ TEST(LinearMeasurement, RepeatsAsTheFunctionDoes)
 
     auto rng = std::mt19937_64{3};
     // The prior's covariance is positive definite by construction, so toDensity() can't fail here.
-    Eigen::MatrixXd const states = Emrys::drawSamples(prior.toDensity().value(), 10, rng);
+    Eigen::MatrixXd const states = Emrys::drawSamples(prior.toDensity().value(), 10, rng).collect();
     auto const & space = prior.space();
     auto const weights = Emrys::logLikelihoods(observe(relative, observed), space, states);
     auto const expected = Emrys::logLikelihoods(observe(function, observed), space, states);

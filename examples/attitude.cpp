@@ -118,7 +118,7 @@ main()
         // The true state is drawn from the prior. The prior's covariance is positive definite by
         // construction, so toDensity() can't fail here.
         auto filter = Emrys::KalmanFilter{motion, prior};
-        Emrys::ValueVector<State> truth = Emrys::drawSamples(prior.toDensity().value(), 1, rng);
+        Emrys::ValueVector<State> truth = Emrys::drawSample(prior.toDensity().value(), rng);
         for (int k = 0; k < steps; ++k)
         {
             // The gyroscope's reading over the step, in rad/s about the body's axes. The simulation

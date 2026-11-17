@@ -3,8 +3,8 @@
 // their allocators and step within their resources after warm-up, with fixed-step models too
 // [fixed-step-models], the particle filter under a user's policy that brings its memory, off the global heap
 // [execution-policies], its prediction with an uncertain input from construction on, Roughen, the kernel density
-// estimate, drawSample() and drawSampleWithLogDensity() between steps, and a Monte Carlo divergence from the
-// estimate, every resampler, the prunes of the particle states, and the Rao-Blackwellized states'
+// estimate, drawSample() and drawSampleWithLogDensity() between steps, a set drawn into its resource, and a Monte Carlo
+// divergence from the estimate, every resampler, the prunes of the particle states, and the Rao-Blackwellized states'
 // collapsed(). Part of the allocation test target; the counters and fixtures are in allocation.h.
 
 #include <EmrysFilter/Distributions/Conditionals.h>
@@ -57,11 +57,8 @@ expectParticleFilterStepsWithinItsResource(Model const & model, Predict const & 
     auto const allocator = Pmr{&resource};
     auto rng = std::mt19937_64{1};
     auto const initial = makeInitial();
-    auto particles = ParticleSet<State, double, Pmr>{
-        State{},
-        Emrys::drawSamples(initial.toDensity().value(), particleCount, rng),
-        allocator
-    };
+    auto particles =
+        ParticleSet<State, double, Pmr>{Emrys::drawSamples(initial.toDensity().value(), particleCount, rng), allocator};
     particles.setCapacity(particleCount);
     auto filter = ParticleFilter{model, std::move(particles)};
     EXPECT_EQ(filter.get_allocator(), allocator);
@@ -140,7 +137,6 @@ TEST(Allocation, ParticleFilterWithBatchedModelsStepsWithinItsResource)
     auto rng = std::mt19937_64{3};
     auto const initial = makeInitial();
     auto particles = ParticleSet<State, double, Pmr>{
-        State{},
         Emrys::drawSamples(initial.toDensity().value(), particleCount, rng),
         Pmr{&resource}
     };
@@ -165,8 +161,7 @@ TEST(Allocation, ParticleFilterSetStateFollowsTheAllocator)
     auto const initial = makeInitial();
     auto const draw = [&](auto const & allocator, Eigen::Index count) {
         return ParticleSet<State, double, std::remove_cvref_t<decltype(allocator)>>{
-            State{},
-            Emrys::drawSamples(initial.toDensity().value(), count, rng),
+            Emrys::drawSamples(initial.toDensity().value(), count, rng).collect(),
             allocator
         };
     };
@@ -231,11 +226,8 @@ TEST(Allocation, ParticleFilterUnderAUsersPolicyStaysOffTheHeap)
     auto const policy = PolicyWithMemory{{}, &pool};
     auto rng = std::mt19937_64{1};
     auto const initial = makeInitial();
-    auto particles = ParticleSet<State, double, Pmr>{
-        State{},
-        Emrys::drawSamples(initial.toDensity().value(), count, rng),
-        Pmr{&resource}
-    };
+    auto particles =
+        ParticleSet<State, double, Pmr>{Emrys::drawSamples(initial.toDensity().value(), count, rng), Pmr{&resource}};
     particles.setCapacity(count);
     auto filter = ParticleFilter{makeModel(), std::move(particles)};
     auto const resampling = upkeep::whenEss(policy, std::less{}, 0.5, upkeep::resample(policy, rng));
@@ -317,7 +309,6 @@ TEST(Allocation, ParticleFilterPredictsWithAnUncertainInputFromConstructionOn)
     auto rng = std::mt19937_64{7};
     auto const initial = makeInitial();
     auto particles = ParticleSet<State, double, Pmr>{
-        State{},
         Emrys::drawSamples(initial.toDensity().value(), particleCount, rng),
         Pmr{&resource}
     };
@@ -350,11 +341,8 @@ TEST(Allocation, ParticleFilterUnderAUsersPolicyReusesItsDrawsForAnUncertainInpu
     auto const policy = PolicyWithMemory{{}, &scratch};
     auto rng = std::mt19937_64{9};
     auto const initial = makeInitial();
-    auto particles = ParticleSet<State, double, Pmr>{
-        State{},
-        Emrys::drawSamples(initial.toDensity().value(), count, rng),
-        Pmr{&resource}
-    };
+    auto particles =
+        ParticleSet<State, double, Pmr>{Emrys::drawSamples(initial.toDensity().value(), count, rng), Pmr{&resource}};
     particles.setCapacity(count);
     auto filter = ParticleFilter{accelerated(), std::move(particles)};
     auto const accelerometer = makeAccelerometer();
@@ -381,8 +369,7 @@ TEST(Allocation, RoughenKernelDensityAndSingleDrawsAllocateNothing)
     auto rng = std::mt19937_64{3};
     auto const initial = makeInitial();
     auto const gaussian = initial.toDensity().value();
-    auto particles =
-        ParticleSet<State, double, Pmr>{State{}, Emrys::drawSamples(gaussian, particleCount, rng), Pmr{&resource}};
+    auto particles = ParticleSet<State, double, Pmr>{Emrys::drawSamples(gaussian, particleCount, rng), Pmr{&resource}};
     particles.setCapacity(particleCount);
     auto const x = Vector4{0.5, -0.5, 0.1, 0.0};
     double total = 0;
@@ -406,6 +393,40 @@ TEST(Allocation, RoughenKernelDensityAndSingleDrawsAllocateNothing)
     EXPECT_TRUE(std::isfinite(total));
 }
 
+// A pmr ParticleSet drawn from a Gaussian over a bounded space reads the draws into its own storage
+// [lazy-draws]: building it takes nothing from the global heap, and redrawing it in place with
+// assign() at its capacity, or reading a range of draws without collecting it, allocates nothing.
+TEST(Allocation, ParticleSetDrawsIntoItsResource)
+{
+    auto resource = CountingResource{arenaBytes};
+    auto rng = std::mt19937_64{9};
+    auto const initial = makeInitial();
+    auto const gaussian = initial.toDensity().value();
+    auto particles = std::optional<ParticleSet<State, double, Pmr>>{};
+    int heap = 0;
+    {
+        auto const watch = HeapWatch{};
+        particles.emplace(Emrys::drawSamples(gaussian, particleCount, rng), Pmr{&resource});
+        heap = watch.allocations();
+    }
+    EXPECT_EQ(heap, 0) << "allocations from the global heap";
+    EXPECT_GT(resource.allocations(), 0);
+    EXPECT_EQ(particles->size(), particleCount);
+    particles->setCapacity(particleCount);
+    double total = 0;
+    expectStepsAllocateNothing(
+        [&](int) {
+            particles->assign(Emrys::drawSamples(gaussian, particleCount, rng));
+            for (auto const & draw : Emrys::drawSamples(gaussian, 10, rng))
+            {
+                total += draw.sum();
+            }
+        },
+        &resource
+    );
+    EXPECT_TRUE(std::isfinite(total));
+}
+
 // Every resampler resamples a pmr ParticleSet within its resource after warm-up [allocation]: the
 // stratified and systematic resamplers need no scratch, and the multinomial and residual ones
 // take the set's (ResamplerWithScratch), where their three-argument forms would allocate. The
@@ -418,7 +439,6 @@ expectResamplingAllocatesNothing(R const & resampler)
     auto rng = std::mt19937_64{5};
     auto const initial = makeInitial();
     auto particles = ParticleSet<State, double, Pmr>{
-        State{},
         Emrys::drawSamples(initial.toDensity().value(), particleCount, rng),
         Pmr{&resource}
     };
@@ -452,11 +472,8 @@ TEST(Allocation, CopiesKeepTheirSourcesResourceAndCapacity)
     auto const allocator = Pmr{&resource};
     auto rng = std::mt19937_64{1};
     auto const initial = makeInitial();
-    auto particles = ParticleSet<State, double, Pmr>{
-        State{},
-        Emrys::drawSamples(initial.toDensity().value(), particleCount, rng),
-        allocator
-    };
+    auto particles =
+        ParticleSet<State, double, Pmr>{Emrys::drawSamples(initial.toDensity().value(), particleCount, rng), allocator};
     particles.setCapacity(particleCount);
     auto filter = ParticleFilter{makeModel(), std::move(particles)};
 
@@ -502,11 +519,8 @@ TEST(Allocation, FixedLagParticleSmoothingStepsWithinItsResource)
     auto const allocator = Pmr{&resource};
     auto rng = std::mt19937_64{3};
     auto const initial = makeInitial();
-    auto particles = ParticleSet<State, double, Pmr>{
-        State{},
-        Emrys::drawSamples(initial.toDensity().value(), particleCount, rng),
-        allocator
-    };
+    auto particles =
+        ParticleSet<State, double, Pmr>{Emrys::drawSamples(initial.toDensity().value(), particleCount, rng), allocator};
     particles.setCapacity(particleCount);
     auto filter = ParticleFilter{makeModel(), std::move(particles)};
     auto window = ParticleHistory<State, double, Pmr>{Lag{lag}, allocator};
@@ -604,7 +618,6 @@ TEST(Allocation, ParticlePrunesStayWithinTheResource)
     auto rng = std::mt19937_64{1};
     auto const initial = makeInitial();
     auto particles = ParticleSet<State, double, Pmr>{
-        State{},
         Emrys::drawSamples(initial.toDensity().value(), particleCount, rng),
         Pmr{&resource}
     };

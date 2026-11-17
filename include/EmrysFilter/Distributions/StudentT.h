@@ -68,7 +68,7 @@ enum class StudentTError
  * \tparam Space_   space of the coordinates (see \ref Spaces)
  * \tparam Scalar_  scalar type
  *
- * \sa drawSamples(StudentT const &, Eigen::Index, G &)
+ * \sa drawSample(StudentT const &, G &)
  */
 template <Space Space_, RealScalar Scalar_ = double>
 class StudentT
@@ -367,43 +367,6 @@ private:
 namespace internal
 {
 
-/** Draws from a Student-t, not yet normalized, with each draw's squared Mahalanobis distance. */
-template <typename Space, typename Scalar = double>
-struct StudentTDraws
-{
-    SampleSet<Space, Scalar> samples;  ///< one draw per column
-    Eigen::Array<Scalar, Eigen::Dynamic, 1>
-        squaredDistance;  ///< each draw's squared Mahalanobis distance under the scale
-};
-
-/** \returns \a n draws from \a t as the scale mixture \f$ \mu \boxplus L z \sqrt{\nu / u} \f$,
- * \f$ z \sim \mathcal{N}(0, I) \f$, \f$ u \sim \chi^2_\nu \f$, with each draw's
- * \f$ \|z\|^2 \nu / u \f$
- */
-template <typename Scalar, typename Space, std::uniform_random_bit_generator G>
-[[nodiscard]] StudentTDraws<Space, Scalar>
-drawStudentT(StudentT<Space, Scalar> const & t, Eigen::Index n, G & rng)
-{
-    EMRYS_FILTER_ASSERT(n >= 0);
-    using Normals = SampleSet<DifferenceSpace<Space>, Scalar>;
-    Normals const z = standardNormal<Normals>(t.differenceDimension(), n, rng);
-    auto chiSquared = std::chi_squared_distribution<Scalar>{t.dof()};
-    auto stretch = Eigen::Array<Scalar, Eigen::Dynamic, 1>{n};  // sqrt(ν / u) for each draw
-    for (Eigen::Index j = 0; j < n; ++j)
-    {
-        stretch(j) = Eigen::numext::sqrt(t.dof() / chiSquared(rng));
-    }
-    Normals offsets = multiply(t.scaleDensity().covarianceRoot(), z);
-    for (Eigen::Index j = 0; j < n; ++j)
-    {
-        offsets.col(j) *= stretch(j);
-    }
-    return {
-        Emrys::plus(t.space(), t.location(), offsets),
-        z.colwise().squaredNorm().transpose().array() * stretch.square()
-    };
-}
-
 /** One draw from a Student-t, in a vector sized by the space, with its squared Mahalanobis distance. */
 template <typename Space, typename Scalar = double>
 struct StudentTDraw
@@ -433,23 +396,10 @@ drawOneStudentT(StudentT<Space, Scalar> const & t, G & rng)
 }  // namespace internal
 
 /** \ingroup Distributions
- * \returns \a n independent draws from \a t, one per column: \f$ \mu \boxplus L z \sqrt{\nu / u} \f$
- * with \f$ z \sim \mathcal{N}(0, I) \f$ and \f$ u \sim \chi^2_\nu \f$, normalized in the space.
- *
- * \sa drawSamplesWithLogDensity(StudentT const &, Eigen::Index, G &)
- */
-template <typename Scalar, typename Space, std::uniform_random_bit_generator G>
-[[nodiscard]] SampleSet<Space, Scalar>
-drawSamples(StudentT<Space, Scalar> const & t, Eigen::Index n, G & rng)
-{
-    auto draws = internal::drawStudentT(t, n, rng);
-    return std::move(draws.samples);
-}
-
-/** \ingroup Distributions
- * \returns one draw from \a t, \f$ \mu \boxplus L z \sqrt{\nu / u} \f$ as drawSamples() draws each,
- * in a vector sized by the space: the stream of draws that drawSample() of a %Gaussian is. It
- * draws the normals and then the chi-squared, where drawSamples() draws every normal first.
+ * \returns one draw from \a t, \f$ \mu \boxplus L z \sqrt{\nu / u} \f$ with
+ * \f$ z \sim \mathcal{N}(0, I) \f$ and \f$ u \sim \chi^2_\nu \f$, normalized in the space, in a
+ * vector sized by the space: the stream of draws that drawSample() of a %Gaussian is. It draws the
+ * normals and then the chi-squared.
  */
 template <typename Scalar, typename Space, std::uniform_random_bit_generator G>
 [[nodiscard]] typename Moments<Space, Scalar>::VectorType
@@ -459,42 +409,11 @@ drawSample(StudentT<Space, Scalar> const & t, G & rng)
 }
 
 /** \ingroup Distributions
- * \returns \a n independent draws from \a t, one per column, with the log-density at each.
- *
- * In a linear space the log-densities cost almost nothing extra: the squared Mahalanobis
- * distance of a draw is \f$ \|z\|^2 \nu / u \f$. In other spaces each is logDensity() of the
- * stored sample, the nearest-image density.
- *
- * \sa drawSamples(StudentT const &, Eigen::Index, G &)
- */
-template <typename Scalar, typename Space, std::uniform_random_bit_generator G>
-[[nodiscard]] SamplesWithLogDensity<Space, Scalar>
-drawSamplesWithLogDensity(StudentT<Space, Scalar> const & t, Eigen::Index n, G & rng)
-{
-    auto draws = internal::drawStudentT(t, n, rng);
-    auto result = SamplesWithLogDensity<Space, Scalar>{std::move(draws.samples), {}};
-    result.logDensity.resize(n);
-    if constexpr (isLinear<Space>)
-    {
-        for (Eigen::Index j = 0; j < n; ++j)
-        {
-            result.logDensity(j) = t.logDensityAtSquaredDistance(draws.squaredDistance(j));
-        }
-    }
-    else
-    {
-        for (Eigen::Index j = 0; j < n; ++j)
-        {
-            result.logDensity(j) = t.logDensity(result.samples.col(j));
-        }
-    }
-    return result;
-}
-
-/** \ingroup Distributions
  * \returns one draw from \a t, as drawSample() draws it, with the log-density at it, in a vector
- * sized by the space: the stream of draws that drawSampleWithLogDensity() of a %Gaussian is, with
- * the log-density computed as drawSamplesWithLogDensity() computes it.
+ * sized by the space: the stream of draws that drawSampleWithLogDensity() of a %Gaussian is. In a
+ * linear space the log-density costs almost nothing extra, the squared Mahalanobis distance being
+ * \f$ \|z\|^2 \nu / u \f$; in other spaces it is logDensity() of the draw, the nearest-image
+ * density.
  */
 template <typename Scalar, typename Space, std::uniform_random_bit_generator G>
 [[nodiscard]] SampleWithLogDensity<Space, Scalar>

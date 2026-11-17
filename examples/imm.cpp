@@ -92,7 +92,7 @@ main()
 
         // The true mode and state are drawn from the priors. The covariance is positive definite and
         // the weights are positive, by construction, so neither toDensity() can fail here.
-        Emrys::ValueVector<State> truth = Emrys::drawSamples(prior.toDensity().value(), 1, rng);
+        Emrys::ValueVector<State> truth = Emrys::drawSample(prior.toDensity().value(), rng);
         Eigen::Index mode = Emrys::drawSample(modePrior.toDensity().value(), rng);
         for (int k = 0; k < steps; ++k)
         {

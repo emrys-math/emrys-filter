@@ -1,13 +1,13 @@
 #pragma once
 
 /** \file
- * Drawing samples: SamplesWithLogDensity and SampleWithLogDensity, the %Gaussian draws drawSamples(),
- * drawSamplesWithLogDensity(), and drawSample() and drawSampleWithLogDensity(), the one-at-a-time
- * draws that allocate nothing for a bounded space [allocation], and the internal standard normal and uniform draws. A
- * draw's root is the default one of Roots.h. The other distributions' draws are in their own headers.
- * The generator is the caller's and the draws come from the standard distributions, so a seed fixes them within one
- * standard library only (decisions.md [random-draws]).
- * Read GaussianForm.h next.
+ * Drawing from a %Gaussian: drawSample() and drawSampleWithLogDensity(), the one-at-a-time draws
+ * that allocate nothing for a bounded space [allocation] and that drawSamples() and
+ * drawSamplesWithLogDensity() of Draws.h read as a range, and the internal standard normal and
+ * uniform draws. A draw's root is the default one of Roots.h. The other distributions' draws are
+ * in their own headers. The generator is the caller's and the draws come from the standard
+ * distributions, so a seed fixes them within one standard library only (decisions.md
+ * [random-draws]). Read GaussianForm.h next.
  */
 
 #include <algorithm>
@@ -20,37 +20,11 @@
 #include <EmrysFilter/Core/Macros.h>
 #include <EmrysFilter/Core/Multiply.h>
 #include <EmrysFilter/Core/Solve.h>
+#include <EmrysFilter/Distributions/Draws.h>
 #include <EmrysFilter/Distributions/SampleSet.h>
 
 namespace Emrys
 {
-
-/** \ingroup Distributions
- * Samples in \a Space together with the log of the density they were drawn from,
- * evaluated at each.
- *
- * \sa drawSamplesWithLogDensity()
- */
-template <typename Space, typename Scalar = double>
-struct SamplesWithLogDensity
-{
-    SampleSet<Space, Scalar> samples;                    ///< one sample per column
-    Eigen::Array<Scalar, Eigen::Dynamic, 1> logDensity;  ///< \c logDensity(i) is the log-density at \c samples.col(i)
-};
-
-/** \ingroup Distributions
- * One sample in \a Space, in a vector sized by the space, together with the log of the density it
- * was drawn from, evaluated at it: what drawSampleWithLogDensity() returns, so that a bounded
- * space allocates nothing [allocation].
- *
- * \sa drawSampleWithLogDensity()
- */
-template <typename Space, typename Scalar = double>
-struct SampleWithLogDensity
-{
-    typename Moments<Space, Scalar>::VectorType sample;  ///< the sample
-    Scalar logDensity = 0;                               ///< the log-density at \c sample
-};
 
 namespace internal
 {
@@ -138,35 +112,15 @@ standardUniform(Eigen::Index rows, Eigen::Index cols, G & rng)
 }  // namespace internal
 
 /** \ingroup Distributions
- * \returns \a n independent draws from \a gaussian, one per column.
- *
- * Each draw is \f$ \mu \boxplus L z \f$ with \f$ z \sim \mathcal{N}(0, I) \f$ and \f$ L \f$
- * the Cholesky factor of the covariance: the standard
+ * \returns one draw from \a gaussian in a vector sized by the space, so that a bounded space
+ * allocates nothing: \f$ \mu \boxplus L z \f$ with \f$ z \sim \mathcal{N}(0, I) \f$ and
+ * \f$ L \f$ the Cholesky factor of the covariance, the standard
  * [affine transformation of standard
  * normals](https://en.wikipedia.org/wiki/Multivariate_normal_distribution#Drawing_values_from_the_distribution), with
  * the space's \f$ \boxplus \f$ in place of addition.
  *
- * \sa drawSamplesWithLogDensity()
- */
-template <typename Scalar, typename Space, std::uniform_random_bit_generator G>
-[[nodiscard]] SampleSet<Space, Scalar>
-drawSamples(Gaussian<Space, Scalar> const & gaussian, Eigen::Index n, G & rng)
-{
-    EMRYS_FILTER_ASSERT(n >= 0);
-    using Normals = SampleSet<DifferenceSpace<Space>, Scalar>;
-    Normals const z = internal::standardNormal<Normals>(gaussian.differenceDimension(), n, rng);
-    return SampleSet<Space, Scalar>{
-        Emrys::plus(gaussian.space(), gaussian.mean(), internal::multiply(gaussian.covarianceRoot(), z))
-    };
-}
-
-/** \ingroup Distributions
- * \returns one draw from \a gaussian, \f$ \mu \boxplus L z \f$ as drawSamples() draws each, in a
- * vector sized by the space, so that a bounded space allocates nothing.
- *
- * Called again and again, it is a stream of independent draws for code that keeps each one where
- * it chooses, as on a system with no heap. Each call takes its own normal draws from \a rng, so a
- * stream of them is not the sequence drawSamples() gives from the same generator.
+ * Called again and again, it is a stream of independent draws, the sequence that drawSamples()
+ * gives from the same generator, since each element of that range is one call of this.
  *
  * \sa drawSamples()
  */
@@ -182,50 +136,13 @@ drawSample(Gaussian<Space, Scalar> const & gaussian, G & rng)
 }
 
 /** \ingroup Distributions
- * \returns \a n independent draws from \a gaussian, one per column, with the
- * log-density of \a gaussian at each.
- *
- * The log-densities cost almost nothing extra in a linear space: for
- * \f$ x = \mu + L z \f$ the squared Mahalanobis distance is \f$ \|z\|^2 \f$. In other
- * spaces each is Gaussian::logDensity() of the stored sample, so a draw that wraps far
- * around a periodic coordinate gets the nearest-image density, matching logDensity().
- *
- * \sa drawSamples()
- */
-template <typename Scalar, typename Space, std::uniform_random_bit_generator G>
-[[nodiscard]] SamplesWithLogDensity<Space, Scalar>
-drawSamplesWithLogDensity(Gaussian<Space, Scalar> const & gaussian, Eigen::Index n, G & rng)
-{
-    EMRYS_FILTER_ASSERT(n >= 0);
-    using Normals = SampleSet<DifferenceSpace<Space>, Scalar>;
-    Normals const z = internal::standardNormal<Normals>(gaussian.differenceDimension(), n, rng);
-    auto result = SamplesWithLogDensity<Space, Scalar>{
-        Emrys::plus(gaussian.space(), gaussian.mean(), internal::multiply(gaussian.covarianceRoot(), z)),
-        {}
-    };
-    if constexpr (isLinear<Space>)
-    {
-        result.logDensity = gaussian.logPeak() - Scalar(0.5) * z.colwise().squaredNorm().transpose().array();
-    }
-    else
-    {
-        result.logDensity.resize(n);
-        for (Eigen::Index j = 0; j < n; ++j)
-        {
-            result.logDensity(j) = gaussian.logDensity(result.samples.col(j));
-        }
-    }
-    return result;
-}
-
-/** \ingroup Distributions
  * \returns one draw from \a gaussian, as drawSample() draws it, with the log-density of
  * \a gaussian at it, so that a bounded space allocates nothing: the stream of draws for code
  * that needs each one's density, such as an importance sampler on a system with no heap.
  *
  * The log-density costs almost nothing extra in a linear space, \f$ \|z\|^2 \f$ being the squared
  * Mahalanobis distance of \f$ \mu + L z \f$; in other spaces it is Gaussian::logDensity() of the
- * draw, as drawSamplesWithLogDensity() computes it.
+ * draw, so that a draw that wraps far around a periodic coordinate gets the nearest-image density.
  *
  * \sa drawSample(), drawSamplesWithLogDensity()
  */

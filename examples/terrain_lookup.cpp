@@ -125,9 +125,8 @@ main()
     int updates = 0;
     for (int run = 0; run < runs; ++run)
     {
-        auto filter =
-            Emrys::ParticleFilter{motion, Emrys::ParticleSet<State>{Emrys::drawSamples(priorDensity, count, rng)}};
-        Emrys::ValueVector<State> truth = Emrys::drawSamples(priorDensity, 1, rng);
+        auto filter = Emrys::ParticleFilter{motion, Emrys::drawSamples(priorDensity, count, rng)};
+        Emrys::ValueVector<State> truth = Emrys::drawSample(priorDensity, rng);
         for (int k = 1; k <= steps; ++k)
         {
             truth = Emrys::simulate<State>(truth, motion, rng, dt);

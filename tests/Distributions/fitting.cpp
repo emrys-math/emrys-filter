@@ -85,7 +85,7 @@ TEST(FitMixture, RecoversMixtureFromSamples)
 {
     auto const truth = makeTrueMixture();
     auto rng = std::mt19937_64{41};
-    auto const particles = Particles2{Emrys::drawSamples(truth.toDensity().value(), 20000, rng)};
+    auto const particles = Particles2{Emrys::drawSamples(truth.toDensity().value(), 20000, rng).collect()};
     auto const fit = Emrys::fitMixture(particles, 3, rng);
     ASSERT_TRUE(fit.has_value());
     EXPECT_TRUE(fit->converged);
@@ -102,7 +102,7 @@ TEST(FitMixture, UsesParticleWeights)
     auto const target = truth.toDensity();
     auto const proposal = GaussianParams<Linear<2>>{Eigen::Vector2d{0.0, 2.0}, 49.0 * Eigen::Matrix2d::Identity()};
     auto rng = std::mt19937_64{43};
-    auto const drawn = Emrys::drawSamplesWithLogDensity(proposal.toDensity().value(), 60000, rng);
+    auto const drawn = Emrys::drawSamplesWithLogDensity(proposal.toDensity().value(), 60000, rng).collect();
     auto logWeights = Eigen::ArrayXd{drawn.logDensity.size()};
     for (Eigen::Index i = 0; i < logWeights.size(); ++i)
     {
@@ -128,7 +128,7 @@ TEST(FitMixture, ReducesJitteredMixtureWithoutSampling)
     for (std::size_t c = 0; c < 3; ++c)
     {
         auto const jitter = GaussianParams<Linear<2>>{trueMeans[c], 0.5 * trueCovs[c]};
-        auto const centers = Emrys::drawSamples(jitter.toDensity().value(), 333, rng);
+        auto const centers = Emrys::drawSamples(jitter.toDensity().value(), 333, rng).collect();
         for (Eigen::Index j = 0; j < centers.cols(); ++j)
         {
             children.add(std::log(trueWeights[c] / 333.0), centers.col(j), 0.5 * trueCovs[c]);
@@ -189,7 +189,7 @@ TEST(FitMixture, FloorScalesWithEachDimension)
     // Dimensions a million times apart in scale: each component's floor follows its own dimension.
     auto const truth = makeTrueMixture();
     auto rng = std::mt19937_64{83};
-    Eigen::Matrix2Xd samples = Emrys::drawSamples(truth.toDensity().value(), 5000, rng);
+    Eigen::Matrix2Xd samples = Emrys::drawSamples(truth.toDensity().value(), 5000, rng).collect();
     samples.row(1) *= 1e-6;
     auto const particles = Particles2{samples};
     auto const fit = Emrys::fitMixture(particles, 3, rng, FitOptions<double>{.regularization = 1e-2});
@@ -226,7 +226,7 @@ TEST(FitMixture, SeedsFromAMixture)
     auto const truth = makeTrueMixture();
     auto const view = truth.toDensity();
     auto rng = std::mt19937_64{61};
-    auto const particles = Particles2{Emrys::drawSamples(*view, 20000, rng)};
+    auto const particles = Particles2{Emrys::drawSamples(*view, 20000, rng).collect()};
     auto const fit = Emrys::fitMixture(particles, *view, 3, rng);
     ASSERT_TRUE(fit.has_value());
     EXPECT_TRUE(fit->converged);
@@ -243,7 +243,7 @@ TEST(FitMixture, LogLikelihoodNeverDecreases)
 {
     auto const truth = makeTrueMixture();
     auto sampler = std::mt19937_64{67};
-    auto const particles = Particles2{Emrys::drawSamples(truth.toDensity().value(), 2000, sampler)};
+    auto const particles = Particles2{Emrys::drawSamples(truth.toDensity().value(), 2000, sampler).collect()};
     double previous = -std::numeric_limits<double>::infinity();
     for (int iterations = 1; iterations <= 12; ++iterations)
     {
@@ -260,8 +260,9 @@ TEST(FitMixture, DynamicSize)
 {
     auto const truth = makeTrueMixture();
     auto rng = std::mt19937_64{73};
-    auto const particles =
-        ParticleSet<Linear<Eigen::Dynamic>>{Eigen::MatrixXd{Emrys::drawSamples(truth.toDensity().value(), 5000, rng)}};
+    auto const particles = ParticleSet<Linear<Eigen::Dynamic>>{
+        Eigen::MatrixXd{Emrys::drawSamples(truth.toDensity().value(), 5000, rng).collect()}
+    };
     auto const fit = Emrys::fitMixture(particles, 3, rng);
     ASSERT_TRUE(fit.has_value());
     static_assert(std::is_same_v<decltype(fit->mixture), GaussianMixtureParams<Linear<Eigen::Dynamic>>>);
@@ -288,7 +289,7 @@ TEST(FitMixture, ManyComponentsUnderAPolicyMatchSequential)
     constexpr Eigen::Index perComponent = 800;
     for (std::size_t c = 0; c < 3; ++c)
     {
-        auto const centers = Emrys::drawSamples(truth.toDensity().value(), perComponent, rng);
+        auto const centers = Emrys::drawSamples(truth.toDensity().value(), perComponent, rng).collect();
         for (Eigen::Index j = 0; j < centers.cols(); ++j)
         {
             children.add(std::log(trueWeights[c] / double(perComponent)), centers.col(j), 0.5 * trueCovs[c]);
@@ -311,7 +312,7 @@ TEST(FitMixture, WeightlessParticlesAndComponentsThatVanish)
 {
     auto const truth = makeTrueMixture();
     auto rng = std::mt19937_64{103};
-    auto particles = Particles2{Emrys::drawSamples(truth.toDensity().value(), 2000, rng)};
+    auto particles = Particles2{Emrys::drawSamples(truth.toDensity().value(), 2000, rng).collect()};
     particles.setLogWeight(0, -std::numeric_limits<double>::infinity());
     EXPECT_TRUE(Emrys::fitMixture(particles, 3, rng));
     EXPECT_EQ(

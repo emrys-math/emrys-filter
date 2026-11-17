@@ -517,25 +517,6 @@ private:
 };
 
 /** \ingroup Distributions
- * \returns \a n independent draws from \a each, one per column: the factor's draws at each
- * repetition, repetition by repetition.
- */
-template <typename F, typename BlockSpace, std::uniform_random_bit_generator G>
-[[nodiscard]] SampleSet<BlockSpace, typename F::Scalar>
-drawSamples(EachRepetition<F, BlockSpace> const & each, Eigen::Index n, G & rng)
-{
-    EMRYS_FILTER_ASSERT(n >= 0);
-    constexpr int Step = BlockSpace::ValueDimensionStep;
-    auto samples = SampleSet<BlockSpace, typename F::Scalar>{each.valueDimension(), n};
-    decltype(auto) density = internal::densityOf(each.factor());
-    for (Eigen::Index k = 0; k < each.count(); ++k)
-    {
-        samples.template middleRows<Step>(k * Step) = drawSamples(density, n, rng);
-    }
-    return samples;
-}
-
-/** \ingroup Distributions
  * \returns one draw from \a each, the factor's drawSample() at each repetition, in order.
  */
 template <typename F, typename BlockSpace, std::uniform_random_bit_generator G>
@@ -551,31 +532,6 @@ drawSample(EachRepetition<F, BlockSpace> const & each, G & rng)
         sample.template segment<Step>(k * Step) = drawSample(density, rng);
     }
     return sample;
-}
-
-/** \ingroup Distributions
- * \returns \a n independent draws from \a each, one per column, with the log-density at each:
- * the sum of the factor's log-densities at its draws.
- */
-template <typename F, typename BlockSpace, std::uniform_random_bit_generator G>
-[[nodiscard]] SamplesWithLogDensity<BlockSpace, typename F::Scalar>
-drawSamplesWithLogDensity(EachRepetition<F, BlockSpace> const & each, Eigen::Index n, G & rng)
-{
-    EMRYS_FILTER_ASSERT(n >= 0);
-    using Scalar = typename F::Scalar;
-    constexpr int Step = BlockSpace::ValueDimensionStep;
-    auto result = SamplesWithLogDensity<BlockSpace, Scalar>{
-        SampleSet<BlockSpace, Scalar>{each.valueDimension(), n},
-        Eigen::Array<Scalar, Eigen::Dynamic, 1>::Zero(n)
-    };
-    decltype(auto) density = internal::densityOf(each.factor());
-    for (Eigen::Index k = 0; k < each.count(); ++k)
-    {
-        auto draws = drawSamplesWithLogDensity(density, n, rng);
-        result.samples.template middleRows<Step>(k * Step) = draws.samples;
-        result.logDensity += draws.logDensity;
-    }
-    return result;
 }
 
 /** \ingroup Distributions
@@ -837,7 +793,7 @@ inline constexpr bool isFactors<Factors<Placed...>>{true};
  * \tparam Scalar_   scalar type, shared by every factor
  * \tparam Factors_  the factors' types, in order
  *
- * \sa on(), drawSamples(Product const &, Eigen::Index, G &)
+ * \sa on(), drawSample(Product const &, G &)
  */
 template <Space Space_, RealScalar Scalar_, ProductFactor... Factors_>
 class Product
@@ -1617,24 +1573,6 @@ Product(Space, Factors<First, Rest...>) -> Product<
 /// \endcond
 
 /** \ingroup Distributions
- * \returns \a n independent draws from \a product, one per column: each factor's draws in
- * its coordinates, factor by factor.
- *
- * \sa drawSamplesWithLogDensity(Product const &, Eigen::Index, G &)
- */
-template <typename Scalar, typename Space, typename... Factors_, std::uniform_random_bit_generator G>
-[[nodiscard]] SampleSet<Space, Scalar>
-drawSamples(Product<Space, Scalar, Factors_...> const & product, Eigen::Index n, G & rng)
-{
-    EMRYS_FILTER_ASSERT(n >= 0);
-    auto samples = SampleSet<Space, Scalar>{product.valueDimension(), n};
-    product.forEachFactor([&](auto const & density, auto const & indices) {
-        samples(indices, Eigen::placeholders::all) = drawSamples(density, n, rng);
-    });
-    return samples;
-}
-
-/** \ingroup Distributions
  * \returns one draw from \a product, each factor's drawSample() in its coordinates, factor by
  * factor, in a vector sized by the space: the stream of draws that drawSample() of a %Gaussian is.
  */
@@ -1648,29 +1586,6 @@ drawSample(Product<Space, Scalar, Factors_...> const & product, G & rng)
         sample(indices) = drawSample(density, rng);
     });
     return sample;
-}
-
-/** \ingroup Distributions
- * \returns \a n independent draws from \a product, one per column, with the log-density at
- * each: the sum of the factors' log-densities at their draws.
- *
- * \sa drawSamples(Product const &, Eigen::Index, G &)
- */
-template <typename Scalar, typename Space, typename... Factors_, std::uniform_random_bit_generator G>
-[[nodiscard]] SamplesWithLogDensity<Space, Scalar>
-drawSamplesWithLogDensity(Product<Space, Scalar, Factors_...> const & product, Eigen::Index n, G & rng)
-{
-    EMRYS_FILTER_ASSERT(n >= 0);
-    auto result = SamplesWithLogDensity<Space, Scalar>{
-        SampleSet<Space, Scalar>{product.valueDimension(), n},
-        Eigen::Array<Scalar, Eigen::Dynamic, 1>::Zero(n)
-    };
-    product.forEachFactor([&](auto const & density, auto const & indices) {
-        auto draws = drawSamplesWithLogDensity(density, n, rng);
-        result.samples(indices, Eigen::placeholders::all) = draws.samples;
-        result.logDensity += draws.logDensity;
-    });
-    return result;
 }
 
 /** \ingroup Distributions

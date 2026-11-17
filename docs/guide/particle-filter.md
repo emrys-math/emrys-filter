@@ -28,7 +28,9 @@ definite noise covariance is its Cholesky factor rather than the pivoted root (�
 other samples of the same distribution from a seed, so §1's digits after the first prediction are
 new; the Kalman filter's numbers in §1 are unchanged. Every other sampled number in §1 to §4 is the
 same as on 2026-11-04, §3's Constant example among them, whose singular $Q$ still takes the pivoted
-root. Earlier refreshes found: `update()` is
+root. Roadmap 17zw (2026-11-17) changed the draws a seed gives, each element of `drawSamples()`
+now being one `drawSample()`, so every sampled digit below predates it and differs from a run
+today by about the Monte Carlo error, until the next refresh. Earlier refreshes found: `update()` is
 `[[nodiscard]]`; a fixed-size space is named rather than passed [space-storage]; weights
 that can't be normalized reject the update in a release build (§4, Q12 decided); a residual
 resampler given a negative weight asserts under `Sequential` but not under a policy (§7, Q16); and
@@ -70,7 +72,7 @@ This document covers the statistics behind them and how the particle filter uses
 
 ## Decisions so far
 
-Nothing has been decided in this review itself. Changes made elsewhere settled Q6
+This review decided Q1 (roadmap 17zw). Changes made elsewhere settled Q6
 [likelihood-measurements], Q8 [allocation], and Q12. These decisions from
 [decisions.md](../design/decisions.md) are in place and should be taken as given:
 
@@ -130,8 +132,8 @@ A full cycle, next to a Kalman filter on the same linear problem:
 
 ```cpp
 auto rng = std::mt19937_64{42};
-auto particles = ParticleSet<State>{drawSamples(initial.toDensity().value(), 5000, rng)};
-auto filter = ParticleFilter{model, particles};         // ParticleFilter<State, Kinematic<double, Position, Velocity>>
+auto filter = ParticleFilter{model, drawSamples(initial.toDensity().value(), 5000, rng)};
+// ParticleFilter<State, Kinematic<double, Position, Velocity>>
 auto kalman = KalmanFilter{model, initial};
 auto const resampling = upkeep::whenEss(std::less{}, 0.5, upkeep::resample(rng), upkeep::roughen(rng));
 
@@ -172,24 +174,37 @@ ParticleFilter.h:223:5: note: candidate template ignored: could not match 'Parti
 
 ## 2. Building the initial set
 
-Every particle filter starts by drawing a set from a prior, and that still takes a `value()` of
-an `expected` and a density view. It no longer takes the space twice: a set of a fixed-size space
-takes its draws alone [space-storage].
+Every particle filter starts by drawing a set from a prior. Since roadmap 17zw the filter and the
+set take the range that `drawSamples()` returns and read the draws into the set's own storage
+[lazy-draws], and `drawParticleSet()` names the set, as `drawParticleGaussian<Path>(joint, count,
+rng)` names the Rao-Blackwellized particle filter's state. Each still takes a `value()` of an
+`expected`, which the range moves in:
 
 ```cpp
-auto particles = ParticleSet<State>{drawSamples(initial.toDensity().value(), 5000, rng)};
+auto filter = ParticleFilter{model, drawSamples(initial.toDensity().value(), 5000, rng)};
+auto particles = drawParticleSet(initial.toDensity().value(), 5000, rng);   // ParticleSet<State>
 ```
 
-`tests/Filters/particle_filter.cpp` defines a helper `drawParticles(gaussian, count, rng)` for
-exactly this, and the Rao-Blackwellized particle filter has a library function for its own
-state, `drawParticleGaussian<Path>(joint, count, rng)`.
-
-> **Q1.** Add `drawParticles(density, count, rng)`, returning an equal-weight `ParticleSet` in
-> the density's space, for any density `drawSamples` accepts (a Gaussian, a mixture, a kernel
-> density)? It would sit beside `drawParticleGaussian` and make the filter's first line short.
-> A `ParticleSet` constructor taking `(density, count, rng)` would do the same, but a
-> constructor that consumes a generator reads oddly. An allocator-extended form would also let
-> the set be built in its resource rather than moved in (§13).
+> **Q1.** *Decided (roadmap 17zw): `drawSamples()` returns a lazy range, and the set and the
+> filter are built from it.* ~~Add `drawParticles(density, count, rng)`, returning an
+> equal-weight `ParticleSet` in the density's space, for any density `drawSamples` accepts (a
+> Gaussian, a mixture, a kernel density)? A `ParticleSet` constructor taking `(density, count,
+> rng)` would do the same. An allocator-extended form would also let the set be built in its
+> resource rather than moved in (§13).~~ `drawSamples(density, n, rng)` returns `Draws`, a sized
+> input range of `n` draws taken from `rng` as it is read; on a bounded space each draw is a
+> fixed-size vector, so reading it allocates nothing. Its element $i$ is the $i$-th of `n` calls
+> of `drawSample(density, rng)`, so a stream of single draws and the range give the same
+> sequence from the same generator; only a lower-variance resampler given to a kernel density's or
+> a mixture's draws picks its ancestors for the whole range at once. `collect()` returns the
+> draws as a `SampleSet`. The constructors take the range, not the arguments that made it, so a
+> parameter added to `drawSamples()` never touches them: `ParticleSet{drawSamples(density, n,
+> rng), allocator}` draws into the set's own storage, and `ParticleFilter{model,
+> drawSamples(density, n, rng)}` builds the filter's set from it. `drawParticleSet(density, count,
+> rng, allocator)` names that set, as `drawParticleGaussian()` names the state it returns; both
+> return one distribution made of many draws, which is why their names are singular.
+> `std::generator` was rejected: it allocates its frame on the heap unless given an allocator, and
+> LLVM's libc++, which the `clang-libcxx` and `apple-clang` jobs build with, has no `<generator>`
+> (checked with libc++ 21, 2026-11-17).
 
 ## 3. Predict
 
@@ -687,7 +702,7 @@ A draw from the kernel density has the cloud's covariance plus $s H$, so each `R
 the covariance by a factor $1 + s c$. For four dimensions and 5,000 particles $c = 0.1075$:
 
 ```cpp
-auto p = ParticleSet<State>{State{}, drawSamples(initial.toDensity().value(), 5000, rng)};
+auto p = ParticleSet<State>{drawSamples(initial.toDensity().value(), 5000, rng)};
 p.kdeBandwidth().value()(0, 0) / p.moments()->covarianceLower()(0, 0);  // 0.1075
 auto const roughen = upkeep::roughen(rng);
 // covariance diagonal:    [4.062, 3.947, 1.027, 0.998]
@@ -875,7 +890,10 @@ particles.setCapacity(n);
 auto filter = ParticleFilter{model, std::move(particles)};   // filter.get_allocator() == allocator
 ```
 
-The particles are moved in, which saves a copy. A copy would stay in the resource too: against
+The set reads the draws into its resource, so on a bounded space building it takes nothing from
+the global heap, and `assign(drawSamples(...))` at its capacity allocates nothing
+(`Allocation.ParticleSetDrawsIntoItsResource`). The particles are moved into the filter, which
+saves a copy. A copy would stay in the resource too: against
 pmr's rule, [allocation] has a copy of a container keep its source's allocator and capacity, so a
 filter built from a copy of a set, or a copy of a whole filter, steps without an allocation from
 the first step on (`Allocation.CopiesKeepTheirSourcesResourceAndCapacity`). Nothing in the
@@ -923,7 +941,8 @@ filter today. The Rao-Blackwellized particle filter keeps its own steps too
 
 ## Questions
 
-1. A `drawParticles(density, count, rng)` for the initial set (§2).
+1. ~~A `drawParticles(density, count, rng)` for the initial set (§2).~~ Decided: a lazy
+   `drawSamples()`, constructors that take it, and `drawParticleSet()` (roadmap 17zw).
 2. Non-Gaussian process noise: draw any samplable input per particle, or a model's own
    sampling policy (§3).
 3. Where the generator argument goes; [execution-policies] has made option 2 the practice (§3).

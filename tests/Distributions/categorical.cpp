@@ -702,7 +702,7 @@ TEST(Categorical, DrawsSamplesInProportion)
     auto const params = CategoricalParams<Mode>::fromWeights(Mode{}, Eigen::Vector4d{0.6, 0.1, 0.25, 0.05});
     auto const p = params.toDensity().value();
     auto rng = std::mt19937_64{42};
-    std::vector<Eigen::Index> const samples = drawSamples(p, 100'000, rng);
+    std::vector<Eigen::Index> const samples = drawSamples(p, 100'000, rng).collect();
     Eigen::Array4d counts = Eigen::Array4d::Zero();
     for (Eigen::Index const v : samples)
     {

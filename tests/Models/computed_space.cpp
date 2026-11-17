@@ -217,7 +217,7 @@ TEST(ComputedSpace, WeightsPointsAndSimulatesAsTheModelBuiltForTheCount)
     auto rng = std::mt19937_64{8};
     auto const density = prior.toDensity();
     ASSERT_TRUE(density.has_value());
-    Eigen::MatrixXd const states = Emrys::drawSamples(*density, 5, rng);
+    Eigen::MatrixXd const states = Emrys::drawSamples(*density, 5, rng).collect();
     Eigen::ArrayXd const computed = Emrys::logLikelihoods(observe(makeComputed(), z), prior.space(), states);
     Eigen::ArrayXd const byHand = Emrys::logLikelihoods(observe(makeByHand(3), z), prior.space(), states);
     EXPECT_TRUE(computed.isApprox(byHand, 1e-12));

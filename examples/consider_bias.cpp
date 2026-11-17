@@ -119,7 +119,7 @@ main()
     {
         // The true heading and bias are drawn from the prior, whose covariance is positive definite
         // by construction, so toDensity() can't fail here.
-        Emrys::ValueVector<State> truth = Emrys::drawSamples(prior.toDensity().value(), 1, rng);
+        Emrys::ValueVector<State> truth = Emrys::drawSample(prior.toDensity().value(), rng);
         auto estimating = Emrys::KalmanFilter{motion, prior};
         auto considering = Emrys::KalmanFilter{motion, prior};
         auto dropping = Emrys::KalmanFilter{unbiased, headingPrior};

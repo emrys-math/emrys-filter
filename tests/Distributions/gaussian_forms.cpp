@@ -410,8 +410,8 @@ TEST(GaussianForms, SqrtDrawsMatchGaussian)
     auto const root = Emrys::toSqrt(g);
     auto first = std::mt19937{7};
     auto second = std::mt19937{7};
-    auto const expected = Emrys::drawSamples(g.toDensity().value(), 50, first);
-    auto const actual = Emrys::drawSamples(root->toDensity().value(), 50, second);
+    auto const expected = Emrys::drawSamples(g.toDensity().value(), 50, first).collect();
+    auto const actual = Emrys::drawSamples(root->toDensity().value(), 50, second).collect();
     EXPECT_TRUE(actual.isApprox(expected, 1e-14));
     for (int k = 0; k < 10; ++k)
     {
@@ -615,8 +615,8 @@ TEST(GaussianForms, InfoDraws)
     auto const rootInfo = Emrys::toSqrtInfo(g);
     auto first = std::mt19937{11};
     auto second = std::mt19937{11};
-    auto const draws = Emrys::drawSamples(info->toDensity().value(), 20000, first);
-    auto const same = Emrys::drawSamples(rootInfo->toDensity().value(), 20000, second);
+    auto const draws = Emrys::drawSamples(info->toDensity().value(), 20000, first).collect();
+    auto const same = Emrys::drawSamples(rootInfo->toDensity().value(), 20000, second).collect();
     EXPECT_TRUE(same.isApprox(draws, 1e-13));
 
     Eigen::Vector3d const sampleMean = draws.rowwise().mean();
@@ -661,8 +661,8 @@ TEST(GaussianForms, FormDensitiesReadAsTheGaussian)
 
         auto first = std::mt19937{5};
         auto second = std::mt19937{5};
-        auto const drawn = Emrys::drawSamplesWithLogDensity(density, 50, first);
-        EXPECT_EQ(drawn.samples, Emrys::drawSamples(density, 50, second));
+        auto const drawn = Emrys::drawSamplesWithLogDensity(density, 50, first).collect();
+        EXPECT_EQ(drawn.samples, Emrys::drawSamples(density, 50, second).collect());
         for (Eigen::Index j = 0; j < drawn.samples.cols(); ++j)
         {
             EXPECT_NEAR(drawn.logDensity(j), expected->logDensity(drawn.samples.col(j)), 1e-12);
@@ -718,7 +718,7 @@ TEST(GaussianForms, InfoDensityMarginalIsTheSchurComplement)
     auto const linearDensity = linear->toDensity();
     ASSERT_TRUE(linearDensity);
     auto rng = std::mt19937{7};
-    auto const drawn = Emrys::drawSamplesWithLogDensity(linearDensity.value(), 20, rng);
+    auto const drawn = Emrys::drawSamplesWithLogDensity(linearDensity.value(), 20, rng).collect();
     for (Eigen::Index j = 0; j < drawn.samples.cols(); ++j)
     {
         EXPECT_NEAR(drawn.logDensity(j), linearDensity->logDensity(drawn.samples.col(j)), 1e-12);

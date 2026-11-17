@@ -39,6 +39,7 @@
 #include <EmrysFilter/Core/Stamp.h>
 #include <EmrysFilter/Core/Weights.h>
 #include <EmrysFilter/Distributions/Component.h>
+#include <EmrysFilter/Distributions/Draws.h>
 #include <EmrysFilter/Distributions/Gaussian.h>
 #include <EmrysFilter/Distributions/Moments.h>
 #include <EmrysFilter/Distributions/SampleSet.h>
@@ -2604,66 +2605,175 @@ private:
     internal::SelectionHolder<Source, Selection, SubSpace> m_selection;  ///< the selected coordinates and their space
 };
 
-/** \ingroup Distributions
- * \returns \a n draws from \a mixture, one per column.
- *
- * Each draw picks a component in proportion to its weight using \a resampler, then
- * draws \f$ \mu_c \boxplus L_c z \f$ from it, with \f$ z \sim \mathcal{N}(0, I) \f$ and
- * \f$ \Sigma_c = L_c L_c^T \f$: [sampling a mixture](https://en.wikipedia.org/wiki/Mixture_distribution#Sampling)
- * by composition. The default resamplers::Multinomial makes the draws
- * independent; a lower-variance resampler such as resamplers::Systematic gives each
- * component a count closer to its expected share.
- *
- * \sa drawSamplesWithLogDensity(GaussianMixture const &, Eigen::Index, G &, R const &), \ref
- * Resamplers
- */
-template <
-    typename Scalar,
-    typename Space,
-    typename Allocator,
-    std::uniform_random_bit_generator G,
-    typename R = resamplers::Multinomial>
-    requires Resampler<R, Scalar, G>
-[[nodiscard]] SampleSet<Space, Scalar>
-drawSamples(
-    Mixture<Gaussian<Space, Scalar>, Allocator> const & mixture,
-    Eigen::Index n,
-    G & rng,
-    R const & resampler = {}
-)
+namespace internal
 {
-    EMRYS_FILTER_ASSERT(n >= 0);
-    using SampleSetType = SampleSet<Space, Scalar>;
-    auto weights = internal::bufferOf<Scalar>(mixture.get_allocator());
-    weights.reserve(std::size_t(mixture.size()));
-    for (auto const & entry : mixture)
-    {
-        weights.push_back(Eigen::numext::exp(entry.logWeight - mixture.logTotalWeight()));
-    }
-    auto ancestors = internal::bufferOf<Eigen::Index>(mixture.get_allocator());
-    ancestors.resize(std::size_t(n));
-    resampler(std::span<Scalar const>{weights}, std::span<Eigen::Index>{ancestors}, rng);
 
-    using Normals = SampleSet<DifferenceSpace<Space>, Scalar>;
-    Normals const noise = internal::standardNormal<Normals>(mixture.differenceDimension(), n, rng);
-    auto samples = SampleSetType{mixture.valueDimension(), n};
-    for (Eigen::Index j = 0; j < n; ++j)
+/** \returns the normalized weights of \a mixture's components, from its allocator, as drawSample()
+ * weighs them
+ */
+template <typename Scalar, typename Space, typename Allocator>
+[[nodiscard]] Buffer<Scalar, Allocator>
+pickWeights(Mixture<Gaussian<Space, Scalar>, Allocator> const & mixture)
+{
+    auto weights = bufferOf<Scalar>(mixture.get_allocator());
+    weights.resize(std::size_t(mixture.size()));
+    for (Eigen::Index k = 0; k < mixture.size(); ++k)
     {
-        auto const gaussian = mixture[ancestors[std::size_t(j)]].component.toDensity();
-        samples.col(j) = Emrys::plus(
-            mixture.space(),
-            gaussian->mean(),
-            internal::multiply(gaussian->covarianceRoot(), noise.col(j))
-        );
+        weights[std::size_t(k)] = Eigen::numext::exp(Scalar(mixture[k].logWeight - mixture.logTotalWeight()));
     }
-    return samples;
+    return weights;
+}
+
+/** \returns one draw from component \a picked of \a mixture, its drawSample() */
+template <typename Scalar, typename Space, typename Allocator, std::uniform_random_bit_generator G>
+[[nodiscard]] typename Moments<Space, Scalar>::VectorType
+drawFromComponent(Mixture<Gaussian<Space, Scalar>, Allocator> const & mixture, Eigen::Index picked, G & rng)
+{
+    auto const gaussian = mixture[picked].component.toDensity();
+    return drawSample(*gaussian, rng);
+}
+
+/** The sampler of a %Gaussian mixture held as \a Held: each draw picks a component by \a Picks,
+ * independently by default, and draws from it, [sampling a
+ * mixture](https://en.wikipedia.org/wiki/Mixture_distribution#Sampling) by composition. Its
+ * log-density is a full Mixture::logDensity() evaluation after the draw, so collect() takes a
+ * policy for it.
+ */
+template <typename Held, typename Picks>
+class MixtureDraws
+{
+public:
+
+    using DensityType = std::remove_cvref_t<Held>;     ///< the mixture
+    using Scalar = typename DensityType::Scalar;       ///< the scalar type
+    static constexpr bool LogDensityAfterDraw = true;  ///< its log-density follows the draw
+
+    /** Draws from \a density, picking by \a picks. */
+    MixtureDraws(HeldDensity<Held> density, Picks picks)
+        : m_density{std::move(density)}
+        , m_picks{std::move(picks)}
+    {}
+
+    /** Draws from \a density, picking each component independently. */
+    explicit MixtureDraws(HeldDensity<Held> density)
+        requires std::same_as<Picks, IndependentPicks<Scalar, typename DensityType::allocator_type>>
+        : m_density{std::move(density)}
+        , m_picks{this->density().get_allocator()}
+    {}
+
+    /** \returns the density drawn from */
+    [[nodiscard]] DensityType const &
+    density() const
+    {
+        return m_density.get();
+    }
+
+    /** Readies the picks for \a count draws from \a rng. */
+    template <std::uniform_random_bit_generator G>
+    void
+    prepare(Eigen::Index count, G & rng)
+    {
+        m_picks.prepare(pickWeights(density()), count, rng);
+    }
+
+    /** \returns the next draw */
+    template <std::uniform_random_bit_generator G>
+    [[nodiscard]] typename Moments<typename DensityType::SpaceType, Scalar>::VectorType
+    draw(G & rng)
+    {
+        Eigen::Index const picked = m_picks.next(rng);
+        return drawFromComponent(density(), picked, rng);
+    }
+
+    /** \returns the next draw with the log-density at it */
+    template <std::uniform_random_bit_generator G>
+    [[nodiscard]] SampleWithLogDensity<typename DensityType::SpaceType, Scalar>
+    drawWithLogDensity(G & rng)
+    {
+        auto result = SampleWithLogDensity<typename DensityType::SpaceType, Scalar>{draw(rng), 0};
+        result.logDensity = density().logDensity(result.sample);
+        return result;
+    }
+
+private:
+
+    HeldDensity<Held> m_density;  ///< the density
+    Picks m_picks;                ///< how each draw picks its component
+};
+
+/** A %Gaussian mixture's draws pick each component independently, as its drawSample() does. */
+template <typename Held, typename Space, typename Scalar, typename Allocator>
+struct SamplerOf<Held, Mixture<Gaussian<Space, Scalar>, Allocator>>
+{
+    using type = MixtureDraws<Held, IndependentPicks<Scalar, Allocator>>;  ///< the sampler
+};
+
+/** Whether \a T is a Mixture of Gaussians */
+template <typename T>
+inline constexpr bool isGaussianMixtureDensity = false;
+
+/** Whether \a T is a Mixture of Gaussians: true */
+template <typename Space, typename Scalar, typename Allocator>
+inline constexpr bool isGaussianMixtureDensity<Mixture<Gaussian<Space, Scalar>, Allocator>> = true;
+
+/** \returns the range of \a n draws from \a mixture whose components \a resampler picks */
+template <bool WithLogDensity, typename D, std::uniform_random_bit_generator G, typename R>
+[[nodiscard]] auto
+resampledMixtureDraws(D && mixture, Eigen::Index n, G & rng, R const & resampler)
+{
+    using Held = HeldDensityType<D>;
+    using Density = std::remove_cvref_t<D>;
+    using Picks = ResampledPicks<typename Density::Scalar, typename Density::allocator_type, R>;
+    auto picks = Picks{resampler, mixture.get_allocator()};
+    using Sampler = MixtureDraws<Held, Picks>;
+    return Draws<Sampler, G, WithLogDensity>{
+        Sampler{HeldDensity<Held>{std::forward<D>(mixture)}, std::move(picks)},
+        n,
+        rng
+    };
+}
+
+}  // namespace internal
+
+/** \ingroup Distributions
+ * \returns a range of \a n draws from \a mixture by \a rng whose components \a resampler picks,
+ * all at the first read, each draw then taken from its component. A lower-variance resampler such
+ * as resamplers::Systematic gives each component a count closer to its expected share than
+ * drawSamples(mixture, n, rng), whose picks are independent; the range is then not the stream of
+ * single draws. The picks take storage from the mixture's allocator. It holds \a mixture as
+ * drawSamples() does.
+ *
+ * \sa drawSample(GaussianMixture const &, G &), \ref Resamplers
+ */
+template <typename D, std::uniform_random_bit_generator G, typename R>
+    requires internal::isGaussianMixtureDensity<std::remove_cvref_t<D>>
+          && Resampler<R, typename std::remove_cvref_t<D>::Scalar, G>
+[[nodiscard]] auto
+drawSamples(D && mixture, Eigen::Index n, G & rng, R const & resampler)
+{
+    return internal::resampledMixtureDraws<false>(std::forward<D>(mixture), n, rng, resampler);
+}
+
+/** \ingroup Distributions
+ * \returns the range of drawSamples(mixture, n, rng, resampler), each draw with the log-density of
+ * \a mixture at it, a full Mixture::logDensity() evaluation, so the total is
+ * \f$ O(n \cdot \mathrm{size}() \cdot d^2) \f$; Draws::collect() takes a policy for it.
+ */
+template <typename D, std::uniform_random_bit_generator G, typename R>
+    requires internal::isGaussianMixtureDensity<std::remove_cvref_t<D>>
+          && Resampler<R, typename std::remove_cvref_t<D>::Scalar, G>
+[[nodiscard]] auto
+drawSamplesWithLogDensity(D && mixture, Eigen::Index n, G & rng, R const & resampler)
+{
+    return internal::resampledMixtureDraws<true>(std::forward<D>(mixture), n, rng, resampler);
 }
 
 /** \ingroup Distributions
  * \returns one draw from \a mixture, a component picked in proportion to its weight and then a
  * draw from it, in a vector sized by the space: the stream of draws that drawSample() of a
- * %Gaussian is. Its draws are independent, as resamplers::Multinomial makes those of drawSamples(); a
- * lower-variance resampler spreads a batch over the components, which one draw at a time cannot.
+ * %Gaussian is, and what each element of drawSamples(mixture, n, rng) is. A lower-variance
+ * resampler spreads a batch over the components, which one draw at a time cannot:
+ * drawSamples(mixture, n, rng, resampler).
  */
 template <typename Scalar, typename Space, typename Allocator, std::uniform_random_bit_generator G>
 [[nodiscard]] typename Moments<Space, Scalar>::VectorType
@@ -2676,66 +2786,7 @@ drawSample(Mixture<Gaussian<Space, Scalar>, Allocator> const & mixture, G & rng)
         },
         rng
     );
-    auto const gaussian = mixture[picked].component.toDensity();
-    return drawSample(*gaussian, rng);
-}
-
-/** \ingroup Distributions
- * \returns \a n draws from \a mixture, one per column, with the log-density of
- * \a mixture at each.
- *
- * Draws exactly as drawSamples() does. Each log-density is a full
- * Mixture::logDensity() evaluation, so the total is
- * \f$ O(n \cdot \mathrm{size}() \cdot d^2) \f$.
- *
- * \sa drawSamples(GaussianMixture const &, Eigen::Index, G &, R const &)
- */
-template <
-    typename Scalar,
-    typename Space,
-    typename Allocator,
-    std::uniform_random_bit_generator G,
-    typename R = resamplers::Multinomial>
-    requires Resampler<R, Scalar, G>
-[[nodiscard]] SamplesWithLogDensity<Space, Scalar>
-drawSamplesWithLogDensity(
-    Mixture<Gaussian<Space, Scalar>, Allocator> const & mixture,
-    Eigen::Index n,
-    G & rng,
-    R const & resampler = {}
-)
-{
-    return drawSamplesWithLogDensity(execution::sequential, mixture, n, rng, resampler);
-}
-
-/** \ingroup Distributions
- * drawSamplesWithLogDensity() under \a policy: the draws are taken as the sequential form takes
- * them, and their log-densities are a for-each over the draws (see \ref Execution), so the result
- * is Sequential's.
- */
-template <
-    ExecutionPolicy P,
-    typename Scalar,
-    typename Space,
-    typename Allocator,
-    std::uniform_random_bit_generator G,
-    typename R = resamplers::Multinomial>
-    requires Resampler<R, Scalar, G>
-[[nodiscard]] SamplesWithLogDensity<Space, Scalar>
-drawSamplesWithLogDensity(
-    P && policy,
-    Mixture<Gaussian<Space, Scalar>, Allocator> const & mixture,
-    Eigen::Index n,
-    G & rng,
-    R const & resampler = {}
-)
-{
-    auto result = SamplesWithLogDensity<Space, Scalar>{drawSamples(mixture, n, rng, resampler), {}};
-    result.logDensity.resize(n);
-    internal::forEachIndex(std::forward<P>(policy), n, [&](Eigen::Index j) {
-        result.logDensity(j) = mixture.logDensity(result.samples.col(j));
-    });
-    return result;
+    return internal::drawFromComponent(mixture, picked, rng);
 }
 
 /** \ingroup Distributions

@@ -138,7 +138,7 @@ main()
         auto collapsed = Emrys::GaussianMixtureFilter{motion, initial};
 
         // The prior's covariance is positive definite by construction, so toDensity() can't fail.
-        Emrys::ValueVector<State> truth = Emrys::drawSamples(prior.toDensity().value(), 1, rng);
+        Emrys::ValueVector<State> truth = Emrys::drawSample(prior.toDensity().value(), rng);
         for (int k = 0; k < steps; ++k)
         {
             truth = Emrys::simulate<State>(truth, motion, rng);

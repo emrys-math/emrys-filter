@@ -104,7 +104,7 @@ main()
         // each particle the Gaussian of the velocity given its position. The true state is one
         // more draw from the prior.
         auto filter = Emrys::RbParticleFilter{motion, Emrys::drawParticleGaussian<Position>(prior, particles, rng)};
-        Emrys::ValueVector<State> truth = Emrys::drawSamples(priorDensity, 1, rng);
+        Emrys::ValueVector<State> truth = Emrys::drawSample(priorDensity, rng);
         for (int k = 0; k < steps; ++k)
         {
             truth = Emrys::simulate<State>(truth, motion, rng, dt);

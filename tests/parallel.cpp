@@ -148,7 +148,8 @@ makeParticles(Index count, unsigned seed)
 {
     auto rng = std::mt19937_64{seed};
     auto const initial = makeInitial();
-    Emrys::SampleSet<State, double> const states = Emrys::drawSamples(initial.toDensity().value(), count, rng);
+    Emrys::SampleSet<State, double> const states =
+        Emrys::drawSamples(initial.toDensity().value(), count, rng).collect();
     auto spread = std::normal_distribution<double>{0.0, 1.5};
     auto logWeights = Eigen::ArrayXd{count};
     for (Index i = 0; i < count; ++i)
@@ -499,8 +500,8 @@ TEST(Parallel, DensitiesMatchSequential)
 
     auto first = std::mt19937_64{41};
     auto second = std::mt19937_64{41};
-    auto const draws = Emrys::drawSamplesWithLogDensity(*kde, 200, first);
-    auto const drawsInParallel = Emrys::drawSamplesWithLogDensity(std::execution::par, *kde, 200, second);
+    auto const draws = Emrys::drawSamplesWithLogDensity(*kde, 200, first).collect();
+    auto const drawsInParallel = Emrys::drawSamplesWithLogDensity(*kde, 200, second).collect(std::execution::par);
     expectSame(drawsInParallel.samples, draws.samples);
     expectSame(drawsInParallel.logDensity, draws.logDensity);
 
@@ -509,9 +510,9 @@ TEST(Parallel, DensitiesMatchSequential)
     mixture.add(std::log(0.7), Vector4{5, -2, 0, 1}, Matrix4::Identity());
     auto const density = mixture.toDensity();
     ASSERT_TRUE(density);
-    auto const mixtureDraws = Emrys::drawSamplesWithLogDensity(*density, manyParticles, first);
+    auto const mixtureDraws = Emrys::drawSamplesWithLogDensity(*density, manyParticles, first).collect();
     auto const mixtureDrawsInParallel =
-        Emrys::drawSamplesWithLogDensity(std::execution::par, *density, manyParticles, second);
+        Emrys::drawSamplesWithLogDensity(*density, manyParticles, second).collect(std::execution::par);
     expectSame(mixtureDrawsInParallel.samples, mixtureDraws.samples);
     expectSame(mixtureDrawsInParallel.logDensity, mixtureDraws.logDensity);
 }
@@ -858,8 +859,7 @@ TEST(Parallel, FitMixtureMatchesSequential)
     auto source = GaussianMixtureParams<State>{State{}};
     source.add(std::log(0.5), Vector4{-6, 0, 0, 0}, Matrix4::Identity());
     source.add(std::log(0.5), Vector4{6, 2, 0, 0}, Matrix4::Identity());
-    auto const particles =
-        ParticleSet<State>{State{}, Emrys::drawSamples(source.toDensity().value(), manyParticles, rng)};
+    auto const particles = ParticleSet<State>{Emrys::drawSamples(source.toDensity().value(), manyParticles, rng)};
     auto first = std::mt19937_64{73};
     auto second = std::mt19937_64{73};
     auto const fit = Emrys::fitMixture(particles, 2, first);

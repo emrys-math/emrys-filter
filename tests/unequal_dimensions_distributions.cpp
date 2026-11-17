@@ -134,7 +134,7 @@ TEST(UnequalDimensions, SamplesAreUnitQuaternionsWithTheRightSpread)
 {
     GaussianParams<Pose> const g = pose();
     auto rng = std::mt19937_64{7};
-    auto const samples = Emrys::drawSamples(g.toDensity().value(), 40000, rng);
+    auto const samples = Emrys::drawSamples(g.toDensity().value(), 40000, rng).collect();
     ASSERT_EQ(samples.rows(), 6);
     for (Eigen::Index j = 0; j < samples.cols(); ++j)
     {

@@ -109,7 +109,7 @@ TEST(Uniform, ExplicitBoxInALinearSpace)
     EXPECT_TRUE(moments.covarianceLower().isApprox(Eigen::Vector2d{4.0 / 12, 16.0 / 12}.asDiagonal().toDenseMatrix()));
 
     auto rng = std::mt19937_64{7};
-    auto const samples = Emrys::drawSamples(uniform, 40000, rng);
+    auto const samples = Emrys::drawSamples(uniform, 40000, rng).collect();
     EXPECT_TRUE((samples.row(0).array() >= -1.0).all() && (samples.row(0).array() < 1.0).all());
     EXPECT_TRUE((samples.row(1).array() >= 0.0).all() && (samples.row(1).array() < 4.0).all());
     // The seed is fixed; the tolerances are about seven standard errors of the sample mean at
@@ -135,7 +135,7 @@ TEST(Uniform, PeriodicIntervalCrossesTheSeam)
     EXPECT_NEAR(arc.moments().mean()(0), 3.25 - 2 * pi, 1e-14);  // the center, normalized
 
     auto rng = std::mt19937_64{3};
-    auto const drawn = Emrys::drawSamplesWithLogDensity(arc, 2000, rng);
+    auto const drawn = Emrys::drawSamplesWithLogDensity(arc, 2000, rng).collect();
     bool wrapped = false;
     for (Eigen::Index j = 0; j < drawn.samples.cols(); ++j)
     {
@@ -247,7 +247,7 @@ TEST(Gamma, FromMeanAndStdDevPerCoordinate)
     EXPECT_EQ(moments.covarianceLower()(0, 1), 0.0);
 
     auto rng = std::mt19937_64{11};
-    auto const drawn = Emrys::drawSamplesWithLogDensity(gamma, 40000, rng);
+    auto const drawn = Emrys::drawSamplesWithLogDensity(gamma, 40000, rng).collect();
     EXPECT_TRUE((drawn.samples.array() >= 0).all());
     // Four to five standard errors of the sample mean (standard deviations 20 and 5) at this count.
     Eigen::Vector2d const mean = drawn.samples.rowwise().mean();
@@ -343,7 +343,7 @@ TEST(StudentT, SamplesMatchTheDistribution)
     auto const t = StudentT<Linear<2>>::create(Eigen::Vector2d{1.0, 2.0}, sigma, 8.0);
     ASSERT_TRUE(t.has_value());
     auto rng = std::mt19937_64{5};
-    auto const drawn = Emrys::drawSamplesWithLogDensity(*t, 100000, rng);
+    auto const drawn = Emrys::drawSamplesWithLogDensity(*t, 100000, rng).collect();
     for (Eigen::Index j = 0; j < 20; ++j)
     {
         EXPECT_NEAR(drawn.logDensity(j), t->logDensity(drawn.samples.col(j)), 1e-10);
@@ -359,8 +359,8 @@ TEST(StudentT, SamplesMatchTheDistribution)
 
     auto withDensity = std::mt19937_64{6};
     auto alone = std::mt19937_64{6};
-    auto const few = Emrys::drawSamplesWithLogDensity(*t, 20, withDensity);
-    auto const samples = Emrys::drawSamples(*t, 20, alone);
+    auto const few = Emrys::drawSamplesWithLogDensity(*t, 20, withDensity).collect();
+    auto const samples = Emrys::drawSamples(*t, 20, alone).collect();
     Eigen::Matrix2Xd const withoutDensity = samples;
     EXPECT_EQ(withoutDensity, few.samples);
 }
@@ -377,7 +377,7 @@ TEST(StudentT, WrapsInAPeriodicSpace)
         1e-12
     );
     auto rng = std::mt19937_64{9};
-    auto const drawn = Emrys::drawSamplesWithLogDensity(*t, 2000, rng);
+    auto const drawn = Emrys::drawSamplesWithLogDensity(*t, 2000, rng).collect();
     EXPECT_TRUE((drawn.samples.array() >= -pi).all() && (drawn.samples.array() < pi).all());
     for (Eigen::Index j = 0; j < 20; ++j)
     {

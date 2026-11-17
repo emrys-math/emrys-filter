@@ -109,7 +109,7 @@ TEST(Product, SamplesFillEachFactorsRows)
     };
 
     auto rng = std::mt19937_64{17};
-    auto const drawn = Emrys::drawSamplesWithLogDensity(prior, 50000, rng);
+    auto const drawn = Emrys::drawSamplesWithLogDensity(prior, 50000, rng).collect();
     ASSERT_EQ(drawn.samples.rows(), 4);
     for (Eigen::Index j = 0; j < 20; ++j)
     {
@@ -192,7 +192,7 @@ TEST(Product, FactorsMayBeListedInAnyOrder)
     EXPECT_EQ(product.logDensity(Eigen::Vector3d{3.0, 0.5, 2.0}), -std::numeric_limits<double>::infinity());
 
     auto rng = std::mt19937_64{23};
-    auto const samples = Emrys::drawSamples(product, 1000, rng);
+    auto const samples = Emrys::drawSamples(product, 1000, rng).collect();
     EXPECT_TRUE((samples.row(1).array() >= 0.0).all() && (samples.row(1).array() < 4.0).all());
     EXPECT_TRUE((samples.row(2).array() >= -1.0).all() && (samples.row(2).array() < 1.0).all());
     EXPECT_TRUE((samples.row(0).array() >= 0.0).all());
@@ -227,7 +227,7 @@ TEST(Product, TakesAKernelDensityFactor)
     auto const x = Eigen::Vector3d{1.0, 0.5, 1.0};
     EXPECT_NEAR(product.logDensity(x), kde->logDensity(x.head<2>()) - std::log(2 * pi), 1e-13);
     auto rng = std::mt19937_64{29};
-    auto const drawn = Emrys::drawSamplesWithLogDensity(product, 50, rng);
+    auto const drawn = Emrys::drawSamplesWithLogDensity(product, 50, rng).collect();
     for (Eigen::Index j = 0; j < 10; ++j)
     {
         EXPECT_NEAR(drawn.logDensity(j), product.logDensity(drawn.samples.col(j)), 1e-10);
@@ -262,7 +262,7 @@ TEST(Product, TakesEveryFormOfTheGaussian)
         EXPECT_TRUE(moments.mean().isApprox(expectedMoments.mean(), 1e-13));
         EXPECT_TRUE(moments.covarianceLower().isApprox(expectedMoments.covarianceLower(), 1e-13));
         auto rng = std::mt19937_64{31};
-        auto const drawn = Emrys::drawSamplesWithLogDensity(product, 20, rng);
+        auto const drawn = Emrys::drawSamplesWithLogDensity(product, 20, rng).collect();
         for (Eigen::Index j = 0; j < drawn.samples.cols(); ++j)
         {
             EXPECT_NEAR(drawn.logDensity(j), expected.logDensity(drawn.samples.col(j)), 1e-10);
@@ -365,7 +365,7 @@ TEST(Product, HoldsParamsByValue)
     auto const x = Eigen::Vector4d{11.0, -4.0, 2.0, 1.5};
     EXPECT_NEAR(prior.logDensity(x), place->logDensity(x.head<2>()) - std::log(2 * pi) + speedLogDensity(1.5), 1e-13);
     auto rng = std::mt19937_64{31};
-    auto const drawn = Emrys::drawSamplesWithLogDensity(prior, 20, rng);
+    auto const drawn = Emrys::drawSamplesWithLogDensity(prior, 20, rng).collect();
     for (Eigen::Index j = 0; j < 20; ++j)
     {
         EXPECT_NEAR(drawn.logDensity(j), prior.logDensity(drawn.samples.col(j)), 1e-10);
@@ -692,9 +692,10 @@ TEST(Product, OnEachWithoutAPathCoversTheWholeSpace)
     EXPECT_EQ(moments.covarianceLower(), expected.covarianceLower());
 }
 
-// The draws of an onEach() factor are the factor's own, one repetition after another, so the stream
-// is the one drawn from the factor alone; drawSample(), drawSamplesWithLogDensity(), and
-// drawSampleWithLogDensity() agree with it.
+// The draws of an onEach() factor are the factor's own, one repetition after another within each
+// draw, and one draw after another in a range [lazy-draws], so the stream is the one drawn from the
+// factor alone; drawSample(), drawSamplesWithLogDensity(), and drawSampleWithLogDensity() agree
+// with it.
 TEST(Product, OnEachDrawsEachRepetitionInTurn)
 {
     auto const space = Landmarks{Landmark{}, 3};
@@ -704,12 +705,17 @@ TEST(Product, OnEachDrawsEachRepetitionInTurn)
     ASSERT_TRUE(landmark.has_value());
 
     auto rng = std::mt19937_64{5};
-    auto const drawn = Emrys::drawSamples(product, 4, rng);
+    auto const drawn = Emrys::drawSamples(product, 4, rng).collect();
     auto replay = std::mt19937_64{5};
-    for (Eigen::Index k = 0; k < 3; ++k)
+    for (Eigen::Index j = 0; j < 4; ++j)
     {
-        Eigen::Matrix<double, 2, Eigen::Dynamic> const one = Emrys::drawSamples(*landmark, 4, replay);
-        EXPECT_EQ(Eigen::MatrixXd{drawn.middleRows(2 * k, 2)}, Eigen::MatrixXd{one});
+        for (Eigen::Index k = 0; k < 3; ++k)
+        {
+            EXPECT_EQ(
+                Eigen::Vector2d{drawn.col(j).segment<2>(2 * k)},
+                Eigen::Vector2d{Emrys::drawSample(*landmark, replay)}
+            );
+        }
     }
 
     auto sampleRng = std::mt19937_64{6};
@@ -723,7 +729,7 @@ TEST(Product, OnEachDrawsEachRepetitionInTurn)
         );
     }
 
-    auto const withDensity = Emrys::drawSamplesWithLogDensity(product, 3, rng);
+    auto const withDensity = Emrys::drawSamplesWithLogDensity(product, 3, rng).collect();
     for (Eigen::Index j = 0; j < 3; ++j)
     {
         EXPECT_NEAR(withDensity.logDensity(j), product.logDensity(withDensity.samples.col(j)), 1e-12);

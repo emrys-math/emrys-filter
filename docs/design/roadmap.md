@@ -26,6 +26,16 @@ question answered, breaking or not; and for every algorithm checked against its 
 read in full (decided 2026-11-16). With no date to meet, a feature that may want a change to the
 existing API is built before the launch rather than after it.
 
+## 17zw. Lazy draws — in progress
+
+[lazy-draws] records the design, from particle-filter.md Q1: `drawSamples()` returns a range of
+single draws, and `ParticleSet`, `assign()`, `drawParticleSet()`, and `ParticleFilter` take it.
+`tests/Distributions/draws.cpp`, `Allocation.ParticleSetDrawsIntoItsResource`,
+`ParticleFilter.BuildsItsParticlesFromARangeOfDraws`, and the `DRAWS_COPIED` cases are the
+evidence. The sampled digits in particle-filter.md predate it.
+
+Done when: the `land` checks pass, with MSVC.
+
 ## 17g. Posterior Cramér-Rao bound — in progress
 
 [cramer-rao-bound]: the recursion and its tests are done.
@@ -99,7 +109,7 @@ thread counts but not across standard libraries.
 
 - [ ] `Core/Random.h`: a `CounterBasedGenerator` concept (an independent stream at a step and an
       index), which `std::philox4x32` meets where the library has it.
-- [ ] Parallel overloads of `predict()`, `Roughen`, `drawSamples()`, and the Monte Carlo
+- [ ] Parallel overloads of `predict()`, `Roughen`, `Draws::collect()`, and the Monte Carlo
       divergences that draw inside the loop from such a generator; without one they keep drawing
       before the loop.
 - [ ] `MetropolisResampler` and `RejectionResampler` (Murray, Lee, and Jacob 2016), which need no
@@ -1087,8 +1097,8 @@ Allocation [allocation]:
 - [ ] A point-mass filter with a hybrid per cell, and a particle filter with a hybrid per particle,
       allocate at every update the IMM result they reuse across the points
       (rao-blackwellized-filters.md Q26), and run their points only in order (Q25).
-- [ ] `drawSamples()` of a gamma, `drawParticleGaussian()`, the fitting, and the samplers'
-      batches build owning sample sets, which a bounded space shouldn't need.
+- [ ] `drawParticleGaussian()`, the fitting, and the samplers' batches build owning sample sets,
+      which a bounded space shouldn't need.
 - [ ] `GridGaussianParams::subdivide()`, `PointGrid::subdivided()`, and `collapseGivenPoints` allocate
       from the global heap (rao-blackwellized-filters.md Q18); `PoissonEmission`,
       `ExponentialEmission`, and `ArrivalInterval` copy their rates into every measurement

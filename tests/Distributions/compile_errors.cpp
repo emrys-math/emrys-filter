@@ -3,7 +3,8 @@
 // that must fail to compile with the static_assert or deleted function it names, checked by
 // tests/compile_errors.cmake. Without a case the file compiles, which checks what the cases share.
 // The evidence for [coverage]'s negative compile tests, for the deleted marginals and densities of
-// temporaries ([element-marginals]), and for sampling only in a standard floating-point scalar.
+// temporaries ([element-marginals]), for sampling only in a standard floating-point scalar, and for ranges of draws
+// that are never copied.
 
 #include <EmrysFilter/Distributions.h>
 #include <EmrysFilter/Spaces/UnitQuaternion.h>
@@ -160,7 +161,7 @@ drawGamma()
 {
     auto const gamma =
         Emrys::Gamma<Speed, Dual>::create(Eigen::Vector<Dual, 1>{Dual{2.0}}, Eigen::Vector<Dual, 1>{Dual{1.0}}).value();
-    [[maybe_unused]] auto const x = Emrys::drawSamples(gamma, 3, rng);
+    [[maybe_unused]] auto const x = Emrys::drawSamples(gamma, 3, rng).collect();
 }
 #endif
 
@@ -181,16 +182,6 @@ drawUniform()
 miscountWeights()
 {
     [[maybe_unused]] auto const params = Emrys::CategoricalParams<Maneuver>::fromWeights(0.5, 0.25, 0.25);
-}
-#endif
-
-#if defined(CATEGORICAL_SAMPLES_IN_DUAL)  // static_assert: Categorical.h: sampling requires a standard floating-point
-[[maybe_unused]] void
-drawCategoricals()
-{
-    auto const params =
-        Emrys::CategoricalParams<Maneuver, Dual>::fromWeights(Maneuver{}, Eigen::Vector<Dual, 2>{Dual{1.0}, Dual{1.0}});
-    [[maybe_unused]] auto const x = Emrys::drawSamples(params.toDensity().value(), 3, rng);
 }
 #endif
 
@@ -272,6 +263,30 @@ productOnRepetitions()
     auto const car = Emrys::GaussianParams<Car>{Eigen::Vector3d::Zero(), Eigen::Matrix3d::Identity()};
     auto const product = Emrys::Product{Cars{Car{}, 2}, Emrys::onEach<Cars>(car)};
     product.conditional<Cars>(Eigen::Vector3d::Zero(), 1);
+}
+#endif
+
+// A range of draws reads the generator it holds, so a copy would draw from it twice: a range is moved,
+// never copied [lazy-draws].
+
+#if defined(DRAWS_COPIED)  // deleted: Draws.h: Draws(Draws const &)
+[[maybe_unused]] void
+copyDraws()
+{
+    auto const params = makePosition();
+    auto draws = Emrys::drawSamples(params.toDensity().value(), 3, rng);
+    [[maybe_unused]] auto copy = draws;
+}
+#endif
+
+#if defined(DRAWS_COPY_ASSIGNED)  // deleted: Draws.h: operator=(Draws const &)
+[[maybe_unused]] void
+assignDraws()
+{
+    auto const params = makePosition();
+    auto const draws = Emrys::drawSamples(params.toDensity().value(), 3, rng);
+    auto other = Emrys::drawSamples(params.toDensity().value(), 3, rng);
+    other = draws;
 }
 #endif
 

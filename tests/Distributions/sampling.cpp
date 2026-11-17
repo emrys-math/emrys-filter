@@ -90,7 +90,7 @@ TYPED_TEST(SamplingTest, SampleMomentsConverge)
     ASSERT_TRUE(g.has_value());
     auto rng = std::mt19937_64{7};
     constexpr Eigen::Index count = 40000;
-    auto const samples = Emrys::drawSamples(*g, count, rng);
+    auto const samples = Emrys::drawSamples(*g, count, rng).collect();
     ASSERT_EQ(samples.rows(), this->n);
     ASSERT_EQ(samples.cols(), count);
 
@@ -114,7 +114,7 @@ TYPED_TEST(SamplingTest, LogDensityMatchesGaussian)
     auto const gaussianParams = this->make();
     auto const g = gaussianParams.toDensity();
     auto rng = std::mt19937_64{11};
-    auto const drawn = Emrys::drawSamplesWithLogDensity(*g, 50, rng);
+    auto const drawn = Emrys::drawSamplesWithLogDensity(*g, 50, rng).collect();
     ASSERT_EQ(drawn.logDensity.size(), 50);
     Scalar const tolerance = std::is_same_v<Scalar, float> ? Scalar(1e-4) : Scalar(1e-10);
     for (Eigen::Index i = 0; i < 50; ++i)
@@ -132,7 +132,7 @@ TYPED_TEST(SamplingTest, BothVersionsDrawTheSameSamples)
     auto const g = gaussianParams.toDensity();
     auto a = std::mt19937_64{3};
     auto b = std::mt19937_64{3};
-    EXPECT_EQ(Emrys::drawSamples(*g, 20, a), Emrys::drawSamplesWithLogDensity(*g, 20, b).samples);
+    EXPECT_EQ(Emrys::drawSamples(*g, 20, a).collect(), Emrys::drawSamplesWithLogDensity(*g, 20, b).collect().samples);
 }
 
 // The samples and the negated log-densities construct a ParticleSet of the same size with those
@@ -141,7 +141,7 @@ TEST(Sampling, FeedsParticleSet)
 {
     auto const gaussianParams = GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), Eigen::Matrix2d::Identity()};
     auto rng = std::mt19937_64{5};
-    auto const drawn = Emrys::drawSamplesWithLogDensity(gaussianParams.toDensity().value(), 10, rng);
+    auto const drawn = Emrys::drawSamplesWithLogDensity(gaussianParams.toDensity().value(), 10, rng).collect();
     // Importance weights for a uniform target, as a particle filter proposal would use.
     auto const set = Emrys::ParticleSet<Emrys::Linear<2>>{drawn.samples, -drawn.logDensity};
     EXPECT_EQ(set.size(), 10);
@@ -154,7 +154,7 @@ TEST(Sampling, ZeroSamples)
     auto const gaussianParams =
         GaussianParams<Linear<Eigen::Dynamic>>{Eigen::Vector3d::Zero(), Eigen::Matrix3d::Identity()};
     auto rng = std::mt19937_64{5};
-    auto const samples = Emrys::drawSamples(gaussianParams.toDensity().value(), 0, rng);
+    auto const samples = Emrys::drawSamples(gaussianParams.toDensity().value(), 0, rng).collect();
     EXPECT_EQ(samples.rows(), 3);
     EXPECT_EQ(samples.cols(), 0);
 }
@@ -185,7 +185,7 @@ TEST(MixtureSampling, SampleMomentsConverge)
     ASSERT_TRUE(g.has_value());
     auto rng = std::mt19937_64{23};
     constexpr Eigen::Index count = 40000;
-    auto const samples = Emrys::drawSamples(*g, count, rng);
+    auto const samples = Emrys::drawSamples(*g, count, rng).collect();
     ASSERT_EQ(samples.cols(), count);
 
     auto const moments = g->moments();
@@ -207,7 +207,7 @@ TEST(MixtureSampling, SystematicGivesEachComponentItsShare)
     auto const mixture = makeSeparatedMixture(0.01);
     auto const g = mixture.toDensity();
     auto rng = std::mt19937_64{29};
-    auto const samples = Emrys::drawSamples(*g, 80, rng, Emrys::resamplers::systematic());
+    auto const samples = Emrys::drawSamples(*g, 80, rng, Emrys::resamplers::systematic()).collect();
     auto counts = std::array<int, 3>{};
     for (Eigen::Index j = 0; j < samples.cols(); ++j)
     {
@@ -230,8 +230,8 @@ TEST(MixtureSampling, LogDensityMatchesMixture)
     auto const g = mixture.toDensity();
     auto a = std::mt19937_64{31};
     auto b = std::mt19937_64{31};
-    auto const drawn = Emrys::drawSamplesWithLogDensity(*g, 25, a);
-    EXPECT_EQ(drawn.samples, Emrys::drawSamples(*g, 25, b));
+    auto const drawn = Emrys::drawSamplesWithLogDensity(*g, 25, a).collect();
+    EXPECT_EQ(drawn.samples, Emrys::drawSamples(*g, 25, b).collect());
     for (Eigen::Index j = 0; j < 25; ++j)
     {
         EXPECT_EQ(drawn.logDensity(j), g->logDensity(drawn.samples.col(j))) << "sample " << j;

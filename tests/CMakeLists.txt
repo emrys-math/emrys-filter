@@ -39,6 +39,7 @@ add_executable(emrys_filter_tests
   Distributions/gaussian_mixture.cpp
   Distributions/particle_set.cpp
   Distributions/sampling.cpp
+  Distributions/draws.cpp
   Distributions/roots.cpp
   Models/spread.cpp
   Distributions/kernel_density.cpp

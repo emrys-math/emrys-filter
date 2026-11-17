@@ -105,7 +105,7 @@ TEST(SpaceParticles, KernelDensityWrapsResiduals)
     EXPECT_GT(kde->logDensity(Eigen::Vector2d{1.5, -pi + 0.05}), kde->logDensity(Eigen::Vector2d{1.5, 0.0}) + 10.0);
 
     auto rng = std::mt19937_64{1};
-    auto const samples = Emrys::drawSamples(*kde, 500, rng);
+    auto const samples = Emrys::drawSamples(*kde, 500, rng).collect();
     EXPECT_TRUE((samples.row(1).array() >= -pi).all() && (samples.row(1).array() < pi).all());
 }
 
@@ -169,7 +169,7 @@ TEST(SpaceMixture, MomentsAndDensityWrap)
     EXPECT_NEAR(g->logDensity(Eigen::Vector2d{1.5, pi - 0.05}), g->logDensity(Eigen::Vector2d{1.5, -pi + 0.05}), 1e-12);
 
     auto rng = std::mt19937_64{2};
-    auto const samples = Emrys::drawSamples(*g, 500, rng);
+    auto const samples = Emrys::drawSamples(*g, 500, rng).collect();
     EXPECT_TRUE((samples.row(1).array() >= -pi).all() && (samples.row(1).array() < pi).all());
 
     auto const conditional = mixture.conditional<Position>(Eigen::Matrix<double, 1, 1>{1.5});
@@ -188,7 +188,7 @@ TEST(SpaceFitting, FitsAClusterAcrossTheSeam)
     truth.add(std::log(0.6), Eigen::Vector2d{0.0, pi}, Eigen::Matrix2d{{1.0, 0.0}, {0.0, 0.04}});
     truth.add(std::log(0.4), Eigen::Vector2d{5.0, 0.0}, Eigen::Matrix2d{{1.0, 0.0}, {0.0, 0.04}});
     auto rng = std::mt19937_64{3};
-    auto const particles = Particles{State{}, Emrys::drawSamples(truth.toDensity().value(), 20000, rng)};
+    auto const particles = Particles{Emrys::drawSamples(truth.toDensity().value(), 20000, rng)};
     auto const fit = Emrys::fitMixture(particles, 2, rng);
     ASSERT_TRUE(fit.has_value());
     static_assert(std::is_same_v<decltype(fit->mixture), MixtureParams>);

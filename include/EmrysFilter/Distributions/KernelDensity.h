@@ -22,6 +22,7 @@
 #include <EmrysFilter/Core/Solve.h>
 #include <EmrysFilter/Core/Stamp.h>
 #include <EmrysFilter/Core/Weights.h>
+#include <EmrysFilter/Distributions/Draws.h>
 #include <EmrysFilter/Distributions/Gaussian.h>
 // NOLINTNEXTLINE(misc-header-include-cycle): ParticleSet.h includes this header last, to complete toDensity()
 #include <EmrysFilter/Distributions/ParticleSet.h>
@@ -262,65 +263,185 @@ private:
     KernelType m_kernel;                            ///< \f$ \mathcal{N}(0, H) \f$, factorized
 };
 
-/** \ingroup Distributions
- * \returns \a n draws from \a kde, one per column.
- *
- * Each draw picks a particle in proportion to its weight using \a resampler, then
- * adds kernel noise \f$ L z \f$ with \f$ z \sim \mathcal{N}(0, I) \f$ and
- * \f$ H = L L^T \f$. The default resamplers::Multinomial makes the draws independent;
- * a lower-variance resampler such as resamplers::Systematic spreads them more evenly
- * over the particles, as in the regularized particle filter of
- * \ref Musso2001 "Musso, Oudjane, and Le Gland (2001)".
- *
- * \sa drawSamplesWithLogDensity(KernelDensity const &, Eigen::Index, G &, R const &), \ref Resamplers
- */
-template <
-    typename Scalar,
-    typename Space,
-    typename Allocator,
-    std::uniform_random_bit_generator G,
-    typename R = resamplers::Multinomial>
-    requires Resampler<R, Scalar, G>
-[[nodiscard]] SampleSet<Space, Scalar>
-drawSamples(KernelDensity<Space, Scalar, Allocator> const & kde, Eigen::Index n, G & rng, R const & resampler = {})
+namespace internal
 {
-    EMRYS_FILTER_ASSERT(n >= 0);
-    using SampleSetType = SampleSet<Space, Scalar>;
-    auto const & particles = kde.particles();
-    auto weights = internal::bufferOf<Scalar>(particles.get_allocator());
-    weights.resize(std::size_t(particles.size()));
-    for (Eigen::Index i = 0; i < particles.size(); ++i)
-    {
-        weights[std::size_t(i)] = Eigen::numext::exp(particles.logWeight(i) - kde.logTotalWeight());
-    }
-    auto ancestors = internal::bufferOf<Eigen::Index>(particles.get_allocator());
-    ancestors.resize(std::size_t(n));
-    resampler(std::span<Scalar const>{weights}, std::span<Eigen::Index>{ancestors}, rng);
 
-    using Normals = SampleSet<DifferenceSpace<Space>, Scalar>;
-    Normals const offsets = internal::multiply(
-        kde.kernel().covarianceRoot(),
-        internal::standardNormal<Normals>(kde.differenceDimension(), n, rng)
-    );
-    auto samples = SampleSetType{kde.valueDimension(), n};
-    for (Eigen::Index j = 0; j < n; ++j)
+/** \returns one draw from \a kde around particle \a picked: its state plus kernel noise \f$ L z \f$
+ * with \f$ z \sim \mathcal{N}(0, I) \f$ and \f$ H = L L^T \f$, in a vector sized by the space
+ */
+template <typename Scalar, typename Space, typename Allocator, std::uniform_random_bit_generator G>
+[[nodiscard]] typename Moments<Space, Scalar>::VectorType
+drawAround(KernelDensity<Space, Scalar, Allocator> const & kde, Eigen::Index picked, G & rng)
+{
+    using Difference = DifferenceVector<Space, Scalar>;
+    Difference const z = standardNormalVector<Difference>(kde.differenceDimension(), rng);
+    return typename Moments<Space, Scalar>::VectorType{
+        Emrys::plus(kde.space(), kde.particles().state(picked), Difference{multiply(kde.kernel().covarianceRoot(), z)})
+    };
+}
+
+/** \returns the normalized weights of \a kde's particles, from their allocator, as drawSample()
+ * weighs them
+ */
+template <typename Scalar, typename Space, typename Allocator>
+[[nodiscard]] Buffer<Scalar, Allocator>
+pickWeights(KernelDensity<Space, Scalar, Allocator> const & kde)
+{
+    auto const & particles = kde.particles();
+    auto weights = bufferOf<Scalar>(particles.get_allocator());
+    weights.resize(std::size_t(particles.size()));
+    for (Eigen::Index k = 0; k < particles.size(); ++k)
     {
-        samples.col(j) = Emrys::plus(kde.space(), particles.state(ancestors[std::size_t(j)]), offsets.col(j));
+        weights[std::size_t(k)] = Eigen::numext::exp(Scalar(particles.logWeight(k) - kde.logTotalWeight()));
     }
-    return samples;
+    return weights;
+}
+
+/** The sampler of a kernel density held as \a Held: each draw picks a particle by \a Picks,
+ * independently by default, and adds kernel noise around it. Its log-density is a full
+ * KernelDensity::logDensity() evaluation after the draw, so collect() takes a policy for it.
+ */
+template <typename Held, typename Picks>
+class KernelDensityDraws
+{
+public:
+
+    using DensityType = std::remove_cvref_t<Held>;     ///< the kernel density
+    using Scalar = typename DensityType::Scalar;       ///< the scalar type
+    static constexpr bool LogDensityAfterDraw = true;  ///< its log-density follows the draw
+
+    /** Draws from \a density, picking by \a picks. */
+    KernelDensityDraws(HeldDensity<Held> density, Picks picks)
+        : m_density{std::move(density)}
+        , m_picks{std::move(picks)}
+    {}
+
+    /** Draws from \a density, picking each particle independently. */
+    explicit KernelDensityDraws(HeldDensity<Held> density)
+        requires std::same_as<Picks, IndependentPicks<Scalar, typename DensityType::allocator_type>>
+        : m_density{std::move(density)}
+        , m_picks{this->density().particles().get_allocator()}
+    {}
+
+    /** \returns the density drawn from */
+    [[nodiscard]] DensityType const &
+    density() const
+    {
+        return m_density.get();
+    }
+
+    /** Readies the picks for \a count draws from \a rng. */
+    template <std::uniform_random_bit_generator G>
+    void
+    prepare(Eigen::Index count, G & rng)
+    {
+        m_picks.prepare(pickWeights(density()), count, rng);
+    }
+
+    /** \returns the next draw */
+    template <std::uniform_random_bit_generator G>
+    [[nodiscard]] typename Moments<typename DensityType::SpaceType, Scalar>::VectorType
+    draw(G & rng)
+    {
+        Eigen::Index const picked = m_picks.next(rng);
+        return drawAround(density(), picked, rng);
+    }
+
+    /** \returns the next draw with the log-density at it */
+    template <std::uniform_random_bit_generator G>
+    [[nodiscard]] SampleWithLogDensity<typename DensityType::SpaceType, Scalar>
+    drawWithLogDensity(G & rng)
+    {
+        auto result = SampleWithLogDensity<typename DensityType::SpaceType, Scalar>{draw(rng), 0};
+        result.logDensity = density().logDensity(result.sample);
+        return result;
+    }
+
+private:
+
+    HeldDensity<Held> m_density;  ///< the density
+    Picks m_picks;                ///< how each draw picks its particle
+};
+
+/** A kernel density's draws pick each particle independently, as its drawSample() does. */
+template <typename Held, typename Space, typename Scalar, typename Allocator>
+struct SamplerOf<Held, KernelDensity<Space, Scalar, Allocator>>
+{
+    using type = KernelDensityDraws<Held, IndependentPicks<Scalar, Allocator>>;  ///< the sampler
+};
+
+/** Whether \a T is a KernelDensity */
+template <typename T>
+inline constexpr bool isKernelDensity = false;
+
+/** Whether \a T is a KernelDensity: true */
+template <typename Space, typename Scalar, typename Allocator>
+inline constexpr bool isKernelDensity<KernelDensity<Space, Scalar, Allocator>> = true;
+
+/** \returns the range of \a n draws from \a kde whose particles \a resampler picks */
+template <bool WithLogDensity, typename D, std::uniform_random_bit_generator G, typename R>
+[[nodiscard]] auto
+resampledDraws(D && kde, Eigen::Index n, G & rng, R const & resampler)
+{
+    using Held = HeldDensityType<D>;
+    using Density = std::remove_cvref_t<D>;
+    using Picks = ResampledPicks<typename Density::Scalar, typename Density::allocator_type, R>;
+    auto picks = Picks{resampler, kde.particles().get_allocator()};
+    using Sampler = KernelDensityDraws<Held, Picks>;
+    return Draws<Sampler, G, WithLogDensity>{
+        Sampler{HeldDensity<Held>{std::forward<D>(kde)}, std::move(picks)},
+        n,
+        rng
+    };
+}
+
+}  // namespace internal
+
+/** \ingroup Distributions
+ * \returns a range of \a n draws from \a kde by \a rng whose particles \a resampler picks, all at
+ * the first read: each draw adds kernel noise \f$ L z \f$, \f$ z \sim \mathcal{N}(0, I) \f$ and
+ * \f$ H = L L^T \f$, to its particle. A lower-variance resampler such as resamplers::Systematic
+ * spreads the draws more evenly over the particles than drawSamples(kde, n, rng), whose picks are
+ * independent, as in the regularized particle filter of
+ * \ref Musso2001 "Musso, Oudjane, and Le Gland (2001)"; the range is then not the stream of single
+ * draws. The picks take storage from the particles' allocator. It holds \a kde as drawSamples()
+ * does.
+ *
+ * \sa drawSample(KernelDensity const &, G &), \ref Resamplers
+ */
+template <typename D, std::uniform_random_bit_generator G, typename R>
+    requires internal::isKernelDensity<std::remove_cvref_t<D>>
+          && Resampler<R, typename std::remove_cvref_t<D>::Scalar, G>
+[[nodiscard]] auto
+drawSamples(D && kde, Eigen::Index n, G & rng, R const & resampler)
+{
+    return internal::resampledDraws<false>(std::forward<D>(kde), n, rng, resampler);
+}
+
+/** \ingroup Distributions
+ * \returns the range of drawSamples(kde, n, rng, resampler), each draw with the log-density of
+ * \a kde at it, a full KernelDensity::logDensity() evaluation, so the total is
+ * \f$ O(n \cdot \mathrm{size}() \cdot d^2) \f$; Draws::collect() takes a policy for it.
+ */
+template <typename D, std::uniform_random_bit_generator G, typename R>
+    requires internal::isKernelDensity<std::remove_cvref_t<D>>
+          && Resampler<R, typename std::remove_cvref_t<D>::Scalar, G>
+[[nodiscard]] auto
+drawSamplesWithLogDensity(D && kde, Eigen::Index n, G & rng, R const & resampler)
+{
+    return internal::resampledDraws<true>(std::forward<D>(kde), n, rng, resampler);
 }
 
 /** \ingroup Distributions
  * \returns one draw from \a kde, a particle picked in proportion to its weight plus kernel noise
  * \f$ L z \f$, in a vector sized by the space: the stream of draws that drawSample() of a %Gaussian
- * is. Its draws are independent, as resamplers::Multinomial makes those of drawSamples(); a
- * lower-variance resampler spreads a batch over the particles, which one draw at a time cannot.
+ * is, and what each element of drawSamples(kde, n, rng) is. A lower-variance resampler spreads a
+ * batch over the particles, which one draw at a time cannot: drawSamples(kde, n, rng, resampler).
  */
 template <typename Scalar, typename Space, typename Allocator, std::uniform_random_bit_generator G>
 [[nodiscard]] typename Moments<Space, Scalar>::VectorType
 drawSample(KernelDensity<Space, Scalar, Allocator> const & kde, G & rng)
 {
-    using Difference = DifferenceVector<Space, Scalar>;
     auto const & particles = kde.particles();
     Eigen::Index const picked = internal::drawIndex<Scalar>(
         particles.size(),
@@ -329,69 +450,7 @@ drawSample(KernelDensity<Space, Scalar, Allocator> const & kde, G & rng)
         },
         rng
     );
-    Difference const z = internal::standardNormalVector<Difference>(kde.differenceDimension(), rng);
-    return typename Moments<Space, Scalar>::VectorType{Emrys::plus(
-        kde.space(),
-        particles.state(picked),
-        Difference{internal::multiply(kde.kernel().covarianceRoot(), z)}
-    )};
-}
-
-/** \ingroup Distributions
- * \returns \a n draws from \a kde, one per column, with the log-density of \a kde at each.
- *
- * Draws exactly as drawSamples() does. Unlike the %Gaussian case the log-densities
- * are not free: each costs a full KernelDensity::logDensity() evaluation, so the
- * total is \f$ O(n \cdot \mathrm{size}() \cdot d^2) \f$.
- *
- * \sa drawSamples(KernelDensity const &, Eigen::Index, G &, R const &)
- */
-template <
-    typename Scalar,
-    typename Space,
-    typename Allocator,
-    std::uniform_random_bit_generator G,
-    typename R = resamplers::Multinomial>
-    requires Resampler<R, Scalar, G>
-[[nodiscard]] SamplesWithLogDensity<Space, Scalar>
-drawSamplesWithLogDensity(
-    KernelDensity<Space, Scalar, Allocator> const & kde,
-    Eigen::Index n,
-    G & rng,
-    R const & resampler = {}
-)
-{
-    return drawSamplesWithLogDensity(execution::sequential, kde, n, rng, resampler);
-}
-
-/** \ingroup Distributions
- * drawSamplesWithLogDensity() under \a policy: the draws are taken as the sequential form takes
- * them, and their log-densities are a for-each over the draws (see \ref Execution), so the result
- * is Sequential's.
- */
-template <
-    ExecutionPolicy P,
-    typename Scalar,
-    typename Space,
-    typename Allocator,
-    std::uniform_random_bit_generator G,
-    typename R = resamplers::Multinomial>
-    requires Resampler<R, Scalar, G>
-[[nodiscard]] SamplesWithLogDensity<Space, Scalar>
-drawSamplesWithLogDensity(
-    P && policy,
-    KernelDensity<Space, Scalar, Allocator> const & kde,
-    Eigen::Index n,
-    G & rng,
-    R const & resampler = {}
-)
-{
-    auto result = SamplesWithLogDensity<Space, Scalar>{drawSamples(kde, n, rng, resampler), {}};
-    result.logDensity.resize(n);
-    internal::forEachIndex(std::forward<P>(policy), n, [&](Eigen::Index j) {
-        result.logDensity(j) = kde.logDensity(result.samples.col(j));
-    });
-    return result;
+    return internal::drawAround(kde, picked, rng);
 }
 
 /** \ingroup Distributions

@@ -144,8 +144,9 @@
  * their WithLogDensity forms, take the density and the caller's generator [random-draws]. The
  * draws go through \c std::normal_distribution and its siblings, whose algorithms the standard
  * leaves to the implementation, so a seed gives the same draws under one standard library and
- * other draws under another. drawSample() takes its own draws from the generator at each call, so a
- * stream of single draws is not the sequence drawSamples() gives from the same seed.
+ * other draws under another. drawSamples() returns Draws, a range that draws as it is read, each
+ * element one drawSample(), so a stream of single draws and the range give the same sequence from
+ * the same seed; collect() gives a SampleSet, and ParticleSet and ParticleFilter take the range.
  */
 
 #include <EmrysFilter/Distributions/Categorical.h>
@@ -153,6 +154,7 @@
 #include <EmrysFilter/Distributions/Conditionals.h>
 #include <EmrysFilter/Distributions/ContinuousTimeMarkovChain.h>
 #include <EmrysFilter/Distributions/Divergence.h>
+#include <EmrysFilter/Distributions/Draws.h>
 #include <EmrysFilter/Distributions/Fitting.h>
 #include <EmrysFilter/Distributions/Gamma.h>
 #include <EmrysFilter/Distributions/Gaussian.h>

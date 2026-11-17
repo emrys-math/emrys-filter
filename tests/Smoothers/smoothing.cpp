@@ -487,10 +487,8 @@ runParticles(unsigned seed, Eigen::Index count)
 {
     auto rng = std::mt19937_64{seed};
     auto const initial = makeInitial();
-    auto filter = ParticleFilter{
-        makeModel(),
-        ParticleSet<State>{State{}, Emrys::drawSamples(initial.toDensity().value(), count, rng)}
-    };
+    auto filter =
+        ParticleFilter{makeModel(), ParticleSet<State>{Emrys::drawSamples(initial.toDensity().value(), count, rng)}};
     auto const resampling = upkeep::whenEss(std::less{}, 0.5, upkeep::resample(rng));
     auto run = ParticleRun{};
     static_cast<void>(filter.update(makeFix(fixAt(0))));

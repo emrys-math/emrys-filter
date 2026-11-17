@@ -615,7 +615,7 @@ a cruise, $z_k = k + 0.4 \sin(2.3 k)$, and compares with the RTS smoother on the
 problem:
 
 ```cpp
-auto filter = ParticleFilter{model, ParticleSet<State>{State{}, drawSamples(initial.toDensity().value(), 5000, rng)}};
+auto filter = ParticleFilter{model, ParticleSet<State>{drawSamples(initial.toDensity().value(), 5000, rng)}};
 auto const resampling = upkeep::whenEss(std::less{}, 0.5, upkeep::resample(rng));
 auto history = ParticleHistory<State>{};
 static_cast<void>(filter.update(fix(z(0))));

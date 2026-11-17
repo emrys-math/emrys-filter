@@ -1,5 +1,6 @@
-// ParticleFilter (steps 7, 9a, 13d; [upkeep], [fixed-step-models], [likelihood-measurements]): point-wise
-// log-likelihoods match the likelihood, deduction and accessors, prediction matches the Kalman prediction in
+// ParticleFilter (steps 7, 9a, 13d, 17zw; [upkeep], [fixed-step-models], [likelihood-measurements],
+// [lazy-draws]): point-wise log-likelihoods match the likelihood, deduction and accessors, a filter
+// built from a range of draws, prediction matches the Kalman prediction in
 // distribution, a fixed-step model moves the particles as the step does, a noiseless block moves only by its
 // dynamics, periodic coordinates wrap, an update multiplies each weight by its likelihood and rejects what no particle
 // can explain, a measurement known only by its likelihood, or one that supplies its own, is weighted by that
@@ -87,7 +88,7 @@ template <typename Space, typename G>
 ParticleSet<Space>
 drawParticles(GaussianParams<Space> const & gaussian, Eigen::Index count, G & rng)
 {
-    return ParticleSet<Space>{gaussian.space(), Emrys::drawSamples(gaussian.toDensity().value(), count, rng)};
+    return Emrys::drawParticleSet(gaussian.toDensity().value(), count, rng);
 }
 
 Matrix4
@@ -293,6 +294,27 @@ TEST(ParticleFilter, DeducesItsTypeAndHoldsItsParts)
     EXPECT_EQ(std::as_const(filter).model().spectralDensity(), 0.5 * Eigen::Matrix2d::Identity());
     filter.state().setLogWeight(0, -1.0);
     EXPECT_EQ(filter.state().logWeight(0), -1.0);
+}
+
+// A filter built from the range drawSamples() returns, with or without its upkeep, deduces the
+// filter that one built from the set deduces, and reads the draws into its state in order
+// [lazy-draws].
+TEST(ParticleFilter, BuildsItsParticlesFromARangeOfDraws)
+{
+    auto const initial = makeInitial();
+    auto a = std::mt19937_64{5};
+    auto b = std::mt19937_64{5};
+    auto fromDraws = ParticleFilter{makeModel(), Emrys::drawSamples(initial.toDensity().value(), 40, a)};
+    auto const fromSet = ParticleFilter{makeModel(), drawParticles(initial, 40, b)};
+    static_assert(std::is_same_v<decltype(fromDraws), std::remove_const_t<decltype(fromSet)>>);
+    EXPECT_EQ(fromDraws.state().states(), fromSet.state().states());
+
+    auto resampling = std::mt19937_64{6};
+    auto const keep = upkeep::whenEss(std::less{}, 0.5, upkeep::resample(resampling));
+    auto const withUpkeep = ParticleFilter{makeModel(), Emrys::drawSamples(initial.toDensity().value(), 40, a), keep};
+    auto const withUpkeepFromSet = ParticleFilter{makeModel(), drawParticles(initial, 40, b), keep};
+    static_assert(std::is_same_v<decltype(withUpkeep), decltype(withUpkeepFromSet)>);
+    EXPECT_EQ(withUpkeep.state().states(), withUpkeepFromSet.state().states());
 }
 
 // setState() replaces the particles with a set of another size: the steps that follow equal those

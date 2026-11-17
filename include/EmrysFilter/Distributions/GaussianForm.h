@@ -3,10 +3,10 @@
 /** \file
  * What the four forms of the %Gaussian share (decisions.md [gaussian-forms], [form-densities]): the GaussianForm
  * concept and the isInfoForm<> and isSqrtForm<> traits; FormGaussian, the read-only density view that the square-root
- * and information forms' parameters return from toDensity(), with its moments(), marginals, drawSamples(), and
- * drawSamplesWithLogDensity(); and toGaussian(), which converts any form to the covariance form. Gaussian.h holds the
- * covariance form, and SqrtGaussian.h, InfoGaussian.h, and SqrtInfoGaussian.h the other three, each with the conversion
- * to it. Read SqrtGaussian.h next.
+ * and information forms' parameters return from toDensity(), with its moments(), marginals, drawSample(), and
+ * drawSampleWithLogDensity(), which drawSamples() reads as a range; and toGaussian(), which converts any form to the
+ * covariance form. Gaussian.h holds the covariance form, and SqrtGaussian.h, InfoGaussian.h, and SqrtInfoGaussian.h the
+ * other three, each with the conversion to it. Read SqrtGaussian.h next.
  */
 
 #include <concepts>
@@ -324,7 +324,7 @@ public:
     }
 
     /** \returns \f$ A z \f$ for a root \f$ A \f$ of the covariance, \f$ A A^T = \Sigma \f$: standard
-     * normal draws in the columns of \a z become draws of the residual, which drawSamples() adds
+     * normal draws in the columns of \a z become draws of the residual, which drawSample() adds
      * to the mean. \f$ A \f$ is the stored root in the square-root form and the inverse of the
      * precision's root in the information forms, applied by a triangular solve.
      */
@@ -359,26 +359,10 @@ private:
 };
 
 /** \ingroup Distributions
- * \returns \a n independent draws from \a gaussian, one per column: \f$ \mu \boxplus A z \f$ with
- * \f$ z \sim \mathcal{N}(0, I) \f$ and \f$ A \f$ the root of
- * FormGaussian::colorNormals(), as drawSamples() of a %Gaussian draws with its
- * Cholesky factor.
- */
-template <typename Params_, std::uniform_random_bit_generator G>
-[[nodiscard]] SampleSet<typename Params_::SpaceType, typename Params_::Scalar>
-drawSamples(FormGaussian<Params_> const & gaussian, Eigen::Index n, G & rng)
-{
-    EMRYS_FILTER_ASSERT(n >= 0);
-    using Space = typename Params_::SpaceType;
-    using Scalar = typename Params_::Scalar;
-    using Normals = SampleSet<DifferenceSpace<Space>, Scalar>;
-    Normals const z = internal::standardNormal<Normals>(gaussian.differenceDimension(), n, rng);
-    return SampleSet<Space, Scalar>{Emrys::plus(gaussian.space(), gaussian.mean(), gaussian.colorNormals(z))};
-}
-
-/** \ingroup Distributions
- * \returns one draw from \a gaussian, \f$ \mu \boxplus A z \f$ as drawSamples() draws each, in a
- * vector sized by the space: the stream of draws that drawSample() of a %Gaussian is.
+ * \returns one draw from \a gaussian, \f$ \mu \boxplus A z \f$ with \f$ z \sim \mathcal{N}(0, I) \f$
+ * and \f$ A \f$ the root of FormGaussian::colorNormals(), as drawSample() of a %Gaussian draws with
+ * its Cholesky factor, in a vector sized by the space: the stream of draws that drawSample() of a
+ * %Gaussian is.
  */
 template <typename Params_, std::uniform_random_bit_generator G>
 [[nodiscard]] typename Moments<typename Params_::SpaceType, typename Params_::Scalar>::VectorType
@@ -391,47 +375,11 @@ drawSample(FormGaussian<Params_> const & gaussian, G & rng)
 }
 
 /** \ingroup Distributions
- * \returns \a n independent draws from \a gaussian, one per column, as drawSamples() draws them,
- * with the log-density of \a gaussian at each.
- *
- * The log-densities cost almost nothing extra in a linear space: the whitened residual of
- * \f$ x = \mu + A z \f$ is \f$ z \f$, so the squared Mahalanobis distance is \f$ \|z\|^2 \f$. In
- * other spaces each is FormGaussian::logDensity() of the stored sample, as for a %Gaussian (see
- * drawSamplesWithLogDensity(Gaussian const &, Eigen::Index, G &)).
- */
-template <typename Params_, std::uniform_random_bit_generator G>
-[[nodiscard]] SamplesWithLogDensity<typename Params_::SpaceType, typename Params_::Scalar>
-drawSamplesWithLogDensity(FormGaussian<Params_> const & gaussian, Eigen::Index n, G & rng)
-{
-    EMRYS_FILTER_ASSERT(n >= 0);
-    using Space = typename Params_::SpaceType;
-    using Scalar = typename Params_::Scalar;
-    using Normals = SampleSet<DifferenceSpace<Space>, Scalar>;
-    Normals const z = internal::standardNormal<Normals>(gaussian.differenceDimension(), n, rng);
-    auto result = SamplesWithLogDensity<Space, Scalar>{
-        Emrys::plus(gaussian.space(), gaussian.mean(), gaussian.colorNormals(z)),
-        {}
-    };
-    if constexpr (isLinear<Space>)
-    {
-        result.logDensity = gaussian.logPeak() - Scalar(0.5) * z.colwise().squaredNorm().transpose().array();
-    }
-    else
-    {
-        result.logDensity.resize(n);
-        for (Eigen::Index j = 0; j < n; ++j)
-        {
-            result.logDensity(j) = gaussian.logDensity(result.samples.col(j));
-        }
-    }
-    return result;
-}
-
-/** \ingroup Distributions
  * \returns one draw from \a gaussian, as drawSample() draws it, with the log-density of
  * \a gaussian at it, in a vector sized by the space: the stream of draws that
- * drawSampleWithLogDensity() of a %Gaussian is, with the log-density computed as
- * drawSamplesWithLogDensity() computes it.
+ * drawSampleWithLogDensity() of a %Gaussian is. The log-density costs almost nothing extra in a
+ * linear space, the whitened residual of \f$ x = \mu + A z \f$ being \f$ z \f$; in other spaces it
+ * is FormGaussian::logDensity() of the draw.
  */
 template <typename Params_, std::uniform_random_bit_generator G>
 [[nodiscard]] SampleWithLogDensity<typename Params_::SpaceType, typename Params_::Scalar>

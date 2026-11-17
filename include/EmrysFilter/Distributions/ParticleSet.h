@@ -3,7 +3,8 @@
 /** \file
  * The particle set: ParticleSet, the weighted samples, with resampling, upkeep of
  * weights and particles, insert() and erase() on a resizable block, and a kernel bandwidth; its
- * marginal view ParticleSetMarginal; and Silverman's bandwidth. KernelDensity.h completes
+ * marginal view ParticleSetMarginal; drawParticleSet(), a set drawn from a density; and Silverman's
+ * bandwidth. KernelDensity.h completes
  * toDensity() and is included at the end. The particle filter's state [upkeep]. Read
  * KernelDensity.h next.
  */
@@ -33,6 +34,7 @@
 #include <EmrysFilter/Core/Solve.h>
 #include <EmrysFilter/Core/Stamp.h>
 #include <EmrysFilter/Core/Weights.h>
+#include <EmrysFilter/Distributions/Draws.h>
 #include <EmrysFilter/Distributions/Gaussian.h>
 #include <EmrysFilter/Distributions/Moments.h>
 #include <EmrysFilter/Distributions/SampleSet.h>
@@ -440,6 +442,21 @@ public:
         assign(states, logWeights);
     }
 
+    /** Constructs a set of the draws \a draws, the range drawSamples() returns, with equal weights
+     * summing to one. The set takes its space and dimension from the draws and reads each into its
+     * own storage, from \a allocator, so that they never sit in a matrix of their own and, on a
+     * bounded space, nothing is allocated outside \a allocator. It takes the range rather than what
+     * made it, so it holds for any argument drawSamples() takes.
+     */
+    template <typename R>
+        requires internal::ValueDraws<R> && std::same_as<typename std::remove_cvref_t<R>::SpaceType, Space_>
+              && std::same_as<typename std::remove_cvref_t<R>::Scalar, Scalar_>
+    explicit ParticleSet(R && draws, Allocator_ const & allocator = {})
+        : ParticleSet{Space_(draws.space()), draws.valueDimension(), allocator}
+    {
+        assignDraws(draws);
+    }
+
     /** Constructs an empty set in \a space. */
     explicit ParticleSet(Space_ space, Allocator_ const & allocator = {})
         : ParticleSet{allocator}
@@ -836,6 +853,19 @@ public:
         copyStates(states);
         logWeightsMap() = logWeights.derived().array();
         fitSpace();
+    }
+
+    /** Replaces the particles with the draws \a draws, the range drawSamples() returns, read into
+     * the set's storage, with equal weights summing to one. Clears the bandwidth if the number of
+     * coordinates changes.
+     */
+    template <typename R>
+        requires internal::ValueDraws<R> && std::same_as<typename std::remove_cvref_t<R>::SpaceType, Space_>
+              && std::same_as<typename std::remove_cvref_t<R>::Scalar, Scalar_>
+    void
+    assign(R && draws)
+    {
+        assignDraws(draws);
     }
 
     /** Appends a particle. Without a capacity it may grow the storage, which costs O(size()).
@@ -1623,6 +1653,33 @@ private:
         m_ancestors.reserve(count);
     }
 
+    /** Replaces the particles with \a draws, read in order into the set's storage, with equal
+     * weights summing to one.
+     */
+    template <typename R>
+    void
+    assignDraws(R & draws)
+    {
+        touchShape();
+        Index const rows = draws.valueDimension();
+        if (rows != m_rows)
+        {
+            m_bandwidth.reset();
+        }
+        m_rows = rows;
+        reserveRows(m_rows);
+        setCount(draws.size());
+        auto states = statesMap();
+        Index j = 0;
+        for (auto const & draw : draws)
+        {
+            states.col(j) = draw;
+            ++j;
+        }
+        logWeightsMap().setConstant(-Eigen::numext::log(Scalar(size())));
+        fitSpace();
+    }
+
     /** Replaces the states with the columns of \a states, clearing the bandwidth if their
      * dimension changes.
      */
@@ -1800,6 +1857,18 @@ private:
     std::optional<Scalar> m_logTotalWeight;                   ///< the log total weight, where known without a pass
     internal::Stamp m_stamp;                                  ///< what views check [view-stamp]
 };
+
+/// \cond DEDUCTION_GUIDES
+template <typename R>
+    requires internal::ValueDraws<R>
+ParticleSet(R &&) -> ParticleSet<typename std::remove_cvref_t<R>::SpaceType, typename std::remove_cvref_t<R>::Scalar>;
+
+template <typename R, typename Allocator>
+    requires internal::ValueDraws<R>
+ParticleSet(R &&, Allocator)
+    -> ParticleSet<typename std::remove_cvref_t<R>::SpaceType, typename std::remove_cvref_t<R>::Scalar, Allocator>;
+
+/// \endcond
 
 /** \ingroup Distributions
  * \brief Read-only view of a subset of the state entries of a ParticleSet.
@@ -2083,6 +2152,24 @@ silvermanBandwidth(P && policy, ParticleSet<Space, Scalar, Allocator> const & pa
             particles.logWeights()
         );
     });
+}
+
+/** \ingroup Distributions
+ * \returns \a count equally weighted particles drawn from \a density by \a rng into storage from
+ * \a allocator: <tt>ParticleSet{drawSamples(density, count, rng), allocator}</tt>, in the density's
+ * space. It names the set, as drawParticleGaussian() names the state it draws: one distribution
+ * made of many draws.
+ */
+template <typename D, std::uniform_random_bit_generator G, typename Allocator = DefaultAllocator>
+    requires internal::DrawsSingly<std::remove_cvref_t<D>, G>
+[[nodiscard]] auto
+drawParticleSet(D && density, Eigen::Index count, G & rng, Allocator const & allocator = {})
+{
+    using Density = std::remove_cvref_t<D>;
+    return ParticleSet<typename Density::SpaceType, typename Density::Scalar, Allocator>{
+        Emrys::drawSamples(std::forward<D>(density), count, rng),
+        allocator
+    };
 }
 
 }  // namespace Emrys

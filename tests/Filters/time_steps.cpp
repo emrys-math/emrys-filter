@@ -249,8 +249,7 @@ TEST(TimeSteps, ParticleFilterTakesDurationsAndAdvancesByACount)
 {
     auto rng = std::mt19937_64{11};
     auto const initial = makeInitial();
-    auto const particles =
-        Emrys::ParticleSet<State>{State{}, Emrys::drawSamples(initial.toDensity().value(), 200, rng)};
+    auto const particles = Emrys::ParticleSet<State>{Emrys::drawSamples(initial.toDensity().value(), 200, rng)};
 
     auto seconds = Emrys::ParticleFilter{makeModel(), particles};
     auto milliseconds = Emrys::ParticleFilter{makeModel(), particles};

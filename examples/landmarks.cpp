@@ -131,7 +131,7 @@ main()
         auto filter = Emrys::KalmanFilter{motion, prior, Emrys::methods::unscented()};
 
         // The prior's covariance is positive definite by construction, so toDensity() can't fail here.
-        Eigen::VectorXd truth = Emrys::drawSamples(prior.toDensity().value(), 1, rng);
+        Eigen::VectorXd truth = Emrys::drawSample(prior.toDensity().value(), rng);
         Eigen::Index sighted = 0;
         for (int k = 0; k < steps; ++k)
         {

@@ -77,6 +77,7 @@ Read the index, then the decisions your change touches.
 | [sigma-point-axes](#sigma-point-axes) | A sigma-point method is a rule spread by axes the caller may choose, and the default axes are the Cholesky factor, falling back to a pivoted root |
 | [conditional-evidence](#conditional-evidence) | `conditional()` returns a plain distribution; the evidence of the given values stays in its weights, or comes beside a single Gaussian |
 | [random-draws](#random-draws) | A density draws from the caller's generator through the standard distributions, so a seed fixes the draws within one standard library only |
+| [lazy-draws](#lazy-draws) | `drawSamples()` returns a range that draws as it is read, and a constructor takes the range |
 | **Models** | |
 | [method-per-measurement](#method-per-measurement) | Each measurement chooses its transform method |
 | [additive-noise](#additive-noise) | Additive noise is explicit, and it may be a mixture |
@@ -159,8 +160,8 @@ count comes from an `Allocator` parameter (style.md, Types).
   across calls, and lent to a function object that accepts it (`ResamplerWithScratch`).
 - An update result owns its count-sized arrays, and is never a view into filter scratch;
   `update(measurement, policy, result)` refills one the caller keeps, made by `emptyUpdate<M>()`.
-- A `SampleSet` is a batch of draws or a temporary, never stored. `drawSample()` and
-  `drawSampleWithLogDensity()` allocate nothing for a bounded space; `drawSamples()` does.
+- A `SampleSet` is a batch of draws or a temporary, never stored. `drawSample()` and reading the
+  range `drawSamples()` returns allocate nothing for a bounded space [lazy-draws]; `collect()` does.
 
 **Why.** Eigen takes no allocator, so only a buffer a container holds can be redirected. Callers
 need to say where the heap is and to know that allocation happens up front, not every step, and an
@@ -1457,15 +1458,16 @@ caller would evaluate the marginal's density again.
 *A density draws from the caller's generator through the standard distributions, so a seed fixes
 the draws within one standard library only.*
 
-**Rule.** Sampling is free functions over densities: `drawSamples()`, `drawSample()`, and their
-`WithLogDensity` forms. Parameters don't sample, as they don't evaluate [params-and-density]. The
-bit generator is the caller's, and the normal, uniform, gamma, and discrete draws come from
-`std::normal_distribution` and its siblings, whose algorithms the standard leaves to the
-implementation: one seed gives the same draws under MSVC's library, with Clang on Windows too, and
-other draws under libstdc++. Tests compare statistics, never fixed draws. A draw in a scalar that is
-not a standard floating-point type fails a `static_assert`. A mixture's draws pick components
-independently (`resamplers::Multinomial`), while `ParticleSet::resample()` defaults to the systematic
-resampler.
+**Rule.** Sampling is free functions over densities: `drawSample()`, which takes one draw,
+`drawSamples()`, which returns a range of them [lazy-draws], and their `WithLogDensity` forms.
+Parameters don't sample, as they don't evaluate [params-and-density]. The bit generator is the
+caller's, and the normal, uniform, gamma, and discrete draws come from `std::normal_distribution`
+and its siblings, whose algorithms the standard leaves to the implementation: one seed gives the
+same draws under MSVC's library, with Clang on Windows too, and other draws under libstdc++. Tests
+compare statistics, never fixed draws, except a range against the single draws of one seed. A draw
+in a scalar that is not a standard floating-point type fails a `static_assert`. A kernel density's
+and a mixture's draws pick independently, as `drawSample()` does, unless a resampler is given,
+while `ParticleSet::resample()` defaults to the systematic resampler.
 
 **Why.** Parameters hold values that may be invalid, and the density is the proof that they are
 not: a caller makes it once, checks it, and draws, which keeps the factorization out of every draw.
@@ -1482,6 +1484,38 @@ built on `internal::` functions and keeps mutable state that every call shares.
 
 **Where.** `Distributions/Sampling.h` and each distribution's header; usage.md tells a user what a
 seed fixes.
+
+### lazy-draws
+
+*`drawSamples()` returns a range that draws as it is read, and a constructor takes the range.*
+
+**Rule.** `drawSamples(density, n, rng)` and `drawSamplesWithLogDensity()` return `Draws`, a
+sized, single-pass input range whose element $i$ is the $i$-th of `n` calls of `drawSample()` (or
+`drawSampleWithLogDensity()`), taken from the generator as the range is read, so the range and a
+stream of single draws give one sequence from one seed. It holds a density given as an lvalue by
+reference and one given as an rvalue by value, and the generator by reference. `collect()` reads
+it into a `SampleSet`, a `SamplesWithLogDensity`, or a categorical distribution's indices, and for
+a kernel density or a mixture, whose log-density is an evaluation after the draw, takes a policy
+for the evaluations. A kernel density's and a mixture's ranges search running sums of the weights,
+kept from the density's allocator, so that each pick is the one `drawSample()` makes; given a
+resampler, `drawSamples(density, n, rng, resampler)` picks all `n` at the first read and is then
+not the stream of single draws. A constructor takes the range, never the arguments that made it:
+`ParticleSet{drawSamples(prior, n, rng), allocator}`, `ParticleFilter{model, drawSamples(prior, n,
+rng)}`. `drawParticleSet()` names that set, as `drawParticleGaussian()` names its state.
+
+**Why.** Code with no heap can draw any number of samples one at a time, and a container draws into
+its own storage, from its allocator, rather than copying a matrix the draws were first put in. A
+constructor that took the density, the count, and the generator would have to change with every
+parameter `drawSamples()` gains. One single draw per element makes the range and the stream one
+sequence, at the cost of the spare normal a `std::normal_distribution` keeps between calls.
+
+**Rejected.** A `SampleSet`, as `drawSamples()` returned until roadmap step 17zw: it put every
+draw on Eigen's heap, outside any allocator. `std::generator`: its frame is on the heap unless it
+is given an allocator, and libc++ 21 has no `<generator>`. Elements that share the distributions'
+state, or a block colored by one matrix product: faster, but not the stream of single draws.
+
+**Where.** `Distributions/Draws.h`; `ParticleSet` and `ParticleFilter` take the range;
+particle-filter.md Q1.
 
 ## Models
 

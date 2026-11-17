@@ -63,7 +63,7 @@ enum class UniformError
  * \tparam Space_   space of the coordinates (see \ref Spaces)
  * \tparam Scalar_  scalar type
  *
- * \sa drawSamples(Uniform const &, Eigen::Index, G &)
+ * \sa drawSample(Uniform const &, G &)
  */
 template <Space Space_, RealScalar Scalar_ = double>
 class Uniform
@@ -369,28 +369,9 @@ private:
 };
 
 /** \ingroup Distributions
- * \returns \a n independent draws from \a uniform, one per column: \f$ \ell + w \circ u \f$
- * with \f$ u \f$ uniform on <tt>[0, 1)</tt>, normalized in the space.
- *
- * \sa drawSamplesWithLogDensity(Uniform const &, Eigen::Index, G &)
- */
-template <typename Scalar, typename Space, std::uniform_random_bit_generator G>
-[[nodiscard]] SampleSet<Space, Scalar>
-drawSamples(Uniform<Space, Scalar> const & uniform, Eigen::Index n, G & rng)
-{
-    EMRYS_FILTER_ASSERT(n >= 0);
-    using SampleSetType = SampleSet<Space, Scalar>;
-    SampleSetType samples =
-        uniform.width().asDiagonal() * internal::standardUniform<SampleSetType>(uniform.valueDimension(), n, rng);
-    samples.colwise() += uniform.lower();
-    normalizeValues(uniform.space(), samples);
-    return samples;
-}
-
-/** \ingroup Distributions
- * \returns one draw from \a uniform, \f$ \ell + w \circ u \f$ as drawSamples() draws each, in a
- * vector sized by the space: the stream of draws that drawSample() of a %Gaussian is. Its
- * coordinates take the uniform draws in the order drawSamples() gives each column.
+ * \returns one draw from \a uniform, \f$ \ell + w \circ u \f$ with \f$ u \f$ uniform on
+ * <tt>[0, 1)</tt>, normalized in the space, in a vector sized by the space: the stream of draws that
+ * drawSample() of a %Gaussian is. Its coordinates take the uniform draws in order.
  */
 template <typename Scalar, typename Space, std::uniform_random_bit_generator G>
 [[nodiscard]] typename Moments<Space, Scalar>::VectorType
@@ -407,19 +388,6 @@ drawSample(Uniform<Space, Scalar> const & uniform, G & rng)
     }
     normalizeValues(uniform.space(), sample);
     return sample;
-}
-
-/** \ingroup Distributions
- * \returns \a n independent draws from \a uniform, one per column, with the log-density at
- * each, which is the same everywhere in the box.
- *
- * \sa drawSamples(Uniform const &, Eigen::Index, G &)
- */
-template <typename Scalar, typename Space, std::uniform_random_bit_generator G>
-[[nodiscard]] SamplesWithLogDensity<Space, Scalar>
-drawSamplesWithLogDensity(Uniform<Space, Scalar> const & uniform, Eigen::Index n, G & rng)
-{
-    return {drawSamples(uniform, n, rng), Eigen::Array<Scalar, Eigen::Dynamic, 1>::Constant(n, -uniform.logVolume())};
 }
 
 /** \ingroup Distributions

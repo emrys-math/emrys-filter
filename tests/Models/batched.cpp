@@ -109,7 +109,7 @@ makeParticles(Eigen::Index count, unsigned seed)
     Eigen::Vector4d const variances{9.0, 9.0, 1.0, 1.0};
     auto const prior =
         GaussianParams<State>{State{}, Eigen::Vector4d{2.0, 1.0, 0.0, 0.0}, Eigen::Matrix4d{variances.asDiagonal()}};
-    return ParticleSet<State>{State{}, Emrys::drawSamples(prior.toDensity().value(), count, rng)};
+    return ParticleSet<State>{Emrys::drawSamples(prior.toDensity().value(), count, rng)};
 }
 
 struct Range : Linear<1>
