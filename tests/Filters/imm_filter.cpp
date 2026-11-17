@@ -4,7 +4,8 @@
 // chain, a measurement per value of a mode axis, fixed-step models fix the step and the method, the mode moves by the
 // chain over each step, fixed-step models take a continuous-time chain over their step, each mode predicts by its own
 // method, rejected modes lose their probability, a maneuver is detected, a cruise mode that resets the acceleration it
-// doesn't use hands the maneuvering mode none after a maneuver, and a burst of outliers is ridden out.
+// doesn't use hands the maneuvering mode none after a maneuver, a burst of outliers is ridden out, and a recursion of
+// the user's own runs the steps ([filters-and-recursions], [user-extension-points]).
 
 #include <EmrysFilter/Distributions/Categorical.h>
 #include <EmrysFilter/Distributions/ContinuousTimeMarkovChain.h>
@@ -16,6 +17,9 @@
 #include <EmrysFilter/Models/ProcessModel.h>
 #include <EmrysFilter/Models/Reduction.h>
 #include <EmrysFilter/Models/SwitchingModel.h>
+#include <EmrysFilter/Distributions/Upkeep.h>
+
+#include "user_recursion.h"
 
 #include <Eigen/LU>
 
@@ -41,6 +45,7 @@ using Emrys::ConstantAcceleration;
 using Emrys::ConstantVelocity;
 using Emrys::ContinuousTimeMarkovChain;
 using Emrys::DiscreteProduct;
+using Emrys::Gaussian;
 using Emrys::GaussianMixtureParams;
 using Emrys::GaussianParams;
 using Emrys::HybridGaussian;
@@ -438,6 +443,95 @@ TEST(ImmFilter, OneModeIsAKalmanFilter)
         EXPECT_DOUBLE_EQ(imm.state().modes().toDensity().value().probability(0), 1.0);
         EXPECT_TRUE(imm.state().conditional(0).mean().isApprox(kalman.state().mean(), 1e-12));
         EXPECT_TRUE(imm.state().conditional(0).covarianceLower().isApprox(kalman.state().covarianceLower(), 1e-12));
+    }
+}
+
+// A recursion of the user's own over the hybrid, FadingModes over an ImmRecursion
+// (tests/user_recursion.h), meets Recursion by its interface alone, is deduced from
+// ImmFilter{recursion, state} as the filter's recursion argument, with an upkeep after it too, and
+// runs the filter's steps: after a prediction each mode's mean and probability are the plain IMM's
+// and its covariance the plain IMM's times alpha squared, and the update, returned or into a
+// result from emptyUpdate(), is the plain IMM's on that prior. The tolerance is rounding: the two
+// run the same arithmetic [filters-and-recursions], [user-extension-points].
+TEST(ImmFilter, UserRecursionRunsTheSteps)
+{
+    auto const makeSwitching = [] {
+        return switchingModel<Maneuver>(
+            ContinuousTimeMarkovChain<Maneuver>::persistent(0.1),
+            makeModel(quiet),
+            makeModel(agile)
+        );
+    };
+    using Model = decltype(makeSwitching());
+    using Inner = Emrys::ImmRecursion<Gaussian<State>, Model>;
+    using Fading = EmrysTest::FadingModes<Inner>;
+    static_assert(Emrys::RecursionOver<Fading, HybridGaussian<State, Maneuver>>);
+    static_assert(!Emrys::RecursionOver<Fading, Gaussian<State>>);
+
+    auto const initial = HybridParams{
+        CategoricalParams<Maneuver>::fromWeights(0.7, 0.3),
+        std::vector{
+            makeGaussian(Vector4{0, 0, 1, 0}, Vector4{4, 4, 1, 1}),
+            makeGaussian(Vector4{0.5, 0, 1, 0.2}, Vector4{2, 3, 1, 2})
+        }
+    };
+    constexpr double alpha = 1.1;
+    auto filter = ImmFilter{Fading{Inner{makeSwitching()}, alpha}, initial};
+    static_assert(std::is_same_v<
+                  decltype(filter),
+                  ImmFilter<Gaussian<State>, Model, Emrys::DefaultMethodFor<Model>, Emrys::DefaultAllocator, Fading>>);
+    static_assert(std::is_same_v<decltype(filter)::RecursionType, Fading>);
+    EXPECT_DOUBLE_EQ(filter.recursion().alpha(), alpha);
+    auto withUpkeep = ImmFilter{Fading{Inner{makeSwitching()}, alpha}, initial, Emrys::upkeep::floorModes(1e-3)};
+    static_assert(std::is_same_v<decltype(withUpkeep)::RecursionType, Fading>);
+
+    auto plain = ImmFilter{makeSwitching(), initial};
+    static_assert(std::is_same_v<decltype(plain)::RecursionType, Inner>);
+    auto const fix = makeFix(Eigen::Vector2d{1.2, 0.4});
+    auto result = filter.emptyUpdate<decltype(fix)>();
+    static_assert(std::is_same_v<decltype(result), decltype(plain.update(fix))::value_type>);
+    for (int k = 1; k <= 3; ++k)
+    {
+        filter.predict(timeStep);
+        plain.predict(timeStep);
+        for (Eigen::Index m = 0; m < 2; ++m)
+        {
+            EXPECT_LT((filter.state().conditional(m).mean() - plain.state().conditional(m).mean()).norm(), 1e-12);
+            Eigen::Matrix4d const inflated = alpha * alpha * plain.state().conditional(m).covarianceLower();
+            EXPECT_LT((filter.state().conditional(m).covarianceLower() - inflated).norm(), 1e-12);
+        }
+        EXPECT_LT(
+            (filter.state().modes().logWeights() - plain.state().modes().logWeights()).cwiseAbs().maxCoeff(),
+            1e-12
+        );
+
+        plain.setState(filter.state());
+        auto const reference = plain.update(fix);
+        ASSERT_TRUE(reference);
+        if (k == 2)
+        {
+            auto const updated = filter.update(fix);
+            ASSERT_TRUE(updated);
+            EXPECT_NEAR(updated->logLikelihood(), reference->logLikelihood(), 1e-12);
+        }
+        else
+        {
+            ASSERT_TRUE(filter.update(fix, reductions::collapse(), result));
+            EXPECT_NEAR(result.logLikelihood(), reference->logLikelihood(), 1e-12);
+        }
+        for (Eigen::Index m = 0; m < 2; ++m)
+        {
+            EXPECT_LT((filter.state().conditional(m).mean() - plain.state().conditional(m).mean()).norm(), 1e-12);
+            EXPECT_LT(
+                (filter.state().conditional(m).covarianceLower() - plain.state().conditional(m).covarianceLower())
+                    .norm(),
+                1e-12
+            );
+        }
+        EXPECT_LT(
+            (filter.state().modes().logWeights() - plain.state().modes().logWeights()).cwiseAbs().maxCoeff(),
+            1e-12
+        );
     }
 }
 

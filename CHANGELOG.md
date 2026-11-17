@@ -29,6 +29,15 @@ instead.
 
 ### Changed
 
+- **Breaking:** `ImmFilter` takes a recursion, as `KalmanFilter` and `MixtureFilter` do:
+  `ImmFilter<Component, Model, Method, Allocator, Recursion, Upkeep>`, the `ImmRecursion` unless
+  given one, and `ImmFilter{recursion, state}` runs a recursion of your own over the hybrid, such
+  as one that wraps the `ImmRecursion` and changes a step. Code that deduces the filter is
+  unchanged; code that names its upkeep in the type writes the recursion before it:
+  `ImmFilter<C, Model, Method, Allocator, ImmRecursion<C, Model, Method, Allocator>, Upkeep>` for
+  `ImmFilter<C, Model, Method, Allocator, Upkeep>`. `AmmFilter` keeps its parameters and runs the
+  `ImmRecursion`.
+
 - **Breaking:** `MarkovChain::fromDwellTimes()` and `ContinuousTimeMarkovChain::fromDwellTimes()`
   are renamed `fromSojournTimes()`, with the same arguments: write
   `MarkovChain<Mode>::fromSojournTimes(tau, exits)` for `MarkovChain<Mode>::fromDwellTimes(tau, exits)`.

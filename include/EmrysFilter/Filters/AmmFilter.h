@@ -75,6 +75,9 @@ namespace Emrys
  * \tparam Upkeep_     the upkeep maintain() runs on the state (see \ref Upkeep), upkeep::None unless given
  *                     one, such as FloorModes
  *
+ * It runs the ImmRecursion. A recursion of the user's own runs in an ImmFilter instead, whose
+ * switching model it holds is given the chain that never moves, as this class gives its own.
+ *
  * \sa ImmFilter, FloorModes, \ref Filters
  */
 template <
@@ -83,11 +86,25 @@ template <
     typename Method_ = DefaultMethodFor<Model_>,
     typename Allocator_ = DefaultAllocator,
     typename Upkeep_ = upkeep::None>
-class AmmFilter : public ImmFilter<Component_, Model_, Method_, Allocator_, Upkeep_>
+class AmmFilter
+    : public ImmFilter<
+          Component_,
+          Model_,
+          Method_,
+          Allocator_,
+          ImmRecursion<Component_, Model_, Method_, Allocator_>,
+          Upkeep_>
 {
 public:
 
-    using Base = ImmFilter<Component_, Model_, Method_, Allocator_, Upkeep_>;  ///< the filter this is
+    /** the filter this is: the ImmFilter that runs the ImmRecursion */
+    using Base = ImmFilter<
+        Component_,
+        Model_,
+        Method_,
+        Allocator_,
+        ImmRecursion<Component_, Model_, Method_, Allocator_>,
+        Upkeep_>;
 
     /** A filter with initial state \a state whose modes follow \a models, one per mode in
      * flat-index order or one shared by every mode, each predicting by its models' default method.

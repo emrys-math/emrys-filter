@@ -29,6 +29,7 @@
 #include <EmrysFilter/Distributions/Hybrid.h>
 #include <EmrysFilter/Filters/FilterUpkeep.h>
 #include <EmrysFilter/Filters/KalmanFilter.h>
+#include <EmrysFilter/Filters/Recursion.h>
 #include <EmrysFilter/Models/Measurement.h>
 #include <EmrysFilter/Models/ProcessModel.h>
 #include <EmrysFilter/Models/Reduction.h>
@@ -1380,6 +1381,14 @@ struct RecursionFor<Hybrid<Component_, ModeSpace_, HybridAllocator>, Model, Meth
  * exchanged with the state's, so on a bounded space its steps allocate nothing;
  * update(measurement, policy, result) also reuses the result's storage (see \ref Allocation).
  *
+ * A recursion of the user's own, one that meets Recursion over the hybrid, such as one that wraps
+ * the ImmRecursion and changes its step, runs in place of the ImmRecursion:
+ * <tt>ImmFilter{recursion, state}</tt> deduces it as the last argument but the upkeep
+ * (decisions.md [filters-and-recursions], [user-extension-points]). The filter calls its
+ * predict(), update(), and, where the filter's are called, predictJoint() and the update into a
+ * result, as the ImmRecursion takes them; and resetScratch(allocator) where it has one, when
+ * setState() brings a state from another allocator.
+ *
  * \tparam Component_  the component given one mode (see Component), a Gaussian over the state
  *                     space (see \ref Spaces)
  * \tparam Model_      a SwitchingModel over the mode space, of process models whose blocks
@@ -1387,39 +1396,48 @@ struct RecursionFor<Hybrid<Component_, ModeSpace_, HybridAllocator>, Model, Meth
  * \tparam Method_     the prediction method of every mode whose model carries none of its own
  *                    (see withMethod()); ModelsMethod with fixed-step models, which all carry one
  * \tparam Allocator_  the state's allocator (see \ref Allocation)
+ * \tparam Recursion_  the steps it runs on the state (see Recursion): the ImmRecursion unless given one
  * \tparam Upkeep_     the upkeep maintain() runs on the state (see \ref Upkeep), upkeep::None unless given
  *                     one, such as FloorModes or RepairCovariance
  *
- * \sa Hybrid, SwitchingModel, ImmRecursion, \ref Filters
+ * \sa Hybrid, SwitchingModel, ImmRecursion, Recursion, \ref Filters
  */
 template <
     Component Component_,
     typename Model_,
     typename Method_ = DefaultMethodFor<Model_>,
     typename Allocator_ = DefaultAllocator,
+    typename Recursion_ = ImmRecursion<Component_, Model_, Method_, Allocator_>,
     typename Upkeep_ = upkeep::None>
-class ImmFilter : public internal::HeldUpkeep<ImmFilter<Component_, Model_, Method_, Allocator_, Upkeep_>, Upkeep_>
+    requires RecursionOver<Recursion_, Hybrid<Component_, typename Model_::ModeSpaceType, Allocator_>>
+          && std::same_as<typename Recursion_::ModelType, Model_>
+          && std::same_as<typename Recursion_::MethodType, Method_>
+class ImmFilter
+    : public internal::HeldUpkeep<ImmFilter<Component_, Model_, Method_, Allocator_, Recursion_, Upkeep_>, Upkeep_>
 {
     using UpkeepBase = internal::HeldUpkeep<ImmFilter, Upkeep_>;  ///< what holds the upkeep
 
 public:
 
-    /** the steps it runs */
-    using RecursionType = ImmRecursion<Component_, Model_, Method_, Allocator_>;
+    /** the steps it runs (see Recursion) */
+    using RecursionType = Recursion_;
 
-    using Scalar = typename RecursionType::Scalar;                ///< the scalar type
-    using SpaceType = typename RecursionType::SpaceType;          ///< the state space
-    using ModelType = Model_;                                     ///< the process model
-    using MethodType = Method_;                                   ///< the prediction method
-    using ModeSpaceType = typename RecursionType::ModeSpaceType;  ///< the discrete mode space
-    using StateType = typename RecursionType::StateType;          ///< the state the filter owns
-    using ComponentType = Params<Component_>;                     ///< one component of the state
-    using allocator_type = Allocator_;                            ///< the state's allocator
-    using JointType = typename RecursionType::JointType;          ///< what predictJoint() returns
+    using Scalar = typename RecursionType::Scalar;         ///< the scalar type
+    using SpaceType = typename RecursionType::SpaceType;   ///< the state space
+    using ModelType = Model_;                              ///< the process model
+    using MethodType = Method_;                            ///< the prediction method
+    using ModeSpaceType = typename Model_::ModeSpaceType;  ///< the discrete mode space
+    using StateType = typename RecursionType::StateType;   ///< the state the filter owns
+    using ComponentType = Params<Component_>;              ///< one component of the state
+    using allocator_type = Allocator_;                     ///< the state's allocator
+
+    /** what predictJoint() returns */
+    using JointType = HybridPredictedJoint<SpaceType, ModeSpaceType, Scalar, Allocator_>;
 
     /** A filter with switching model \a model, initial state \a state, prediction method \a method,
      * and upkeep \a upkeep, which maintain() runs. Fixed-step models carry their own method, so there
-     * is none to give; each mode predicts by its own model's.
+     * is none to give; each mode predicts by its own model's. The filter runs the ImmRecursion, with
+     * scratch from the state's allocator.
      */
     ImmFilter(
         Model_ model,
@@ -1427,18 +1445,12 @@ public:
         MethodFor<Model_, Method_> method = {},
         std::type_identity_t<Upkeep_> upkeep = {}
     )
+        requires std::constructible_from<Recursion_, Model_, MethodFor<Model_, Method_>, Allocator_ const &>
         : UpkeepBase{std::move(upkeep)}
         , m_state{std::move(state)}
         , m_recursion{std::move(model), std::move(method), m_state.get_allocator()}
     {
-        EMRYS_FILTER_ASSERT(
-            m_recursion.modeSpace() == m_state.modeSpace() && "the model and the state have different modes"
-        );
-        internal::assertPartitions(
-            m_recursion.model(),
-            m_state.space(),
-            "every process model must write every coordinate of the state space once"
-        );
+        checkState(m_state);
     }
 
     /** A filter with switching model \a model, initial state \a state, the default prediction method,
@@ -1446,8 +1458,21 @@ public:
      */
     ImmFilter(Model_ model, StateType state, std::type_identity_t<Upkeep_> upkeep)
         requires(!std::same_as<Upkeep_, Emrys::upkeep::None>)
+             && std::constructible_from<Recursion_, Model_, MethodFor<Model_, Method_>, Allocator_ const &>
         : ImmFilter{std::move(model), std::move(state), MethodFor<Model_, Method_>{}, std::move(upkeep)}
     {}
+
+    /** A filter that runs \a recursion, the library's or one of the user's own (see Recursion), on
+     * the initial state \a state, with upkeep \a upkeep, which maintain() runs. A recursion with
+     * scratch, as the ImmRecursion, must have been given the state's allocator.
+     */
+    ImmFilter(Recursion_ recursion, StateType state, std::type_identity_t<Upkeep_> upkeep = {})
+        : UpkeepBase{std::move(upkeep)}
+        , m_state{std::move(state)}
+        , m_recursion{std::move(recursion)}
+    {
+        checkState(m_state);
+    }
 
     /** \returns the allocator of the state and scratch */
     [[nodiscard]] allocator_type
@@ -1480,17 +1505,15 @@ public:
     void
     setState(StateType state)
     {
-        EMRYS_FILTER_ASSERT(state.modeSpace() == m_recursion.modeSpace() && "the state has different modes");
-        internal::assertPartitions(
-            m_recursion.model(),
-            state.space(),
-            "every process model must write every coordinate of the state space once"
-        );
+        checkState(state);
         m_state = std::move(state);
-        if (m_state.get_allocator() != m_recursion.get_allocator())
+        if constexpr (requires { m_recursion.resetScratch(m_state.get_allocator()); })
         {
-            // The assignment carried the new state's allocator in, so the scratch follows it.
-            m_recursion.resetScratch(m_state.get_allocator());
+            if (m_state.get_allocator() != m_recursion.get_allocator())
+            {
+                // The assignment carried the new state's allocator in, so the scratch follows it.
+                m_recursion.resetScratch(m_state.get_allocator());
+            }
         }
     }
 
@@ -1692,30 +1715,42 @@ public:
     }
 
     /** \returns an empty result for update(measurement, policy, result) with a measurement of type
-     * \a M, \c const and references aside, a measurement or a SwitchingMeasurement, from the
-     * state's allocator, with room for an update of every mode: the recursion's
-     * ImmRecursion::emptyUpdate() for the state
+     * \a M, \c const and references aside, a measurement or a SwitchingMeasurement: the update
+     * inside the \c std::expected that update(measurement) returns, from the state's allocator,
+     * with room for an update of every mode
      */
     template <typename M>
         requires Measurement<M> || internal::isSwitchingMeasurement<std::remove_cvref_t<M>>
     [[nodiscard]] auto
     emptyUpdate() const
     {
-        using Plain = std::remove_cvref_t<M>;
-        if constexpr (internal::isSwitchingMeasurement<Plain>)
-        {
-            return m_recursion.template emptyUpdate<typename Plain::template MeasurementType<0>>(
-                get_allocator(),
-                m_state.size()
-            );
-        }
-        else
-        {
-            return m_recursion.template emptyUpdate<Plain>(get_allocator(), m_state.size());
-        }
+        using Update = decltype(std::declval<RecursionType &>().update(
+            std::declval<StateType &>(),
+            std::declval<std::remove_cvref_t<M> const &>(),
+            reductions::collapse()
+        ));
+        auto result = typename Update::value_type{get_allocator()};
+        result.modes.reserve(std::size_t(m_state.size()));
+        return result;
     }
 
 private:
+
+    /** Checks that \a state has the model's modes and that every process model's writes partition
+     * its space: the check of every constructor and of setState().
+     */
+    void
+    checkState(StateType const & state) const
+    {
+        EMRYS_FILTER_ASSERT(
+            m_recursion.model().modeSpace() == state.modeSpace() && "the model and the state have different modes"
+        );
+        internal::assertPartitions(
+            m_recursion.model(),
+            state.space(),
+            "every process model must write every coordinate of the state space once"
+        );
+    }
 
     StateType m_state;          ///< the state estimate
     RecursionType m_recursion;  ///< the model, method, and scratch the steps run with
@@ -1729,29 +1764,50 @@ template <
     typename Method = DefaultMethodFor<Model>,
     typename Allocator,
     typename ModeSpace>
-    requires(!internal::UpkeepArgument<Method>)
+    requires(!Recursion<Model> && !internal::UpkeepArgument<Method>)
 ImmFilter(Model, HybridParams<C, ModeSpace, Allocator>, Method = {}) -> ImmFilter<
     C,
     internal::BoundStep<Model, typename Params<C>::SpaceType, typename Params<C>::Scalar>,
     Method,
     Allocator>;
 
+template <Component C, typename R, typename Allocator, typename ModeSpace>
+    requires RecursionOver<R, Hybrid<C, ModeSpace, Allocator>>
+ImmFilter(R, HybridParams<C, ModeSpace, Allocator>)
+    -> ImmFilter<C, typename R::ModelType, typename R::MethodType, Allocator, R>;
+
 template <Component C, typename Model, typename Allocator, typename ModeSpace, typename U>
-    requires internal::UpkeepArgument<U>
+    requires(!Recursion<Model> && internal::UpkeepArgument<U>)
 ImmFilter(Model, HybridParams<C, ModeSpace, Allocator>, U) -> ImmFilter<
     C,
     internal::BoundStep<Model, typename Params<C>::SpaceType, typename Params<C>::Scalar>,
     DefaultMethodFor<Model>,
     Allocator,
+    ImmRecursion<
+        C,
+        internal::BoundStep<Model, typename Params<C>::SpaceType, typename Params<C>::Scalar>,
+        DefaultMethodFor<Model>,
+        Allocator>,
     U>;
 
 template <Component C, typename Model, typename Method, typename Allocator, typename ModeSpace, typename U>
+    requires(!Recursion<Model>)
 ImmFilter(Model, HybridParams<C, ModeSpace, Allocator>, Method, U) -> ImmFilter<
     C,
     internal::BoundStep<Model, typename Params<C>::SpaceType, typename Params<C>::Scalar>,
     Method,
     Allocator,
+    ImmRecursion<
+        C,
+        internal::BoundStep<Model, typename Params<C>::SpaceType, typename Params<C>::Scalar>,
+        Method,
+        Allocator>,
     U>;
+
+template <Component C, typename R, typename Allocator, typename ModeSpace, typename U>
+    requires RecursionOver<R, Hybrid<C, ModeSpace, Allocator>> && internal::UpkeepArgument<U>
+ImmFilter(R, HybridParams<C, ModeSpace, Allocator>, U)
+    -> ImmFilter<C, typename R::ModelType, typename R::MethodType, Allocator, R, U>;
 /// \endcond
 
 }  // namespace Emrys
@@ -1765,11 +1821,17 @@ namespace internal
 {
 
 /** Describes \a filter: its name, and its state nested under it. */
-template <typename Component_, typename Model_, typename Method_, typename Allocator_, typename Upkeep_>
+template <
+    typename Component_,
+    typename Model_,
+    typename Method_,
+    typename Allocator_,
+    typename Recursion_,
+    typename Upkeep_>
 void
 describe(
     std::ostream & stream,
-    ImmFilter<Component_, Model_, Method_, Allocator_, Upkeep_> const & filter,
+    ImmFilter<Component_, Model_, Method_, Allocator_, Recursion_, Upkeep_> const & filter,
     Indent indent
 )
 {

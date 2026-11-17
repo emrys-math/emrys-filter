@@ -5,6 +5,8 @@
 // filter that forgets old measurements, which the library doesn't ship. It meets the Recursion concept by its
 // interface alone, with nothing of the library's specialized, so it runs inside a KalmanFilter and on each component
 // of a MixtureFilter [filters-and-recursions], [user-extension-points]. usage.md, "Writing a recursion", shows it.
+// FadingModes does the same to each mode of a hybrid over an ImmRecursion, for tests/Filters/imm_filter.cpp, and runs
+// inside an ImmFilter.
 
 #include <EmrysFilter/Filters/Recursion.h>
 #include <EmrysFilter/Models/Measurement.h>
@@ -84,6 +86,87 @@ public:
     template <Emrys::Measurement M, typename Policy, typename Result>
     [[nodiscard]] auto
     update(StateType & state, M const & measurement, Policy const & policy, Result & result) const
+    {
+        return m_inner.update(state, measurement, policy, result);
+    }
+
+private:
+
+    Inner m_inner;
+    Scalar m_alpha;
+};
+
+// The recursion Inner over a hybrid, an ImmRecursion, with every mode's predicted covariance
+// multiplied by alpha squared: a fading-memory IMM. Its steps write the inner recursion's scratch,
+// so they are not const, and it has no resetScratch(), so a state from another allocator must not
+// replace its filter's.
+template <Emrys::Recursion Inner>
+class FadingModes
+{
+public:
+
+    using Scalar = typename Inner::Scalar;
+    using SpaceType = typename Inner::SpaceType;
+    using StateType = typename Inner::StateType;
+    using ModelType = typename Inner::ModelType;
+    using MethodType = typename Inner::MethodType;
+    static constexpr bool Reentrant = Inner::Reentrant;
+
+    FadingModes(Inner inner, Scalar alpha)
+        : m_inner{std::move(inner)}
+        , m_alpha{alpha}
+    {}
+
+    [[nodiscard]] ModelType const &
+    model() const
+    {
+        return m_inner.model();
+    }
+
+    [[nodiscard]] ModelType &
+    model()
+    {
+        return m_inner.model();
+    }
+
+    [[nodiscard]] MethodType const &
+    method() const
+    {
+        return m_inner.method();
+    }
+
+    [[nodiscard]] Scalar
+    alpha() const
+    {
+        return m_alpha;
+    }
+
+    // Mixes and predicts as the inner recursion does, then inflates each mode's covariance.
+    template <typename... Args>
+    void
+    predict(StateType & state, Args const &... args)
+    {
+        m_inner.predict(state, args...);
+        for (Eigen::Index m = 0; m < state.size(); ++m)
+        {
+            state.updateConditional(m, [&](auto & component) {
+                component.setCovariance(m_alpha * m_alpha * component.covarianceLower());
+            });
+        }
+    }
+
+    // Updates as the inner recursion does, for a measurement or a switching measurement.
+    template <typename M, typename Policy>
+    [[nodiscard]] auto
+    update(StateType & state, M const & measurement, Policy const & policy)
+    {
+        return m_inner.update(state, measurement, policy);
+    }
+
+    // The update into a result, which the inner recursion refills.
+    template <typename M, typename Policy, typename Result>
+    [[nodiscard]] auto
+    update(StateType & state, M const & measurement, Policy const & policy, Result & result)
     {
         return m_inner.update(state, measurement, policy, result);
     }

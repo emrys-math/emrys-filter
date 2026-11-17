@@ -144,9 +144,9 @@ now in the code (§4). These decisions from
   every component.
 - **[filters-and-recursions].** A filter holds a state and runs a recursion. `ImmRecursion` holds
   the switching model, the method, and the scratch the modes are mixed and updated into, and acts
-  on a hybrid passed in; `ImmFilter<Component, Model, Method, Allocator>`, a class with no
-  abbreviation behind it, owns the hybrid and runs it. Unlike `KalmanFilter` and `MixtureFilter`, it
-  takes no recursion parameter (Q18). An example that deduces a hybrid writes
+  on a hybrid passed in; `ImmFilter<Component, Model, Method, Allocator, Recursion, Upkeep>`, a
+  class with no abbreviation behind it, owns the hybrid and runs it, the `ImmRecursion` unless given
+  a recursion of the user's own, as `KalmanFilter` and `MixtureFilter` do (Q18). An example that deduces a hybrid writes
   `HybridParams{modes, initial}`, not `HybridGaussianParams{...}`, which MSVC rejects.
 - **[autonomous-multiple-model].** `AmmFilter` is the IMM on the identity chain, a derived class
   whose constructor builds that chain; the IMM's prediction skips the mixing when the chain is
@@ -169,7 +169,7 @@ now in the code (§4). These decisions from
 
 | | `KalmanFilter` | `ImmFilter` |
 |---|---|---|
-| Params | `<Component, Model, Method, Recursion, Upkeep>` | `<Component, Model, Method, Allocator, Upkeep>`, the allocator the state's; no recursion parameter (Q18) |
+| Params | `<Component, Model, Method, Recursion, Upkeep>` | `<Component, Model, Method, Allocator, Recursion, Upkeep>`, the allocator the state's, the recursion the `ImmRecursion` unless given one (Q18) |
 | Model | a process model | a `SwitchingModel`: a chain on the modes, a `ContinuousTimeMarkovChain` or with fixed-step models a `MarkovChain` (§2), and one or more process models |
 | State | a `Component`, such as `GaussianParams<Space, Scalar>` | `HybridParams<Component, ModeSpace, Allocator>`, normally a `HybridGaussianParams<Space, ModeSpace>` |
 | Recursion [filters-and-recursions] | `KalmanRecursion` | `ImmRecursion`, with scratch for every mode; not reentrant |
@@ -195,6 +195,17 @@ through the class's one guide:
 auto filter = ImmFilter{SwitchingModel{ContinuousTimeMarkovChain<Maneuver>::persistent(0.05), cv(0.01), cv(4.0)},
                         HybridParams{CategoricalParams<Maneuver>{}, initial}};
 // ImmFilter<Gaussian<State>, SwitchingModel<Maneuver, double, Maneuver, CV, CV>, Linearized, std::allocator<std::byte>>
+// as printed before Q18; the type now goes on with ImmRecursion<...> and upkeep::None (not rerun)
+```
+
+`ImmFilter{recursion, state}` deduces a recursion of the user's own instead, one that meets
+`Recursion` over the hybrid, such as one that wraps the `ImmRecursion` and changes a step (Q18;
+condensed from `UserRecursionRunsTheSteps`, whose `FadingModes` inflates each mode's predicted
+covariance):
+
+```cpp
+auto filter = ImmFilter{FadingModes{ImmRecursion<Gaussian<State>, Model>{model}, 1.1}, state};
+// ImmFilter<Gaussian<State>, Model, Linearized, std::allocator<std::byte>, FadingModes<...>>
 ```
 
 `std::cout << filter` prints "interacting multiple model filter" and the state under it
@@ -1335,13 +1346,19 @@ component. `MixtureParams::merged()` and `merge()` work on hybrids, keeping each
 > too, and in the tests for consistency? The class template's name is right ([sensors]), so the tag
 > is what gives way.~~
 
-> **Q18.** `KalmanFilter` and `MixtureFilter` take a recursion as a template parameter, before the
+> **Q18.** *Done: `ImmFilter<Component, Model, Method, Allocator, Recursion, Upkeep>`, the
+> recursion after the allocator as `MixtureFilter`'s is, and `ImmFilter{recursion, state}`
+> [filters-and-recursions]. No concept beyond `Recursion` was needed: the filter reads the mode
+> space from the model, makes `emptyUpdate()`'s result from the update's own type, and calls
+> `resetScratch()` only on a recursion that has one, as `MixtureFilter` does. `AmmFilter` runs the
+> `ImmRecursion`; a user's recursion runs as an AMM in an `ImmFilter` given the chain that never
+> moves.* ~~`KalmanFilter` and `MixtureFilter` take a recursion as a template parameter, before the
 > upkeep, and a constructor `Filter{recursion, state}` [filters-and-recursions],
 > [user-extension-points]; `ImmFilter` has neither, so a user's step over a hybrid (a fading-memory
 > IMM, say) has to be run on each component of a one-component `MixtureFilter` of hybrids. Give
 > `ImmFilter` the same parameter and constructor, so the three filters are spelled alike? It breaks
 > only code that spells the filter's template arguments out to its upkeep, and a breaking change is
-still allowed before 1.0.
+> still allowed before 1.0.~~
 
 ## Questions
 
@@ -1383,8 +1400,8 @@ still allowed before 1.0.
 17. ~~The tag `Sensor` collides with `Emrys::Sensor` under `using namespace Emrys`; this document now
     writes `SensorMode`. Rename it in the header comments and tests too (§12)?~~ *Settled by roadmap
     17z: `Emrys::Sensor` is gone, so nothing collides.*
-18. Give `ImmFilter` a recursion parameter and `ImmFilter{recursion, state}`, as `KalmanFilter` and
-    `MixtureFilter` have (§12)?
+18. ~~Give `ImmFilter` a recursion parameter and `ImmFilter{recursion, state}`, as `KalmanFilter` and
+    `MixtureFilter` have (§12)?~~ *Done [filters-and-recursions], with no concept beyond `Recursion`.*
 19. A `SwitchingMeasurement` updates an `ImmFilter`, an `AmmFilter`, and an `ImmRecursion`, but
     not a `MixtureFilter` of hybrids, nor with a block given for a point-mass filter's hybrid cells,
     as `update()` is; add both (§7)?

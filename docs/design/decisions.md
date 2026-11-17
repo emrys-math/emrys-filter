@@ -2507,12 +2507,12 @@ particles (Godsill, Doucet, and West 2004): it needs a transition density no pro
 **Rule.** A recursion is a filter without its state: the model, the method, and any scratch, acting
 in place on a state passed in. `KalmanRecursion` acts on one component, `ImmRecursion` on a
 `Hybrid`, and a component names its recursion. The filters hold a state and a recursion each:
-`KalmanFilter<Component, Model, Method, Recursion>`, `MixtureFilter<Component, Model, Method,
-Allocator, Recursion>`, and `ImmFilter`, with the prediction method in the filter's type and deduced
-from its constructor, so `predict()` is as short as the process model it drives. The recursion is
-the last parameter, the component's unless given one, and `Filter{recursion, state}` deduces it from
-any type meeting the public `Recursion` concept, so a step of the user's own runs over one state or
-over each component of a mixture [user-extension-points]. A `MixtureFilter` over hybrids is a
+`KalmanFilter<Component, Model, Method, Recursion, Upkeep>`, and `MixtureFilter` and `ImmFilter`
+with an `Allocator` before the `Recursion`, the prediction method in the type and deduced from the
+constructor, so `predict()` is as short as the process model it drives. The recursion is the last
+parameter but the upkeep, the component's unless given one, and `Filter{recursion, state}` deduces
+it from any type meeting the public `Recursion` concept, so a step of the user's own runs over one
+state or over each component of a mixture [user-extension-points]. A `MixtureFilter` over hybrids is a
 mixture of IMM filters, each component mixed, predicted, and updated as an IMM is (the Gaussian sum
 filter of Alspach and Sorenson with mode-matched components, as Pasha, Vo, Tuan, and Ma 2009 carry
 each target). A recursion that writes scratch is not reentrant, so a mixture of hybrids under a

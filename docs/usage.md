@@ -479,11 +479,12 @@ block, each with its own noise; an input renamed to a `Repeated` tag has a value
 ## Writing a recursion
 
 A filter is a state and a recursion: the process model, the prediction method, and any scratch,
-acting on a state passed in. `KalmanFilter` and `MixtureFilter` take theirs as their last template
-argument, the `KalmanRecursion` or `ImmRecursion` their component names unless given one, and
-deduce it from a recursion passed to the constructor. So a step the library doesn't ship is a type
-of your own that meets `Emrys::Recursion` (`Filters/Recursion.h`), and it runs over one Gaussian or
-over each component of a mixture with nothing in the library changed. The shortest one wraps a
+acting on a state passed in. `KalmanFilter`, `MixtureFilter`, and `ImmFilter` take theirs as a
+template argument, the last but the upkeep's: the `KalmanRecursion` or `ImmRecursion` their
+component names unless given one. Each deduces it from a recursion passed to the constructor,
+`Filter{recursion, state}`. So a step the library doesn't ship is a type of your own that meets
+`Emrys::Recursion` (`Filters/Recursion.h`), and it runs over one Gaussian, over one IMM's hybrid
+state, or over each component of a mixture with nothing in the library changed. The shortest one wraps a
 library recursion and changes one step. This one inflates every predicted covariance by $\alpha^2$,
 a fading-memory filter that forgets old measurements:
 
@@ -557,7 +558,8 @@ Gaussian component's update through the branches rather than the recursion when 
 keep several of them (one that adds to the filter's output, below), so a recursion over Gaussians
 decides the update only under a policy that returns its state, such as `Collapse` or `Select`, or a
 `Gate` over one. `tests/user_recursion.h` is this recursion, and the tests run it inside
-both filters.
+both filters; beside it, `FadingModes` wraps an `ImmRecursion` the same way, inflating each mode's
+covariance, and runs inside an `ImmFilter`.
 
 ## Writing a reduction policy
 

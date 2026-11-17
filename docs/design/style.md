@@ -56,8 +56,9 @@ the decision, and history belongs in the commit message. An open question goes i
   Factors...>`). A type that holds a distribution per element takes that component first instead,
   since it carries the space and scalar (`MixtureParams<Gaussian<State>, Allocator>`,
   `HybridParams<Gaussian<State>, Mode, Allocator>`, `KalmanFilter<Gaussian<State>, Model, Method>`,
-  `MixtureFilter<Component, Model, Method, Allocator>`), a filter's recursion comes last, defaulting
-  to the one its component names (`KalmanFilter<Gaussian<State>, Model, Method, Recursion>`), and
+  `MixtureFilter<Component, Model, Method, Allocator>`), a filter's recursion comes last but its
+  upkeep, defaulting to the one its component names (`KalmanFilter<Gaussian<State>, Model, Method,
+  Recursion, Upkeep>`), and
   an alias keeps the space-first spelling
   for Gaussian components (`GaussianMixtureParams<State, Scalar, Allocator>`,
   `GaussianMixture<State, Scalar, Allocator>`, `HybridGaussianParams<State, Mode, Scalar, Allocator>`,

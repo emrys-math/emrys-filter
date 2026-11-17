@@ -125,11 +125,9 @@ makeInitial()
 TEST(AmmFilter, IsABankOfKalmanFilters)
 {
     auto filter = AmmFilter{makeInitial(), makeModel(quiet), makeModel(agile)};
-    static_assert(std::is_base_of_v<
-                  ImmFilter<
-                      Gaussian<State>,
-                      SwitchingModel<Regime, double, Regime, decltype(makeModel(quiet)), decltype(makeModel(agile))>>,
-                  decltype(filter)>);
+    using Switching = SwitchingModel<Regime, double, Regime, decltype(makeModel(quiet)), decltype(makeModel(agile))>;
+    static_assert(std::is_base_of_v<ImmFilter<Gaussian<State>, Switching>, decltype(filter)>);
+    static_assert(std::is_same_v<decltype(filter)::RecursionType, Emrys::ImmRecursion<Gaussian<State>, Switching>>);
     EXPECT_TRUE(filter.model().chain().generator().isZero(0.0));
 
     auto const initial = makeInitial();
