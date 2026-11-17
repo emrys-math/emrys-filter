@@ -62,6 +62,7 @@ instead.
   the noise by, as the mixture's were; without them such a filter refuses the noise at compile
   time. A measurement per value of an axis is `byMode<Sensor>(when<Inlier>(nominal),
   when<Outlier>(biased))`; write it in place of `switchingMeasurement<Sensor>(nominal, biased)`.
+  It takes no weights, and only a filter whose state holds hybrids takes it.
   `SwitchingMeasurement`, `switchingMeasurement()`, `AdditiveNoise::byMode()`, and
   `ImmRecursion::SwitchingResultType` are gone; `ImmRecursion::ResultType<M>` takes the `byMode`.
 - **Breaking:** `ImmFilter` takes a recursion, as `KalmanFilter` and `MixtureFilter` do:

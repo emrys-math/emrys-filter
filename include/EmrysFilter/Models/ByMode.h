@@ -250,11 +250,13 @@ asWhen(T && part)
  * alternatives are positional, one per value in order, and their count is checked against the
  * axis's cardinality, at compile time where it is fixed.
  *
- * A filter that does not track the axis reads alternatives that carry weights,
+ * Weights are for noise by mode axis alone, <tt>additiveNoise(byMode<Sensor>(...))</tt> (see
+ * ModeNoise): a filter that does not track the axis reads alternatives that carry weights,
  * <tt>when<Inlier>(inlier).weight(0.9)</tt>, as a mixture with those weights, independent from one
  * measurement to the next (the memoryless reading); without weights it refuses them at compile time.
  * For the two readings to describe one sensor, the weights should be the chain's stationary
- * probabilities on the axis. Either every alternative has a weight or none does.
+ * probabilities on the axis. Either every alternative has a weight or none does. A byMode of
+ * process models or of measurements takes no weights, and only a filter that tracks its axis takes it.
  *
  * Alternatives nest, each reading the axis it depends on: a measurement per value of
  * <tt>SensorKind</tt> may have noise by <tt>Outlier</tt>. An axis chooses at most once along a

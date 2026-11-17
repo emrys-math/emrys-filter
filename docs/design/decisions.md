@@ -1528,29 +1528,29 @@ mixed component.
 *A part of a model that depends on the mode is `byMode<Axis>()` of alternatives labeled by value.*
 
 **Rule.** `byMode<Axis>(when<Value>(part), ...)` gives one alternative per value of a mode axis,
-in any order, each labeled by the value it serves; on a named axis, a value named twice, left out,
-or not the axis's fails to compile, and `otherwise(part)` serves the values not named. On an axis
-whose values have no names the alternatives are positional, their count checked. A filter whose
-mode space has the axis gives each mode its value's alternative, the chain giving the
-probabilities. `additiveNoise(byMode<Axis>(...))` of one `GaussianParams` type is noise by mode
-axis [imm]; a filter without the axis reads it as the mixture of the alternatives by their
-`.weight(w)`, and refuses it without weights. A `byMode` of measurements is a measurement per
-value, which every filter holding hybrids takes; `observe()` of a `byMode` of models makes one.
-Alternatives nest, each reading its own axis, and an axis chooses at most once along a nesting.
-Every mode's update has one type. The motion of a switching model is the same: a process model, or
-a `byMode` of them, without weights [switching-models].
+in any order, each labeled by its value; on a named axis, a value named twice, left out, or not
+the axis's fails to compile, and `otherwise(part)` serves the values not named. On an axis whose
+values have no names the alternatives are positional, their count checked. A filter whose mode
+space has the axis gives each mode its value's alternative, the chain giving the probabilities.
+`additiveNoise(byMode<Axis>(...))` of one `GaussianParams` type is noise by mode axis [imm]; a
+filter without the axis reads it as the mixture of the alternatives by their `.weight(w)`, and
+refuses it without weights. A `byMode` of measurements and a switching model's motion
+[switching-models] take no weights, and only a filter holding hybrids takes them. Alternatives
+nest, each reading its own axis; an axis chooses once along a nesting; a mode's update has one type.
 
 **Why.** One spelling for every part that varies by mode, where before noise and measurements each
-had their own and the two did not combine (imm-filter.md Q19, Q20). Labels make the alternatives'
-order irrelevant and let the compiler check that each value is served once. Nesting keeps each
-part at the axis it depends on, so the spelling grows with how parts depend on axes, not with how
-many axes the mode has. Weights beside their values keep one sensor model for both readings.
+had their own and did not combine (imm-filter.md Q19, Q20). Labels make the order irrelevant and
+let the compiler check that each value is served once. Nesting keeps each part at the axis it
+depends on, so the spelling grows with how parts depend on axes, not with the number of axes.
+Weights beside their values keep one sensor model for both readings.
 
 **Rejected.** A positional list on a named axis, whose order the reader must know. A map literal,
 whose values have one type and whose keys are checked at run time. `otherwise()` implied for a
-missing value, which would turn a forgotten one into a silent default. Deducing the axis from the
-tags, since a tag may name a value of two axes. A choice by the same axis inside another, which
-could take only one alternative.
+missing value, turning a forgotten one into a silent default. Deducing the axis from the tags,
+since a tag may name a value of two axes. A choice by the same axis inside another. Weighted
+measurements read as a mixture of models by a filter without the axis, and noise by mode inside a
+process model, which saves only writing a model twice: neither saves computation, and their use
+doesn't justify the branches across measurement types and the process-noise mixtures they need.
 
 **Where.** `Models/ByMode.h`, `Models/Policies.h` (`ModeNoise`), `Models/SwitchingModel.h`
 (the motion, `observe()`), `Filters/ImmFilter.h` (`forMode()`).

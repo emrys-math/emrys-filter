@@ -533,15 +533,6 @@ nesting, and every filter that holds hybrids taking them (imm-filter.md Q19, Q20
 process side: a filter over a hybrid takes the chain and the motion, `ImmFilter{chain, motion,
 prior}`, the motion a process model or a `byMode` of them. What is left:
 
-- [ ] Noise by mode inside a process model, `processNoise(byMode<Maneuver>(...))`, so that modes
-      differing only in their noise share the model's other parameters in one spelling. It saves
-      no computation: each mode transforms its own mixed component [switching-models]. Test: the
-      IMM with such a model equals the IMM with a model per mode.
-- [ ] The memoryless reading of a `byMode` of weighted measurements in a filter without the axis:
-      a Kalman filter collapses the alternatives' branches, a Gaussian mixture filter may keep them,
-      and a particle filter sums their likelihoods. Until then those filters refuse a `byMode` of
-      measurements. Test: the Kalman filter's update by it equals its update by the mixture noise
-      when the alternatives differ in noise alone.
 - [ ] Rerun imm-filter.md §7's printouts under the new spelling.
 
 Done when: every item passes its test on all three compilers.

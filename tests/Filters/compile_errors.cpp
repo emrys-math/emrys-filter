@@ -558,6 +558,19 @@ immByModeSameAxisTwice()
 }
 #endif
 
+#if defined(IMM_BY_MODE_WEIGHTED)  // static_assert: ImmFilter.h: a measurement per value of a mode axis takes no
+                                   // weight
+[[maybe_unused]] void
+immByModeWeighted()
+{
+    auto filter = makeImm();
+    auto const fix = makeFix(Emrys::methods::linearized(), makeNoise());
+    [[maybe_unused]] auto const updated = filter.update(
+        Emrys::byMode<Maneuver>(Emrys::when<Cruise>(fix).weight(0.9), Emrys::when<Turn>(fix).weight(0.1))
+    );
+}
+#endif
+
 #if defined(RB_PARTICLE_BY_MODE_UNSWITCHED)  // static_assert: RbParticleFilter.h: a measurement per value of a mode
                                              // axis
 [[maybe_unused]] void

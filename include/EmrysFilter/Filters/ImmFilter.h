@@ -295,7 +295,8 @@ using ModeResolved = typename ModeResolvedOf<std::remove_cvref_t<M>>::type;
 
 /** \returns true, after checking at compile time that the measurement \a M chooses by each mode
  * axis at most once along a nesting, the axes \a Used having chosen already: an inner choice by
- * the same axis would only ever take one alternative [by-mode]
+ * the same axis would only ever take one alternative [by-mode]; and that no choice of a
+ * measurement has weights, which no filter reads
  */
 template <typename M, typename... Used>
 consteval bool
@@ -304,6 +305,11 @@ choosesEachAxisOnce()
     if constexpr (isByModePart<M>)
     {
         using Axis = PathTag<typename M::PathType>;
+        static_assert(
+            !M::Weighted,
+            "a measurement per value of a mode axis takes no weight: the chain gives the modes' probabilities, and "
+            "only noise by mode axis is read by its weights, in a filter without the axis"
+        );
         static_assert(
             !(std::is_same_v<Axis, Used> || ...),
             "a measurement chosen by a mode axis chooses again by the same axis, which would only ever take one "
