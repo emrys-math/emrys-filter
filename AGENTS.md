@@ -42,6 +42,9 @@ header's. The library was eigen-filter until roadmap step 13, and its repository
 - `dev` is the public branch, and its history is never rewritten: no rebase, amend, or force-push
   of a commit already on it. `next` reaches `dev` by fast-forward only, and a mistake on `dev` is
   fixed by a new commit. Only the user decides to rewrite `dev`.
+- `main` points at the latest release, and moves from release to release by fast-forward along
+  `dev`, never by its own commits. It points now at the commit after the 0.1.0 tag, which adds the
+  DOI that Zenodo minted for 0.1.0.
 
 ## Build and test
 
