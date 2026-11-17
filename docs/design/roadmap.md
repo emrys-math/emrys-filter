@@ -34,6 +34,12 @@ single draws, and `ParticleSet`, `assign()`, `drawParticleSet()`, and `ParticleF
 `ParticleFilter.BuildsItsParticlesFromARangeOfDraws`, and the `DRAWS_COPIED` cases are the
 evidence. The sampled digits in particle-filter.md predate it.
 
+[sampled-inputs] records Q2, on the same branch: a particle filter's prediction draws a
+`SampledInput` once per particle. `ParticleFilter.PredictDrawsASampledInputPerParticle`,
+`ParticleFilter.ASampledInputKeepsItsShape`, `Parallel.ParticleFilterMatchesSequential`,
+`Allocation.ParticleFilterPredictsWithASampledInputFromConstructionOn`, and the
+`PREDICT_SAMPLED_INPUT` and `MEASUREMENT_SAMPLED_INPUT` cases are the evidence.
+
 Done when: the `land` checks pass, with MSVC.
 
 ## 17g. Posterior Cramér-Rao bound — in progress

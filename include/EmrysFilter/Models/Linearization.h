@@ -3,7 +3,8 @@
 /** \file
  * What a transform returns and what a measurement update reads from it (decisions.md
  * [linearization-forms], [innovation-statistics], [innovation-cholesky]): the UncertainInput concept of a
- * transform's uncertain arguments, the linearization forms JacobianForm and RootForm, OutputWithCross, the
+ * transform's uncertain arguments, the SampledInput concept of a particle filter's inputs that are not
+ * %Gaussian, the linearization forms JacobianForm and RootForm, OutputWithCross, the
  * output's %Gaussian with its linearization in the input marked by withCross(), and Innovation, an
  * observation's residual and its covariance, from which the NIS and the log-likelihood follow. Read
  * Condition.h next.
@@ -14,6 +15,7 @@
 #include <expected>
 #include <limits>
 #include <optional>
+#include <random>
 #include <type_traits>
 #include <utility>
 
@@ -49,6 +51,24 @@ concept UncertainInput = requires(T const & input) {
     input.valueDimension();
     input.differenceDimension();
 } && (requires(T const & input) { input.covarianceLower(); } || requires(T const & input) { input.root(); });
+
+/** \ingroup Models
+ * An input to a particle filter's prediction that is not %Gaussian: a distribution over a tagged
+ * space, such as a Mixture of Gaussians, a KernelDensity, a StudentT, a Gamma, a Uniform, or a
+ * Product of them, from which drawSample() draws a value of its space (decisions.md
+ * [sampled-inputs]). The particle filter draws it once per particle, as it draws an
+ * UncertainInput; the filters that carry a %Gaussian refuse it at compile time. A distribution that
+ * is an UncertainInput is not a SampledInput, so a %Gaussian is always drawn as one.
+ */
+template <typename T>
+concept SampledInput = !UncertainInput<T> && requires(T const & input, std::mt19937_64 & rng) {
+    typename T::Scalar;
+    typename T::SpaceType;
+    input.space();
+    {
+        drawSample(input, rng)
+    } -> std::convertible_to<typename Moments<typename T::SpaceType, typename T::Scalar>::VectorType>;
+};
 
 namespace internal
 {

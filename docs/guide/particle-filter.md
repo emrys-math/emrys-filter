@@ -72,7 +72,7 @@ This document covers the statistics behind them and how the particle filter uses
 
 ## Decisions so far
 
-This review decided Q1 (roadmap 17zw). Changes made elsewhere settled Q6
+This review decided Q1 (roadmap 17zw) and Q2 [sampled-inputs]. Changes made elsewhere settled Q6
 [likelihood-measurements], Q8 [allocation], and Q12. These decisions from
 [decisions.md](../design/decisions.md) are in place and should be taken as given:
 
@@ -101,6 +101,10 @@ This review decided Q1 (roadmap 17zw). Changes made elsewhere settled Q6
   draws every particle's normals before it moves any, in Sequential's order, so under `par` it is
   Sequential's bitwise; an update's likelihoods are a for-each and its evidence a reduction in fixed
   chunks, equal to Sequential's to rounding (§11).
+- **[sampled-inputs].** Beside the uncertain and the sure, a prediction takes a sampled input: a
+  distribution over a tagged space that is not Gaussian, such as a mixture's density, drawn once
+  per particle by its `drawSample()`. The Kalman-family filters, a simulation, and a measurement
+  refuse one at compile time (§3).
 - **[filters-and-recursions].** A filter holds a state and runs a recursion. The particle filter has
   the state's half (`state()`, `model()`, the steps) and no separate recursion; §15 and Q11 ask
   whether it should.
@@ -295,16 +299,34 @@ example above is the check of it here.
 
 ### Non-Gaussian process noise
 
-A particle filter's usual reason to exist is noise a Kalman filter can't carry, but both ways
-into `predict()` are Gaussian. $Q$ is a covariance. An uncertain input is drawn as
-$\mathcal{N}(\mu, \Sigma)$ from its `mean()` and `covarianceLower()`. A `GaussianMixtureParams` doesn't satisfy
-`UncertainInput` (checked: `static_assert(!UncertainInput<GaussianMixtureParams<Linear<2>>>)` holds),
-and it is not a `sure<Tag>()` input either, so `predict()` refuses it at compile time with the
-message for an argument that is neither (§10). Heavy-tailed or multimodal process noise, such as an
-occasional maneuver or a wheel slip, can't be written today except by giving the model's function
-its own generator outside the library.
+A particle filter's usual reason to exist is noise a Kalman filter can't carry. Until Q2 was
+decided, both ways into `predict()` were Gaussian: $Q$ is a covariance, and an uncertain input is
+drawn as $\mathcal{N}(\mu, \Sigma)$ from its `mean()` and `covarianceLower()`. Now a third kind of
+input, a `SampledInput`, is any distribution over a tagged space that isn't an `UncertainInput` and
+that `drawSample()` draws a value of its space from: a mixture's density, a kernel density, a
+Student-t, a gamma, a uniform, or a product of them [sampled-inputs]. The filter draws it once per
+particle into the rows of the particle's column after the noise's normals, so under a policy the
+draws still come before the loop. A Gaussian stays an uncertain input, and its draws are those it
+had. The parameters `GaussianMixtureParams` are not an input; their density is:
 
-> **Q2.** Should the particle filter draw non-Gaussian noise? Options:
+```cpp
+auto slips = GaussianMixtureParams<SpecificForce>{SpecificForce{}};
+slips.add(std::log(0.7), Eigen::Vector2d{2.0, 0.0}, 1e-4 * Eigen::Matrix2d::Identity());
+slips.add(std::log(0.3), Eigen::Vector2d{-2.0, 0.0}, 1e-4 * Eigen::Matrix2d::Identity());
+filter.predict(rng, 2.0, slips.toDensity().value());   // the particles split 70/30 into two clusters
+```
+
+`ParticleFilter.ASampledInputKeepsItsShape` checks that split from one starting state, and
+`PredictDrawsASampledInputPerParticle` that, through a model affine in the input, 40,000 particles
+have the moments of the Kalman prediction with the mixture replaced by its moments, also with a
+`sure<Tag>()` input beside it. A Kalman filter's prediction, a simulation, and a measurement refuse
+a sampled input at compile time (`PREDICT_SAMPLED_INPUT`, `MEASUREMENT_SAMPLED_INPUT`). Noise whose
+scale depends on the state is a standardized input that the function scales; only noise whose
+shape depends on the state still needs a generator of the model's own.
+
+> **Q2.** *Decided [sampled-inputs]: option 1, with no wrapper; the type says which kind an input
+> is, and a Gaussian keeps the shared normals.* ~~Should the particle filter draw non-Gaussian
+> noise? Options:
 > 1. Draw any input that `drawSamples` can draw (a Gaussian, a mixture, a kernel density, and
 >    Student-t if it gets a sampler) once per particle, rather than only `UncertainInput`s. The
 >    Kalman-family filters would still require a Gaussian. This needs a third kind of argument
@@ -316,7 +338,7 @@ its own generator outside the library.
 > Option 1 covers process noise that enters as an input, which is most of it, and keeps models free
 > of generators. Option 2 covers noise that depends on the state, but a model drawing its own noise
 > inside the moves would break [execution-policies]'s rule that the draws come before a parallel
-> loop.
+> loop.~~
 
 The generator comes first in `predict(rng, dt, inputs...)` because the inputs are a trailing
 pack; under a policy the policy comes first and the generator second. Elsewhere it comes last
@@ -785,7 +807,8 @@ or a `std::chrono` step (the time tests cover the Kalman-family filters).
 | `update()`'s result dropped | compile, warning | ignoring return value of function declared with 'nodiscard' attribute |
 | a known input as a plain `Vector2d`, not `sure<Tag>(v)` | compile | static assertion failed: an argument after the observation is an uncertain input over a tagged space, sure<Tag>(value), ... (Q15) |
 | an input that the model does not read | compile | static assertion failed: the call was given an input the model does not read ([prediction-inputs], Q15) |
-| a `GaussianMixtureParams` as an input | compile | the same assertion as a plain vector, being neither uncertain nor sure (Q15, Q2) |
+| a `GaussianMixtureParams` as an input, not its density | compile | the same assertion as a plain vector, being neither uncertain, sampled, nor sure (Q15, Q2) |
+| a mixture's density as an input to a Kalman filter's prediction | compile | static assertion failed: an input that is not Gaussian, such as a mixture's density, is drawn once per particle by a particle filter's prediction; ... ([sampled-inputs]) |
 | an empty initial set | run, debug | assertion: the initial particle set must have a particle |
 | weights all $-\infty$ through `state()` | run | debug: assertion; release: rejected, `logLikelihood` NaN (Q12) |
 | a 40-sigma outlier with Gaussian noise | never | accepted; ESS 1 (Q4) |
@@ -943,8 +966,8 @@ filter today. The Rao-Blackwellized particle filter keeps its own steps too
 
 1. ~~A `drawParticles(density, count, rng)` for the initial set (§2).~~ Decided: a lazy
    `drawSamples()`, constructors that take it, and `drawParticleSet()` (roadmap 17zw).
-2. Non-Gaussian process noise: draw any samplable input per particle, or a model's own
-   sampling policy (§3).
+2. ~~Non-Gaussian process noise: draw any samplable input per particle, or a model's own
+   sampling policy (§3).~~ Decided [sampled-inputs]: a sampled input, drawn per particle.
 3. Where the generator argument goes; [execution-policies] has made option 2 the practice (§3).
 4. A gate for the particle filter, on the evidence (§4).
 5. Return the per-particle log-likelihoods from `update()` (§4).

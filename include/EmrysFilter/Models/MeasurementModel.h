@@ -1160,6 +1160,7 @@ struct NoObservation
 enum class ArgumentKind
 {
     uncertain,  ///< an uncertain input, a distribution over a tagged space
+    sampled,    ///< a sampled input, a distribution over a tagged space that is not %Gaussian (SampledInput)
     sure,       ///< a sure input, sure<Tag>(value)
     form,       ///< a covariance update form, updates::...
     repair,     ///< a repair of the innovation covariance, roots::ridge()
@@ -1189,6 +1190,10 @@ inline constexpr ArgumentKind argumentKind = [] {
     {
         return ArgumentKind::uncertain;
     }
+    else if constexpr (SampledInput<Plain>)
+    {
+        return ArgumentKind::sampled;
+    }
     else if constexpr (isLinearizedAbout<Plain>)
     {
         return ArgumentKind::reference;
@@ -1211,8 +1216,25 @@ inline constexpr ArgumentKind argumentKind = [] {
     }
 }();
 
-/** The tag of the input argument of type \a T: the space of an uncertain or a sure input, void for
- * any other argument.
+/** Whether the argument of type \a T is drawn: an uncertain or a sampled input. */
+template <typename T>
+inline constexpr bool isDrawnArgument =
+    argumentKind<T> == ArgumentKind::uncertain || argumentKind<T> == ArgumentKind::sampled;
+
+/** Whether the arguments \a Arguments, a \c std::tuple, hold a sampled input, which only a
+ * particle filter's prediction draws (decisions.md [sampled-inputs]).
+ */
+template <typename Arguments>
+inline constexpr bool hasSampled = false;
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename... Args>
+inline constexpr bool hasSampled<std::tuple<Args...>> = ((argumentKind<Args> == ArgumentKind::sampled) || ... || false);
+
+/// \endcond
+
+/** The tag of the input argument of type \a T: the space of an uncertain, a sampled, or a sure
+ * input, void for any other argument.
  */
 template <typename T>
 struct InputTagOf
@@ -1222,7 +1244,7 @@ struct InputTagOf
 
 /// \cond INTERNAL_SPECIALIZATIONS
 template <typename T>
-    requires(argumentKind<T> == ArgumentKind::uncertain || argumentKind<T> == ArgumentKind::sure)
+    requires(isDrawnArgument<T> || argumentKind<T> == ArgumentKind::sure)
 struct InputTagOf<T>
 {
     using type =
@@ -1251,14 +1273,15 @@ checkArguments()
         "an argument after the observation is an uncertain input over a tagged space, sure<Tag>(value), a covariance "
         "update form such as updates::joseph(), a repair of the innovation covariance such as roots::ridge(), or the "
         "blocks to consider, consider(path<Bias>); after a prediction's step, an uncertain or a sure input, or a "
-        "linearizedAbout() reference first"
+        "linearizedAbout() reference first; a particle filter's prediction also draws a distribution that is not "
+        "Gaussian, such as a mixture's density"
     );
     static_assert(
         (std::size_t{argumentKind<Args> == ArgumentKind::reference} + ... + 0) <= 1,
         "give the linearizedAbout() reference once"
     );
     static_assert(
-        ((argumentKind<Args> != ArgumentKind::uncertain || !IsUntagged<InputTag<Args>>) && ...),
+        ((!isDrawnArgument<Args> || !IsUntagged<InputTag<Args>>) && ...),
         "an uncertain input is named by the tag of its space, so give it over a tag such as struct SpecificForce : "
         "Linear<3> {}"
     );

@@ -10,6 +10,7 @@
 #include <EmrysFilter/Distributions/Conditionals.h>
 #include <EmrysFilter/Distributions/Divergence.h>
 #include <EmrysFilter/Distributions/GridGaussian.h>
+#include <EmrysFilter/Distributions/Mixture.h>
 #include <EmrysFilter/Distributions/Upkeep.h>
 #include <EmrysFilter/Distributions/ParticleGaussian.h>
 #include <EmrysFilter/Distributions/ParticleSet.h>
@@ -322,6 +323,38 @@ TEST(Allocation, ParticleFilterPredictsWithAnUncertainInputFromConstructionOn)
         for (int k = 0; k < 100; ++k)
         {
             filter.predict(rng, timeStep, accelerometer);
+        }
+        heap = watch.allocations();
+    }
+    EXPECT_EQ(heap, 0) << "allocations from the global heap";
+    EXPECT_EQ(resource.allocations(), constructed) << "allocations from the resource after construction";
+}
+
+// A sampled input, a mixture's density [sampled-inputs], is drawn by its drawSample() into the
+// particle's column on the stack, so under Sequential the prediction asks neither the resource
+// nor the heap for memory either, from the first one on [allocation].
+TEST(Allocation, ParticleFilterPredictsWithASampledInputFromConstructionOn)
+{
+    auto resource = CountingResource{arenaBytes};
+    auto rng = std::mt19937_64{8};
+    auto const initial = makeInitial();
+    auto particles = ParticleSet<State, double, Pmr>{
+        Emrys::drawSamples(initial.toDensity().value(), particleCount, rng),
+        Pmr{&resource}
+    };
+    particles.setCapacity(particleCount);
+    auto filter = ParticleFilter{accelerated(), std::move(particles)};
+    auto mixture = Emrys::GaussianMixtureParams<SpecificForce>{SpecificForce{}};
+    mixture.add(std::log(0.7), Eigen::Vector2d{0.3, -0.1}, Eigen::Matrix2d{{0.2, 0.05}, {0.05, 0.1}});
+    mixture.add(std::log(0.3), Eigen::Vector2d{-0.5, 0.4}, Eigen::Matrix2d{{0.4, 0.0}, {0.0, 0.2}});
+    auto const density = mixture.toDensity().value();
+    int const constructed = resource.allocations();
+    int heap = 0;
+    {
+        auto const watch = HeapWatch{};
+        for (int k = 0; k < 100; ++k)
+        {
+            filter.predict(rng, timeStep, density);
         }
         heap = watch.allocations();
     }

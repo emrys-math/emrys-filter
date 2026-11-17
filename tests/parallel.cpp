@@ -400,6 +400,27 @@ TEST(Parallel, ParticleFilterMatchesSequential)
     fixed.predict(first, accelerometer);
     fixedInParallel.predict(std::execution::par_unseq, second, accelerometer);
     expectSame(fixedInParallel.state().states(), fixed.state().states());
+
+    // A sampled input [sampled-inputs], a mixture's density or a Student-t, is drawn into the same
+    // columns before the loop, in the order Sequential draws it, so the particles move alike.
+    auto mixture = Emrys::GaussianMixtureParams<SpecificForce>{SpecificForce{}};
+    mixture.add(std::log(0.7), Eigen::Vector2d{0.3, -0.1}, Eigen::Matrix2d{{0.2, 0.05}, {0.05, 0.1}});
+    mixture.add(std::log(0.3), Eigen::Vector2d{-0.5, 0.4}, Eigen::Matrix2d{{0.4, 0.0}, {0.0, 0.2}});
+    auto const mixtureDensity = mixture.toDensity().value();
+    auto const heavyTailed = Emrys::StudentT<SpecificForce>::create(
+                                 Eigen::Vector2d{0.3, -0.1},
+                                 Eigen::Matrix2d{{0.2, 0.05}, {0.05, 0.1}},
+                                 4.0
+    )
+                                 .value();
+    auto drawnSequentially = Emrys::ParticleFilter{model, makeParticles(manyParticles, 41)};
+    auto drawnInParallel = Emrys::ParticleFilter{model, drawnSequentially.state()};
+    sequential.predict(first, 0.5, mixtureDensity);
+    parallel.predict(std::execution::par, second, 0.5, mixtureDensity);
+    expectSame(parallel.state().states(), sequential.state().states());
+    drawnSequentially.predict(first, 0.5, heavyTailed);
+    drawnInParallel.predict(std::execution::par, second, 0.5, heavyTailed);
+    expectSame(drawnInParallel.state().states(), drawnSequentially.state().states());
 }
 
 // A batched range with a bias, an uncertain input it is affine in, weighs points by one call per

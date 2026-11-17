@@ -3596,11 +3596,28 @@ public:
 };
 
 /** \returns the process model call \a call resolved against the state space \a space (see
- * ResolvedProcess)
+ * ResolvedProcess), for a step that carries a %Gaussian, which refuses a sampled input
  */
 template <typename Space, typename Call>
 [[nodiscard]] ResolvedProcess<Call, Space>
 resolveProcess(Call const & call, Space const & space)
+{
+    static_assert(
+        !hasSampled<typename Call::ArgumentsType>,
+        "an input that is not Gaussian, such as a mixture's density, is drawn once per particle by a particle "
+        "filter's prediction; a prediction that carries a Gaussian, and a simulation, take a Gaussian or a sure input "
+        "(decisions.md [sampled-inputs])"
+    );
+    return ResolvedProcess<Call, Space>{call, space};
+}
+
+/** \returns the process model call \a call resolved against the state space \a space, for a
+ * particle filter's prediction, which draws each sampled input once per particle as it draws an
+ * uncertain one (decisions.md [sampled-inputs])
+ */
+template <typename Space, typename Call>
+[[nodiscard]] ResolvedProcess<Call, Space>
+resolveDrawnProcess(Call const & call, Space const & space)
 {
     return ResolvedProcess<Call, Space>{call, space};
 }

@@ -153,8 +153,60 @@ struct DrawnInput<Input>
     }
 };
 
-/** \returns the rows of a particle's standard normal draws that \a input takes: its difference
- * dimension if it is uncertain, and none if it is known.
+/** A sampled input to a particle filter's prediction, one that is not %Gaussian (SampledInput): an
+ * independent draw for each particle by its drawSample(), kept in rows of that particle's draws, a
+ * row per value coordinate, which the inputs take in turn (decisions.md [sampled-inputs]).
+ */
+template <SampledInput Input>
+struct DrawnInput<Input>
+{
+    using Space = typename Input::SpaceType;  ///< the input's space
+    using Scalar = typename Input::Scalar;    ///< the input's scalar type
+
+    /** Refers to \a input, and takes the draws' rows from \a row on, one per value coordinate,
+     * advancing \a row past them.
+     */
+    DrawnInput(Input const & input, Eigen::Index & row)
+        : input{input}
+        , firstRow{row}
+    {
+        row += valueDimension(input.space());
+    }
+
+    /// the rows of a particle's draws it takes at compile time, or \c Eigen::Dynamic
+    static constexpr int RowsAtCompileTime = valueDimensionAtCompileTime<Space>;
+
+    /// the bound on those rows, or \c Eigen::Dynamic
+    static constexpr int MaxRowsAtCompileTime = maxValueDimensionAtCompileTime<Space>;
+
+    Input const & input;  ///< the sampled input
+
+    Eigen::Index firstRow;  ///< the first row of a particle's draws that this input takes
+
+    /** Writes a draw of the input by \a rng into its rows of one particle's \a draws. The draw
+     * takes its numbers from \a rng by the input's own drawSample(), so \a normal is left as it is.
+     */
+    template <typename Derived, typename G, typename Normal>
+    void
+    fill(Derived && draws, G & rng, Normal & /*normal*/) const
+    {
+        using Column = typename std::remove_cvref_t<Derived>::Scalar;
+        typename Moments<Space, Scalar>::VectorType const value = drawSample(input, rng);
+        middleRowsOf<RowsAtCompileTime>(draws, firstRow, value.size()) = value.template cast<Column>();
+    }
+
+    /** \returns the draw kept in this input's rows of one particle's \a draws */
+    template <typename Derived>
+    [[nodiscard]] typename Moments<Space, Scalar>::VectorType
+    at(Eigen::MatrixBase<Derived> const & draws) const
+    {
+        return middleRowsOf<RowsAtCompileTime>(draws.derived(), firstRow, valueDimension(input.space()))
+            .template cast<Scalar>();
+    }
+};
+
+/** \returns the rows of a particle's draws that \a input takes: its difference dimension if it is
+ * uncertain, its value dimension if it is sampled, and none if it is known.
  */
 template <typename Input>
 [[nodiscard]] Eigen::Index
@@ -163,6 +215,10 @@ drawnRows([[maybe_unused]] Input const & input)
     if constexpr (UncertainInput<Input>)
     {
         return input.differenceDimension();
+    }
+    else if constexpr (SampledInput<Input>)
+    {
+        return valueDimension(input.space());
     }
     else
     {
@@ -193,14 +249,15 @@ drawnRows([[maybe_unused]] Input const & input)
  * as the proposal.
  *
  * Both steps also take an execution policy first (see \ref Execution). A prediction draws every
- * particle's standard normals before it moves any, in the order a sequential prediction draws
- * them, so the particles then move as a for-each and match Sequential's from the same generator.
+ * particle's standard normals and sampled inputs before it moves any, in the order a sequential
+ * prediction draws them, so the particles then move as a for-each and match Sequential's from the
+ * same generator.
  * The normals come from \c std::normal_distribution, so a seed fixes the run within one standard
  * library only (decisions.md [random-draws]).
  * An update's likelihoods are a for-each and its evidence a reduction.
  *
  * Under Sequential a prediction draws one particle's normals at a time, in a vector sized by the
- * noise and the uncertain inputs, so it takes no scratch, and an update's likelihoods go into
+ * noise and the inputs, so it takes no scratch, and an update's likelihoods go into
  * scratch from the state's allocator, reused across updates. On a bounded space its steps
  * therefore allocate nothing under Sequential once it has run one at a steady number of particles
  * (see \ref Allocation). Under another policy the draws go into scratch from the state's
@@ -348,11 +405,17 @@ public:
     /** Moves each particle forward by \a dt, any TimeStep (see \ref Time), through the process
      * model and adds an independent draw of the process noise \f$ Q \f$, drawn with \a rng.
      * \a inputs reach the model as in Emrys::predict(), except that each uncertain input
-     * is drawn once per particle rather than carried as a covariance. The weights are unchanged.
+     * is drawn once per particle rather than carried as a covariance, and that an input which is
+     * not %Gaussian, a SampledInput such as a mixture's density, is also taken and drawn once per
+     * particle by its drawSample() (decisions.md [sampled-inputs]). The weights are unchanged.
      *
      * \f$ Q \f$ may be singular, as for a Constant model, whose coordinates then move only as the
-     * dynamics move them. Each particle's noise is drawn before its uncertain inputs, which are
-     * drawn in order.
+     * dynamics move them. Each particle's noise is drawn before its inputs, which are drawn in the
+     * order the model reads them.
+     *
+     * \code
+     * filter.predict(rng, dt, slips.toDensity().value());   // slips: a GaussianMixtureParams<Slip>
+     * \endcode
      */
     template <std::uniform_random_bit_generator G, typename... Inputs>
         requires(!isFixedStep<Model_>)
@@ -375,7 +438,7 @@ public:
         auto const & space = m_state.space();
         Scalar_ const step = internal::toScalarTime<Scalar_>(dt);
         auto const call = internal::modelWith(std::cref(m_model), inputs...);
-        auto const resolved = internal::resolveProcess(call, space);
+        auto const resolved = internal::resolveDrawnProcess(call, space);
         std::apply(
             [&](auto const &... uncertain) {
                 if constexpr (std::remove_cvref_t<decltype(resolved)>::BatchedFunction)
@@ -429,7 +492,7 @@ public:
         internal::rejectTimeStep<Inputs...>();
         auto const & space = m_state.space();
         auto const call = internal::modelWith(std::cref(m_model.model()), inputs...);
-        auto const resolved = internal::resolveProcess(call, space);
+        auto const resolved = internal::resolveDrawnProcess(call, space);
         std::apply(
             [&](auto const &... uncertain) {
                 if constexpr (std::remove_cvref_t<decltype(resolved)>::BatchedFunction)
@@ -551,9 +614,10 @@ private:
      * It takes the factor rather than \f$ Q \f$ so that a fixed-step model's, computed once, is
      * not computed again at every step.
      *
-     * A particle's standard normals are a column with a row per difference coordinate of the noise
-     * and of each uncertain input, fixed in size where theirs are: the noise's rows, then each
-     * uncertain input's, each filled as one draw. Under Sequential each particle's column is drawn
+     * A particle's draws are a column with a row per difference coordinate of the noise and of
+     * each uncertain input, and per value coordinate of each sampled input, fixed in size where
+     * theirs are: the noise's standard normals, then each input's rows in the order the model reads
+     * them, each filled as one draw. Under Sequential each particle's column is drawn
      * on the stack and the particle moved before the next is drawn, so a prediction takes no
      * scratch. Under another policy every column is drawn first, particle by particle, into the
      * filter's scratch, reserved for the noise's rows and grown once if the inputs need more, and

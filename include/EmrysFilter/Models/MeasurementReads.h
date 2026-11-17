@@ -794,6 +794,11 @@ template <typename Space, typename M>
 [[nodiscard]] ResolvedMeasurement<M, Space>
 resolveMeasurement(M const & measurement, Space const & space)
 {
+    static_assert(
+        !hasSampled<typename M::ArgumentsType>,
+        "an input that is not Gaussian, such as a mixture's density, is drawn only by a particle filter's "
+        "prediction; a measurement takes a Gaussian or a sure input (decisions.md [sampled-inputs])"
+    );
     return ResolvedMeasurement<M, Space>{measurement, space};
 }
 

@@ -91,6 +91,7 @@ Read the index, then the decisions your change touches.
 | [measurement-space-functions](#measurement-space-functions) | A measurement model's output space may be a function of the state's space, computed once per update and passed to the function as `out` |
 | [continuous-time-noise](#continuous-time-noise) | Process noise is continuous-time, discretized exactly by each model |
 | [prediction-inputs](#prediction-inputs) | Prediction takes inputs by the tag of their space, uncertain or sure |
+| [sampled-inputs](#sampled-inputs) | A particle filter's prediction draws an input that is not Gaussian once per particle, and the Gaussian filters refuse it |
 | [model-policies](#model-policies) | A model is a function with policies given as calls, and a composition's method is given at the call |
 | [function-scalars](#function-scalars) | A function the library calls with a vector may take the vector's scalar as its one template parameter, which the call supplies |
 | [model-placement](#model-placement) | A model is placed on a block by prefixing its paths, on every repetition by onEach, and models compose side by side |
@@ -1851,6 +1852,37 @@ position lets each part of a composition read the inputs it names, whatever the 
 lets the library refuse an input nothing reads, which a positional pack passed on in silence.
 
 **Where.** `Models/ProcessModel.h`.
+
+### sampled-inputs
+
+*A particle filter's prediction draws an input that is not Gaussian once per particle, and the
+Gaussian filters refuse it.*
+
+**Rule.** A third kind of input stands beside the uncertain and the sure: a sampled input, a
+distribution over a tagged space that is not an `UncertainInput` and from which `drawSample()`
+draws a value of its space (`SampledInput`), such as a mixture's density, a kernel density, a
+Student-t, or a product of them. It is matched to `reads()` by its tag [prediction-inputs] and
+needs no wrapper. A particle filter's prediction draws it once per particle by its own
+`drawSample()`, into rows of the particle's column of draws after the noise's and the uncertain
+inputs' normals, so under a policy the columns are drawn before the loop in the order Sequential
+draws them and the particles move alike [execution-policies]. A Gaussian stays an uncertain input,
+drawn from the shared normals, so its draws are those it had before. Every other use of a model
+refuses a sampled input at compile time: a prediction that carries a Gaussian, a simulation, a
+bound, and any measurement. Process noise of the model's own stays Gaussian; noise that is not
+Gaussian enters as an input, which the function may scale by the state.
+
+**Why.** A particle filter's reason to exist is noise a Kalman filter can't carry, such as an
+occasional maneuver or a wheel slip, and most process noise enters as an input. A model that drew
+its own noise inside the moves would put a generator in the parallel loop, and a sampled input
+whose shape, not only its scale, depends on the state is rare.
+
+**Rejected.** A sampling policy on the process model, used by the sample-based filters in place of
+$Q$: it draws inside the moves. Drawing every input by `drawSample()`: a Gaussian would lose the
+spare normal its draws now share, and every draw from a seed would change. A wrapper such as
+`drawn<Tag>(density)`: the type already says which kind an input is.
+
+**Where.** `Models/Linearization.h` (`SampledInput`), `Models/MeasurementModel.h`,
+`Filters/ParticleFilter.h`; particle-filter.md Q2.
 
 ### model-policies
 

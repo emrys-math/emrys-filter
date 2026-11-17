@@ -107,6 +107,10 @@ instead.
   the axes cannot take the root of the blocks the measurement reads; it was a compile error. A
   transform or prediction still refuses such axes, and so does an update whose model's `affineIn()`
   names some of the blocks read.
+- A particle filter's prediction draws an input that is not Gaussian, such as a mixture's density,
+  a kernel density, or a Student-t over a tagged space, once per particle:
+  `filter.predict(rng, dt, mixture.toDensity().value())`. The concept `SampledInput` names such an
+  input; a Kalman-family prediction, a simulation, and a measurement refuse one at compile time.
 - `ParticleSet{drawSamples(prior, count, rng), allocator}` and `ParticleFilter{model,
   drawSamples(prior, count, rng)}` build the particles from the draws, read straight into the
   set's own storage, which on a bounded space allocates nothing outside the set's allocator;

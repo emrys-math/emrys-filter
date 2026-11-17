@@ -741,12 +741,15 @@ protected:
         "the call was given an input the model does not read"
     );
 
-    /** \returns whether argument \a j is an uncertain input; false for ArgumentCount, no argument */
+    /** \returns whether argument \a j is an uncertain input, or a sampled one, which a particle
+     * filter draws as it draws an uncertain one (decisions.md [sampled-inputs]); false for
+     * ArgumentCount, no argument
+     */
     [[nodiscard]] static consteval bool
     uncertainArgument(std::size_t j)
     {
         return []<std::size_t... J>(std::size_t argument, std::index_sequence<J...>) {
-            return ((J == argument && argumentKind<Argument<J>> == ArgumentKind::uncertain) || ... || false);
+            return ((J == argument && isDrawnArgument<Argument<J>>) || ... || false);
         }(j, std::make_index_sequence<ArgumentCount>{});
     }
 

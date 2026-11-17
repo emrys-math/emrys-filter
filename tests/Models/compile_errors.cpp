@@ -1810,6 +1810,35 @@ scalarOf(auto... policies)
 ));
 #endif
 
+// An input that is not Gaussian is drawn only by a particle filter's prediction [sampled-inputs]: a
+// prediction that carries a Gaussian, and a measurement, refuse it.
+
+#if defined(PREDICT_SAMPLED_INPUT)  // static_assert: ProcessModel.h: an input that is not Gaussian, such as a mixture's
+[[maybe_unused]] void
+predictsASampledInput()
+{
+    auto force = Emrys::GaussianMixtureParams<Force>{Force{}};
+    force.add(0.0, Eigen::Vector2d::Zero(), Eigen::Matrix2d::Identity());
+    auto const density = force.toDensity().value();
+    [[maybe_unused]] auto const predicted =
+        Emrys::predict(Emrys::methods::linearized(), makeInitial(), pushed(), 1.0, density);
+}
+#endif
+
+#if defined(MEASUREMENT_SAMPLED_INPUT)  // static_assert: MeasurementReads.h: an input that is not Gaussian, such as a
+[[maybe_unused]] void
+observesASampledInput()
+{
+    auto offset = Emrys::GaussianMixtureParams<Offset>{Offset{}};
+    offset.add(0.0, Eigen::Vector2d::Zero(), Eigen::Matrix2d::Identity());
+    auto const density = offset.toDensity().value();
+    [[maybe_unused]] auto const updated = Emrys::update(
+        makeInitial(),
+        Emrys::observe(Emrys::methods::linearized(), makeOffsetModel(), Eigen::Vector2d::Zero(), density)
+    );
+}
+#endif
+
 #if defined(EACH_PARTIAL_WRITES)  // static_assert: Placement.h: onEach<Path>(model) places a model that writes every
 [[maybe_unused]] auto const model = Emrys::onEach<Fleet>(Emrys::RandomWalk<Position>{0.1});
 #endif

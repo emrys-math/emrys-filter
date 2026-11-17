@@ -1,11 +1,11 @@
 // ParticleFilter (steps 7, 9a, 13d, 17zw; [upkeep], [fixed-step-models], [likelihood-measurements],
-// [lazy-draws]): point-wise log-likelihoods match the likelihood, deduction and accessors, a filter
-// built from a range of draws, prediction matches the Kalman prediction in
-// distribution, a fixed-step model moves the particles as the step does, a noiseless block moves only by its
-// dynamics, periodic coordinates wrap, an update multiplies each weight by its likelihood and rejects what no particle
-// can explain, a measurement known only by its likelihood, or one that supplies its own, is weighted by that
-// likelihood, the filter matches KalmanFilter on a linear problem, mixture noise rides out injected outliers, and an
-// ambiguity is carried until resolved.
+// [lazy-draws], [sampled-inputs]): point-wise log-likelihoods match the likelihood, deduction and
+// accessors, a filter built from a range of draws, prediction matches the Kalman prediction in
+// distribution, a sampled input is drawn per particle and keeps its shape, a fixed-step model moves the particles as
+// the step does, a noiseless block moves only by its dynamics, periodic coordinates wrap, an update multiplies each
+// weight by its likelihood and rejects what no particle can explain, a measurement known only by its likelihood, or one
+// that supplies its own, is weighted by that likelihood, the filter matches KalmanFilter on a linear problem, mixture
+// noise rides out injected outliers, and an ambiguity is carried until resolved.
 
 #include <EmrysFilter/Distributions/Gaussian.h>
 #include <EmrysFilter/Distributions/Mixture.h>
@@ -358,6 +358,92 @@ TEST(ParticleFilter, PredictMatchesTheKalmanPredictionInDistribution)
 
     auto const expected = Emrys::predict(methods::linearized(), makeInitial(), model, 2.0, accelerometer);
     expectMomentsNear(weightedMoments(filter.state()), expected.mean(), expected.covarianceLower(), double(count), 5.0);
+}
+
+namespace
+{
+
+// A two-component mixture over the specific force, with weights 0.7 and 0.3.
+GaussianMixtureParams<SpecificForce>
+makeForceMixture(Eigen::Vector2d const & first, Eigen::Vector2d const & second, double spread)
+{
+    auto mixture = GaussianMixtureParams<SpecificForce>{SpecificForce{}};
+    mixture.add(std::log(0.7), first, spread * Eigen::Matrix2d{{1.0, 0.2}, {0.2, 0.5}});
+    mixture.add(std::log(0.3), second, spread * Eigen::Matrix2d{{2.0, 0.0}, {0.0, 1.0}});
+    return mixture;
+}
+
+}  // namespace
+
+// A sampled input [sampled-inputs], a mixture's density, is drawn once per particle: through a model
+// affine in the input, 40,000 particles have the moments of the Kalman prediction with the input
+// replaced by the mixture's moments, to five standard errors, and a sure input may stand beside it.
+TEST(ParticleFilter, PredictDrawsASampledInputPerParticle)
+{
+    static_assert(Emrys::SampledInput<Emrys::GaussianMixture<SpecificForce>>);
+    static_assert(!Emrys::SampledInput<GaussianParams<SpecificForce>>);
+    static_assert(!Emrys::SampledInput<GaussianMixtureParams<SpecificForce>>);
+    constexpr Eigen::Index count = 40000;
+    auto const mixture = makeForceMixture(Eigen::Vector2d{0.5, -0.2}, Eigen::Vector2d{-0.4, 0.3}, 0.1);
+    auto const density = mixture.toDensity().value();
+    auto const matched = density.collapsed();
+    auto const model = accelerometerDriven<Position, Velocity>();
+    auto rng = std::mt19937_64{13};
+    auto filter = ParticleFilter{model, drawParticles(makeInitial(), count, rng)};
+    filter.predict(rng, 2.0, density);
+
+    auto const expected = Emrys::predict(methods::linearized(), makeInitial(), model, 2.0, matched);
+    expectMomentsNear(weightedMoments(filter.state()), expected.mean(), expected.covarianceLower(), double(count), 5.0);
+
+    struct Wind : Linear<2>
+    {};
+
+    auto const windBlown = Emrys::processModel(
+        []<typename T>(auto const & in, auto const & out, auto const & x, double dt) {
+            auto y = Emrys::zeros<T>(out);
+            Eigen::Matrix<T, 2, 1> const a = Emrys::block<SpecificForce>(in, x);
+            Eigen::Matrix<T, 2, 1> const w = Emrys::block<Wind>(in, x);
+            Emrys::block<Position>(out, y) =
+                Emrys::block<Position>(in, x) + T(dt) * (Emrys::block<Velocity>(in, x) + w);
+            Emrys::block<Velocity>(out, y) = Emrys::block<Velocity>(in, x) + T(dt) * a;
+            return y;
+        },
+        Emrys::reads(Emrys::path<Position>, Emrys::path<Velocity>, Emrys::path<SpecificForce>, Emrys::path<Wind>),
+        Emrys::writes(Emrys::path<Position>, Emrys::path<Velocity>)
+    );
+    auto const wind = Eigen::Vector2d{0.25, -0.5};
+    auto blown = ParticleFilter{windBlown, drawParticles(makeInitial(), count, rng)};
+    blown.predict(rng, 1.0, density, Emrys::sure<Wind>(wind));
+    auto const expectedBlown =
+        Emrys::predict(methods::linearized(), makeInitial(), windBlown, 1.0, matched, Emrys::sure<Wind>(wind));
+    expectMomentsNear(
+        weightedMoments(blown.state()),
+        expectedBlown.mean(),
+        expectedBlown.covarianceLower(),
+        double(count),
+        5.0
+    );
+}
+
+// A mixture input with two well-separated, narrow components splits particles that start at one
+// state into two clusters, in the proportions of the weights: the draws are the mixture's, not a
+// Gaussian with its moments.
+TEST(ParticleFilter, ASampledInputKeepsItsShape)
+{
+    constexpr Eigen::Index count = 20000;
+    auto const mixture = makeForceMixture(Eigen::Vector2d{2.0, 0.0}, Eigen::Vector2d{-2.0, 0.0}, 1e-4);
+    auto const density = mixture.toDensity().value();
+    auto const start = GaussianParams<State>{State{}, Vector4{0.0, 0.0, 1.0, 0.5}, Matrix4{1e-8 * Matrix4::Identity()}};
+    auto rng = std::mt19937_64{37};
+    auto filter = ParticleFilter{accelerometerDriven<Position, Velocity>(), drawParticles(start, count, rng)};
+    filter.predict(rng, 2.0, density);
+
+    // The first velocity is 1 + 2a: near 5 from the first component and near -3 from the second,
+    // spread by the model's own velocity noise, of standard deviation 0.32.
+    auto const velocity = filter.state().states().row(2).array();
+    double const fromFirst = double((velocity > 1.0).count()) / double(count);
+    EXPECT_NEAR(fromFirst, 0.7, 5.0 * std::sqrt(0.7 * 0.3 / double(count)));
+    EXPECT_EQ(((velocity - 1.0).abs() < 2.0).count(), 0) << "no particle lies between the clusters";
 }
 
 // With a FixedStepModel [fixed-step-models], from the same particles, input, and seed, the filter moves every
