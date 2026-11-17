@@ -1,11 +1,15 @@
 name: CI
 
-# Runs only when dispatched, and only the jobs ticked: the test suite is thorough and costs hours of
-# runner time per full run, so each job is chosen by hand for the change at hand. Every input
-# defaults to off. From the command line:
+# Runs on a pull request to dev, the `pr` stage of [check-stages], with the jobs that
+# `tools/required_checks.py pr --ci-inputs` names for the pull request's change, and when
+# dispatched, with the jobs ticked. A full run costs hours of runner time, so no run takes a job
+# the change doesn't need, and the jobs only a release needs, the `ci` stage, are dispatched by
+# hand. Every input defaults to off. From the command line:
 #
 #   gh workflow run CI --ref next -f clang=true -f format=true
 on:
+  pull_request:
+    branches: [dev]
   workflow_dispatch:
     inputs:
       gcc:
@@ -76,10 +80,44 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request's branch cancels the run of the one before.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
 env:
   LLVM_VERSION: 21
 
 jobs:
+  # The jobs to run, as a JSON object with one boolean per input: the inputs ticked when
+  # dispatched, and on a pull request the checks required at `pr` for its change from the base.
+  plan:
+    name: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 0
+
+      - name: Choose the jobs
+        id: plan
+        env:
+          INPUTS: ${{ toJSON(inputs) }}
+          BASE: origin/${{ github.base_ref }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            python3 tools/required_checks.py pr --base "$BASE" | tee -a "$GITHUB_STEP_SUMMARY"
+            run=$(python3 tools/required_checks.py pr --base "$BASE" --ci-inputs)
+          else
+            run=$(echo "$INPUTS" | tr -d '\n')
+          fi
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+          echo "$run"
+
   # Each job runs the same workflow preset as a local build. The presets name the compilers
   # `g++` and `clang++`, so the Linux jobs put the wanted versions first on PATH under those names.
   # `clang-sanitize` runs the tests under AddressSanitizer and UndefinedBehaviorSanitizer, which
@@ -97,9 +135,11 @@ jobs:
   # worked out from the job's name, since an `include` entry would bring an excluded job back.
   linux:
     name: ${{ matrix.job }} (Linux)
+    needs: plan
     if: >-
-      inputs.gcc || inputs.clang || inputs.clang_sanitize || inputs.gcc_no_exceptions
-      || inputs.clang_libcxx || inputs.gcc_arm64
+      fromJSON(needs.plan.outputs.run).gcc || fromJSON(needs.plan.outputs.run).clang
+      || fromJSON(needs.plan.outputs.run).clang_sanitize || fromJSON(needs.plan.outputs.run).gcc_no_exceptions
+      || fromJSON(needs.plan.outputs.run).clang_libcxx || fromJSON(needs.plan.outputs.run).gcc_arm64
     runs-on: ${{ matrix.job == 'gcc-arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 120
     strategy:
@@ -108,14 +148,14 @@ jobs:
         job: [gcc, gcc-compile-errors, clang, clang-compile-errors, clang-sanitize, gcc-no-exceptions,
               clang-libcxx, gcc-arm64]
         exclude:
-          - job: ${{ !inputs.gcc && 'gcc' || '' }}
-          - job: ${{ !inputs.gcc && 'gcc-compile-errors' || '' }}
-          - job: ${{ !inputs.clang && 'clang' || '' }}
-          - job: ${{ !inputs.clang && 'clang-compile-errors' || '' }}
-          - job: ${{ !inputs.clang_sanitize && 'clang-sanitize' || '' }}
-          - job: ${{ !inputs.gcc_no_exceptions && 'gcc-no-exceptions' || '' }}
-          - job: ${{ !inputs.clang_libcxx && 'clang-libcxx' || '' }}
-          - job: ${{ !inputs.gcc_arm64 && 'gcc-arm64' || '' }}
+          - job: ${{ !fromJSON(needs.plan.outputs.run).gcc && 'gcc' || '' }}
+          - job: ${{ !fromJSON(needs.plan.outputs.run).gcc && 'gcc-compile-errors' || '' }}
+          - job: ${{ !fromJSON(needs.plan.outputs.run).clang && 'clang' || '' }}
+          - job: ${{ !fromJSON(needs.plan.outputs.run).clang && 'clang-compile-errors' || '' }}
+          - job: ${{ !fromJSON(needs.plan.outputs.run).clang_sanitize && 'clang-sanitize' || '' }}
+          - job: ${{ !fromJSON(needs.plan.outputs.run).gcc_no_exceptions && 'gcc-no-exceptions' || '' }}
+          - job: ${{ !fromJSON(needs.plan.outputs.run).clang_libcxx && 'clang-libcxx' || '' }}
+          - job: ${{ !fromJSON(needs.plan.outputs.run).gcc_arm64 && 'gcc-arm64' || '' }}
     env:
       # Two heavy template translation units at a time fit in the runner's memory.
       CMAKE_BUILD_PARALLEL_LEVEL: 2
@@ -156,7 +196,8 @@ jobs:
   # summary, and writes the regions not executed and the annotated sources, kept as an artifact.
   coverage:
     name: coverage (Linux)
-    if: inputs.coverage
+    needs: plan
+    if: fromJSON(needs.plan.outputs.run).coverage
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     env:
@@ -208,7 +249,8 @@ jobs:
   # Apple Clang and libc++ on an Arm Mac, the compiler and library a macOS or iOS user builds with.
   macos:
     name: apple-clang (macOS)
-    if: inputs.macos
+    needs: plan
+    if: fromJSON(needs.plan.outputs.run).macos
     runs-on: macos-26
     timeout-minutes: 120
     env:
@@ -230,7 +272,8 @@ jobs:
   # the Arm GNU toolchain 14 and QEMU 10 as packages; 24.04's toolchain is GCC 13, below the floor.
   cortex-m:
     name: cortex-m (QEMU)
-    if: inputs.cortex_m
+    needs: plan
+    if: fromJSON(needs.plan.outputs.run).cortex_m
     runs-on: ubuntu-24.04
     container: ubuntu:26.04
     timeout-minutes: 60
@@ -263,7 +306,8 @@ jobs:
   # the job names the processor it ran on.
   msvc:
     name: ${{ matrix.preset }} (Windows)
-    if: inputs.msvc
+    needs: plan
+    if: fromJSON(needs.plan.outputs.run).msvc
     runs-on: windows-2025-vs2026
     timeout-minutes: 120
     strategy:
@@ -289,7 +333,8 @@ jobs:
 
   docs:
     name: docs (Doxygen)
-    if: inputs.docs
+    needs: plan
+    if: fromJSON(needs.plan.outputs.run).docs
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -322,7 +367,8 @@ jobs:
   # port, which checks its SHA512.
   vcpkg:
     name: vcpkg (Linux)
-    if: inputs.vcpkg
+    needs: plan
+    if: fromJSON(needs.plan.outputs.run).vcpkg
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -365,7 +411,8 @@ jobs:
   # checks the archive's sha256.
   conan:
     name: conan ${{ matrix.compiler }} (Linux)
-    if: inputs.conan
+    needs: plan
+    if: fromJSON(needs.plan.outputs.run).conan
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -417,7 +464,8 @@ jobs:
 
   layers:
     name: header layers
-    if: inputs.layers
+    needs: plan
+    if: fromJSON(needs.plan.outputs.run).layers
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -434,7 +482,8 @@ jobs:
 
   format:
     name: clang-format
-    if: inputs.format
+    needs: plan
+    if: fromJSON(needs.plan.outputs.run).format
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -455,7 +504,8 @@ jobs:
   # among four jobs, which a full run divides about evenly.
   clang-tidy:
     name: clang-tidy ${{ matrix.shard }}/4 (Linux)
-    if: inputs.clang_tidy
+    needs: plan
+    if: fromJSON(needs.plan.outputs.run).clang_tidy
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     strategy:

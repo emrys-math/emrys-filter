@@ -69,8 +69,8 @@ the ones a change needs, with their commands:
 - **`pr`**, before `next` goes to `dev`: GCC, MSVC, the negative compile tests with each of Clang,
   GCC, and MSVC (the `<compiler>-compile-errors` workflows, which compile again only the cases
   whose file's object was rebuilt), the Doxygen build and the policy check over its XML,
-  `clang-sanitize` in WSL, and coverage, one at a time, and the CI jobs the script names,
-  dispatched when the user agrees.
+  `clang-sanitize` in WSL, and coverage, one at a time. The pull request then runs in CI every job
+  the script names at `pr`, the CI-only ones included, and it is merged only when they pass.
 - **`ci`**, before a release: every CI job.
 
 A change that needs no compiling, such as documentation or instructions, needs only the checks the
@@ -94,10 +94,11 @@ clang-tidy through every test, example, and benchmark, `tools/clang_tidy.py` ove
 clang-format check, a header-layer check, a check that each claimed compile error has a negative
 test (`tools/check_compile_errors.py`), and a Doxygen build that fails on any warning, followed by a
 check over its XML that each policy namespace holds only its kind (`tools/check_policies.py`). The tests, examples, and benchmarks build with warnings as errors
-(`EMRYS_FILTER_WARNINGS_AS_ERRORS`). CI runs only when dispatched by hand, and only the jobs
-ticked, since a full run takes hours to finish: nothing runs on a push or a pull request, so
-run the local checks above, and dispatch a job only when the user asks for it
-(`gh workflow run CI --ref next -f gcc=true -f docs=true`). The Linux jobs but `clang-libcxx`
+(`EMRYS_FILTER_WARNINGS_AS_ERRORS`). A full CI run takes hours, so no run takes a
+job the change doesn't need: a pull request to `dev` runs the jobs that
+`python tools/required_checks.py pr --ci-inputs` names for its change, and nothing runs on a push.
+Run the local checks above first, and dispatch a job by hand only when the user asks for it
+(`gh workflow run CI --ref next -f gcc=true -f docs=true`), as for the `ci` stage before a release. The Linux jobs but `clang-libcxx`
 install TBB, so libstdc++ runs `std::execution::par` on threads; without TBB it runs on one
 thread. The examples build with the tests and run as ctest
 tests named `example.<name>`, each failing when its filter's consistency check fails;

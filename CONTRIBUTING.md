@@ -38,8 +38,9 @@ tests it needs is not merged.
 
 Build and test with `cmake --workflow --preset clang` (or `gcc`, or `msvc` from an x64 Visual
 Studio developer environment, since every preset uses Ninja); CI runs all three,
-clang-format, a header-layer check, and a Doxygen build that fails on any warning, when a
-maintainer dispatches it, so run them locally before opening a pull request. Before each release,
+clang-format, a header-layer check, and a Doxygen build that fails on any warning, on each pull
+request, choosing the jobs your change needs with `python tools/required_checks.py pr`. Run them
+locally before opening a pull request, since the full suite takes CI hours. Before each release,
 clang-tidy analyzes the headers with the checks in `.clang-tidy`
 (`python tools/clang_tidy.py build/clang`), and a finding is fixed or suppressed at its line with
 the reason. The

@@ -1,7 +1,8 @@
 """Lists the checks a change needs at a stage of its way to a release (decisions.md [check-stages]).
 
 The stages are `land`, before work goes onto `next`, and `pr`, before `next` goes to `dev` in a pull
-request; the CI jobs not run here run at `ci`, when the user dispatches them. A check is required
+request, where CI runs the jobs that `--ci-inputs` names; the CI jobs not run then run at `ci`,
+when the user dispatches them. A check is required
 at its own stage and every later one when the change touches anything it tests, and at an earlier
 stage when the change touches something only it tests: a deduction guide brings MSVC to `land`, a
 claimed compile error Clang's negative compile tests, and a `throw` the build without exceptions to
@@ -12,9 +13,11 @@ its reason, and its command, then the checks a later stage adds.
     python tools/required_checks.py land        # against next
     python tools/required_checks.py pr          # against origin/dev
     python tools/required_checks.py pr --base <branch>
+    python tools/required_checks.py pr --base origin/dev --ci-inputs   # what a pull request runs in CI
 """
 import argparse
 import dataclasses
+import json
 import pathlib
 import re
 import subprocess
@@ -116,6 +119,32 @@ CHECKS = [
                    line=r'\balignas\b|EIGEN_(MAX_)?(STATIC_)?ALIGN|__aarch64__|__ARM_NEON|reinterpret_cast')]),
 ]
 
+# The inputs of the CI workflow (.github/workflows/ci.yml) that run each check. A pull request to
+# `dev` ticks those of the checks required at `pr`.
+CI_INPUTS = {
+    'clang-format': ['format'],
+    'layers': ['layers'],
+    'decisions': ['layers'],
+    'compile-error claims': ['layers'],
+    'clang': ['clang'],
+    'clang compile errors': ['clang'],
+    'msvc': ['msvc'],
+    'msvc compile errors': ['msvc'],
+    'gcc': ['gcc'],
+    'gcc compile errors': ['gcc'],
+    'doxygen': ['docs'],
+    'policies': ['docs'],
+    'clang-sanitize': ['clang_sanitize'],
+    'coverage': ['coverage'],
+    'clang-tidy': ['clang_tidy'],
+    'gcc-no-exceptions': ['gcc_no_exceptions'],
+    'clang-libcxx': ['clang_libcxx', 'macos'],
+    'cortex-m': ['cortex_m'],
+    'vcpkg': ['vcpkg'],
+    'conan': ['conan'],
+    'gcc-arm64': ['gcc_arm64'],
+}
+
 
 def git(*arguments):
     return subprocess.run(['git', *arguments], cwd=ROOT, capture_output=True, encoding='utf-8',
@@ -167,8 +196,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('stage', choices=STAGES[:2])
     parser.add_argument('--base', help='the branch to compare with (default: next for land, origin/dev for pr)')
+    parser.add_argument('--ci-inputs', action='store_true',
+                        help='print the CI inputs that run the required checks, as one line of JSON')
     arguments = parser.parse_args()
     paths = change(arguments.base or BASES[arguments.stage])
+    if arguments.ci_inputs:
+        ticked = {name for check in CHECKS if paths and reason(check, arguments.stage, paths)
+                  for name in CI_INPUTS[check.name]}
+        print(json.dumps({name: name in ticked for names in CI_INPUTS.values() for name in names}))
+        return 0
     if not paths:
         print('No change.')
         return 0
