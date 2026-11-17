@@ -525,12 +525,40 @@ The distributed-fusion operations that are pure functions of the library's types
 
 Done when: the above pass on all three compilers, with the consensus step's parallel case.
 
+## 17zs. One spelling for what depends on the mode — in progress
+
+A part of a model that depends on the mode is `byMode<Axis>(when<Value>(part), ...)` [by-mode].
+The measurement side is built: noise by mode axis, a measurement per value of an axis, their
+nesting, and every filter that holds hybrids taking them (imm-filter.md Q19, Q20). What is left:
+
+- [ ] The process side: the chain apart from the models, and the models per value as
+      `byMode<Maneuver>(when<Cruise>(cv), when<Turn>(ct))`, replacing `SwitchingModel`'s positional
+      models and `switchingModel<Path>()`, with a model shared by every mode where no `byMode` is
+      given. Decide first, in imm-filter.md, how a filter takes the chain and the models:
+      `ImmFilter{chain, motion, prior}`, or a pair that holds both. It breaks every spelling of a
+      switching model, so it goes before the launch. Test: the IMM, AMM, mixture-of-IMMs,
+      Rao-Blackwellized, and smoother tests spelled the new way, and a nested `byMode` of motion
+      over two axes matching a hand IMM.
+- [ ] Noise by mode inside a process model, `processNoise(byMode<Maneuver>(...))`, so that modes
+      differing only in their noise share the model's other parameters in one spelling. It saves
+      no computation: each mode transforms its own mixed component [switching-models]. Test: the
+      IMM with such a model equals the IMM with a model per mode.
+- [ ] The memoryless reading of a `byMode` of weighted measurements in a filter without the axis:
+      a Kalman filter collapses the alternatives' branches, a Gaussian mixture filter may keep them,
+      and a particle filter sums their likelihoods. Until then those filters refuse a `byMode` of
+      measurements. Test: the Kalman filter's update by it equals its update by the mixture noise
+      when the alternatives differ in noise alone.
+- [ ] Rerun imm-filter.md §7's printouts under the new spelling.
+
+Done when: every item passes its test on all three compilers, and no spelling of a switching model
+by position remains.
+
 ## 17za. Mixture arguments of a model — not started
 
 A mixture as an uncertain argument of `predict()` or `observe()` [prediction-inputs], in stages after
 the first, which exists (additive mixture noise, [additive-noise]): a mixture through the function;
-then several mixtures each naming a mode axis, as `byMode<Axis>()` names one for additive noise
-(imm-filter.md Q10); then several memoryless mixtures.
+then several mixtures each naming a mode axis, as `additiveNoise(byMode<Axis>(...))` names one for
+additive noise (imm-filter.md Q10); then several memoryless mixtures.
 The Kalman filter refuses a mixture argument, and the mixture filters take it, with a branch per
 component. Each stage is an addition; the first two change no spelling.
 

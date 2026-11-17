@@ -46,6 +46,15 @@ describe the code before that decision. §7 also gained a measurement per value 
 `switchingMeasurement<Path>()` (roadmap 17ze), with Q19 and Q20; its snippet is condensed from the
 tests.
 
+Q19 and Q20 were decided on 2026-11-16 by one spelling for every part of a model that depends on the
+mode [by-mode]: `byMode<Axis>(when<Value>(part), ...)`, its alternatives labeled by the value they
+serve, in any order. Noise by mode axis is `additiveNoise(byMode<Axis>(when<Value>(gaussian), ...))`,
+replacing `additiveNoise(mixture).byMode<Axis>()`, and a measurement per value of an axis is a
+`byMode` of measurements, replacing `switchingMeasurement<Path>()`; they nest, so a measurement
+chosen by one axis may have noise by another (Q20), and every filter that holds hybrids takes both
+(Q19). §7's code spells the new forms, and its printed numbers, from the same arithmetic, were not
+rerun. Elsewhere this document's mentions of the old forms describe the code before that decision.
+
 Q1 has since been decided: a `SwitchingModel` whose models are stepped by `predict(dt)` takes a
 `ContinuousTimeMarkovChain`, and a `MarkovChain` with them doesn't compile (§2). The examples that
 built such a model on a `MarkovChain` now give it the rates that the old chain's off-diagonal
@@ -129,11 +138,15 @@ now in the code (§4). These decisions from
   `GaussianMixtureParams` stays unlabeled. `SwitchingModel` assigns models one per mode, one per
   value of a mode axis, or one for all. The filter is spelled like `KalmanFilter`, its
   policy must keep one component, a rejected mode keeps its prior component with probability
-  zero, and noise by mode axis, `additiveNoise(mixture).byMode<Axis>()`, makes the noise components
-  the values of a mode axis where the mode space has it, the memoryless mixture where the state has
-  no mode space, and a compile-time error where the mode space lacks it (Q10). A
-  `SwitchingMeasurement` holds a measurement per value of a mode axis, and `update()` updates each
-  mode by the one its value selects (§7).
+  zero, and noise by mode axis, `additiveNoise(byMode<Axis>(when<Value>(gaussian), ...))`, gives
+  each value of a mode axis its %Gaussian where the mode space has the axis, the memoryless mixture
+  by the alternatives' weights where the state has no mode space, and a compile-time error where
+  the mode space lacks it (Q10). A `byMode` of measurements is a measurement per value of a mode
+  axis, and `update()` updates each mode by the one its value selects (§7).
+- **[by-mode].** A part of a model that depends on the mode is `byMode<Axis>(when<Value>(part),
+  ...)`: alternatives labeled by value, in any order, each value served once, `otherwise()` only
+  when written, and `.weight()` for a filter without the axis. Alternatives nest, each reading its
+  own axis, and an axis chooses once along a nesting (Q19, Q20).
 - **[component-first].** `HybridParams<Component, ModeSpace, Allocator>` takes the distribution it
   holds per mode first; `HybridGaussianParams<Space, ModeSpace, Scalar, Allocator>` is its alias for
   Gaussians and the spelling for the common case. A hybrid is itself a `Component`, named by its
@@ -178,10 +191,10 @@ now in the code (§4). These decisions from
 | `predict(dt, inputs...)` | the Gaussian | mixes through $\Pi = e^{Q \, \Delta t}$, predicts each mode by its model, moves the mode probabilities by $\Pi$; with the identity chain, no mixing (§5); `[[nodiscard]]`, returning nothing for Gaussians and a `std::expected` for square-root modes (§3a) |
 | `predict(inputs...)`, `predict(Steps{n})` | with fixed-step models [fixed-step-models] | the same, the chain stepping once per step |
 | `update(m, policy = reductions::collapse())` | reduces the branches to the new state | reduces each mode's branches, reweights the mode by $p(z \mid m)$, or under a gate by its passing branches' likelihood (§6) |
-| `update(m, policy)`, noise `byMode<Axis>()` | the memoryless mixture, by its weights | each mode uses only the noise component its `Axis` value names (§7) |
-| `update(switchingMeasurement<Path>(m0, m1, ...), policy)` | | each mode is updated by the measurement its `Path` value selects, all with one result type (§7) |
-| `update(m, policy, result)` | refills a result | the same, for a switching measurement too (§6) |
-| `update(state, m, given<P>(space, value), policy)` | `update(prior, m, given)` | on `ImmRecursion`: each mode updated given the block, plainly or by mode axis, for a point-mass filter's hybrid cells (rao-blackwellized-filters.md §6) |
+| `update(m, policy)`, noise `additiveNoise(byMode<Axis>(...))` | the memoryless mixture, by the alternatives' weights; without weights, a compile-time error | each mode uses only the %Gaussian its `Axis` value names (§7) |
+| `update(byMode<Axis>(when<Value>(m), ...), policy)` | | each mode is updated by the measurement its `Axis` value selects, which may have noise by another axis, all with one result type (§7) |
+| `update(m, policy, result)` | refills a result | the same, for a `byMode` of measurements too (§6) |
+| `update(state, m, given<P>(space, value), policy)` | `update(prior, m, given)` | on `ImmRecursion`: each mode updated given the block, by whatever measurement it takes, for a point-mass or particle filter's hybrids (rao-blackwellized-filters.md §6) |
 | Policies accepted | those returning `std::optional<Component>` | the same; `Keep` is a compile-time error |
 | A part rejected | (one part) | the mode keeps its prior component, with probability zero |
 | Returns | `FilterUpdate`, in a `std::expected` [innovation-cholesky] | `ImmFilterUpdate`, in a `std::expected`: one `FilterUpdate` per mode |
@@ -814,8 +827,8 @@ posterior mode probabilities are only in the state. Noise by mode axis gives the
 `update(measurement, policy, result)` refills a result instead of returning one, and returns
 `std::expected<void, GaussianError>` [innovation-cholesky], so a loop that passes the same result
 allocates nothing once it has been as large. The filter's `emptyUpdate<M>()` makes that result,
-from the state's allocator and with room for every mode (Q15), and takes a
-`SwitchingMeasurement` too:
+from the state's allocator and with room for every mode (Q15), and takes a `byMode` of
+measurements too:
 
 ```cpp
 using Fix = decltype(fix({0, 0}));
@@ -890,16 +903,23 @@ nothing changes.
 
 Mixture noise in a Kalman filter treats each fix's outlier state as independent of the last
 one's. A bias that corrupts several fixes in a row, or a sensor that sticks, is better described
-by a chain. The measurement's noise says so itself: `additiveNoise(mixture).byMode<SensorMode>()`
-is a `ModeNoise` (`Models/Policies.h`), an `AdditiveNoise` whose components are the values of the
-mode axis `SensorMode`, in the axis's order. An IMM whose mode space has that axis updates each
-mode with only the component that the mode's value names, with its own likelihood. The
-components' weights are ignored there; the chain on that axis supplies the probabilities instead.
-Since Q10 was decided, this is how the axis is named; `update<Path>()`, which named it at the call,
-is gone. In the examples below, `markovFix(z)` is `robustFix(z)` with its noise by `SensorMode`:
+by a chain. The measurement's noise says so itself [by-mode]:
 
 ```cpp
-// markovFix(z): robustFix(z)'s mixture as additiveNoise(mixture).byMode<SensorMode>().
+auto const sensorNoise = additiveNoise(byMode<SensorMode>(
+    when<Inlier>(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), R}).weight(0.9),
+    when<Outlier>(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), 100 * R}).weight(0.1)));
+```
+
+is a `ModeNoise` (`Models/Policies.h`): a %Gaussian per value of the mode axis `SensorMode`, each
+labeled by its value, in any order. An IMM whose mode space has that axis updates each mode with
+only the %Gaussian that the mode's value names, with its own likelihood. The weights are not read
+there; the chain on that axis supplies the probabilities instead. In the examples below,
+`markovFix(z)` is a fix with this noise, and `robustFix(z)` one with the mixture of the same two
+%Gaussians with the same weights:
+
+```cpp
+// markovFix(z): a position fix with sensorNoise; robustFix(z): with that mixture, unmarked.
 auto markovFix(Eigen::Vector2d const & z);
 ```
 
@@ -907,7 +927,7 @@ The same noise means something in every filter, by what the filter's state has [
 
 | The filter's state | Noise by mode axis is read as |
 |---|---|
-| no mode space (Kalman, Gaussian mixture, particle, a Rao-Blackwellized filter of Gaussians) | the mixture it is, with its weights: memoryless outliers |
+| no mode space (Kalman, Gaussian mixture, particle, a Rao-Blackwellized filter of Gaussians) | the mixture of the alternatives, with their weights: memoryless outliers; given no weights, a compile-time error |
 | a mode space with the named axis (IMM, AMM, a mixture of IMMs, a Rao-Blackwellized filter of hybrids) | the axis's values: Markov outliers, with the chain's probabilities |
 | a mode space without the named axis | a compile-time error (below) |
 
@@ -994,33 +1014,51 @@ updates by `markovFix(z)` exactly as by `robustFix(z)` (Q9).
 
 Noise by mode axis lets the mode change a measurement's noise and nothing else. A sensor whose
 bias, scale factor, or function depends on the mode needs a whole measurement per value of the
-axis. `switchingMeasurement<Path>(m0, m1, ...)` holds them, in the axis's order, and `update()`
-updates each mode by the one its `Path` value selects, as `switchingModel<Path>()` selects a
-process model [imm]. Condensed from `UpdatesEachModeByTheMeasurementItsValueSelects`:
+axis: a `byMode` of measurements, which `update()` takes, updating each mode by the one its value
+selects [by-mode]. Condensed from `UpdatesEachModeByTheMeasurementItsValueSelects`:
 
 ```cpp
 // the Inlier modes see the plain fix; the Outlier modes a fix through a function of its own,
 // biased by (3, -1) and with four times the noise
-auto const update = filter.update(switchingMeasurement<SensorMode>(fix(z), biasedFix(z, bias, 4.0)));
+auto const update = filter.update(byMode<SensorMode>(when<Inlier>(fix(z)), when<Outlier>(biasedFix(z, bias, 4.0))));
 // matches a hand IMM update with each mode's own offset and noise to 1e-12
 ```
 
 The measurements may differ in model type, function, noise, and method. Every mode's update
 fills one `ImmFilterUpdate`, so they need one result type: one measurement space, and noise that
-is Gaussian in all of them or a mixture in all of them. Otherwise:
+is Gaussian or by mode axis in all of them, or a mixture in all of them. Otherwise:
 
 ```
-static assertion failed: the measurements of a switching measurement update a mode into one type:
-give them one measurement space, and noise that is Gaussian in all of them or a mixture in all of them
+static assertion failed: the alternatives of a measurement by mode axis update a mode into one type: give them
+one measurement space, and noise that is Gaussian or by mode axis in all of them, or a mixture in all of them
 ```
 
-A count that differs from the axis's cardinality fails to compile for a fixed axis ("give one
-measurement per value of the axis that selects it") and asserts at run time otherwise. A path the
-mode space lacks fails to compile, as noise by a missing axis does, and so does a measurement in it
-whose noise is by mode axis, which would select twice (Q20). With Gaussian noise in each,
-`switchingMeasurement<SensorMode>(fix(z), outlierFix(z))` is the same Markov outlier model as
-`markovFix(z)`, but without the `component` label on each mode's branch, and with a measurement
-that a Kalman filter can't read.
+A value named twice, a value left out, or a value the axis lacks fails to compile where the
+`byMode` is built, as every `byMode` does, and a path the mode space lacks fails at the update, as
+noise by a missing axis does. A measurement chosen by one axis may have noise by another (Q20):
+over `DiscreteProduct<Maneuver, SensorMode>`, condensed from
+`ChoosesTheMeasurementByOneAxisAndItsNoiseByAnother`,
+
+```cpp
+auto const fix = byMode<Maneuver>(
+    when<Maneuvering>(biasedFix(z, bias, sensorNoise(4.0))),  // biased, by the maneuver
+    when<Cruise>(observeFix(z, sensorNoise(1.0))));           // each with noise by SensorMode
+// each mode's noise is its SensorMode value's, scaled by its Maneuver value's, its offset its
+// Maneuver value's, to 1e-12; each mode's branch carries the SensorMode component it used
+```
+
+An axis chooses at most once along a nesting: noise by `Maneuver` inside a measurement chosen by
+`Maneuver` would only ever take one of its components, and fails to compile with "a measurement
+chosen by a mode axis has noise by the same axis". `observe()` of a `byMode` of models makes a
+`byMode` of measurements with one observation:
+`observe(byMode<Maneuver>(when<Cruise>(position), when<Maneuvering>(biased)), z)`.
+
+Every filter that holds hybrids takes it (Q19): the IMM and the AMM, a `MixtureFilter` of hybrids,
+and the Rao-Blackwellized point-mass and particle filters under a switching model, whose hybrids
+`ImmRecursion` updates with a block given. With Gaussian noise in each,
+`byMode<SensorMode>(when<Inlier>(fix(z)), when<Outlier>(outlierFix(z)))` is the same Markov
+outlier model as `markovFix(z)`, but without the `component` label on each mode's branch, and
+with a measurement that a Kalman filter can't read.
 
 ### Unmarked mixture noise in an IMM
 
@@ -1153,7 +1191,10 @@ which is why a `MixtureFilter` of hybrids runs its components in order.
 | `withMethod()` of a fixed-step model | where it is made | `a fixed-step model carries its own method; give the method to fixedStep() in place of withMethod()` (§4) |
 | a state over different modes than the model | at construction | `no matching constructor for initialization of 'ImmFilter<...>'` |
 | a hybrid of an information form | at the type | `static assertion failed: a Gaussian in an information form is not a hybrid's conditional, having no collapse; ...` (§3a) |
-| `byMode<SensorMode>()` on Gaussian noise | where the noise is built | `byMode() takes additive noise that is one mixture over the whole output, with one component per value of the mode axis` (§7, Q11) |
+| `additiveNoise(byMode<SensorMode>(...))` of other than one `GaussianParams` type | where the noise is built | `additiveNoise(byMode<Axis>(...)) takes one GaussianParams type for every value of the axis` (§7) |
+| a `byMode` that names a value twice, leaves one out, or names one the axis lacks | where it is built | `two alternatives name the same value of the axis`, `an alternative is missing: ...`, `an alternative names a value that the axis does not have` [by-mode] |
+| noise by mode axis without weights, in a filter without the axis | at `update()` | `a filter without the noise's mode axis reads its alternatives as a mixture, so give each a weight: when<Value>(noise).weight(probability)` (§7) |
+| noise by the axis that chooses the measurement | at `update()` | `a measurement chosen by a mode axis has noise by the same axis, ...` (§7, Q20) |
 | noise by mode axis with the wrong number of components | at run time, debug only | `the noise needs one component per value of the mode axis` (§7) |
 | noise by an axis the mode space lacks, or by a block such as `Position` | at `update()` | `the measurement's noise is by a mode axis, byMode<Axis>(), that the filter's mode space does not have` (§7, Q10) |
 | unmarked mixture noise, on a filter with a sensor axis | never | the sensor axis follows the chain alone (§7, Q10) |
@@ -1402,8 +1443,11 @@ component. `MixtureParams::merged()` and `merge()` work on hybrids, keeping each
     17z: `Emrys::Sensor` is gone, so nothing collides.*
 18. ~~Give `ImmFilter` a recursion parameter and `ImmFilter{recursion, state}`, as `KalmanFilter` and
     `MixtureFilter` have (§12)?~~ *Done [filters-and-recursions], with no concept beyond `Recursion`.*
-19. A `SwitchingMeasurement` updates an `ImmFilter`, an `AmmFilter`, and an `ImmRecursion`, but
+19. ~~A `SwitchingMeasurement` updates an `ImmFilter`, an `AmmFilter`, and an `ImmRecursion`, but
     not a `MixtureFilter` of hybrids, nor with a block given for a point-mass filter's hybrid cells,
-    as `update()` is; add both (§7)?
-20. A switching measurement whose measurements have noise by mode axis fails to compile. Support
-    it, each value's measurement then reading its noise component by the other axis (§7)?
+    as `update()` is; add both (§7)?~~ *Decided [by-mode]: a `byMode` of measurements, which every
+    filter that holds hybrids takes, the Rao-Blackwellized particle filter's too.*
+20. ~~A switching measurement whose measurements have noise by mode axis fails to compile. Support
+    it, each value's measurement then reading its noise component by the other axis (§7)?~~
+    *Decided [by-mode]: alternatives nest, each reading its own axis; an axis chooses once along a
+    nesting.*

@@ -4,7 +4,7 @@
  * ImmRecursion and ImmFilter (decisions.md [switching-models],
  * [imm], [filters-and-recursions]): a Hybrid state mixed through a Markov chain, predicted through each mode's model,
  * and updated per mode, with Markov outlier states when a measurement's noise is by mode axis (ModeNoise) and a
- * measurement per mode through a SwitchingMeasurement; the recursion that does this to a hybrid
+ * measurement per value of a mode axis through a ByMode [by-mode]; the recursion that does this to a hybrid
  * passed in, keeping the scratch it mixes and updates into, the filter that owns a hybrid and runs the recursion on it.
  * predictJoint() records a step as a HybridPredictedJoint for the IMM smoother in HybridGaussianHistory.h [smoothing],
  * and a MixtureFilter of hybrids runs the recursion on each of its components. Read AmmFilter.h next; the design review
@@ -232,9 +232,101 @@ struct MeasurementModeAxisOf<M>
 
 /// \endcond
 
-/** Whether the measurement \a M has noise by mode axis, <tt>additiveNoise(mixture).byMode<Axis>()</tt>. */
+/** Whether the measurement \a M has noise by mode axis, <tt>additiveNoise(byMode<Axis>(...))</tt> (ModeNoise). */
 template <typename M>
-inline constexpr bool isByMode = !std::is_void_v<typename MeasurementModeAxisOf<M>::type>;
+inline constexpr bool hasModeNoise = !std::is_void_v<typename MeasurementModeAxisOf<M>::type>;
+
+/** Whether the measurement \a M, a Measurement or a ByMode of them, depends on the mode: by its
+ * noise or as a measurement per value of a mode axis [by-mode].
+ */
+template <typename M>
+inline constexpr bool dependsOnMode = hasModeNoise<M> || isByModePart<M>;
+
+/** The %Gaussian, one per value of the mode axis, of the measurement \a M with noise by mode axis. */
+template <typename M>
+using ModeNoiseComponent = std::remove_cvref_t<decltype(std::declval<M const &>()
+                                                            .model()
+                                                            .template policy<PolicyKind::additiveNoise>()
+                                                            .components()
+                                                            .begin()
+                                                            ->component)>;
+
+/** Whether \a T is a WithNoiseComponent, a measurement with one %Gaussian of its noise. */
+template <typename T>
+inline constexpr bool isWithNoiseComponent = false;
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename M, typename Component>
+inline constexpr bool isWithNoiseComponent<WithNoiseComponent<M, Component>> = true;
+
+/// \endcond
+
+/** The measurement that one mode of a filter over a Hybrid is updated by, for the measurement
+ * \a M, as \c type: \a M itself; for noise by mode axis, \a M with the mode's one %Gaussian
+ * (WithNoiseComponent); for a ByMode, that of its first alternative, which every alternative's
+ * shares in its update's type.
+ */
+template <typename M, bool = hasModeNoise<M>>
+struct ModeResolvedOf
+{
+    using type = M;  ///< the measurement itself
+};
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename M>
+struct ModeResolvedOf<M, true>
+{
+    using type = WithNoiseComponent<M, ModeNoiseComponent<M>>;  ///< the measurement with one %Gaussian
+};
+
+template <typename P, typename... Alternatives>
+struct ModeResolvedOf<ByMode<P, Alternatives...>, false>
+{
+    /// the first alternative's
+    using type =
+        typename ModeResolvedOf<std::remove_cvref_t<typename ByMode<P, Alternatives...>::template PartType<0>>>::type;
+};
+
+/// \endcond
+
+/** The measurement that one mode is updated by for \a M (see ModeResolvedOf). */
+template <typename M>
+using ModeResolved = typename ModeResolvedOf<std::remove_cvref_t<M>>::type;
+
+/** \returns true, after checking at compile time that the measurement \a M chooses by each mode
+ * axis at most once along a nesting, the axes \a Used having chosen already: an inner choice by
+ * the same axis would only ever take one alternative [by-mode]
+ */
+template <typename M, typename... Used>
+consteval bool
+choosesEachAxisOnce()
+{
+    if constexpr (isByModePart<M>)
+    {
+        using Axis = PathTag<typename M::PathType>;
+        static_assert(
+            !(std::is_same_v<Axis, Used> || ...),
+            "a measurement chosen by a mode axis chooses again by the same axis, which would only ever take one "
+            "alternative: give each value of the axis its measurement once"
+        );
+        return []<std::size_t... I>(std::index_sequence<I...>) {
+            return (choosesEachAxisOnce<std::remove_cvref_t<typename M::template PartType<I>>, Used..., Axis>() && ...);
+        }(std::make_index_sequence<M::Count>{});
+    }
+    else if constexpr (hasModeNoise<M>)
+    {
+        static_assert(
+            !(std::is_same_v<PathTag<typename MeasurementModeAxisOf<M>::type>, Used> || ...),
+            "a measurement chosen by a mode axis has noise by the same axis, which would only ever take one of its "
+            "components: give each value's measurement the noise it has in the modes with that value"
+        );
+        return true;
+    }
+    else
+    {
+        return true;
+    }
+}
 
 /** One mode's measurement in an update by mode axis given a block (see GivenMeasurement): \a One,
  * the measurement with the mode's noise component, and the model over the rest and the block
@@ -339,84 +431,69 @@ public:
 
     static constexpr bool Reentrant = false;  ///< the steps write the scratch, so they run one at a time
 
-    /** The MeasurementUpdate of \a M on one mode's component, or, for a square-root form, the
+    /** The MeasurementUpdate on one mode's component of the measurement it is updated by for \a M,
+     * a Measurement or a ByMode of them (see internal::ModeResolved), or, for a square-root form, the
      * FilterUpdate of its one branch.
      */
-    template <Measurement M>
-    using MeasuredType = typename internal::ImmMeasured<ComponentType, M>::type;
+    template <typename M>
+    using MeasuredType = typename internal::ImmMeasured<ComponentType, internal::ModeResolved<M>>::type;
 
-    /** What update() with \a M fills when given a result: one branch per mode for noise by mode
-     * axis, every noise component's branch otherwise.
+    /** What update() with \a M, a Measurement or a ByMode of them, fills when given a result: one
+     * branch per mode for noise by mode axis or %Gaussian noise, every noise component's branch for
+     * mixture noise that is not by mode axis.
      */
-    template <Measurement M>
+    template <typename M>
     using ResultType = ImmFilterUpdate<
         std::conditional_t<
-            internal::isByMode<M>,
-            FilterUpdate<typename MeasuredType<M>::MeasurementSpaceType, 1, Scalar>,
-            std::conditional_t<
-                IsForm,
-                MeasuredType<M>,
-                internal::FilterUpdateWithScratch<
-                    SpaceType,
-                    typename MeasuredType<M>::MeasurementSpaceType,
-                    MeasuredType<M>::BranchCount,
-                    Scalar,
-                    Allocator_>>>,
-        Scalar,
-        Allocator_>;
-
-    /** What update() with \a M returns: the ResultType in a \c std::expected (decisions.md [innovation-cholesky]). */
-    template <Measurement M>
-    using UpdateType = std::expected<ResultType<M>, NumericError>;
-
-    /** UpdateType<M>, named without being formed (see internal::UnlessGivenBlock). */
-    template <Measurement M>
-    struct UpdateTypeOf
-    {
-        using type = UpdateType<M>;  ///< the update's type
-    };
-
-    /** What update() with the SwitchingMeasurement \a S fills when given a result: the ResultType
-     * of its first measurement, which every one of its measurements shares.
-     */
-    template <typename S>
-    using SwitchingResultType = ResultType<typename S::template MeasurementType<0>>;
-
-    /** What update() with the SwitchingMeasurement \a S returns: the SwitchingResultType in a
-     * \c std::expected.
-     */
-    template <typename S>
-    using SwitchingUpdateType = std::expected<SwitchingResultType<S>, NumericError>;
-
-    /** The MeasurementUpdate of \a M on one mode's %Gaussian, with the block named by the path \a P
-     * of a state in \a Space given (see update(state, measurement, pinned, policy)).
-     */
-    template <Measurement M, typename Space, typename P>
-    using GivenMeasuredType = typename decltype(internal::updateBranchesWith<true>(
-        std::declval<ComponentType const &>(),
-        std::declval<internal::PinnedMeasurement<Space, P, M> const &>(),
-        std::declval<typename Moments<internal::PathTag<P>, Scalar>::VectorType const &>()
-    ))::value_type;
-
-    /** What update(state, measurement, pinned, policy) with \a M fills when given a result: one
-     * branch per mode for noise by mode axis, as ResultType has.
-     */
-    template <Measurement M, typename Space, typename P>
-    using GivenResultType = ImmFilterUpdate<
-        std::conditional_t<
-            internal::isByMode<M>,
-            FilterUpdate<typename GivenMeasuredType<M, Space, P>::MeasurementSpaceType, 1, Scalar>,
+            IsForm,
+            MeasuredType<M>,
             internal::FilterUpdateWithScratch<
                 SpaceType,
-                typename GivenMeasuredType<M, Space, P>::MeasurementSpaceType,
-                GivenMeasuredType<M, Space, P>::BranchCount,
+                typename MeasuredType<M>::MeasurementSpaceType,
+                MeasuredType<M>::BranchCount,
                 Scalar,
                 Allocator_>>,
         Scalar,
         Allocator_>;
 
+    /** What update() with \a M returns: the ResultType in a \c std::expected (decisions.md [innovation-cholesky]). */
+    template <typename M>
+    using UpdateType = std::expected<ResultType<M>, NumericError>;
+
+    /** UpdateType<M>, named without being formed (see internal::UnlessGivenBlock). */
+    template <typename M>
+    struct UpdateTypeOf
+    {
+        using type = UpdateType<M>;  ///< the update's type
+    };
+
+    /** The MeasurementUpdate on one mode's %Gaussian of the measurement it is updated by for \a M,
+     * with the block named by the path \a P of a state in \a Space given (see update(state,
+     * measurement, pinned, policy)).
+     */
+    template <typename M, typename Space, typename P>
+    using GivenMeasuredType = typename decltype(internal::updateBranchesWith<true>(
+        std::declval<ComponentType const &>(),
+        std::declval<internal::PinnedMeasurement<Space, P, internal::ModeResolved<M>> const &>(),
+        std::declval<typename Moments<internal::PathTag<P>, Scalar>::VectorType const &>()
+    ))::value_type;
+
+    /** What update(state, measurement, pinned, policy) with \a M fills when given a result, as
+     * ResultType has it.
+     */
+    template <typename M, typename Space, typename P>
+    using GivenResultType = ImmFilterUpdate<
+        internal::FilterUpdateWithScratch<
+            SpaceType,
+            typename GivenMeasuredType<M, Space, P>::MeasurementSpaceType,
+            GivenMeasuredType<M, Space, P>::BranchCount,
+            Scalar,
+            Allocator_>,
+        Scalar,
+        Allocator_>;
+
     /** What update(state, measurement, pinned, policy) with \a M returns. */
-    template <Measurement M, typename Space, typename P>
+    template <typename M, typename Space, typename P>
     using GivenUpdateType = std::expected<GivenResultType<M, Space, P>, NumericError>;
 
     /** The recursion with switching model \a model and prediction method \a method, which the
@@ -614,18 +691,21 @@ public:
      * method, reduces its branches with \a policy (Collapse, Select, or a Gate), and multiplies
      * each mode's probability by \f$ p(z \mid m) \f$.
      *
-     * When the measurement's noise is by mode axis, <tt>additiveNoise(mixture).byMode<Axis>()</tt>
-     * (see ModeNoise), its components are the values of the mode axis \c Axis: in each mode, only
-     * the component that the mode's value in that axis names is used, and its own likelihood
-     * reweights the mode. The components' weights are not used; the chain gives the probabilities
-     * instead. The mode space must have the axis, and the noise one component per value of it.
+     * The measurement may depend on the mode [by-mode]. When its noise is by mode axis,
+     * <tt>additiveNoise(byMode<Axis>(...))</tt> (see ModeNoise), each mode is updated with the one
+     * %Gaussian that its value in \c Axis names, and its own likelihood reweights it; the chain gives
+     * the probabilities. When it is a measurement per value of a mode axis,
+     * <tt>byMode<Axis>(when<Value>(measurement), ...)</tt>, each mode is updated by the measurement
+     * that its value in \c Axis names, which may itself have noise by another axis. The mode space
+     * must have every axis named, and every mode's update must have one type: one measurement space,
+     * and noise that is %Gaussian, or by mode axis, in all of them, or a mixture in all of them.
      *
      * \returns each mode's update before reduction, the observation's log-likelihood, and whether
      * it was accepted (see ImmFilterUpdate), with the modes' updates from the
      * scratch's allocator; or, if any mode's update failed, as one whose innovation covariance is
      * not positive definite does, its error, with \a state unchanged (decisions.md [innovation-cholesky])
      */
-    template <Measurement M, typename Policy = reductions::Collapse>
+    template <internal::ModeMeasurement M, typename Policy = reductions::Collapse>
         requires(!internal::isGivenBlock<Policy>)
     [[nodiscard]] typename internal::UnlessGivenBlock<UpdateTypeOf<M>, Policy>::type
     update(StateType & state, M const & measurement, Policy const & policy = {})
@@ -645,7 +725,7 @@ public:
      * \returns nothing, or the error update(state, measurement, policy) would return, with
      *          \a state unchanged and \a result unspecified
      */
-    template <Measurement M, typename Policy, typename ModeUpdate, typename ResultAllocator>
+    template <internal::ModeMeasurement M, typename Policy, typename ModeUpdate, typename ResultAllocator>
     [[nodiscard]] std::expected<void, NumericError>
     update(
         StateType & state,
@@ -654,181 +734,28 @@ public:
         ImmFilterUpdate<ModeUpdate, Scalar, ResultAllocator> & result
     )
     {
-        if constexpr (internal::isByMode<M>)
-        {
-            return updateByAxis(state, measurement, policy, result, [](auto one) {
-                return one;
+        static_assert(checkModeMeasurement<M>());
+        return updateModes(state, policy, result, [&](Eigen::Index m, auto const & updateMode) {
+            return forMode(state, measurement, m, [&](auto const & resolved, Eigen::Index component) {
+                return updateMode(resolved, component);
             });
-        }
-        else
-        {
-            return updateModes(
-                state,
-                policy,
-                result,
-                [&](Eigen::Index, auto const & updateMode) {
-                    return updateMode(measurement);
-                },
-                [](auto &, Eigen::Index) {}
-            );
-        }
+        });
     }
-
-    /** As update(state, measurement, policy), but with a measurement per value of the mode axis
-     * that \a measurement names (see SwitchingMeasurement): each mode is updated by the measurement
-     * that its value in that axis selects, and its own likelihood \f$ p(z \mid m) \f$ reweights it.
-     * The measurements need one ResultType, so that every mode's update has one type.
-     */
-    template <typename P, Measurement... Ms, typename Policy = reductions::Collapse>
-    [[nodiscard]] SwitchingUpdateType<SwitchingMeasurement<P, Ms...>>
-    update(StateType & state, SwitchingMeasurement<P, Ms...> const & measurement, Policy const & policy = {})
-    {
-        auto result = SwitchingResultType<SwitchingMeasurement<P, Ms...>>{get_allocator()};
-        result.modes.reserve(std::size_t(state.size()));
-        auto const updated = update(state, measurement, policy, result);
-        if (!updated)
-        {
-            return std::unexpected{updated.error()};
-        }
-        return result;
-    }
-
-    /** As update(state, measurement, policy) with a SwitchingMeasurement, but into \a result,
-     * whose storage is reused.
-     *
-     * \returns nothing, or the error update(state, measurement, policy) would return
-     */
-    template <typename P, Measurement... Ms, typename Policy, typename ModeUpdate, typename ResultAllocator>
-    [[nodiscard]] std::expected<void, NumericError>
-    update(
-        StateType & state,
-        SwitchingMeasurement<P, Ms...> const & measurement,
-        Policy const & policy,
-        ImmFilterUpdate<ModeUpdate, Scalar, ResultAllocator> & result
-    )
-    {
-        static_assert(
-            internal::pathResolves<P, ModeSpaceType>(),
-            "a switching measurement is selected by a mode axis that the filter's mode space does not have"
-        );
-        static_assert(
-            !(internal::isByMode<Ms> || ...),
-            "a measurement of a switching measurement has noise by mode axis, byMode<Axis>(): give each value's "
-            "measurement the noise it has in the modes with that value"
-        );
-        static_assert(
-            (std::is_same_v<ResultType<Ms>, SwitchingResultType<SwitchingMeasurement<P, Ms...>>> && ...),
-            "the measurements of a switching measurement update a mode into one type: give them one measurement "
-            "space, and noise that is Gaussian in all of them or a mixture in all of them"
-        );
-        if constexpr (internal::pathResolves<P, ModeSpaceType>())
-        {
-            auto const [stride, axis] = internal::locateAxisByPath<P>(state.modeSpace());
-            Eigen::Index const values = axis->cardinality();
-            EMRYS_FILTER_ASSERT(
-                values == Eigen::Index(sizeof...(Ms)) && "give one measurement per value of the axis that selects it"
-            );
-            return updateModes(
-                state,
-                policy,
-                result,
-                [&, stride](Eigen::Index m, auto const & updateMode) {
-                    return measurement.visit(std::size_t((m / stride) % values), updateMode);
-                },
-                [](auto &, Eigen::Index) {}
-            );
-        }
-        else
-        {
-            return std::expected<void, NumericError>{};
-        }
-    }
-
-private:
-
-    /** The update of a measurement whose noise is by mode axis, common to update(state,
-     * measurement, policy) and its form given a block: mode \a m is updated by \a wrap(one), where
-     * \a one is \a measurement with the noise component that the mode's value in the noise's axis
-     * names.
-     */
-    template <Measurement M, typename Policy, typename ModeUpdate, typename ResultAllocator, typename Wrap>
-    [[nodiscard]] std::expected<void, NumericError>
-    updateByAxis(
-        StateType & state,
-        M const & measurement,
-        Policy const & policy,
-        ImmFilterUpdate<ModeUpdate, Scalar, ResultAllocator> & result,
-        Wrap const & wrap
-    )
-    {
-        using Axis = typename internal::MeasurementModeAxisOf<M>::type;
-        static_assert(
-            internal::pathResolves<Axis, ModeSpaceType>(),
-            "the measurement's noise is by a mode axis, byMode<Axis>(), that the filter's mode space does not have"
-        );
-        if constexpr (internal::pathResolves<Axis, ModeSpaceType>())
-        {
-            return updateByAxisIn<Axis>(state, measurement, policy, result, wrap);
-        }
-        else
-        {
-            return std::expected<void, NumericError>{};
-        }
-    }
-
-    /** updateByAxis() with \a Axis, the noise's mode axis, found in the mode space. */
-    template <
-        typename Axis,
-        Measurement M,
-        typename Policy,
-        typename ModeUpdate,
-        typename ResultAllocator,
-        typename Wrap>
-    [[nodiscard]] std::expected<void, NumericError>
-    updateByAxisIn(
-        StateType & state,
-        M const & measurement,
-        Policy const & policy,
-        ImmFilterUpdate<ModeUpdate, Scalar, ResultAllocator> & result,
-        Wrap const & wrap
-    )
-    {
-        auto const [stride, axis] = internal::locateAxisByPath<Axis>(state.modeSpace());
-        Eigen::Index const values = axis->cardinality();
-        auto const & noise = measurement.model().template policy<internal::PolicyKind::additiveNoise>().distribution();
-        EMRYS_FILTER_ASSERT(noise.size() == values && "the noise needs one component per value of the mode axis");
-        using Component = std::remove_cvref_t<decltype(noise.begin()->component)>;
-        using One = internal::WithNoiseComponent<M, Component>;
-        // Each mode is updated with the one component its value names, not with every component.
-        auto const componentOf = [=](Eigen::Index m) {
-            return (m / stride) % values;
-        };
-        return updateModes(
-            state,
-            policy,
-            result,
-            [&](Eigen::Index m, auto const & updateMode) {
-                return updateMode(wrap(One{measurement, noise[componentOf(m)].component}));
-            },
-            [&](auto & measured, Eigen::Index m) {
-                auto & branch = measured.branches.front();
-                branch.component = componentOf(m);
-                branch.logWeight = Scalar(0);
-            }
-        );
-    }
-
-public:
 
     /** As update(state, measurement, policy), but with \a state a hybrid over the rest of a state
      * and the block that \a pinned names given separately, as given() makes it: each mode's
-     * %Gaussian is conditioned as update(prior, measurement, given) conditions one. This is the
-     * step of a Rao-Blackwellized point-mass filter whose cells each hold a hybrid
-     * (RbPointMassFilter), each cell's center given.
+     * %Gaussian is conditioned as update(prior, measurement, given) conditions one, by the
+     * measurement it is updated by. This is the step of a Rao-Blackwellized filter whose points
+     * each hold a hybrid (RbPointMassFilter, RbParticleFilter), each point's block given.
      *
      * \returns as update(state, measurement, policy) does
      */
-    template <Measurement M, typename Space, typename P, typename Value, typename Policy = reductions::Collapse>
+    template <
+        internal::ModeMeasurement M,
+        typename Space,
+        typename P,
+        typename Value,
+        typename Policy = reductions::Collapse>
         requires(!IsForm)
     [[nodiscard]] GivenUpdateType<M, Space, P>
     update(
@@ -852,7 +779,7 @@ public:
      * \returns nothing, or the error update(state, measurement, pinned, policy) would return
      */
     template <
-        Measurement M,
+        internal::ModeMeasurement M,
         typename Space,
         typename P,
         typename Value,
@@ -869,11 +796,31 @@ public:
         ImmFilterUpdate<ModeUpdate, Scalar, ResultAllocator> & result
     )
     {
-        if constexpr (internal::isByMode<M>)
+        static_assert(checkModeMeasurement<M>());
+        if constexpr (internal::dependsOnMode<M>)
         {
-            // Each mode's measurement holds its own noise component, so each resolves its own.
-            return updateByAxis(state, measurement, policy, result, [&]<typename One>(One one) {
-                return internal::GivenComponent<Space, P, One, Value>{std::move(one), pinned.space, pinned.value};
+            return updateModes(state, policy, result, [&](Eigen::Index m, auto const & updateMode) {
+                return forMode(state, measurement, m, [&]<typename R>(R const & resolved, Eigen::Index component) {
+                    if constexpr (internal::isWithNoiseComponent<R>)
+                    {
+                        // The mode's measurement holds its own noise component, so it resolves its own.
+                        return updateMode(
+                            internal::GivenComponent<Space, P, R, Value>{resolved, pinned.space, pinned.value},
+                            component
+                        );
+                    }
+                    else
+                    {
+                        auto const f = internal::PinnedMeasurement<Space, P, R>{pinned.space, resolved};
+                        return updateMode(
+                            internal::GivenMeasurement<internal::PinnedMeasurement<Space, P, R> const &, Value>{
+                                f,
+                                pinned.value
+                            },
+                            component
+                        );
+                    }
+                });
             });
         }
         else
@@ -886,8 +833,8 @@ public:
     /** As update(state, measurement, pinned, policy, result), with the measurement over the rest and
      * the given block already resolved as \a f and the block's value \a value: a caller that
      * updates many hybrids, each given its own value, resolves the measurement once. A measurement
-     * whose noise is by mode axis takes update(state, measurement, pinned, policy, result), which
-     * resolves each mode's component.
+     * that depends on the mode takes update(state, measurement, pinned, policy, result), which
+     * resolves each mode's measurement.
      */
     template <
         typename Space,
@@ -897,7 +844,7 @@ public:
         typename Policy,
         typename ModeUpdate,
         typename ResultAllocator>
-        requires(!IsForm && !internal::isByMode<M>)
+        requires(!IsForm && !internal::dependsOnMode<M>)
     [[nodiscard]] std::expected<void, NumericError>
     updateGiven(
         StateType & state,
@@ -908,21 +855,15 @@ public:
     )
     {
         using Given = internal::GivenMeasurement<internal::PinnedMeasurement<Space, P, M> const &, Value>;
-        return updateModes(
-            state,
-            policy,
-            result,
-            [&](Eigen::Index, auto const & updateMode) {
-                return updateMode(Given{f, value});
-            },
-            [](auto &, Eigen::Index) {}
-        );
+        return updateModes(state, policy, result, [&](Eigen::Index, auto const & updateMode) {
+            return updateMode(Given{f, value}, Eigen::Index{-1});
+        });
     }
 
     /** \returns an empty ResultType<M> with room for \a modes modes, from \a allocator, for update()
      * to fill
      */
-    template <Measurement M>
+    template <internal::ModeMeasurement M>
     [[nodiscard]] ResultType<M>
     emptyUpdate(Allocator_ const & allocator, Eigen::Index modes) const
     {
@@ -935,7 +876,7 @@ public:
     /** \returns an empty GivenResultType with room for \a modes modes, from \a allocator, for
      * update(state, measurement, pinned, policy, result) to fill
      */
-    template <Measurement M, typename Space, typename P>
+    template <internal::ModeMeasurement M, typename Space, typename P>
     [[nodiscard]] GivenResultType<M, Space, P>
     emptyGivenUpdate(Allocator_ const & allocator, Eigen::Index modes) const
     {
@@ -964,6 +905,127 @@ private:
 
     using ConditionalsType = typename StateType::ConditionalsType;         ///< the modes' components, as stored
     using ComponentAllocator = typename ConditionalsType::allocator_type;  ///< allocates them
+
+    /** \returns true, after checking at compile time that the measurement \a M chooses by each mode
+     * axis once along a nesting and that every mode's update has one type
+     */
+    template <typename M>
+    [[nodiscard]] static consteval bool
+    checkModeMeasurement()
+    {
+        static_assert(internal::choosesEachAxisOnce<std::remove_cvref_t<M>>());
+        static_assert(
+            sharesOneUpdateType<std::remove_cvref_t<M>>(),
+            "the alternatives of a measurement by mode axis update a mode into one type: give them one measurement "
+            "space, and noise that is Gaussian or by mode axis in all of them, or a mixture in all of them"
+        );
+        return true;
+    }
+
+    /** \returns whether every alternative of \a M, a ByMode, nested ones included, updates a mode into
+     * ResultType<M>; true for a Measurement
+     */
+    template <typename M>
+    [[nodiscard]] static consteval bool
+    sharesOneUpdateType()
+    {
+        if constexpr (internal::isByModePart<M>)
+        {
+            return []<std::size_t... I>(std::index_sequence<I...>) {
+                return (
+                    (std::is_same_v<ResultType<typename M::template PartType<I>>, ResultType<M>>
+                     && sharesOneUpdateType<std::remove_cvref_t<typename M::template PartType<I>>>())
+                    && ...
+                );
+            }(std::make_index_sequence<M::Count>{});
+        }
+        else
+        {
+            return true;
+        }
+    }
+
+    /** Calls \a f(resolved, component) with the measurement that mode \a m of \a state is updated by
+     * for \a measurement (see internal::ModeResolved), and the index of the noise component it holds,
+     * or -1: \a measurement itself; for noise by mode axis, \a measurement with the %Gaussian that the
+     * mode's value in the noise's axis names; for a ByMode, the measurement of the alternative that
+     * the mode's value in its axis names, resolved in turn.
+     *
+     * \returns what \a f returns
+     */
+    template <typename M, typename F>
+    [[nodiscard]] std::expected<void, NumericError>
+    forMode(StateType const & state, M const & measurement, Eigen::Index m, F const & f) const
+    {
+        if constexpr (internal::isByModePart<M>)
+        {
+            using P = typename M::PathType;
+            static_assert(
+                internal::pathResolves<P, ModeSpaceType>(),
+                "a measurement by mode axis, byMode<Axis>(), chooses by an axis that the filter's mode space does not "
+                "have"
+            );
+            if constexpr (internal::pathResolves<P, ModeSpaceType>())
+            {
+                auto const located = internal::locateAxisByPath<P>(state.modeSpace());
+                Eigen::Index const values = located.second->cardinality();
+                EMRYS_FILTER_ASSERT(
+                    values == measurement.values() && "give one measurement per value of the axis that chooses it"
+                );
+                return measurement.visit((m / located.first) % values, [&](auto const & part) {
+                    return forMode(state, part, m, f);
+                });
+            }
+            else
+            {
+                return std::expected<void, NumericError>{};
+            }
+        }
+        else if constexpr (internal::hasModeNoise<M>)
+        {
+            using Axis = typename internal::MeasurementModeAxisOf<M>::type;
+            static_assert(
+                internal::pathResolves<Axis, ModeSpaceType>(),
+                "the measurement's noise is by a mode axis, byMode<Axis>(), that the filter's mode space does not have"
+            );
+            if constexpr (internal::pathResolves<Axis, ModeSpaceType>())
+            {
+                auto const located = internal::locateAxisByPath<Axis>(state.modeSpace());
+                Eigen::Index const values = located.second->cardinality();
+                auto const & noise =
+                    measurement.model().template policy<internal::PolicyKind::additiveNoise>().components();
+                EMRYS_FILTER_ASSERT(
+                    noise.size() == values && "the noise needs one component per value of the mode axis"
+                );
+                // Each mode is updated with the one component its value names, not with every component.
+                Eigen::Index const value = (m / located.first) % values;
+                return f(internal::ModeResolved<M>{measurement, noise[value].component}, value);
+            }
+            else
+            {
+                return std::expected<void, NumericError>{};
+            }
+        }
+        else
+        {
+            return f(measurement, Eigen::Index{-1});
+        }
+    }
+
+    /** Labels the one branch of \a measured with the noise component \a component, when it is not -1:
+     * a mode updated with one %Gaussian of noise by mode axis, which the chain weighs, not the noise.
+     */
+    template <typename Measured>
+    static void
+    labelComponent(Measured & measured, Eigen::Index component)
+    {
+        if (component >= 0)
+        {
+            auto & branch = measured.branches.front();
+            branch.component = component;
+            branch.logWeight = Scalar(0);
+        }
+    }
 
     /** Reserves the scratch for every mode. */
     void
@@ -1143,10 +1205,10 @@ private:
     }
 
     /** The update common to every form of update(): mode \a m's %Gaussian is updated by its
-     * measurement, which \a withMeasurement(m, updateMode) passes to \a updateMode, so that the
-     * modes' measurements may have different types, as a SwitchingMeasurement's do; its branches
-     * are labeled by \a relabel(measured, m) and reduced by \a policy, and the modes are
-     * reweighted by their log-likelihoods, with \a result filled in.
+     * measurement, which \a withMeasurement(m, updateMode) passes to \a updateMode with the noise
+     * component it holds or -1, so that the modes' measurements may have different types, as a
+     * ByMode's do; its branches are labeled with the component and the mode and reduced by
+     * \a policy, and the modes are reweighted by their log-likelihoods, with \a result filled in.
      * The reweighting reads each mode's likelihood, so the update computes it with its gain. The
      * slots a result holds from the last update are reused, each mode measured in its slot's
      * scratch where it has one, and the modes beyond them get new slots from the result's
@@ -1160,19 +1222,13 @@ private:
      *          any mode is updated, or the error of the first mode whose update failed (decisions.md
      *          [innovation-cholesky], [update-outcomes])
      */
-    template <
-        typename Policy,
-        typename ModeUpdate,
-        typename ResultAllocator,
-        typename WithMeasurement,
-        typename Relabel>
+    template <typename Policy, typename ModeUpdate, typename ResultAllocator, typename WithMeasurement>
     [[nodiscard]] std::expected<void, NumericError>
     updateModes(
         StateType & state,
         Policy const & policy,
         ImmFilterUpdate<ModeUpdate, Scalar, ResultAllocator> & result,
-        WithMeasurement const & withMeasurement,
-        Relabel const & relabel
+        WithMeasurement const & withMeasurement
     )
     {
         // Mode probabilities the caller left undefined fail the update before any mode is written.
@@ -1191,7 +1247,8 @@ private:
         logLikelihoods.resize(count);
         for (Eigen::Index m = 0; m < count; ++m)
         {
-            auto const updateMode = [&](auto const & measurement) -> std::expected<void, NumericError> {
+            auto const updateMode = [&](auto const & measurement,
+                                        Eigen::Index component) -> std::expected<void, NumericError> {
                 if constexpr (IsForm)
                 {
                     static_assert(
@@ -1207,7 +1264,7 @@ private:
                         result.accepted = false;
                         return std::unexpected{updated.error()};
                     }
-                    relabel(*updated, m);
+                    labelComponent(*updated, component);
                     updated->branches.front().mode = m;
                     logLikelihoods(m) = updated->logLikelihood();
                     result.accepted = true;
@@ -1229,7 +1286,7 @@ private:
                         state.conditional(m),
                         measurement,
                         [&](auto & measured) {
-                            relabel(measured, m);
+                            labelComponent(measured, component);
                             for (auto & branch : measured.branches)
                             {
                                 branch.mode = m;
@@ -1347,11 +1404,12 @@ struct RecursionFor<Hybrid<Component_, ModeSpace_, HybridAllocator>, Model, Meth
  * inlier/outlier state. A measurement's noise components can then be the values of a mode
  * axis, so that the outlier state is a Markov chain (bursts of outliers, a stuck sensor)
  * rather than independent at each measurement: a measurement whose noise is
- * <tt>additiveNoise(mixture).byMode<Sensor>()</tt> (see ModeNoise) uses, in each mode, only the
- * noise component that the mode's \c Sensor value names. A measurement that depends on the mode
- * in more than its noise, such as a sensor whose bias the mode sets, is one measurement per value
- * of an axis: update(switchingMeasurement<Sensor>(nominal, biased)) updates each mode by the one
- * that its \c Sensor value names (see SwitchingMeasurement).
+ * <tt>additiveNoise(byMode<Sensor>(when<Inlier>(inlier), when<Outlier>(outlier)))</tt> (see ModeNoise)
+ * uses, in each mode, only the %Gaussian that the mode's \c Sensor value names. A measurement that
+ * depends on the mode in more than its noise, such as a sensor whose bias the mode sets, is one
+ * measurement per value of an axis: <tt>update(byMode<Sensor>(when<Inlier>(nominal),
+ * when<Outlier>(biased)))</tt> updates each mode by the one that its \c Sensor value names, which
+ * may have noise by another axis in turn (see ByMode) [by-mode].
  *
  * \code
  * using Mode = DiscreteProduct<Maneuver, Sensor>;
@@ -1362,8 +1420,8 @@ struct RecursionFor<Hybrid<Component_, ModeSpace_, HybridAllocator>, Model, Meth
  *                  Hybrid{CategoricalParams<Mode>{}, initial}};
  * filter.predict(dt);
  * auto const updated = filter.update(fix);  // every mode, with the fix's own noise
- * auto const robust = filter.update(robustFix);  // noise byMode<Sensor>(): inlier and outlier are its values
- * auto const biased = filter.update(switchingMeasurement<Sensor>(fix, biasedFix));  // a measurement per value
+ * auto const robust = filter.update(robustFix);  // noise by Sensor: inlier and outlier are its values
+ * auto const biased = filter.update(byMode<Sensor>(when<Inlier>(fix), when<Outlier>(biasedFix)));
  * filter.state().modes().toDensity()->probability<Turn>();
  * filter.state().toDensity()->collapsed();  // the estimate as one GaussianParams
  * \endcode
@@ -1661,14 +1719,15 @@ public:
 
     /** Conditions each mode's component on \a measurement, by the measurement's own method,
      * reduces its branches with \a policy (Collapse, Select, or a Gate), and multiplies each mode's
-     * probability by \f$ p(z \mid m) \f$.
+     * probability by \f$ p(z \mid m) \f$. The measurement may depend on the mode, by its noise or as a
+     * measurement per value of a mode axis, a ByMode (see ImmRecursion::update()) [by-mode].
      *
      * \returns each mode's update before reduction, the observation's log-likelihood, and whether
      * it was accepted (see ImmFilterUpdate), with the modes' updates from the
      * state's allocator, in a \c std::expected that is empty, with the state unchanged, when a
      * mode's update failed (see ImmRecursion::update())
      */
-    template <Measurement M, typename Policy = reductions::Collapse>
+    template <internal::ModeMeasurement M, typename Policy = reductions::Collapse>
     [[nodiscard]] auto
     update(M const & measurement, Policy const & policy = {})
     {
@@ -1680,47 +1739,19 @@ public:
      *
      * \returns nothing, or the error update(measurement, policy) would return
      */
-    template <Measurement M, typename Policy, typename ModeUpdate, typename ResultAllocator>
+    template <internal::ModeMeasurement M, typename Policy, typename ModeUpdate, typename ResultAllocator>
     [[nodiscard]] std::expected<void, NumericError>
     update(M const & measurement, Policy const & policy, ImmFilterUpdate<ModeUpdate, Scalar, ResultAllocator> & result)
     {
         return m_recursion.update(m_state, measurement, policy, result);
     }
 
-    /** As update(measurement, policy), but with a measurement per value of the mode axis that
-     * \a measurement names (see SwitchingMeasurement): each mode is updated by the measurement that
-     * its value in that axis selects, and its own likelihood \f$ p(z \mid m) \f$ reweights it.
-     */
-    template <typename P, Measurement... Ms, typename Policy = reductions::Collapse>
-    [[nodiscard]] auto
-    update(SwitchingMeasurement<P, Ms...> const & measurement, Policy const & policy = {})
-    {
-        return m_recursion.update(m_state, measurement, policy);
-    }
-
-    /** As update(measurement, policy) with a SwitchingMeasurement, but into \a result, whose
-     * storage is reused.
-     *
-     * \returns nothing, or the error update(measurement, policy) would return
-     */
-    template <typename P, Measurement... Ms, typename Policy, typename ModeUpdate, typename ResultAllocator>
-    [[nodiscard]] std::expected<void, NumericError>
-    update(
-        SwitchingMeasurement<P, Ms...> const & measurement,
-        Policy const & policy,
-        ImmFilterUpdate<ModeUpdate, Scalar, ResultAllocator> & result
-    )
-    {
-        return m_recursion.update(m_state, measurement, policy, result);
-    }
-
     /** \returns an empty result for update(measurement, policy, result) with a measurement of type
-     * \a M, \c const and references aside, a measurement or a SwitchingMeasurement: the update
-     * inside the \c std::expected that update(measurement) returns, from the state's allocator,
-     * with room for an update of every mode
+     * \a M, \c const and references aside, a Measurement or a ByMode of them: the update inside the
+     * \c std::expected that update(measurement) returns, from the state's allocator, with room for
+     * an update of every mode
      */
-    template <typename M>
-        requires Measurement<M> || internal::isSwitchingMeasurement<std::remove_cvref_t<M>>
+    template <internal::ModeMeasurement M>
     [[nodiscard]] auto
     emptyUpdate() const
     {

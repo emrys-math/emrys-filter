@@ -647,7 +647,7 @@ public:
      * or with a hybrid per particle, which is updated where it is, with the particles before the
      * failed one updated and the weights as they were
      */
-    template <internal::WeighsPoints M>
+    template <internal::WeighsPointsOrModes M>
     [[nodiscard]] std::expected<UpdateType, NumericError>
     update(M const & measurement)
     {
@@ -657,7 +657,7 @@ public:
     /** update() under \a executionPolicy: each particle's update is a for-each and the evidence a
      * reduction, which matches Sequential's to rounding (see \ref Execution).
      */
-    template <ExecutionPolicy P, internal::WeighsPoints M>
+    template <ExecutionPolicy P, internal::WeighsPointsOrModes M>
     [[nodiscard]] std::expected<UpdateType, NumericError>
     update(P && executionPolicy, M const & measurement)
     {
@@ -675,7 +675,7 @@ public:
      *
      * \returns nothing, or the error update(measurement) would return
      */
-    template <internal::WeighsPoints M, typename ResultAllocator>
+    template <internal::WeighsPointsOrModes M, typename ResultAllocator>
     [[nodiscard]] std::expected<void, NumericError>
     update(M const & measurement, RbParticleFilterUpdate<Scalar, ResultAllocator> & result)
     {
@@ -685,10 +685,16 @@ public:
     /** update(measurement, result) under \a executionPolicy, as update(executionPolicy,
      * measurement) runs.
      */
-    template <ExecutionPolicy P, internal::WeighsPoints M, typename ResultAllocator>
+    template <ExecutionPolicy P, internal::WeighsPointsOrModes M, typename ResultAllocator>
     [[nodiscard]] std::expected<void, NumericError>
     update(P && executionPolicy, M const & measurement, RbParticleFilterUpdate<Scalar, ResultAllocator> & result)
     {
+        static_assert(
+            Switching || !internal::isByModePart<M>,
+            "a measurement per value of a mode axis, byMode<Axis>(), updates the modes of a hybrid, so it takes a "
+            "filter "
+            "whose points each hold one, under a switching model"
+        );
         if constexpr (!internal::hasOwnLikelihood<M> && !Shared)
         {
             return update(std::forward<P>(executionPolicy), measurement, reductions::collapse(), result);
@@ -737,7 +743,7 @@ public:
      * its %Gaussian and gets weight zero. A measurement weighted by its own likelihood has no
      * branches, so it takes no policy.
      */
-    template <internal::WeighsPoints M, typename Policy>
+    template <internal::WeighsPointsOrModes M, typename Policy>
     [[nodiscard]] std::expected<UpdateType, NumericError>
     update(M const & measurement, Policy const & policy)
         requires(!Shared)
@@ -749,7 +755,7 @@ public:
      * reduction by \a policy is a for-each, and the evidence a reduction, which matches
      * Sequential's to rounding (see \ref Execution).
      */
-    template <ExecutionPolicy P, internal::WeighsPoints M, typename Policy>
+    template <ExecutionPolicy P, internal::WeighsPointsOrModes M, typename Policy>
     [[nodiscard]] std::expected<UpdateType, NumericError>
     update(P && executionPolicy, M const & measurement, Policy const & policy)
         requires(!Shared)
@@ -768,7 +774,7 @@ public:
      *
      * \returns nothing, or the error update(measurement, policy) would return
      */
-    template <internal::WeighsPoints M, typename Policy, typename ResultAllocator>
+    template <internal::WeighsPointsOrModes M, typename Policy, typename ResultAllocator>
     [[nodiscard]] std::expected<void, NumericError>
     update(M const & measurement, Policy const & policy, RbParticleFilterUpdate<Scalar, ResultAllocator> & result)
         requires(!Shared)
@@ -779,7 +785,7 @@ public:
     /** update(measurement, policy, result) under \a executionPolicy, as update(executionPolicy,
      * measurement, policy) runs.
      */
-    template <ExecutionPolicy P, internal::WeighsPoints M, typename Policy, typename ResultAllocator>
+    template <ExecutionPolicy P, internal::WeighsPointsOrModes M, typename Policy, typename ResultAllocator>
     [[nodiscard]] std::expected<void, NumericError>
     update(
         P && executionPolicy,
@@ -793,12 +799,18 @@ public:
             !internal::hasOwnLikelihood<M>,
             "a measurement weighted by its own logLikelihood() has no branches to reduce, so it takes no policy"
         );
+        static_assert(
+            Switching || !internal::isByModePart<M>,
+            "a measurement per value of a mode axis, byMode<Axis>(), updates the modes of a hybrid, so it takes a "
+            "filter "
+            "whose points each hold one, under a switching model"
+        );
         // Weights the caller left undefined fail the update before any particle is conditioned.
         if (auto const total = m_state.logTotalWeight(executionPolicy); !total)
         {
             return std::unexpected{total.error()};
         }
-        if constexpr (Switching && internal::isByMode<M>)
+        if constexpr (Switching && internal::dependsOnMode<M>)
         {
             // Each mode's measurement holds its own noise component, so the recursion resolves it.
             return updateParticles(

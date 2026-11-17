@@ -1348,7 +1348,14 @@ concept WeighsPoints = Measurement<M>;
  * filters that weight points use whatever its noise says (decisions.md [likelihood-measurements]).
  */
 template <typename M>
-inline constexpr bool hasOwnLikelihood = std::remove_cvref_t<M>::ModelType::template has<PolicyKind::logLikelihood>;
+inline constexpr bool hasOwnLikelihood = false;
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename M>
+    requires requires { typename std::remove_cvref_t<M>::ModelType; }
+inline constexpr bool hasOwnLikelihood<M> = std::remove_cvref_t<M>::ModelType::template has<PolicyKind::logLikelihood>;
+
+/// \endcond
 
 /** Whether the measurement \a M repairs an innovation covariance that is not positive definite. */
 template <typename M>

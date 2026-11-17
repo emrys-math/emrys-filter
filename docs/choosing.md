@@ -79,8 +79,9 @@ use.
   outright; the particle filter
   weights by the mixture's density exactly.
 - **Outliers that come in runs**, such as a sensor that sticks or a bias that lasts several
-  measurements: the same mixture with `.byMode<Sensor>()` after `additiveNoise()`, and an
-  `ImmFilter` whose mode space has a `Sensor` axis with a `ContinuousTimeMarkovChain` of how long
+  measurements: the same components as noise by mode axis,
+  `additiveNoise(byMode<Sensor>(when<Inlier>(narrow).weight(0.95), when<Outlier>(wide).weight(0.05)))`,
+  and an `ImmFilter` whose mode space has a `Sensor` axis with a `ContinuousTimeMarkovChain` of how long
   the outliers last, or a `MarkovChain` of how many measurements they last when the models are
   fixed-step. The filter learns from each measurement whether the sensor is in its outlier state. Any
   other filter reads that noise as the memoryless mixture of the item above, so one measurement
@@ -116,8 +117,8 @@ use.
   estimate at each step mixes the modes by their probabilities, and a mode that was ruled out comes
   back when the chain lets it. A sensor that sees the state
   differently in some modes, with a bias or through another function, gives one measurement per
-  value of a mode axis, `switchingMeasurement<Sensor>(nominal, biased)`, and each mode is updated by
-  its own.
+  value of a mode axis, `byMode<Sensor>(when<Nominal>(nominal), when<Biased>(biased))`, and each
+  mode is updated by its own, which may have noise by another axis.
 - **Several candidate models, one of which holds for the whole run**, such as a target that is
   one of several classes, or a sensor whose bias follows one of several laws: `AmmFilter`, the
   autonomous multiple model estimator, the same bank over the identity chain, so the mode

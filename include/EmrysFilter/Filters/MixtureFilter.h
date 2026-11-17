@@ -218,7 +218,8 @@ struct GaussianMixturePredictedJoint
  *
  * auto bank = MixtureFilter{switchingModel<Maneuver>(chain, cruise, turn), hybrids};  // a mixture of IMMs
  * bank.predict(dt);
- * auto const robust = bank.update(robustFix);  // noise byMode<Sensor>(): each IMM's Markov outlier axis
+ * auto const robust = bank.update(robustFix);  // noise by Sensor: each IMM's Markov outlier axis
+ * auto const biased = bank.update(byMode<Sensor>(when<Inlier>(fix), when<Outlier>(biasedFix)));  // per value
  * \endcode
  *
  * The recursion updates the state's components in place. A policy that keeps several branches
@@ -285,14 +286,14 @@ public:
     /** What update() with \a M fills when given a result: one component's update per component,
      * each with the filter's allocator for what in it is sized by a run-time count.
      */
-    template <Measurement M>
+    template <internal::ModeMeasurement M>
     using ResultType = MixtureFilterUpdate<
         internal::RebindUpdateAllocator<typename RecursionType::template UpdateType<M>::value_type, Allocator_>,
         Scalar,
         Allocator_>;
 
     /** What update() with \a M returns: the ResultType in a \c std::expected (decisions.md [innovation-cholesky]). */
-    template <Measurement M>
+    template <internal::ModeMeasurement M>
     using UpdateType = std::expected<ResultType<M>, NumericError>;
 
     /** A filter with process model \a model, initial state \a state, prediction method \a method,
@@ -627,7 +628,7 @@ public:
      * it updated and the weights as they were (see the class comment, and decisions.md
      * [innovation-cholesky], [update-outcomes])
      */
-    template <Measurement M, typename Policy = reductions::Collapse>
+    template <internal::ModeMeasurement M, typename Policy = reductions::Collapse>
         requires(
             !isGaussian<ComponentType>
             || MixtureReductionPolicy<Policy, internal::MeasuredUpdate<ComponentType, M>, Component_>
@@ -642,7 +643,7 @@ public:
      * for-each into slots made first, and the reweighting, the evidence, and the posterior then
      * follow in order, so the result is Sequential's (see \ref Execution). The slots allocate.
      */
-    template <ExecutionPolicy P, Measurement M, typename Policy = reductions::Collapse>
+    template <ExecutionPolicy P, internal::ModeMeasurement M, typename Policy = reductions::Collapse>
         requires(
             !isGaussian<ComponentType>
             || MixtureReductionPolicy<Policy, internal::MeasuredUpdate<ComponentType, M>, Component_>
@@ -665,7 +666,7 @@ public:
      * \returns nothing, or the error update(measurement, policy) would return, with the state
      *          unchanged and \a result unspecified
      */
-    template <Measurement M, typename Policy, typename ResultAllocator>
+    template <internal::ModeMeasurement M, typename Policy, typename ResultAllocator>
         requires(
             !isGaussian<ComponentType>
             || MixtureReductionPolicy<Policy, internal::MeasuredUpdate<ComponentType, M>, Component_>
@@ -683,7 +684,7 @@ public:
     /** update(measurement, policy, result) under \a executionPolicy, as
      * update(executionPolicy, measurement, policy) runs.
      */
-    template <ExecutionPolicy P, Measurement M, typename Policy, typename ResultAllocator>
+    template <ExecutionPolicy P, internal::ModeMeasurement M, typename Policy, typename ResultAllocator>
         requires(
             !isGaussian<ComponentType>
             || MixtureReductionPolicy<Policy, internal::MeasuredUpdate<ComponentType, M>, Component_>
@@ -813,11 +814,11 @@ private:
      * branches rather than through the recursion: any policy but one that returns the component it
      * keeps, or a Gate over one (see internal::keepsOne).
      */
-    template <Measurement M, typename Policy>
+    template <typename M, typename Policy>
     [[nodiscard]] static consteval bool
     keepsBranches()
     {
-        if constexpr (isGaussian<ComponentType>)
+        if constexpr (isGaussian<ComponentType> && Measurement<M>)
         {
             using Measured = typename decltype(internal::updateBranches<true>(
                 std::declval<ComponentType const &>(),

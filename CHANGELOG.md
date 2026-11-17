@@ -11,6 +11,13 @@ instead.
 - `SECURITY.md`: how to report a vulnerability privately, and what counts as one. Among them is
   undefined behavior, or a call that never returns, caused by a floating-point value passed to the
   library, NaN and infinities included, in a build with `NDEBUG`.
+- A measurement per value of a mode axis may have noise by another axis:
+  `byMode<Maneuver>(when<Cruise>(fix), when<Turn>(biasedFix))` where each fix's noise is
+  `additiveNoise(byMode<Sensor>(...))`. An axis that chooses twice along a nesting fails to compile.
+- A `MixtureFilter` of hybrids, and an `RbPointMassFilter` or `RbParticleFilter` under a switching
+  model, take a measurement per value of a mode axis, as the IMM does.
+- `observe(method, byMode<Axis>(when<Value>(model), ...), z)` observes a model per value of an
+  axis with one observation, making a measurement per value.
 - `Zero<Path>{variance}`, a built-in process model that resets its block to zero with that variance
   on each coordinate, independent of the rest of the state, over any step: the model of a block a
   switching model's mode doesn't use and in which the quantity is zero, such as a
@@ -23,12 +30,24 @@ instead.
 - `KalmanFilter`, `MixtureFilter`, `ImmFilter`, and `AmmFilter` have `emptyUpdate<M>()`, the empty
   result that `update(measurement, policy, result)` refills, made from the state's allocator with
   room for every component or mode, so a reused result is one line:
-  `auto result = filter.emptyUpdate<Fix>();`. The IMM's takes a `SwitchingMeasurement` too. It
+  `auto result = filter.emptyUpdate<Fix>();`. The IMM's takes a `byMode` of measurements too. It
   replaces `filter.recursion().emptyUpdate<Fix>(filter.get_allocator(), filter.state().size())`
   and a result built from the allocator and reserved by hand, which still work.
 
 ### Changed
 
+- **Breaking:** a part of a model that depends on the mode is
+  `byMode<Axis>(when<Value>(part), ...)`, its alternatives labeled by the value of the mode axis
+  each serves, in any order; a value named twice, left out, or not the axis's fails to compile,
+  and `otherwise(part)` serves the values not named. Noise by mode axis is
+  `additiveNoise(byMode<Sensor>(when<Inlier>(inlier).weight(0.9), when<Outlier>(outlier).weight(0.1)))`,
+  one `GaussianParams` per value; write it in place of
+  `additiveNoise(mixture).byMode<Sensor>()`. The weights are what a filter without the axis reads
+  the noise by, as the mixture's were; without them such a filter refuses the noise at compile
+  time. A measurement per value of an axis is `byMode<Sensor>(when<Inlier>(nominal),
+  when<Outlier>(biased))`; write it in place of `switchingMeasurement<Sensor>(nominal, biased)`.
+  `SwitchingMeasurement`, `switchingMeasurement()`, `AdditiveNoise::byMode()`, and
+  `ImmRecursion::SwitchingResultType` are gone; `ImmRecursion::ResultType<M>` takes the `byMode`.
 - **Breaking:** `ImmFilter` takes a recursion, as `KalmanFilter` and `MixtureFilter` do:
   `ImmFilter<Component, Model, Method, Allocator, Recursion, Upkeep>`, the `ImmRecursion` unless
   given one, and `ImmFilter{recursion, state}` runs a recursion of your own over the hybrid, such

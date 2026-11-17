@@ -479,7 +479,7 @@ immNoiseAxisMissing()
         Emrys::measurementModel(
             readPosition,
             Emrys::reads(Emrys::path<Position>),
-            Emrys::additiveNoise(makeMixtureNoise()).byMode<Sensor>()
+            Emrys::additiveNoise(Emrys::byMode<Sensor>(Emrys::when<Good>(makeNoise()), Emrys::when<Bad>(makeNoise())))
         ),
         Eigen::Vector2d::Zero()
     );
@@ -487,52 +487,95 @@ immNoiseAxisMissing()
 }
 #endif
 
-#if defined(IMM_SWITCHING_RESULT_TYPES)  // static_assert: ImmFilter.h: the measurements of a switching measurement
+#if defined(IMM_BY_MODE_RESULT_TYPES)  // static_assert: ImmFilter.h: the alternatives of a measurement by mode axis
 [[maybe_unused]] void
-immSwitchingResultTypes()
+immByModeResultTypes()
 {
     auto filter = makeImm();
     [[maybe_unused]] auto const updated = filter.update(
-        Emrys::switchingMeasurement<Maneuver>(
-            makeFix(Emrys::methods::linearized(), makeNoise()),
-            makeFix(Emrys::methods::linearized(), makeMixtureNoise())
+        Emrys::byMode<Maneuver>(
+            Emrys::when<Cruise>(makeFix(Emrys::methods::linearized(), makeNoise())),
+            Emrys::when<Turn>(makeFix(Emrys::methods::linearized(), makeMixtureNoise()))
         )
     );
 }
 #endif
 
-#if defined(IMM_SWITCHING_AXIS_MISSING)  // static_assert: ImmFilter.h: a switching measurement is selected by a mode
+#if defined(IMM_BY_MODE_AXIS_MISSING)  // static_assert: ImmFilter.h: a measurement by mode axis, byMode<Axis>(),
+                                       // chooses
 [[maybe_unused]] void
-immSwitchingAxisMissing()
+immByModeAxisMissing()
 {
     // The filter's mode space is Maneuver alone.
     auto filter = makeImm();
     [[maybe_unused]] auto const updated = filter.update(
-        Emrys::switchingMeasurement<Sensor>(
-            makeFix(Emrys::methods::linearized(), makeNoise()),
-            makeFix(Emrys::methods::linearized(), makeNoise())
+        Emrys::byMode<Sensor>(
+            Emrys::when<Good>(makeFix(Emrys::methods::linearized(), makeNoise())),
+            Emrys::when<Bad>(makeFix(Emrys::methods::linearized(), makeNoise()))
         )
     );
 }
 #endif
 
-#if defined(IMM_SWITCHING_BY_MODE)  // static_assert: ImmFilter.h: a measurement of a switching measurement has noise
+#if defined(IMM_BY_MODE_NOISE_SAME_AXIS)  // static_assert: ImmFilter.h: a measurement chosen by a mode axis has noise
 [[maybe_unused]] void
-immSwitchingByMode()
+immByModeNoiseSameAxis()
 {
     auto filter = makeImm();
-    auto const byMode = [] {
+    auto const byManeuver = [] {
         return Emrys::observe(
             Emrys::methods::linearized(),
             Emrys::measurementModel(
                 readPosition,
                 Emrys::reads(Emrys::path<Position>),
-                Emrys::additiveNoise(makeMixtureNoise()).byMode<Maneuver>()
+                Emrys::additiveNoise(
+                    Emrys::byMode<Maneuver>(Emrys::when<Cruise>(makeNoise()), Emrys::when<Turn>(makeNoise()))
+                )
             ),
             Eigen::Vector2d::Zero()
         );
     };
-    [[maybe_unused]] auto const updated = filter.update(Emrys::switchingMeasurement<Maneuver>(byMode(), byMode()));
+    [[maybe_unused]] auto const updated =
+        filter.update(Emrys::byMode<Maneuver>(Emrys::when<Cruise>(byManeuver()), Emrys::when<Turn>(byManeuver())));
+}
+#endif
+
+#if defined(IMM_BY_MODE_SAME_AXIS_TWICE)  // static_assert: ImmFilter.h: a measurement chosen by a mode axis chooses
+                                          // again
+[[maybe_unused]] void
+immByModeSameAxisTwice()
+{
+    auto filter = makeImm();
+    auto const fix = makeFix(Emrys::methods::linearized(), makeNoise());
+    [[maybe_unused]] auto const updated = filter.update(
+        Emrys::byMode<Maneuver>(
+            Emrys::when<Cruise>(Emrys::byMode<Maneuver>(Emrys::when<Cruise>(fix), Emrys::when<Turn>(fix))),
+            Emrys::when<Turn>(fix)
+        )
+    );
+}
+#endif
+
+#if defined(RB_PARTICLE_BY_MODE_UNSWITCHED)  // static_assert: RbParticleFilter.h: a measurement per value of a mode
+                                             // axis
+[[maybe_unused]] void
+rbParticleByModeUnswitched()
+{
+    auto filter = makeRbParticlePerPoint();
+    auto const fix = makeFix(Emrys::methods::linearized(), makeNoise());
+    [[maybe_unused]] auto const updated =
+        filter.update(Emrys::byMode<Maneuver>(Emrys::when<Cruise>(fix), Emrys::when<Turn>(fix)));
+}
+#endif
+
+#if defined(RB_POINT_MASS_BY_MODE_UNSWITCHED)  // static_assert: RbPointMassFilter.h: a measurement per value of a mode
+[[maybe_unused]] void
+rbPointMassByModeUnswitched()
+{
+    auto filter = makeRbPointMassPerPoint();
+    auto const fix = makeFix(Emrys::methods::linearized(), makeNoise());
+    [[maybe_unused]] auto const updated =
+        filter.update(Emrys::byMode<Maneuver>(Emrys::when<Cruise>(fix), Emrys::when<Turn>(fix)));
 }
 #endif
 

@@ -5,8 +5,8 @@
  * unless the models are fixed-step, and the process model each mode follows, one per mode, one per value of a mode axis
  * through switchingModel(), or one shared, and over a fixed step when every model is a FixedStepModel
  * [fixed-step-models]. The interacting multiple model filter's process model. withMethod() gives one mode's model a
- * prediction method of its own, ModelWithMethod. SwitchingMeasurement is the model's counterpart for an update: one
- * measurement per value of a mode axis, through switchingMeasurement(). Read Reduction.h next; the design review is
+ * prediction method of its own, ModelWithMethod. A measurement per value of a mode axis is a ByMode of measurements
+ * [by-mode], which observe() also makes of a ByMode of models. Read Reduction.h next; the design review is
  * docs/guide/imm-filter.md.
  */
 
@@ -21,6 +21,7 @@
 #include <EmrysFilter/Core/Math.h>
 #include <EmrysFilter/Distributions/Categorical.h>
 #include <EmrysFilter/Distributions/ContinuousTimeMarkovChain.h>
+#include <EmrysFilter/Models/ByMode.h>
 #include <EmrysFilter/Models/MeasurementModel.h>
 #include <EmrysFilter/Models/ProcessModel.h>
 #include <EmrysFilter/Spaces/Discrete.h>
@@ -597,127 +598,68 @@ switchingModel(MarkovChain<ModeSpace, Scalar> const & chain, Models... models)
     return SwitchingModel<ModeSpace, Scalar, P, Models...>{chain, std::move(models)...};
 }
 
-/** \ingroup Models
- * \brief A measurement that switches between modes: one Measurement per value of a mode axis, so
- * that a filter over a Hybrid updates each mode by the measurement that its value in that axis
- * names [imm].
- *
- * A sensor may see the state differently in each mode: with a bias or a scale factor that the mode
- * sets, through a function that holds in one regime only, or not at all, when a blocked sensor
- * reads clutter. <tt>switchingMeasurement<Sensor>(nominal, biased)</tt> on a mode space
- * <tt>DiscreteProduct<Maneuver, Sensor></tt> updates each mode whose \c Sensor value is the first by
- * \c nominal and each other mode by \c biased, and each mode's own likelihood
- * \f$ p(z \mid m) \f$ reweights it. The measurements may differ in model, function, noise, and
- * method, as long as every mode's update has one type: one measurement space, and noise that is
- * %Gaussian in all of them or a mixture in all of them. None of them has noise by mode axis.
- *
- * It is the counterpart of SwitchingModel for an update: where switchingModel<Maneuver>() selects
- * the dynamics by an axis, switchingMeasurement<Sensor>() selects the measurement. Noise by mode
- * axis, <tt>additiveNoise(mixture).byMode<Sensor>()</tt> (see ModeNoise), is the case in which the
- * measurements differ in their noise alone, the components of one measurement's mixture noise
- * being the axis's values.
- *
- * \tparam Path_         the mode axis that selects the measurement, as a tag or TagPath
- * \tparam Measurements  the measurements, in the order of the axis's values
- *
- * \sa switchingMeasurement(), SwitchingModel, ImmFilter
- */
-template <typename Path_, Measurement... Measurements>
-class SwitchingMeasurement
-{
-    static_assert(sizeof...(Measurements) > 0, "a switching measurement needs a measurement");
-
-public:
-
-    using PathType = Path_;  ///< the mode axis that selects the measurement
-
-    static constexpr std::size_t Count = sizeof...(Measurements);  ///< the number of measurements
-
-    /** Measurement \a I, for value \a I of the axis. */
-    template <std::size_t I>
-    using MeasurementType = std::tuple_element_t<I, std::tuple<Measurements...>>;
-
-    /** \a measurements, one per value of the axis \a Path_, in order. */
-    explicit SwitchingMeasurement(Measurements... measurements)
-        : m_measurements{std::move(measurements)...}
-    {
-        using Axis = internal::PathTag<Path_>;
-        static_assert(
-            Axis::Cardinality == Eigen::Dynamic || Axis::Cardinality == int(sizeof...(Measurements)),
-            "give one measurement per value of the axis that selects it"
-        );
-    }
-
-    /** \returns measurement \a I, for value \a I of the axis */
-    template <std::size_t I>
-    [[nodiscard]] MeasurementType<I> const &
-    measurement() const
-    {
-        return std::get<I>(m_measurements);
-    }
-
-    /** \returns \a f applied to the measurement for value \a value of the axis, which is less than
-     * Count; \a f returns one type for every measurement
-     */
-    template <typename F>
-    decltype(auto)
-    visit(std::size_t value, F && f) const
-    {
-        EMRYS_FILTER_ASSERT(value < Count && "the switching measurement has no measurement for this value of the axis");
-        return visitFrom<0>(value, f);
-    }
-
-private:
-
-    /** \returns \a f applied to the measurement for \a value, looked for from measurement \a I on */
-    template <std::size_t I, typename F>
-    decltype(auto)
-    visitFrom(std::size_t value, F & f) const
-    {
-        if constexpr (I + 1 == Count)
-        {
-            return f(std::get<I>(m_measurements));
-        }
-        else
-        {
-            if (value == I)
-            {
-                return f(std::get<I>(m_measurements));
-            }
-            return visitFrom<I + 1>(value, f);
-        }
-    }
-
-    std::tuple<Measurements...> m_measurements;  ///< the measurements, in the axis's order
-};
-
-/** \ingroup Models
- * \returns a SwitchingMeasurement in which the mode's value in the axis named by the path \a P (a
- * tag or a TagPath) selects the measurement: \a measurements has one per value of that axis, in
- * order. <tt>filter.update(switchingMeasurement<Sensor>(nominal, biased))</tt> updates the modes of
- * an ImmFilter over <tt>DiscreteProduct<Maneuver, Sensor></tt> whose \c Sensor value is the first by
- * \c nominal, and the others by \c biased.
- */
-template <typename P, Measurement... Measurements>
-[[nodiscard]] SwitchingMeasurement<P, Measurements...>
-switchingMeasurement(Measurements... measurements)
-{
-    return SwitchingMeasurement<P, Measurements...>{std::move(measurements)...};
-}
-
 namespace internal
 {
 
-/** Whether \a T is a SwitchingMeasurement. */
-template <typename T>
-inline constexpr bool isSwitchingMeasurement = false;
+/** Whether \a M is a measurement a filter over a Hybrid updates its modes by: a Measurement, whose noise
+ * may be by mode axis (ModeNoise), or a ByMode of them, a measurement per value of a mode axis [by-mode].
+ */
+template <typename M>
+inline constexpr bool isModeMeasurement = Measurement<M>;
 
 /// \cond INTERNAL_SPECIALIZATIONS
-template <typename Path, typename... Measurements>
-inline constexpr bool isSwitchingMeasurement<SwitchingMeasurement<Path, Measurements...>> = true;
+template <typename P, typename... Alternatives>
+inline constexpr bool isModeMeasurement<ByMode<P, Alternatives...>> =
+    (isModeMeasurement<std::remove_cvref_t<typename Alternatives::PartType>> && ...);
 
 /// \endcond
 
+/** A measurement a filter over a Hybrid updates its modes by (see isModeMeasurement). */
+template <typename M>
+concept ModeMeasurement = isModeMeasurement<std::remove_cvref_t<M>>;
+
+/** A measurement the filters weighting points take (see WeighsPoints), or a ByMode of them, which those
+ * whose points each hold a hybrid take [by-mode].
+ */
+template <typename M>
+concept WeighsPointsOrModes = WeighsPoints<M> || (isByModePart<M> && ModeMeasurement<M>);
+
+/** Whether \a M is a ByMode of measurements, a measurement per value of a mode axis. */
+template <typename M>
+inline constexpr bool isMeasurementByMode = isByModePart<M> && ModeMeasurement<M>;
+
 }  // namespace internal
+
+/** \ingroup Models
+ * \returns a measurement per value of the mode axis of \a models, a ByMode of measurement models:
+ * each model observed by \a method with the observation \a observation and the call's \a args, as
+ * observe() observes one, and serving the values its alternative served [by-mode].
+ *
+ * \code
+ * auto const sensor = byMode<SensorKind>(when<Radar>(radar), when<Lidar>(lidar));
+ * auto const updated = filter.update(observe(methods::unscented(), sensor, z));
+ * \endcode
+ */
+template <TransformMethod Method, typename P, typename... Alternatives, MatrixExpression Z, typename... Args>
+[[nodiscard]] auto
+observe(Method method, ByMode<P, Alternatives...> const & models, Z const & observation, Args const &... args)
+{
+    return models.map([&](auto const & model) {
+        return observe(method, model, observation, args...);
+    });
+}
+
+/** \ingroup Models
+ * \returns observe(method, models, observation, args...) with the method each model's kind gives
+ * [by-mode]: <tt>observe(byMode<SensorKind>(when<Radar>(radar), when<Lidar>(lidar)), z)</tt>
+ */
+template <typename P, typename... Alternatives, MatrixExpression Z, typename... Args>
+[[nodiscard]] auto
+observe(ByMode<P, Alternatives...> const & models, Z const & observation, Args const &... args)
+{
+    return models.map([&](auto const & model) {
+        return observe(model, observation, args...);
+    });
+}
 
 }  // namespace Emrys

@@ -1121,15 +1121,17 @@ makeExactFix(Eigen::Vector2d const & z)
     );
 }
 
-// A range rate clear of obstruction, or biased by 0.5 with variance 0.25: one noise component per
-// value of Mode, for the update by mode axis.
-Emrys::GaussianMixtureParams<Linear<1>>
+// A range rate clear of obstruction, or biased by 0.5 with variance 0.25: one noise %Gaussian per
+// value of Mode, the noise by that mode axis.
+auto
 biasedNoise()
 {
-    auto noise = Emrys::GaussianMixtureParams<Linear<1>>{Linear<1>{}};
-    noise.add(std::log(0.9), Vector1::Zero(), Vector1{0.01});
-    noise.add(std::log(0.1), Vector1{0.5}, Vector1{0.25});
-    return noise;
+    return additiveNoise(
+        Emrys::byMode<Mode>(
+            Emrys::when<Steady>(GaussianParams<Linear<1>>{Vector1::Zero(), Vector1{0.01}}),
+            Emrys::when<Maneuvering>(GaussianParams<Linear<1>>{Vector1{0.5}, Vector1{0.25}})
+        )
+    );
 }
 
 auto
@@ -1143,7 +1145,7 @@ makeBiasedRangeRate(double z, Eigen::Vector2d const & beacon)
             };
         },
         Emrys::reads(Emrys::path<Position>, Emrys::path<Velocity>),
-        additiveNoise(biasedNoise()).byMode<Mode>()
+        biasedNoise()
     );
     return observe(methods::linearized(), rangeRate, Vector1{z});
 }
@@ -1262,20 +1264,16 @@ TEST(RbParticleFilter, HybridParticlesMatchAnImmFilterPerParticle)
         {
             auto hybrid = predicted.conditional(i);
             auto const p = predicted.particle(i);
-            auto const known = byAxis
-                                 ? recursion.update(
-                                       hybrid,
-                                       makeRangeRateAt(z, beacons[b], p, additiveNoise(biasedNoise()).byMode<Mode>())
-                                   )
-                                 : recursion.update(
-                                       hybrid,
-                                       makeRangeRateAt(
-                                           z,
-                                           beacons[b],
-                                           p,
-                                           additiveNoise(GaussianParams<Linear<1>>{Vector1::Zero(), Vector1{0.01}})
-                                       )
-                                   );
+            auto const known = byAxis ? recursion.update(hybrid, makeRangeRateAt(z, beacons[b], p, biasedNoise()))
+                                      : recursion.update(
+                                            hybrid,
+                                            makeRangeRateAt(
+                                                z,
+                                                beacons[b],
+                                                p,
+                                                additiveNoise(GaussianParams<Linear<1>>{Vector1::Zero(), Vector1{0.01}})
+                                            )
+                                        );
             ASSERT_TRUE(known) << i;
             EXPECT_NEAR(result->logLikelihoods()(i), known->logLikelihood(), 1e-9) << i;
             Eigen::Index mode = 0;

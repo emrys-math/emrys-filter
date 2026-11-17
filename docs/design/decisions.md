@@ -80,6 +80,7 @@ Read the index, then the decisions your change touches.
 | [additive-noise](#additive-noise) | Additive noise is explicit, and it may be a mixture |
 | [weighted-branches](#weighted-branches) | An update returns weighted branches |
 | [switching-models](#switching-models) | A switching process model is a set of per-mode models plus Π |
+| [by-mode](#by-mode) | A part of a model that depends on the mode is `byMode<Axis>()` of alternatives labeled by value |
 | [unused-blocks](#unused-blocks) | A block a mode doesn't use is held where the quantity persists and reset where it is zero |
 | [templated-measurements](#templated-measurements) | Heterogeneous sensors use templates, not type erasure |
 | [sensors](#sensors) | A measurement model predicts the observation from what it reads, and a measurement is the model observed by a method |
@@ -1522,6 +1523,37 @@ mixed component.
 **Where.** `Models/SwitchingModel.h`; the modes' predictions in `Filters/ImmFilter.h` and
 `Filters/RbParticleFilter.h`.
 
+### by-mode
+
+*A part of a model that depends on the mode is `byMode<Axis>()` of alternatives labeled by value.*
+
+**Rule.** `byMode<Axis>(when<Value>(part), ...)` gives one alternative per value of a mode axis,
+in any order, each labeled by the value it serves; on a named axis, a value named twice, left out,
+or not the axis's fails to compile, and `otherwise(part)` serves the values not named. On an axis
+whose values have no names the alternatives are positional, their count checked. A filter whose
+mode space has the axis gives each mode its value's alternative, the chain giving the
+probabilities. `additiveNoise(byMode<Axis>(...))` of one `GaussianParams` type is noise by mode
+axis [imm]; a filter without the axis reads it as the mixture of the alternatives by their
+`.weight(w)`, and refuses it without weights. A `byMode` of measurements is a measurement per
+value, which every filter holding hybrids takes; `observe()` of a `byMode` of models makes one.
+Alternatives nest, each reading its own axis, and an axis chooses at most once along a nesting.
+Every mode's update has one type. The process side is to follow (roadmap 17zf).
+
+**Why.** One spelling for every part that varies by mode, where before noise and measurements each
+had their own and the two did not combine (imm-filter.md Q19, Q20). Labels make the alternatives'
+order irrelevant and let the compiler check that each value is served once. Nesting keeps each
+part at the axis it depends on, so the spelling grows with how parts depend on axes, not with how
+many axes the mode has. Weights beside their values keep one sensor model for both readings.
+
+**Rejected.** A positional list on a named axis, whose order the reader must know. A map literal,
+whose values have one type and whose keys are checked at run time. `otherwise()` implied for a
+missing value, which would turn a forgotten one into a silent default. Deducing the axis from the
+tags, since a tag may name a value of two axes. A choice by the same axis inside another, which
+could take only one alternative.
+
+**Where.** `Models/ByMode.h`, `Models/Policies.h` (`ModeNoise`), `Models/SwitchingModel.h`
+(`observe()`), `Filters/ImmFilter.h` (`forMode()`).
+
 ### unused-blocks
 
 *A block a mode doesn't use is held where the quantity persists and reset where it is zero.*
@@ -2385,11 +2417,11 @@ per mode. Its `SwitchingModel` holds a model per value of a mode axis, or one sh
 `predict()` mixes each mode's Gaussian through the chain and predicts it by its mode's model;
 `update()` updates each mode, reduces with a policy that keeps one Gaussian (`Keep` doesn't
 compile), and reweights by $p(z \mid m)$, a rejected mode keeping its Gaussian at probability zero.
-Noise `additiveNoise(mixture).byMode<Axis>()` is the Markov outlier model: in any filter whose mode
-space has the axis, each mode updates by its value's component, weighted by the chain alone; with
-no mode space the mixture is memoryless; a mode space without the axis fails to compile.
-`switchingMeasurement<Sensor>(nominal, biased)` updates each mode by its value's measurement, all of
-one update type and none with noise by mode axis. One measurement's update takes a block given as
+Noise by mode axis, `additiveNoise(byMode<Axis>(...))` [by-mode], is the Markov outlier model: in
+any filter whose mode space has the axis, each mode updates by its value's Gaussian, weighted by the
+chain alone; with no mode space it is the memoryless mixture by the alternatives' weights; a mode
+space without the axis fails to compile. A `byMode` of measurements updates each mode by its
+value's, of one update type. Each mode's measurement takes a block given as
 `update(prior, measurement, given)` does [rb-point-mass], [rb-particle-filter].
 
 **Why.** Every filter that tracks modes keeps one Gaussian per mode, and the mode space fixes the

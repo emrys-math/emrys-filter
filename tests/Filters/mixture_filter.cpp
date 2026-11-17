@@ -169,10 +169,15 @@ makeFix(Eigen::Vector2d const & z)
 auto
 makeRobustFix(Eigen::Vector2d const & z)
 {
-    auto noise = GaussianMixtureParams<Linear<2>>{2};
-    noise.add(std::log(0.9), Eigen::Vector2d::Zero(), R);
-    noise.add(std::log(0.1), Eigen::Vector2d::Zero(), outlierScale * R);
-    return observeFix(z, additiveNoise(std::move(noise)).byMode<Sensor>());
+    return observeFix(
+        z,
+        additiveNoise(
+            Emrys::byMode<Sensor>(
+                Emrys::when<Inlier>(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), R}),
+                Emrys::when<Outlier>(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), outlierScale * R})
+            )
+        )
+    );
 }
 
 // The fixes a run takes, in order: five cycles that drift along x, the third an outlier.

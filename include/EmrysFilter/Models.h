@@ -16,7 +16,8 @@
  * Measurement.h, with the measurement models of MeasurementModel.h, the policies of Policies.h, and the placements
  * and compositions of Placement.h, are the models [model-policies], [model-placement], [affine-coordinates],
  * [templated-measurements], [method-per-measurement], [additive-noise], [sensors], [continuous-time-noise],
- * [weighted-branches], and [prediction-inputs]; SwitchingModel.h adds a mode chain [switching-models], [imm];
+ * [weighted-branches], and [prediction-inputs]; SwitchingModel.h adds a mode chain [switching-models], [imm],
+ * and ByMode.h a part per value of a mode axis [by-mode];
  * Emission.h measures a discrete state [emissions]; Reduction.h and Consistency.h reduce an update's branches and test
  * them [weighted-branches], [reduction-policies], [composed-features], and Simulation.h draws the true states that
  * Consistency.h's nees() tests a filter against, and CramerRao.h's posterior Cramér-Rao bound bounds its error along
@@ -137,6 +138,7 @@
  */
 
 #include <EmrysFilter/Models/Batched.h>
+#include <EmrysFilter/Models/ByMode.h>
 #include <EmrysFilter/Models/Condition.h>
 #include <EmrysFilter/Models/Consistency.h>
 #include <EmrysFilter/Models/CramerRao.h>

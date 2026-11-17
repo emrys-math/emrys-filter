@@ -23,6 +23,7 @@
 #include <EmrysFilter/Distributions/Gaussian.h>
 #include <EmrysFilter/Distributions/Mixture.h>
 #include <EmrysFilter/Distributions/Product.h>
+#include <EmrysFilter/Models/ByMode.h>
 #include <EmrysFilter/Spaces/Composite.h>
 #include <EmrysFilter/Spaces/Coordinates.h>
 #include <EmrysFilter/Spaces/Space.h>
@@ -352,9 +353,6 @@ inline constexpr bool placesMixture<OnEach<X, Path>> = isGaussianMixture<std::re
 
 }  // namespace internal
 
-template <typename Axis, typename Part>
-class ModeNoise;
-
 /** \ingroup Models
  * \brief Noise added to a model's output, \f$ z = h(x) \boxplus v \f$, as additiveNoise() declares
  * it (decisions.md [additive-noise], [model-policies]): the function is transformed once, and the
@@ -433,77 +431,121 @@ public:
         return std::get<0>(std::move(m_parts));
     }
 
-    /** \returns this noise, a mixture, with its components as the values of the mode axis named by
-     * the path \a Axis (a tag or a TagPath), in order (see ModeNoise)
-     */
-    template <typename Axis>
-    [[nodiscard]] auto
-    byMode() const &
-    {
-        checkByMode();
-        return ModeNoise<Axis, std::tuple_element_t<0, std::tuple<Parts...>>>{*this};
-    }
-
-    /** byMode() const &, moving the mixture out of a temporary noise. */
-    template <typename Axis>
-    [[nodiscard]] auto
-    byMode() &&
-    {
-        checkByMode();
-        return ModeNoise<Axis, std::tuple_element_t<0, std::tuple<Parts...>>>{std::move(*this)};
-    }
-
 private:
-
-    /** Checks that this noise is one mixture over the whole output, as byMode() requires. */
-    static constexpr void
-    checkByMode()
-    {
-        static_assert(
-            !Placed && internal::isGaussianMixture<Distribution>,
-            "byMode() takes additive noise that is one mixture over the whole output, with one component per value "
-            "of the mode axis"
-        );
-    }
 
     std::tuple<Parts...> m_parts;  ///< the parts
 };
 
 /** \ingroup Models
- * \brief Additive mixture noise whose components are the values of a mode axis, as
- * <tt>additiveNoise(mixture).byMode<Axis>()</tt> declares it (decisions.md [imm]): the Markov
- * outlier model, in which a sensor's outlier state is a mode of the target that persists as the
- * mode chain says.
+ * \brief Additive noise that depends on a mode axis, one %Gaussian per value of it, as
+ * <tt>additiveNoise(byMode<Axis>(when<Value>(gaussian), ...))</tt> declares it (decisions.md
+ * [by-mode], [imm]): the Markov outlier model, in which a sensor's outlier state is a mode of the
+ * target that persists as the mode chain says.
  *
  * A filter whose state has the mode axis \a Axis, such as an ImmFilter whose mode space has it,
- * updates each mode with the one component that the mode's value in \a Axis names, in the order of
- * the axis's values, and reweights the mode by that component's likelihood; the components'
- * weights are not used, since the chain gives the probabilities. A filter whose state has no mode
- * space, such as a KalmanFilter or a GaussianMixtureFilter, reads it as the AdditiveNoise it
- * derives from, a mixture whose weights are the outliers' rate at each measurement, independent of
- * the last: the memoryless outlier model. A filter whose state has a mode space without \a Axis
- * refuses it at compile time. So one measurement serves a filter with mixture noise and the IMM, and
- * an IMM always updates the axis the measurement names. The weights the memoryless reading uses
- * should match the chain's stationary probabilities on \a Axis, for the two readings to describe
- * one sensor.
+ * updates each mode with the %Gaussian its value in \a Axis names, components(), and reweights the
+ * mode by that %Gaussian's likelihood; the chain gives the probabilities. A filter whose state has no
+ * mode space, such as a KalmanFilter or a GaussianMixtureFilter, reads it as the mixture of the
+ * %Gaussians with the weights given to the alternatives, an outlier rate independent from one
+ * measurement to the next: the memoryless outlier model. Given no weights, such a filter refuses it
+ * at compile time. A filter whose state has a mode space without \a Axis refuses it at compile time.
+ * So one measurement serves a filter with mixture noise and the IMM. The weights should match the
+ * chain's stationary probabilities on \a Axis, for the two readings to describe one sensor.
  *
- * \tparam Axis  the path to the mode axis, a tag or a TagPath
- * \tparam Part  the mixture, as held
+ * \tparam Axis      the path to the mode axis, a tag or a TagPath
+ * \tparam Part      the %Gaussians as a mixture, in the order of the axis's values
+ * \tparam Weighted  whether the alternatives were given weights
  *
- * \sa AdditiveNoise::byMode(), ImmFilter
+ * \sa byMode(), additiveNoise(), ImmFilter
  */
-template <typename Axis, typename Part>
+template <typename Axis, typename Part, bool Weighted>
 class ModeNoise : public AdditiveNoise<Part>
 {
 public:
 
     using ModeAxisType = Axis;  ///< the path to the mode axis whose values the components are
 
-    /** \a noise, with its components as the values of the mode axis. */
-    explicit ModeNoise(AdditiveNoise<Part> noise)
-        : AdditiveNoise<Part>{std::move(noise)}
+    /** \a components, one %Gaussian per value of the mode axis, in order, as a mixture. */
+    explicit ModeNoise(Part components)
+        : AdditiveNoise<Part>{std::move(components)}
     {}
+
+    /** \returns the %Gaussians, one per value of the mode axis, in order, as a mixture whose weights are
+     * the alternatives' (equal, if they were given none)
+     */
+    [[nodiscard]] Part const &
+    components() const
+    {
+        return AdditiveNoise<Part>::distribution();
+    }
+
+    /// whether the alternatives were given weights, which a filter without the mode axis reads them by
+    static constexpr bool HasWeights = Weighted;
 };
+
+namespace internal
+{
+
+/** Whether \a T is a GaussianParams, which noise by mode axis takes per value. */
+template <typename T>
+inline constexpr bool isModeNoiseGaussian = false;
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename Space_, typename Scalar_>
+inline constexpr bool isModeNoiseGaussian<GaussianParams<Space_, Scalar_>> = true;
+
+/// \endcond
+
+/** \returns the alternatives of \a noise, one %Gaussian per value of its axis, as a mixture in the axis's
+ * order, with their weights, or equal ones
+ */
+template <typename P, typename... Alternatives>
+[[nodiscard]] auto
+modeNoiseMixture(ByMode<P, Alternatives...> const & noise)
+{
+    using NoiseGaussian = std::remove_cvref_t<typename ByMode<P, Alternatives...>::template PartType<0>>;
+    static_assert(
+        (std::is_same_v<std::remove_cvref_t<typename Alternatives::PartType>, NoiseGaussian> && ...),
+        "additiveNoise(byMode<Axis>(...)) takes one GaussianParams type for every value of the axis"
+    );
+    static_assert(
+        isModeNoiseGaussian<NoiseGaussian>,
+        "additiveNoise(byMode<Axis>(...)) takes a GaussianParams per value of the axis, the noise in its modes"
+    );
+    using Scalar = typename NoiseGaussian::Scalar;
+    auto mixture = GaussianMixtureParams<typename NoiseGaussian::SpaceType, Scalar>{
+        std::get<0>(noise.alternatives()).part().space()
+    };
+    Eigen::Index const values = noise.values();
+    mixture.reserve(values);
+    for (Eigen::Index v = 0; v < values; ++v)
+    {
+        Scalar logWeight = -std::log(Scalar(values));
+        if constexpr (ByMode<P, Alternatives...>::Weighted)
+        {
+            logWeight = std::log(Scalar(noise.weightFor(v)));
+        }
+        noise.visit(v, [&](NoiseGaussian const & component) {
+            mixture.add(logWeight, component);
+        });
+    }
+    return mixture;
+}
+
+}  // namespace internal
+
+/** \ingroup Models
+ * \returns the additive noise by mode axis of \a noise, one %Gaussian per value of the axis (see
+ * ModeNoise): <tt>additiveNoise(byMode<Sensor>(when<Inlier>(inlier).weight(0.9),
+ * when<Outlier>(outlier).weight(0.1)))</tt> [by-mode]
+ */
+template <typename P, typename... Alternatives>
+[[nodiscard]] auto
+additiveNoise(ByMode<P, Alternatives...> const & noise)
+{
+    using NoiseMixture = decltype(internal::modeNoiseMixture(noise));
+    return ModeNoise<P, NoiseMixture, ByMode<P, Alternatives...>::Weighted>{internal::modeNoiseMixture(noise)};
+}
 
 /** \ingroup Models
  * \returns the additiveNoise() policy of \a parts (see AdditiveNoise): one covariance, zero-mean
@@ -519,6 +561,7 @@ public:
  * \endcode
  */
 template <typename... Parts>
+    requires(!internal::isByModePart<Parts> && ...)
 [[nodiscard]] AdditiveNoise<typename internal::HeldOf<std::unwrap_ref_decay_t<Parts>>::type...>
 additiveNoise(Parts &&... parts)
 {
@@ -757,8 +800,8 @@ inline constexpr std::optional<PolicyKind> policyKind<AffineIn<Names...>>{Policy
 template <typename... Parts>
 inline constexpr std::optional<PolicyKind> policyKind<AdditiveNoise<Parts...>>{PolicyKind::additiveNoise};
 
-template <typename Axis, typename Part>
-inline constexpr std::optional<PolicyKind> policyKind<ModeNoise<Axis, Part>>{PolicyKind::additiveNoise};
+template <typename Axis, typename Part, bool Weighted>
+inline constexpr std::optional<PolicyKind> policyKind<ModeNoise<Axis, Part, Weighted>>{PolicyKind::additiveNoise};
 
 template <typename... Parts>
 inline constexpr std::optional<PolicyKind> policyKind<ContinuousNoise<Parts...>>{PolicyKind::continuousNoise};
@@ -795,11 +838,23 @@ struct NoiseModeAxisOf
 };
 
 /// \cond INTERNAL_SPECIALIZATIONS
-template <typename Axis, typename Part>
-struct NoiseModeAxisOf<ModeNoise<Axis, Part>>
+template <typename Axis, typename Part, bool Weighted>
+struct NoiseModeAxisOf<ModeNoise<Axis, Part, Weighted>>
 {
     using type = Axis;  ///< the noise's mode axis
 };
+
+/// \endcond
+
+/** Whether the additive noise \a Noise is by mode axis with alternatives given no weights, which only a
+ * filter that tracks the axis can read.
+ */
+template <typename Noise>
+inline constexpr bool isUnweightedModeNoise = false;
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename Axis, typename Part>
+inline constexpr bool isUnweightedModeNoise<ModeNoise<Axis, Part, false>> = true;
 
 /// \endcond
 

@@ -735,18 +735,6 @@ squareRootOtherScalar()
 [[maybe_unused]] auto const model = Emrys::withMethod(makeFixed(), methods::unscented());
 #endif
 
-#if defined(SWITCHING_WITHOUT_MEASUREMENTS)  // static_assert: SwitchingModel.h: a switching measurement needs a
-[[maybe_unused]] constexpr auto size = sizeof(Emrys::SwitchingMeasurement<Maneuver>);
-#endif
-
-#if defined(SWITCHING_MEASUREMENT_COUNT)  // static_assert: SwitchingModel.h: give one measurement per value of the
-[[maybe_unused]] auto const switching = Emrys::switchingMeasurement<Maneuver>(
-    Emrys::observe(makeWholeFix(), Eigen::Vector2d::Zero()),
-    Emrys::observe(makeWholeFix(), Eigen::Vector2d::Zero()),
-    Emrys::observe(makeWholeFix(), Eigen::Vector2d::Zero())
-);
-#endif
-
 // Consistency monitors.
 
 #if defined(NIS_WINDOW_EMPTY)  // static_assert: Consistency.h: a window holds at least one statistic
@@ -1957,17 +1945,90 @@ givenBlockConsider()
 }
 #endif
 
-#if defined(BY_MODE_NOT_A_MIXTURE)  // static_assert: Policies.h: byMode() takes additive noise that is one mixture
-struct Clear
+// Parts by mode axis [by-mode].
+
+#if defined(BY_MODE_WITHOUT_ALTERNATIVES)  // static_assert: ByMode.h: byMode() needs an alternative
+[[maybe_unused]] auto const parts = Emrys::byMode<Maneuver>();
+#endif
+
+#if defined(BY_MODE_UNLABELED)  // static_assert: ByMode.h: the axis's values have names: label each alternative
+[[maybe_unused]] auto const parts = Emrys::byMode<Maneuver>(1.0, 2.0);
+#endif
+
+#if defined(BY_MODE_FOREIGN_VALUE)  // static_assert: ByMode.h: an alternative names a value that the axis does not have
+[[maybe_unused]] auto const parts = Emrys::byMode<Maneuver>(Emrys::when<Cruise>(1.0), Emrys::when<Inlier>(2.0));
+#endif
+
+#if defined(BY_MODE_VALUE_TWICE)  // static_assert: ByMode.h: two alternatives name the same value of the axis
+[[maybe_unused]] auto const parts = Emrys::byMode<Maneuver>(Emrys::when<Cruise>(1.0), Emrys::when<Cruise>(2.0));
+#endif
+
+#if defined(BY_MODE_OTHERWISE_TWICE)  // static_assert: ByMode.h: give otherwise() once
+[[maybe_unused]] auto const parts = Emrys::byMode<Maneuver>(Emrys::otherwise(1.0), Emrys::otherwise(2.0));
+#endif
+
+#if defined(BY_MODE_VALUE_MISSING)  // static_assert: ByMode.h: an alternative is missing
+[[maybe_unused]] auto const parts = Emrys::byMode<Maneuver>(Emrys::when<Cruise>(1.0));
+#endif
+
+#if defined(BY_MODE_OTHERWISE_UNUSED)  // static_assert: ByMode.h: otherwise() serves no value
+[[maybe_unused]] auto const parts =
+    Emrys::byMode<Maneuver>(Emrys::when<Cruise>(1.0), Emrys::when<Turn>(2.0), Emrys::otherwise(3.0));
+#endif
+
+#if defined(BY_MODE_POSITIONAL_LABELED)  // static_assert: ByMode.h: the axis's values have no names, so the
+                                         // alternatives
+struct Cells : Emrys::Finite<2>
 {};
 
-struct Blocked
+[[maybe_unused]] auto const parts = Emrys::byMode<Cells>(Emrys::when<Cruise>(1.0), Emrys::when<Turn>(2.0));
+#endif
+
+#if defined(BY_MODE_POSITIONAL_COUNT)  // static_assert: ByMode.h: give one alternative per value of the axis
+struct Cells : Emrys::Finite<2>
 {};
 
-struct Outliers : Emrys::Named<Clear, Blocked>
-{};
+[[maybe_unused]] auto const parts = Emrys::byMode<Cells>(1.0, 2.0, 3.0);
+#endif
 
-[[maybe_unused]] auto const byModeNoise = Emrys::additiveNoise(makeNoise()).byMode<Outliers>();
+#if defined(BY_MODE_SOME_WEIGHTS)  // static_assert: ByMode.h: give every alternative a weight, or none
+[[maybe_unused]] auto const parts =
+    Emrys::byMode<Maneuver>(Emrys::when<Cruise>(1.0).weight(0.5), Emrys::when<Turn>(2.0));
+#endif
+
+#if defined(BY_MODE_NOISE_TYPES)  // static_assert: Policies.h: additiveNoise(byMode<Axis>(...)) takes one
+                                  // GaussianParams type
+[[maybe_unused]] auto const noise =
+    Emrys::additiveNoise(Emrys::byMode<Sensor>(Emrys::when<Inlier>(makeNoise()), Emrys::when<Outlier>(makeOffset())));
+#endif
+
+#if defined(BY_MODE_NOISE_NOT_GAUSSIAN)  // static_assert: Policies.h: additiveNoise(byMode<Axis>(...)) takes a
+                                         // GaussianParams per
+[[maybe_unused]] auto const noise = Emrys::additiveNoise(
+    Emrys::byMode<Sensor>(
+        Emrys::when<Inlier>(Eigen::Matrix2d::Identity().eval()),
+        Emrys::when<Outlier>(Eigen::Matrix2d::Identity().eval())
+    )
+);
+#endif
+
+#if defined(BY_MODE_NOISE_UNWEIGHTED)  // static_assert: MeasurementReads.h: a filter without the noise's mode axis
+                                       // reads
+[[maybe_unused]] auto const updated = Emrys::update(
+    makeInitial(),
+    Emrys::observe(
+        Emrys::methods::linearized(),
+        Emrys::measurementModel(
+            [](auto const & x) {
+                return x.template head<2>().eval();
+            },
+            Emrys::additiveNoise(
+                Emrys::byMode<Sensor>(Emrys::when<Inlier>(makeNoise()), Emrys::when<Outlier>(makeNoise()))
+            )
+        ),
+        Eigen::Vector2d::Zero()
+    )
+);
 #endif
 
 }  // namespace

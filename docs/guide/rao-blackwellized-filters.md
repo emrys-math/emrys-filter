@@ -751,7 +751,7 @@ auto const prior = HybridGaussian<Rest, Clock>{CategoricalParams<Clock>::fromWei
 auto filter = RbPointMassFilter{clock, grid, prior};  // PerPointCovariance, deduced from the model
 filter.predict(1.0);                        // each cell: mix, predict each mode, move the modes by e^{Q}
 filter.update(range(z, beacon));            // each cell: an IMM update given its center
-filter.update(delayed(z, beacon));          // noise byMode<Clock>(): the components are Clock's values
+filter.update(delayed(z, beacon));          // noise by Clock: a Gaussian per value of Clock
 filter.state().conditional(i);              // HybridGaussian<Rest, Clock>
 filter.state().modes();                     // P(Clock), summed over the cells
 filter.state().toDensity()->collapsed();                 // GaussianParams over the whole state
@@ -1037,7 +1037,7 @@ auto const motion = SwitchingModel{
 auto filter = RbParticleFilter{motion, particleGaussian<Position>(State{}, ParticleSet<Position>{positions}, hybrid)};
 filter.predict(rng, 1.0);                         // std::expected<void, NumericError>
 filter.update(makeRangeRate(z, beacon));          // each particle: an IMM update given its position
-filter.update(makeBiasedRangeRate(z, beacon));   // noise byMode<Mode>(): the components are Mode's values
+filter.update(makeBiasedRangeRate(z, beacon));   // noise by Mode: a Gaussian per value of Mode
 filter.state().conditional(i);                    // HybridGaussianParams<Rest, Mode>
 filter.state().modes();                           // P(Mode), summed over the particles
 ```

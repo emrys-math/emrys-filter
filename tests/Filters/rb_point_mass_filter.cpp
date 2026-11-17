@@ -1267,13 +1267,15 @@ initialHybrid()
 
 // A range clear of obstruction, or delayed by 2 m with variance 4, one component per value of Clock,
 // for the noise by mode axis.
-Emrys::GaussianMixtureParams<Linear<1>>
+auto
 delayedNoise()
 {
-    auto noise = Emrys::GaussianMixtureParams<Linear<1>>{Linear<1>{}};
-    noise.add(std::log(0.9), rangeNoise());
-    noise.add(std::log(0.1), GaussianParams<Linear<1>>{Vector1{2.0}, Vector1{4.0}});
-    return noise;
+    return additiveNoise(
+        Emrys::byMode<Clock>(
+            Emrys::when<Steady>(rangeNoise()),
+            Emrys::when<Wander>(GaussianParams<Linear<1>>{Vector1{2.0}, Vector1{4.0}})
+        )
+    );
 }
 
 // makeRange() and makeRangeAt() with the delayed noise, by the mode axis Clock.
@@ -1286,7 +1288,7 @@ makeDelayedRange(double z, Eigen::Vector2d const & beacon)
             return Eigen::Matrix<T, 1, 1>{Eigen::numext::sqrt(T(d.squaredNorm())) + Emrys::block<Bias>(in, x)(0)};
         },
         Emrys::reads(Emrys::path<Position>, Emrys::path<Bias>),
-        additiveNoise(delayedNoise()).byMode<Clock>()
+        delayedNoise()
     );
     return observe(methods::linearized(), range, Vector1{z});
 }
@@ -1299,7 +1301,7 @@ makeDelayedRangeAt(double z, Eigen::Vector2d const & beacon, Eigen::Vector2d con
             return Eigen::Matrix<T, 1, 1>{T(r) + Emrys::block<Bias>(in, x)(0)};
         },
         Emrys::reads(Emrys::path<Bias>),
-        additiveNoise(delayedNoise()).byMode<Clock>()
+        delayedNoise()
     );
     return observe(methods::linearized(), range, Vector1{z});
 }

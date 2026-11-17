@@ -37,6 +37,7 @@
 #include <vector>
 
 using Emrys::additiveNoise;
+using Emrys::byMode;
 using Emrys::CategoricalParams;
 using Emrys::compose;
 using Emrys::Composite;
@@ -57,9 +58,9 @@ using Emrys::Linear;
 using Emrys::MarkovChain;
 using Emrys::Named;
 using Emrys::ScalarOf;
-using Emrys::switchingMeasurement;
 using Emrys::SwitchingModel;
 using Emrys::switchingModel;
+using Emrys::when;
 using Emrys::Zero;
 
 namespace methods = Emrys::methods;
@@ -205,11 +206,25 @@ makeRobustFix(Eigen::Vector2d const & z)
     return makeFix(z, robustNoise());
 }
 
+// Noise by the mode axis Sensor: R in the inlier modes and outlier noise of \a outlier R in the outlier
+// ones, each scaled by \a scale, with the weights of robustNoise() for a filter without the axis. The
+// alternatives are given outlier first, to show that their order does not matter.
+auto
+sensorNoise(double scale = 1.0, double outlier = outlierScale)
+{
+    return additiveNoise(
+        byMode<Sensor>(
+            when<Outlier>(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), outlier * scale * R}).weight(0.1),
+            when<Inlier>(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), scale * R}).weight(0.9)
+        )
+    );
+}
+
 // A fix with the robust noise by the mode axis Sensor: inlier and outlier are its values.
 auto
 makeMarkovFix(Eigen::Vector2d const & z)
 {
-    return observeFix(z, additiveNoise(robustNoise()).byMode<Sensor>());
+    return observeFix(z, sensorNoise());
 }
 
 // A hand-written IMM over the four modes of Mode, in plain Eigen.
@@ -297,10 +312,11 @@ updateByHand(HandImm & imm, Eigen::Vector2d const & z, NoiseScale noiseScale)
     });
 }
 
-// A fix through a function of its own, not a matrix: the position offset by bias, with noise
-// scale times R.
+// A fix through a function of its own, not a matrix: the position offset by bias, with the noise
+// policy noise.
+template <typename NoisePolicy>
 auto
-makeBiasedFix(Eigen::Vector2d const & z, Eigen::Vector2d const & bias, double scale)
+makeBiasedFixWith(Eigen::Vector2d const & z, Eigen::Vector2d const & bias, NoisePolicy noise)
 {
     return observe(
         Emrys::methods::linearized(),
@@ -312,10 +328,17 @@ makeBiasedFix(Eigen::Vector2d const & z, Eigen::Vector2d const & bias, double sc
                 return y;
             },
             Emrys::reads(Emrys::path<Position>),
-            additiveNoise(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), scale * R})
+            std::move(noise)
         ),
         z
     );
+}
+
+// makeBiasedFixWith() with noise scale times R.
+auto
+makeBiasedFix(Eigen::Vector2d const & z, Eigen::Vector2d const & bias, double scale)
+{
+    return makeBiasedFixWith(z, bias, additiveNoise(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), scale * R}));
 }
 
 template <typename Filter>
@@ -656,10 +679,10 @@ TEST(ImmFilter, NoiseByModeIsMemorylessWhereNoModeSpaceHasItsAxis)
     }
 }
 
-// Over four modes, an update by switchingMeasurement<Sensor>() matches the hand update in which the
-// Inlier modes see the plain fix and the Outlier modes a fix of another model type, biased and
-// with four times the noise; switchingMeasurement<Maneuver>() selects by the other axis, whose
-// stride in the flat index is two; and refilling one result, made empty by the filter's
+// Over four modes, an update by byMode<Sensor>() of measurements matches the hand update in which
+// the Inlier modes see the plain fix and the Outlier modes a fix of another model type, biased and
+// with four times the noise; byMode<Maneuver>(), its alternatives given out of order, selects by the
+// other axis, whose stride in the flat index is two; and refilling one result, made empty by the filter's
 // emptyUpdate() with room for the four modes, gives the same state as the update that returns its
 // result.
 TEST(ImmFilter, UpdatesEachModeByTheMeasurementItsValueSelects)
@@ -688,11 +711,11 @@ TEST(ImmFilter, UpdatesEachModeByTheMeasurementItsValueSelects)
     Eigen::Vector2d const bias{3.0, -1.0};
     auto const fixes = std::vector<Eigen::Vector2d>{{1.2, 0.1}, {2.0, 0.5}, {9.0, -4.0}, {3.9, 0.9}};
     auto const switchingFix = [&](Eigen::Vector2d const & z) {
-        return switchingMeasurement<Sensor>(makeFix(z), makeBiasedFix(z, bias, 4.0));
+        return byMode<Sensor>(when<Inlier>(makeFix(z)), when<Outlier>(makeBiasedFix(z, bias, 4.0)));
     };
     using Switching = decltype(switchingFix(fixes.front()));
     auto result = refilled.emptyUpdate<Switching>();
-    static_assert(std::is_same_v<decltype(result), decltype(filter)::RecursionType::SwitchingResultType<Switching>>);
+    static_assert(std::is_same_v<decltype(result), decltype(filter)::RecursionType::ResultType<Switching>>);
     EXPECT_TRUE(result.modes.empty());
     EXPECT_GE(result.modes.capacity(), 4u);
     for (Eigen::Vector2d const & z : fixes)
@@ -737,7 +760,9 @@ TEST(ImmFilter, UpdatesEachModeByTheMeasurementItsValueSelects)
     {
         byManeuver.predict(timeStep);
         predictByHand(hand, transitions);
-        auto const update = byManeuver.update(switchingMeasurement<Maneuver>(makeFix(z), makeBiasedFix(z, bias, 4.0)));
+        auto const update = byManeuver.update(
+            byMode<Maneuver>(when<Maneuvering>(makeBiasedFix(z, bias, 4.0)), when<Cruise>(makeFix(z)))
+        );
         double const logEvidence = updateByHand(
             hand,
             z,
@@ -751,6 +776,85 @@ TEST(ImmFilter, UpdatesEachModeByTheMeasurementItsValueSelects)
         ASSERT_TRUE(update);
         EXPECT_NEAR(update->logLikelihood(), logEvidence, 1e-12);
         expectMatches(byManeuver, hand, 1e-12);
+    }
+}
+
+// Over four modes, a measurement per value of Maneuver whose measurements each have noise by Sensor,
+// one axis choosing the measurement and the other its noise, matches the hand update in which each
+// mode's noise is its Sensor value's, scaled by its Maneuver value's, and its offset its Maneuver
+// value's; each mode's one branch is labeled with the noise component its Sensor value names. The
+// same measurement updates the hybrid through ImmRecursion given the observe() of models by mode.
+TEST(ImmFilter, ChoosesTheMeasurementByOneAxisAndItsNoiseByAnother)
+{
+    auto const maneuverChain =
+        ContinuousTimeMarkovChain<Maneuver>::create(Eigen::Matrix2d{{0, 0.05}, {0.1, 0}}).value();
+    auto const sensorChain = ContinuousTimeMarkovChain<Sensor>::create(Eigen::Matrix2d{{0, 0.1}, {0.4, 0}}).value();
+    auto const chain = ContinuousTimeMarkovChain<Mode>::independent(Mode{}, maneuverChain, sensorChain);
+    Eigen::Matrix4d const transitions = chain.transition(timeStep).matrix();
+    auto const means = std::vector<Vector4>{{0, 0, 1, 0}, {0.5, 0, 1, 0.2}, {0, 1, 0.5, 0.5}, {1, -1, 1, 0}};
+    auto const variances = std::vector<Vector4>{{4, 4, 1, 1}, {2, 3, 1, 2}, {5, 4, 2, 1}, {4, 2, 1, 1}};
+    auto conditionals = std::vector<GaussianParams<State>>{};
+    auto hand = HandImm{{0.4, 0.1, 0.3, 0.2}, {}, {}};
+    for (std::size_t m = 0; m < 4; ++m)
+    {
+        conditionals.push_back(makeGaussian(means[m], variances[m]));
+        hand.means.push_back(means[m]);
+        hand.covs.push_back(Matrix4{variances[m].asDiagonal()});
+    }
+    auto const initial =
+        HybridParams{CategoricalParams<Mode>::fromWeights(Mode{}, Eigen::Array4d{0.4, 0.1, 0.3, 0.2}), conditionals};
+    auto filter = ImmFilter{switchingModel<Maneuver>(chain, makeModel(quiet), makeModel(agile)), initial};
+    auto models = filter;
+
+    Eigen::Vector2d const bias{3.0, -1.0};
+    constexpr double outlier = 9.0;
+    auto const position = Emrys::measurementModel(
+        Eigen::Matrix2d::Identity(),
+        Emrys::reads(Emrys::path<Position>),
+        sensorNoise(1.0, outlier)
+    );
+    auto const biased = makeBiasedFixWith(Eigen::Vector2d::Zero(), bias, sensorNoise(4.0, outlier)).model();
+    auto const sensor = byMode<Maneuver>(when<Cruise>(position), when<Maneuvering>(biased));
+    auto const fixes = std::vector<Eigen::Vector2d>{{1.2, 0.1}, {2.0, 0.5}, {9.0, -4.0}, {3.9, 0.9}};
+    for (Eigen::Vector2d const & z : fixes)
+    {
+        filter.predict(timeStep);
+        models.predict(timeStep);
+        predictByHand(hand, transitions);
+
+        auto const fix = byMode<Maneuver>(
+            when<Maneuvering>(makeBiasedFixWith(z, bias, sensorNoise(4.0, outlier))),
+            when<Cruise>(observeFix(z, sensorNoise(1.0, outlier)))
+        );
+        auto const update = filter.update(fix);
+        double const logEvidence = updateByHand(
+            hand,
+            z,
+            [&](std::size_t m) {
+                return (m / 2 == 0 ? 1.0 : 4.0) * (m % 2 == 0 ? 1.0 : outlier);
+            },
+            [&](std::size_t m) {
+                return m / 2 == 0 ? Eigen::Vector2d::Zero().eval() : bias;
+            }
+        );
+        ASSERT_TRUE(update);
+        ASSERT_TRUE(update->accepted);
+        EXPECT_NEAR(update->logLikelihood(), logEvidence, 1e-12);
+        for (std::size_t m = 0; m < 4; ++m)
+        {
+            ASSERT_EQ(update->modes[m].branches.size(), 1u);
+            EXPECT_EQ(update->modes[m].branches[0].component, Eigen::Index(m % 2));
+            EXPECT_EQ(update->modes[m].branches[0].mode, Eigen::Index(m));
+        }
+        expectMatches(filter, hand, 1e-12);
+
+        auto const byModels = models.update(Emrys::observe(Emrys::methods::linearized(), sensor, z));
+        ASSERT_TRUE(byModels);
+        EXPECT_EQ(byModels->logLikelihood(), update->logLikelihood());
+        for (Eigen::Index m = 0; m < 4; ++m)
+        {
+            EXPECT_EQ(models.state().conditional(m).mean(), filter.state().conditional(m).mean());
+        }
     }
 }
 

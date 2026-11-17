@@ -36,9 +36,9 @@
  *
  * Memoryless mixture noise is the IMM's case where every row of \f$ \Pi \f$ is the same, and a
  * persistent outlier process (bursts, a stuck sensor) is an IMM on the measurement side: the
- * noise <tt>additiveNoise(mixture).byMode<Sensor>()</tt> (ModeNoise) names the mode axis whose
- * values its components are, which an IMM whose mode space has that axis updates by, and which a
- * filter with no mode space reads as memoryless mixture noise.
+ * noise <tt>additiveNoise(byMode<Sensor>(when<Inlier>(inlier), when<Outlier>(outlier)))</tt> (ModeNoise) names the mode
+ * axis whose values its components are, which an IMM whose mode space has that axis updates by, and which a filter with
+ * no mode space reads as memoryless mixture noise.
  *
  * A filter owns a state distribution and a recursion: a process model and a prediction method,
  * with any scratch the steps need, acting on a state passed in (decisions.md [filters-and-recursions]). It moves the

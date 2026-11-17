@@ -401,14 +401,16 @@ TEST(UpdateFailure, AnImmFilterKeepsItsState)
     EXPECT_EQ(root.state().conditional(0).root(), factor);
 
     // So does an update whose noise components are the values of a mode axis.
-    auto noise = GaussianMixtureParams<Linear<2>>{2};
-    noise.add(0.0, Eigen::Vector2d::Zero(), Eigen::Matrix2d::Zero());
     auto const byMode = observe(
         methods::linearized(),
         Emrys::measurementModel(
             Eigen::Matrix2d::Identity(),
             Emrys::reads(Emrys::path<Velocity>),
-            additiveNoise(std::move(noise)).byMode<Single>()
+            additiveNoise(
+                Emrys::byMode<Single>(
+                    Emrys::when<Only>(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), Eigen::Matrix2d::Zero()})
+                )
+            )
         ),
         Eigen::Vector2d{0.5, -0.5}
     );

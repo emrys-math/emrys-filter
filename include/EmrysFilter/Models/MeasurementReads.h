@@ -86,6 +86,15 @@ public:
     /// whether the measurement has additive noise, from the model's policy or its own
     static constexpr bool HasAdditiveNoise = OwnNoise || Model::template has<PolicyKind::additiveNoise>;
 
+    // A filter that tracks the noise's mode axis gives each mode its own component (OwnNoise); any other
+    // reads the alternatives as a mixture, by their weights [by-mode].
+    static_assert(
+        OwnNoise || !Model::template has<PolicyKind::additiveNoise>
+            || !isUnweightedModeNoise<typename Model::template Policy<PolicyKind::additiveNoise>>,
+        "a filter without the noise's mode axis reads its alternatives as a mixture, so give each a weight: "
+        "when<Value>(noise).weight(probability)"
+    );
+
     /// whether the model has a likelihood of its own, logLikelihood(g)
     static constexpr bool HasLogLikelihood = Model::template has<PolicyKind::logLikelihood>;
 
