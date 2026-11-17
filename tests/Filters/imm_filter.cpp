@@ -59,7 +59,6 @@ using Emrys::MarkovChain;
 using Emrys::Named;
 using Emrys::ScalarOf;
 using Emrys::SwitchingModel;
-using Emrys::switchingModel;
 using Emrys::when;
 using Emrys::Zero;
 
@@ -115,6 +114,13 @@ auto
 makeModel(double density)
 {
     return ConstantVelocity<Position, Velocity>{density};
+}
+
+// The motion: the quiet model while cruising and the agile one while maneuvering.
+auto
+makeMotion()
+{
+    return byMode<Maneuver>(when<Cruise>(makeModel(quiet)), when<Maneuvering>(makeModel(agile)));
 }
 
 GaussianParams<State>
@@ -241,9 +247,11 @@ densityOf(std::size_t mode)
     return mode / 2 == 0 ? quiet : agile;
 }
 
-// Mixes by the chain over the step, \a transitions, and predicts each mode over \a dt.
+// Mixes by the chain over the step, \a transitions, and predicts each mode over \a dt with the
+// noise density density(mode).
+template <typename Density>
 void
-predictByHand(HandImm & imm, Eigen::Matrix4d const & transitions, double dt = timeStep)
+predictByHandWith(HandImm & imm, Eigen::Matrix4d const & transitions, Density density, double dt = timeStep)
 {
     std::size_t const n = imm.probabilities.size();
     auto next = HandImm{std::vector<double>(n, 0.0), std::vector<Vector4>(n), std::vector<Matrix4>(n)};
@@ -269,9 +277,16 @@ predictByHand(HandImm & imm, Eigen::Matrix4d const & transitions, double dt = ti
         }
         Matrix4 const f = transitionMatrix(dt);
         next.means[j] = f * mean;
-        next.covs[j] = f * cov * f.transpose() + processNoise(densityOf(j), dt);
+        next.covs[j] = f * cov * f.transpose() + processNoise(density(j), dt);
     }
     imm = next;
+}
+
+// predictByHandWith() with each mode's density by its maneuver, densityOf(mode).
+void
+predictByHand(HandImm & imm, Eigen::Matrix4d const & transitions, double dt = timeStep)
+{
+    predictByHandWith(imm, transitions, densityOf, dt);
 }
 
 // Updates each mode with noise scale noiseScale(mode) and the predicted measurement offset by
@@ -444,12 +459,13 @@ TEST(ImmFilter, OneModeIsAKalmanFilter)
 
     GaussianParams<State> const initial = makeGaussian(Vector4{0, 0, 1, 0.5}, Vector4{4, 4, 1, 1});
     auto imm = ImmFilter{
-        SwitchingModel{ContinuousTimeMarkovChain<Single>{}, makeModel(0.1)},
+        ContinuousTimeMarkovChain<Single>{},
+        makeModel(0.1),
         HybridParams{CategoricalParams<Single>{}, initial},
         methods::unscented()
     };
     auto kalman = KalmanFilter{makeModel(0.1), initial, methods::unscented()};
-    EXPECT_EQ(&imm.model().model<0>(), &std::as_const(imm).model().model<0>());
+    EXPECT_EQ(&imm.model().motion(), &std::as_const(imm).model().motion());
     EXPECT_EQ(&imm.recursion().model(), &imm.model());
     EXPECT_TRUE(imm.recursion().partitions(State{}));
     for (int k = 1; k <= 3; ++k)
@@ -479,11 +495,7 @@ TEST(ImmFilter, OneModeIsAKalmanFilter)
 TEST(ImmFilter, UserRecursionRunsTheSteps)
 {
     auto const makeSwitching = [] {
-        return switchingModel<Maneuver>(
-            ContinuousTimeMarkovChain<Maneuver>::persistent(0.1),
-            makeModel(quiet),
-            makeModel(agile)
-        );
+        return SwitchingModel{ContinuousTimeMarkovChain<Maneuver>::persistent(0.1), makeMotion()};
     };
     using Model = decltype(makeSwitching());
     using Inner = Emrys::ImmRecursion<Gaussian<State>, Model>;
@@ -508,7 +520,7 @@ TEST(ImmFilter, UserRecursionRunsTheSteps)
     auto withUpkeep = ImmFilter{Fading{Inner{makeSwitching()}, alpha}, initial, Emrys::upkeep::floorModes(1e-3)};
     static_assert(std::is_same_v<decltype(withUpkeep)::RecursionType, Fading>);
 
-    auto plain = ImmFilter{makeSwitching(), initial};
+    auto plain = ImmFilter{ContinuousTimeMarkovChain<Maneuver>::persistent(0.1), makeMotion(), initial};
     static_assert(std::is_same_v<decltype(plain)::RecursionType, Inner>);
     auto const fix = makeFix(Eigen::Vector2d{1.2, 0.4});
     auto result = filter.emptyUpdate<decltype(fix)>();
@@ -581,13 +593,13 @@ TEST(ImmFilter, MatchesAHandComputedImmWithMarkovOutliers)
         hand.covs.push_back(Matrix4{variances[m].asDiagonal()});
     }
     auto filter = ImmFilter{
-        switchingModel<Maneuver>(chain, makeModel(quiet), makeModel(agile)),
+        chain,
+        makeMotion(),
         HybridParams{CategoricalParams<Mode>::fromWeights(Mode{}, Eigen::Array4d{0.4, 0.1, 0.3, 0.2}), conditionals}
     };
     static_assert(std::is_same_v<decltype(filter)::ModeSpaceType, Mode>);
     // The abbreviation deduces the same filter.
-    auto const abbreviated =
-        Emrys::ImmFilter{switchingModel<Maneuver>(chain, makeModel(quiet), makeModel(agile)), filter.state()};
+    auto const abbreviated = Emrys::ImmFilter{chain, makeMotion(), filter.state()};
     static_assert(std::is_same_v<decltype(abbreviated), const decltype(filter)>);
 
     auto const fixes = std::vector<Eigen::Vector2d>{{1.2, 0.1}, {2.0, 0.5}, {9.0, -4.0}, {3.9, 0.9}};
@@ -650,10 +662,7 @@ TEST(ImmFilter, NoiseByModeIsMemorylessWhereNoModeSpaceHasItsAxis)
     GaussianParams<State> const initial = makeGaussian(Vector4{0, 0, 10, 0}, Vector4{10, 10, 4, 4});
     auto const rate = CategoricalParams<Sensor>::fromWeights(Sensor{}, Eigen::Vector2d{0.9, 0.1});
     auto const memoryless = MarkovChain<Sensor>::memoryless(rate.toDensity().value());
-    auto imm = ImmFilter{
-        SwitchingModel{memoryless, Emrys::fixedStep(makeModel(quiet), timeStep)},
-        HybridParams{rate, initial}
-    };
+    auto imm = ImmFilter{memoryless, Emrys::fixedStep(makeModel(quiet), timeStep), HybridParams{rate, initial}};
     auto kalman = KalmanFilter{makeModel(quiet), initial};
     auto robust = KalmanFilter{makeModel(quiet), initial};
     for (int k = 1; k <= 6; ++k)
@@ -704,7 +713,7 @@ TEST(ImmFilter, UpdatesEachModeByTheMeasurementItsValueSelects)
     }
     auto const initial =
         HybridParams{CategoricalParams<Mode>::fromWeights(Mode{}, Eigen::Array4d{0.4, 0.1, 0.3, 0.2}), conditionals};
-    auto filter = ImmFilter{switchingModel<Maneuver>(chain, makeModel(quiet), makeModel(agile)), initial};
+    auto filter = ImmFilter{chain, makeMotion(), initial};
     auto refilled = filter;
     auto const handStart = hand;
 
@@ -754,7 +763,7 @@ TEST(ImmFilter, UpdatesEachModeByTheMeasurementItsValueSelects)
     }
 
     // Selected by Maneuver, the bias belongs to the maneuvering modes, two and three.
-    auto byManeuver = ImmFilter{switchingModel<Maneuver>(chain, makeModel(quiet), makeModel(agile)), initial};
+    auto byManeuver = ImmFilter{chain, makeMotion(), initial};
     hand = handStart;
     for (Eigen::Vector2d const & z : fixes)
     {
@@ -776,6 +785,64 @@ TEST(ImmFilter, UpdatesEachModeByTheMeasurementItsValueSelects)
         ASSERT_TRUE(update);
         EXPECT_NEAR(update->logLikelihood(), logEvidence, 1e-12);
         expectMatches(byManeuver, hand, 1e-12);
+    }
+}
+
+// Over four modes, a motion nested over both axes, byMode<Maneuver>() of byMode<Sensor>(), each given
+// out of order, matches the hand IMM in which each mode has a process noise density of its own,
+// and the same models given per mode in flat-index order, byMode<Mode>() by the product, exactly.
+TEST(ImmFilter, ChoosesTheModelByEachAxisItDependsOn)
+{
+    auto const maneuverChain =
+        ContinuousTimeMarkovChain<Maneuver>::create(Eigen::Matrix2d{{0, 0.05}, {0.1, 0}}).value();
+    auto const sensorChain = ContinuousTimeMarkovChain<Sensor>::create(Eigen::Matrix2d{{0, 0.1}, {0.4, 0}}).value();
+    auto const chain = ContinuousTimeMarkovChain<Mode>::independent(Mode{}, maneuverChain, sensorChain);
+    Eigen::Matrix4d const transitions = chain.transition(timeStep).matrix();
+    auto const densities = std::vector<double>{0.01, 0.1, 4.0, 1.0};
+    auto const means = std::vector<Vector4>{{0, 0, 1, 0}, {0.5, 0, 1, 0.2}, {0, 1, 0.5, 0.5}, {1, -1, 1, 0}};
+    auto const variances = std::vector<Vector4>{{4, 4, 1, 1}, {2, 3, 1, 2}, {5, 4, 2, 1}, {4, 2, 1, 1}};
+    auto conditionals = std::vector<GaussianParams<State>>{};
+    auto hand = HandImm{{0.4, 0.1, 0.3, 0.2}, {}, {}};
+    for (std::size_t m = 0; m < 4; ++m)
+    {
+        conditionals.push_back(makeGaussian(means[m], variances[m]));
+        hand.means.push_back(means[m]);
+        hand.covs.push_back(Matrix4{variances[m].asDiagonal()});
+    }
+    auto const initial =
+        HybridParams{CategoricalParams<Mode>::fromWeights(Mode{}, Eigen::Array4d{0.4, 0.1, 0.3, 0.2}), conditionals};
+
+    auto nested = ImmFilter{
+        chain,
+        byMode<Maneuver>(
+            when<Maneuvering>(byMode<Sensor>(when<Outlier>(makeModel(1.0)), when<Inlier>(makeModel(4.0)))),
+            when<Cruise>(byMode<Sensor>(when<Inlier>(makeModel(0.01)), when<Outlier>(makeModel(0.1))))
+        ),
+        initial
+    };
+    auto flat =
+        ImmFilter{chain, byMode<Mode>(makeModel(0.01), makeModel(0.1), makeModel(4.0), makeModel(1.0)), initial};
+    auto const fixes = std::vector<Eigen::Vector2d>{{1.2, 0.1}, {2.0, 0.5}, {9.0, -4.0}, {3.9, 0.9}};
+    for (Eigen::Vector2d const & z : fixes)
+    {
+        nested.predict(timeStep);
+        flat.predict(timeStep);
+        predictByHandWith(hand, transitions, [&](std::size_t m) {
+            return densities[m];
+        });
+        ASSERT_TRUE(nested.update(makeFix(z)));
+        ASSERT_TRUE(flat.update(makeFix(z)));
+        updateByHand(hand, z, [](std::size_t) {
+            return 1.0;
+        });
+        expectMatches(nested, hand, 1e-12);
+        for (Eigen::Index m = 0; m < 4; ++m)
+        {
+            EXPECT_EQ(nested.state().conditional(m).mean(), flat.state().conditional(m).mean()) << m;
+            EXPECT_EQ(nested.state().conditional(m).covarianceLower(), flat.state().conditional(m).covarianceLower())
+                << m;
+        }
+        EXPECT_TRUE(nested.state().modes().logWeights().matrix() == flat.state().modes().logWeights().matrix());
     }
 }
 
@@ -803,7 +870,7 @@ TEST(ImmFilter, ChoosesTheMeasurementByOneAxisAndItsNoiseByAnother)
     }
     auto const initial =
         HybridParams{CategoricalParams<Mode>::fromWeights(Mode{}, Eigen::Array4d{0.4, 0.1, 0.3, 0.2}), conditionals};
-    auto filter = ImmFilter{switchingModel<Maneuver>(chain, makeModel(quiet), makeModel(agile)), initial};
+    auto filter = ImmFilter{chain, makeMotion(), initial};
     auto models = filter;
 
     Eigen::Vector2d const bias{3.0, -1.0};
@@ -882,31 +949,27 @@ TEST(ImmFilter, FixedStepModelsFixTheStepAndTheMethod)
         HybridParams{CategoricalParams<Mode>::fromWeights(Mode{}, Eigen::Array4d{0.4, 0.1, 0.3, 0.2}), conditionals};
 
     auto cached = Emrys::ImmFilter{
-        switchingModel<Maneuver>(
-            chain,
-            FixedStepModel{makeModel(quiet), State{}, timeStep},
-            FixedStepModel{makeModel(agile), State{}, timeStep}
+        chain,
+        byMode<Maneuver>(
+            when<Cruise>(FixedStepModel{makeModel(quiet), State{}, timeStep}),
+            when<Maneuvering>(FixedStepModel{makeModel(agile), State{}, timeStep})
         ),
         initial
     };
     static_assert(Emrys::isFixedStep<decltype(cached)::ModelType>);
     static_assert(std::is_same_v<decltype(cached)::MethodType, Emrys::ModelsMethod>);
     auto unscented = Emrys::ImmFilter{
-        switchingModel<Maneuver>(
-            chain,
-            FixedStepModel{makeModel(quiet), State{}, timeStep, methods::unscented<0.5>()},
-            FixedStepModel{makeModel(agile), State{}, timeStep, methods::unscented<0.5>()}
+        chain,
+        byMode<Maneuver>(
+            when<Cruise>(FixedStepModel{makeModel(quiet), State{}, timeStep, methods::unscented<0.5>()}),
+            when<Maneuvering>(FixedStepModel{makeModel(agile), State{}, timeStep, methods::unscented<0.5>()})
         ),
         initial
     };
     static_assert(std::is_same_v<decltype(unscented)::MethodType, Emrys::ModelsMethod>);
-    EXPECT_EQ(unscented.model().model<1>().method().alpha, 0.5);
-    auto continuousCached = ImmFilter{switchingModel<Maneuver>(chain, makeModel(quiet), makeModel(agile)), initial};
-    auto continuousUnscented = ImmFilter{
-        switchingModel<Maneuver>(chain, makeModel(quiet), makeModel(agile)),
-        initial,
-        methods::unscented<0.5>()
-    };
+    EXPECT_EQ(unscented.model().motion().alternative<1>().part().method().alpha, 0.5);
+    auto continuousCached = ImmFilter{chain, makeMotion(), initial};
+    auto continuousUnscented = ImmFilter{chain, makeMotion(), initial, methods::unscented<0.5>()};
 
     auto const expectSame = [](auto const & filter, auto const & expected, double tolerance) {
         EXPECT_LE(
@@ -977,7 +1040,8 @@ TEST(ImmFilter, MovesTheModeByTheChainOverEachStep)
         hand.covs.push_back(Matrix4{variances[m].asDiagonal()});
     }
     auto filter = ImmFilter{
-        switchingModel<Maneuver>(chain, makeModel(quiet), makeModel(agile)),
+        chain,
+        makeMotion(),
         HybridParams{CategoricalParams<Mode>::fromWeights(Mode{}, Eigen::Array4d{0.4, 0.1, 0.3, 0.2}), conditionals}
     };
 
@@ -1021,11 +1085,11 @@ TEST(ImmFilter, FixedStepModelsTakeTheContinuousTimeChainOverTheirStep)
 {
     constexpr double step = 0.5;
     auto const rates = ContinuousTimeMarkovChain<Maneuver>::create(Eigen::Matrix2d{{0, 0.05}, {0.1, 0}}).value();
-    auto const switching = switchingModel<Maneuver>(
-        rates,
-        Emrys::fixedStep(makeModel(quiet), step),
-        Emrys::fixedStep(makeModel(agile), step)
+    auto const motion = byMode<Maneuver>(
+        when<Cruise>(Emrys::fixedStep(makeModel(quiet), step)),
+        when<Maneuvering>(Emrys::fixedStep(makeModel(agile), step))
     );
+    auto const switching = SwitchingModel{rates, motion};
     static_assert(std::is_same_v<std::remove_cvref_t<decltype(switching.chain())>, MarkovChain<Maneuver>>);
     EXPECT_EQ(switching.chain().matrix(), rates.transition(step).matrix());
 
@@ -1035,10 +1099,10 @@ TEST(ImmFilter, FixedStepModelsTakeTheContinuousTimeChainOverTheirStep)
     };
     auto const initial =
         HybridParams{CategoricalParams<Maneuver>::fromWeights(Maneuver{}, Eigen::Array2d{0.7, 0.3}), conditionals};
-    auto fixed = ImmFilter{switching, initial};
+    auto fixed = ImmFilter{rates, motion, initial};
     static_assert(Emrys::isFixedStep<decltype(fixed)::ModelType>);
     EXPECT_EQ(fixed.model().chain().matrix(), rates.transition(step).matrix());
-    auto timed = ImmFilter{switchingModel<Maneuver>(rates, makeModel(quiet), makeModel(agile)), initial};
+    auto timed = ImmFilter{rates, makeMotion(), initial};
 
     auto const expectSame = [&] {
         EXPECT_LE(
@@ -1089,25 +1153,29 @@ TEST(ImmFilter, EachModePredictsByItsOwnMethod)
     auto const identity = ContinuousTimeMarkovChain<Maneuver>{};
 
     auto filter = ImmFilter{
-        SwitchingModel{identity, makeModel(quiet), withMethod(makeDragModel(agile), methods::unscented())},
+        identity,
+        byMode<Maneuver>(
+            when<Cruise>(makeModel(quiet)),
+            when<Maneuvering>(withMethod(makeDragModel(agile), methods::unscented()))
+        ),
         initial
     };
     static_assert(std::is_same_v<decltype(filter)::MethodType, methods::Linearized>);
     auto fixed = ImmFilter{
-        SwitchingModel{
-            identity,
-            FixedStepModel{makeModel(quiet), State{}, timeStep},
-            FixedStepModel{makeDragModel(agile), State{}, timeStep, methods::unscented()}
-        },
+        identity,
+        byMode<Maneuver>(
+            when<Cruise>(FixedStepModel{makeModel(quiet), State{}, timeStep}),
+            when<Maneuvering>(FixedStepModel{makeDragModel(agile), State{}, timeStep, methods::unscented()})
+        ),
         initial
     };
     static_assert(std::is_same_v<decltype(fixed)::MethodType, Emrys::ModelsMethod>);
     auto mixing = ImmFilter{
-        SwitchingModel{
-            ContinuousTimeMarkovChain<Maneuver>::persistent(0.1),
-            makeModel(quiet),
-            withMethod(makeDragModel(agile), methods::unscented())
-        },
+        ContinuousTimeMarkovChain<Maneuver>::persistent(0.1),
+        byMode<Maneuver>(
+            when<Cruise>(makeModel(quiet)),
+            when<Maneuvering>(withMethod(makeDragModel(agile), methods::unscented()))
+        ),
         initial
     };
 
@@ -1164,7 +1232,8 @@ TEST(ImmFilter, ReturnsTheErrorOfModeProbabilitiesThatCannotBeNormalized)
         makeGaussian(Vector4::Zero(), Vector4{400, 400, 1, 1})
     };
     auto filter = ImmFilter{
-        SwitchingModel{chain, makeModel(quiet), makeModel(agile)},
+        chain,
+        makeMotion(),
         HybridParams{CategoricalParams<Maneuver>::fromWeights(Maneuver{}, Eigen::Array2d{0.0, 0.0}), conditionals}
     };
     auto const update = filter.update(makeFix(Eigen::Vector2d{1, 0}));
@@ -1185,10 +1254,7 @@ TEST(ImmFilter, RejectedModesLoseTheirProbability)
         makeGaussian(Vector4::Zero(), Vector4{0.5, 0.5, 0.1, 0.1}),
         makeGaussian(Vector4::Zero(), Vector4{400, 400, 1, 1})
     };
-    auto filter = ImmFilter{
-        SwitchingModel{chain, makeModel(quiet), makeModel(agile)},
-        HybridParams{CategoricalParams<Maneuver>{}, conditionals}
-    };
+    auto filter = ImmFilter{chain, makeMotion(), HybridParams{CategoricalParams<Maneuver>{}, conditionals}};
     auto const before = filter.state();
 
     auto const update = filter.update(makeFix(Eigen::Vector2d{30, 0}), reductions::gate(0.997));
@@ -1233,7 +1299,8 @@ TEST(ImmFilter, DetectsAManeuver)
 
     GaussianParams<State> const initial = makeGaussian(Vector4{0, 0, 10, 0}, Vector4{10, 10, 4, 4});
     auto imm = ImmFilter{
-        SwitchingModel{ContinuousTimeMarkovChain<Maneuver>::persistent(0.05), makeModel(quiet), makeModel(agile)},
+        ContinuousTimeMarkovChain<Maneuver>::persistent(0.05),
+        makeMotion(),
         HybridParams{CategoricalParams<Maneuver>{}, initial}
     };
     auto cruiseOnly = KalmanFilter{makeModel(quiet), initial};
@@ -1302,11 +1369,11 @@ runAccelerationImm(AccelerationModel const & cruiseAcceleration)
         Matrix6{Vector6{10, 10, 4, 4, 1, 1}.asDiagonal()}
     };
     auto imm = ImmFilter{
-        SwitchingModel{
-            ContinuousTimeMarkovChain<Maneuver>::persistent(0.05),
-            compose(makeModel(quiet), cruiseAcceleration),
-            ConstantAcceleration<Position, Velocity, Acceleration>{0.5}
-        },
+        ContinuousTimeMarkovChain<Maneuver>::persistent(0.05),
+        byMode<Maneuver>(
+            when<Cruise>(compose(makeModel(quiet), cruiseAcceleration)),
+            when<Maneuvering>(ConstantAcceleration<Position, Velocity, Acceleration>{0.5})
+        ),
         HybridParams{CategoricalParams<Maneuver>{}, initial}
     };
 
@@ -1378,7 +1445,8 @@ TEST(ImmFilter, RidesOutABurstOfOutliers)
     auto const noiseFactor = Eigen::LLT<Eigen::Matrix2d>{R};
     GaussianParams<State> const initial = makeGaussian(Vector4{0, 0, 10, 0}, Vector4{10, 10, 4, 4});
     auto filter = ImmFilter{
-        SwitchingModel{ContinuousTimeMarkovChain<Sensor>::persistent(0.1), makeModel(quiet)},
+        ContinuousTimeMarkovChain<Sensor>::persistent(0.1),
+        makeModel(quiet),
         HybridParams{CategoricalParams<Sensor>::fromWeights(Sensor{}, Eigen::Vector2d{0.95, 0.05}), initial}
     };
     auto plain = KalmanFilter{makeModel(quiet), initial};

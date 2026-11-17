@@ -67,7 +67,6 @@ using Emrys::RbPointMassFilter;
 using Emrys::regularGrid;
 using Emrys::SqrtGaussianParams;
 using Emrys::SqrtKalmanFilter;
-using Emrys::SwitchingModel;
 using Emrys::toInfo;
 
 namespace methods = Emrys::methods;
@@ -382,7 +381,8 @@ TEST(UpdateFailure, AnImmFilterKeepsItsState)
     {};
 
     auto filter = ImmFilter{
-        SwitchingModel{ContinuousTimeMarkovChain<Single>{}, makeModel()},
+        ContinuousTimeMarkovChain<Single>{},
+        makeModel(),
         HybridParams{CategoricalParams<Single>{}, makeKnownVelocity()}
     };
     auto const updated = filter.update(makeVelocityFix(methods::linearized(), 0.0));
@@ -394,7 +394,8 @@ TEST(UpdateFailure, AnImmFilterKeepsItsState)
     auto const factor = Matrix4{Vector4{2.0, 2.0, 0.0, 0.0}.asDiagonal()};
     auto const knownRoot = SqrtGaussianParams<State>{Vector4{1.0, 2.0, 0.5, -0.5}, factor};
     auto root = ImmFilter{
-        SwitchingModel{ContinuousTimeMarkovChain<Single>{}, makeModel()},
+        ContinuousTimeMarkovChain<Single>{},
+        makeModel(),
         Emrys::HybridParams<Emrys::SqrtGaussian<State>, Single>{CategoricalParams<Single>{}, knownRoot}
     };
     EXPECT_EQ(root.update(makeVelocityFix(methods::linearized(), 0.0)).error(), GaussianError::NotPositiveDefinite);
@@ -418,7 +419,7 @@ TEST(UpdateFailure, AnImmFilterKeepsItsState)
 
     auto hybrids = Emrys::MixtureParams<Emrys::HybridGaussian<State, Single>>{State{}};
     hybrids.add(0.0, HybridParams{CategoricalParams<Single>{}, makeKnownVelocity()});
-    auto mixture = Emrys::MixtureFilter{SwitchingModel{ContinuousTimeMarkovChain<Single>{}, makeModel()}, hybrids};
+    auto mixture = Emrys::MixtureFilter{ContinuousTimeMarkovChain<Single>{}, makeModel(), hybrids};
     EXPECT_EQ(mixture.update(byMode).error(), GaussianError::NotPositiveDefinite);
 }
 

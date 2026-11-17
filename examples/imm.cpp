@@ -50,11 +50,12 @@ main()
     // The mode is a continuous-time Markov chain. Entry (i, j) of its rate matrix is the rate, per
     // second, at which mode i switches to mode j: a cruise ends at the rate 0.03 /s, so it lasts
     // about 33 s on average, and a maneuver ends at 0.1 /s, so it lasts about 10 s. The switching
-    // model pairs the chain with one process model per mode, in the order of the mode's values, and
-    // takes the chain over the models' step once: switching.transition() is the Markov chain whose
-    // row i is the distribution of the mode one step after mode i.
+    // model pairs the chain with the motion, a process model for each value of the mode, labeled by
+    // the value it serves, and takes the chain over the models' step once: switching.transition() is
+    // the Markov chain whose row i is the distribution of the mode one step after mode i.
     auto const chain = Emrys::ContinuousTimeMarkovChain<Maneuver>::create(Eigen::Matrix2d{{0, 0.03}, {0.1, 0}}).value();
-    auto const switching = Emrys::SwitchingModel{chain, cruise, maneuver};
+    auto const motion = Emrys::byMode<Maneuver>(Emrys::when<Cruising>(cruise), Emrys::when<Maneuvering>(maneuver));
+    auto const switching = Emrys::SwitchingModel{chain, motion};
 
     // A fix measures the position with noise of 1 m^2 variance on each axis.
     double const fixVariance = 1.0;
@@ -83,7 +84,7 @@ main()
     double singleSquaredError = 0;
     for (int run = 0; run < runs; ++run)
     {
-        auto filter = Emrys::ImmFilter{switching, Emrys::HybridParams{modePrior, prior}};
+        auto filter = Emrys::ImmFilter{chain, motion, Emrys::HybridParams{modePrior, prior}};
 
         // For comparison, a Kalman filter that assumes the maneuvering model all the time: the single
         // model that never falls behind a maneuver.
@@ -99,8 +100,8 @@ main()
             // switching.transition(), and the true state moves by that mode's model: visit() calls
             // the lambda with the process model that the mode follows.
             mode = Emrys::simulate(mode, switching.transition(), rng);
-            truth = switching.visit(mode, [&](auto const & motion) {
-                return Emrys::simulate<State>(truth, motion, rng);
+            truth = switching.visit(mode, [&](auto const & model) {
+                return Emrys::simulate<State>(truth, model, rng);
             });
             Emrys::ValueVector<Position> const z = Emrys::simulate<State>(truth, gps, rng);
 

@@ -32,6 +32,7 @@
 #include <vector>
 
 using Emrys::additiveNoise;
+using Emrys::byMode;
 using Emrys::CategoricalParams;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
@@ -53,7 +54,8 @@ using Emrys::ScalarOf;
 using Emrys::SqrtGaussian;
 using Emrys::SqrtGaussianParams;
 using Emrys::SqrtKalmanFilter;
-using Emrys::switchingModel;
+using Emrys::SwitchingModel;
+using Emrys::when;
 
 namespace methods = Emrys::methods;
 namespace reductions = Emrys::reductions;
@@ -106,16 +108,22 @@ makeModel(double density)
 }
 
 auto
-makeSwitching()
+makeChain()
 {
-    auto const chain = ContinuousTimeMarkovChain<Mode>::independent(
+    return ContinuousTimeMarkovChain<Mode>::independent(
         ContinuousTimeMarkovChain<Maneuver>::persistent(0.05),
         ContinuousTimeMarkovChain<Sensor>::persistent(0.2)
     );
-    return switchingModel<Maneuver>(chain, makeModel(quiet), makeModel(agile));
 }
 
-using Model = decltype(makeSwitching());
+// The motion: the quiet model while cruising and the agile one while maneuvering, whatever the sensor's state.
+auto
+makeMotion()
+{
+    return byMode<Maneuver>(when<Cruise>(makeModel(quiet)), when<Maneuvering>(makeModel(agile)));
+}
+
+using Model = SwitchingModel<Mode, double, decltype(makeMotion())>;
 
 HybridState
 makeHybrid(Vector4 const & mean)
@@ -215,7 +223,7 @@ expectSameHybrid(HybridState const & actual, HybridState const & expected, doubl
 // each component, which holds scratch and so is not reentrant.
 TEST(MixtureFilter, HybridComponentsRunTheImmRecursion)
 {
-    auto filter = MixtureFilter{makeSwitching(), makeMixture({{1.0, Vector4::Zero()}})};
+    auto filter = MixtureFilter{makeChain(), makeMotion(), makeMixture({{1.0, Vector4::Zero()}})};
     static_assert(std::is_same_v<decltype(filter), MixtureFilter<HybridDensity, Model>>);
     using Filter = decltype(filter);
     static_assert(std::is_same_v<Filter::RecursionType, ImmRecursion<Gaussian<State>, Model, methods::Linearized>>);
@@ -231,8 +239,8 @@ TEST(MixtureFilter, HybridComponentsRunTheImmRecursion)
 TEST(MixtureFilter, OneHybridComponentIsTheImmFilter)
 {
     auto const start = Vector4{0.0, 0.0, 1.0, 0.0};
-    auto mixture = MixtureFilter{makeSwitching(), makeMixture({{1.0, start}})};
-    auto imm = ImmFilter{makeSwitching(), makeHybrid(start)};
+    auto mixture = MixtureFilter{makeChain(), makeMotion(), makeMixture({{1.0, start}})};
+    auto imm = ImmFilter{makeChain(), makeMotion(), makeHybrid(start)};
 
     for (auto const & z : fixes())
     {
@@ -269,12 +277,12 @@ TEST(MixtureFilter, TwoHybridComponentsAreTwoImmsWeightedByTheirLikelihoods)
         {0.3, Vector4{0.0, 0.0, 1.0, 0.0}},
         {0.7, Vector4{0.5, -0.5, 0.8, 0.1}}
     };
-    auto mixture = MixtureFilter{makeSwitching(), makeMixture(priors)};
+    auto mixture = MixtureFilter{makeChain(), makeMotion(), makeMixture(priors)};
     auto imms = std::vector<ImmFilter<Gaussian<State>, Model>>{};
     auto logWeights = std::vector<double>{};
     for (auto const & [weight, mean] : priors)
     {
-        imms.emplace_back(makeSwitching(), makeHybrid(mean));
+        imms.emplace_back(makeChain(), makeMotion(), makeHybrid(mean));
         logWeights.push_back(std::log(weight));
     }
 
@@ -321,7 +329,8 @@ TEST(MixtureFilter, TwoHybridComponentsAreTwoImmsWeightedByTheirLikelihoods)
 TEST(MixtureFilter, GateDropsHybridComponentsAndRejectsWhenNoneSurvive)
 {
     auto filter = MixtureFilter{
-        makeSwitching(),
+        makeChain(),
+        makeMotion(),
         makeMixture({{0.5, Vector4{0.0, 0.0, 0.0, 0.0}}, {0.5, Vector4{200.0, 200.0, 0.0, 0.0}}})
     };
     auto const gate = reductions::gate(0.997);
@@ -452,8 +461,8 @@ TEST(MixtureFilter, SqrtHybridComponentsTrackTheCovarianceForm)
             }
         );
     }
-    auto expected = MixtureFilter{makeSwitching(), covariance};
-    auto filter = MixtureFilter{makeSwitching(), squareRoot};
+    auto expected = MixtureFilter{makeChain(), makeMotion(), covariance};
+    auto filter = MixtureFilter{makeChain(), makeMotion(), squareRoot};
     static_assert(
         std::is_same_v<decltype(filter)::RecursionType, ImmRecursion<SqrtGaussian<State>, Model, methods::Linearized>>
     );

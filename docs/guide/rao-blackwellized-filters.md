@@ -745,10 +745,10 @@ component per value of `Clock`:
 struct Steady {};
 struct Wander {};
 struct Clock : Named<Steady, Wander> {};
-auto const clock = SwitchingModel{
-    ContinuousTimeMarkovChain<Clock>::persistent(0.1), ConstantVelocity<Bias, Drift>{0.01}, ConstantVelocity<Bias, Drift>{1.0}};
+auto const chain = ContinuousTimeMarkovChain<Clock>::persistent(0.1);
+auto const clock = byMode<Clock>(when<Steady>(ConstantVelocity<Bias, Drift>{0.01}), when<Wander>(ConstantVelocity<Bias, Drift>{1.0}));
 auto const prior = HybridGaussian<Rest, Clock>{CategoricalParams<Clock>::fromWeights(Clock{}, Eigen::Vector2d{0.7, 0.3}), initial};
-auto filter = RbPointMassFilter{clock, grid, prior};  // PerPointCovariance, deduced from the model
+auto filter = RbPointMassFilter{chain, clock, grid, prior};  // PerPointCovariance, deduced from the model
 filter.predict(1.0);                        // each cell: mix, predict each mode, move the modes by e^{Q}
 filter.update(range(z, beacon));            // each cell: an IMM update given its center
 filter.update(delayed(z, beacon));          // noise by Clock: a Gaussian per value of Clock
@@ -1032,9 +1032,10 @@ where the modes differ in their process noise and `makeBiasedRangeRate()` has on
 per value of `Mode`:
 
 ```cpp
-auto const motion = SwitchingModel{
-    ContinuousTimeMarkovChain<Mode>::persistent(0.1), ConstantVelocity<Position, Velocity>{0.01}, ConstantVelocity<Position, Velocity>{2.0}};
-auto filter = RbParticleFilter{motion, particleGaussian<Position>(State{}, ParticleSet<Position>{positions}, hybrid)};
+auto const chain = ContinuousTimeMarkovChain<Mode>::persistent(0.1);
+auto const motion = byMode<Mode>(when<Steady>(ConstantVelocity<Position, Velocity>{0.01}),
+                                 when<Maneuvering>(ConstantVelocity<Position, Velocity>{2.0}));
+auto filter = RbParticleFilter{chain, motion, particleGaussian<Position>(State{}, ParticleSet<Position>{positions}, hybrid)};
 filter.predict(rng, 1.0);                         // std::expected<void, NumericError>
 filter.update(makeRangeRate(z, beacon));          // each particle: an IMM update given its position
 filter.update(makeBiasedRangeRate(z, beacon));   // noise by Mode: a Gaussian per value of Mode

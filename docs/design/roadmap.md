@@ -529,16 +529,10 @@ Done when: the above pass on all three compilers, with the consensus step's para
 
 A part of a model that depends on the mode is `byMode<Axis>(when<Value>(part), ...)` [by-mode].
 The measurement side is built: noise by mode axis, a measurement per value of an axis, their
-nesting, and every filter that holds hybrids taking them (imm-filter.md Q19, Q20). What is left:
+nesting, and every filter that holds hybrids taking them (imm-filter.md Q19, Q20). So is the
+process side: a filter over a hybrid takes the chain and the motion, `ImmFilter{chain, motion,
+prior}`, the motion a process model or a `byMode` of them. What is left:
 
-- [ ] The process side: the chain apart from the models, and the models per value as
-      `byMode<Maneuver>(when<Cruise>(cv), when<Turn>(ct))`, replacing `SwitchingModel`'s positional
-      models and `switchingModel<Path>()`, with a model shared by every mode where no `byMode` is
-      given. Decide first, in imm-filter.md, how a filter takes the chain and the models:
-      `ImmFilter{chain, motion, prior}`, or a pair that holds both. It breaks every spelling of a
-      switching model, so it goes before the launch. Test: the IMM, AMM, mixture-of-IMMs,
-      Rao-Blackwellized, and smoother tests spelled the new way, and a nested `byMode` of motion
-      over two axes matching a hand IMM.
 - [ ] Noise by mode inside a process model, `processNoise(byMode<Maneuver>(...))`, so that modes
       differing only in their noise share the model's other parameters in one spelling. It saves
       no computation: each mode transforms its own mixed component [switching-models]. Test: the
@@ -550,8 +544,7 @@ nesting, and every filter that holds hybrids taking them (imm-filter.md Q19, Q20
       when the alternatives differ in noise alone.
 - [ ] Rerun imm-filter.md §7's printouts under the new spelling.
 
-Done when: every item passes its test on all three compilers, and no spelling of a switching model
-by position remains.
+Done when: every item passes its test on all three compilers.
 
 ## 17za. Mixture arguments of a model — not started
 

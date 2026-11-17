@@ -19,6 +19,7 @@
 #include <vector>
 
 using Emrys::additiveNoise;
+using Emrys::byMode;
 using Emrys::CategoricalParams;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
@@ -33,6 +34,7 @@ using Emrys::Named;
 using Emrys::ScalarOf;
 using Emrys::Steps;
 using Emrys::SwitchingModel;
+using Emrys::when;
 
 namespace methods = Emrys::methods;
 
@@ -323,10 +325,11 @@ TEST(TimeSteps, ImmFilterTakesDurationsAndAdvancesByACount)
     auto const quiet = makeModel();
     auto const agile = ConstantVelocity<Position, Velocity>{4.0};
 
-    auto const switching = SwitchingModel{chain, quiet, agile};
+    auto const motion = byMode<Maneuver>(when<Cruise>(quiet), when<Turn>(agile));
+    auto const switching = SwitchingModel{chain, motion};
     expectSame(switching.transition(timeStepInMilliseconds).matrix(), switching.transition(timeStep).matrix());
-    auto seconds = Emrys::ImmFilter{switching, initial};
-    auto milliseconds = Emrys::ImmFilter{switching, initial};
+    auto seconds = Emrys::ImmFilter{chain, motion, initial};
+    auto milliseconds = Emrys::ImmFilter{chain, motion, initial};
     seconds.predict(timeStep);
     milliseconds.predict(timeStepInMilliseconds);
     expectSame(
@@ -344,7 +347,11 @@ TEST(TimeSteps, ImmFilterTakesDurationsAndAdvancesByACount)
     }
 
     auto stepped = Emrys::ImmFilter{
-        SwitchingModel{chain, FixedStepModel{quiet, State{}, timeStep}, FixedStepModel{agile, State{}, timeStep}},
+        chain,
+        byMode<Maneuver>(
+            when<Cruise>(FixedStepModel{quiet, State{}, timeStep}),
+            when<Turn>(FixedStepModel{agile, State{}, timeStep})
+        ),
         initial
     };
     expectSame(stepped.model().transition().matrix(), chain.transition(timeStep).matrix());

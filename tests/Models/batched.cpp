@@ -757,12 +757,14 @@ TEST(Batched, HybridParticlesCallABatchedModeOncePerTransform)
     auto const state = Emrys::particleGaussian<Position>(State{}, ParticleSet<Position>{positions}, hybrid);
     auto const chain = Emrys::ContinuousTimeMarkovChain<Mode>::persistent(0.2);
     auto byPoint = Emrys::RbParticleFilter{
-        Emrys::SwitchingModel{chain, velocityModel(), velocityModel()},
+        chain,
+        Emrys::byMode<Mode>(Emrys::when<Steady>(velocityModel()), Emrys::when<Drifting>(velocityModel())),
         state,
         Emrys::methods::unscented()
     };
     auto byBatch = Emrys::RbParticleFilter{
-        Emrys::SwitchingModel{chain, batchedVelocityModel(), batchedVelocityModel()},
+        chain,
+        Emrys::byMode<Mode>(Emrys::when<Steady>(batchedVelocityModel()), Emrys::when<Drifting>(batchedVelocityModel())),
         state,
         Emrys::methods::unscented()
     };

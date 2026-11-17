@@ -1066,16 +1066,27 @@ struct Mode : Emrys::Named<Steady, Maneuvering>
 
 using Rest = ParticleGaussianParams<State, Position>::RestSpace;
 
+auto
+makeChain()
+{
+    return ContinuousTimeMarkovChain<Mode>::persistent(0.1);
+}
+
 // The modes differ in their process noise, which moves the position, so a particle's draw of its
 // position tells them apart.
 auto
+makeMotion()
+{
+    return Emrys::byMode<Mode>(
+        Emrys::when<Steady>(ConstantVelocity<Position, Velocity>{0.01}),
+        Emrys::when<Maneuvering>(ConstantVelocity<Position, Velocity>{2.0})
+    );
+}
+
+auto
 makeSwitching()
 {
-    return Emrys::SwitchingModel{
-        ContinuousTimeMarkovChain<Mode>::persistent(0.1),
-        ConstantVelocity<Position, Velocity>{0.01},
-        ConstantVelocity<Position, Velocity>{2.0}
-    };
+    return Emrys::SwitchingModel{makeChain(), makeMotion()};
 }
 
 // The modes start with different velocities, so the mixing moves each.
@@ -1233,7 +1244,7 @@ expectSameHybrid(Hybrid const & actual, Hybrid const & expected, double toleranc
 TEST(RbParticleFilter, HybridParticlesMatchAnImmFilterPerParticle)
 {
     auto rng = std::mt19937_64{31};
-    auto filter = RbParticleFilter{makeSwitching(), makeHybridState()};
+    auto filter = RbParticleFilter{makeChain(), makeMotion(), makeHybridState()};
     static_assert(std::is_same_v<decltype(filter)::StateType::CovarianceType, PerPointCovariance>);
     static_assert(std::is_same_v<decltype(filter)::ConditionalType, Emrys::HybridGaussianParams<Rest, Mode>>);
     auto recursion = Emrys::ImmRecursion<Emrys::Gaussian<Rest>, decltype(makeSwitching())>{makeSwitching()};
@@ -1244,7 +1255,7 @@ TEST(RbParticleFilter, HybridParticlesMatchAnImmFilterPerParticle)
         for (Eigen::Index i = 0; i < before.size(); ++i)
         {
             EXPECT_EQ(filter.state().logWeight(i), before.logWeight(i)) << i;
-            auto imm = Emrys::ImmFilter{makeSwitching(), lifted(before.particle(i), before.conditional(i))};
+            auto imm = Emrys::ImmFilter{makeChain(), makeMotion(), lifted(before.particle(i), before.conditional(i))};
             imm.predict(timeStep);
             auto const given = imm.update(makeExactFix(filter.state().particle(i)));
             ASSERT_TRUE(given && given->accepted) << i;
@@ -1310,11 +1321,8 @@ TEST(RbParticleFilter, HybridParticlesOfOneDynamicsMatchTheFilterOfOneGaussian)
         double,
         Emrys::DefaultAllocator,
         Emrys::HybridGaussian<Rest, Mode>>{State{}, initial.particles(), hybrids};
-    auto hybrid = RbParticleFilter{Emrys::SwitchingModel{chain, makeModel()}, hybridState};
-    auto fixed = RbParticleFilter{
-        Emrys::SwitchingModel{chain, Emrys::FixedStepModel{makeModel(), State{}, timeStep}},
-        hybridState
-    };
+    auto hybrid = RbParticleFilter{chain, makeModel(), hybridState};
+    auto fixed = RbParticleFilter{chain, Emrys::FixedStepModel{makeModel(), State{}, timeStep}, hybridState};
     auto plain = RbParticleFilter{makeModel(), initial};
     auto modes = priorModes;
     for (int k = 1; k <= 3; ++k)
@@ -1355,7 +1363,7 @@ TEST(RbParticleFilter, HybridParticlesOfOneDynamicsMatchTheFilterOfOneGaussian)
 TEST(ParticleGaussian, HoldsAHybridPerParticle)
 {
     auto rng = std::mt19937_64{33};
-    auto filter = RbParticleFilter{makeSwitching(), makeHybridState()};
+    auto filter = RbParticleFilter{makeChain(), makeMotion(), makeHybridState()};
     ASSERT_TRUE(filter.predict(rng, timeStep));
     ASSERT_TRUE(filter.update(makeRangeRate(0.4, beacons[0])));
     ASSERT_TRUE(filter.predict(rng, timeStep));
@@ -1406,11 +1414,11 @@ TEST(RbParticleFilter, AHybridPredictionWithoutADensityLeavesTheState)
     auto prior = initialHybrid();
     prior.setConditional(1, GaussianParams<Rest>{Rest{}, Eigen::Vector2d{1, 0}, Eigen::Matrix2d::Zero()});
     auto filter = RbParticleFilter{
-        Emrys::SwitchingModel{
-            ContinuousTimeMarkovChain<Mode>{},
-            ConstantVelocity<Position, Velocity>{0.01},
-            ConstantVelocity<Position, Velocity>{0.0}
-        },
+        ContinuousTimeMarkovChain<Mode>{},
+        Emrys::byMode<Mode>(
+            Emrys::when<Steady>(ConstantVelocity<Position, Velocity>{0.01}),
+            Emrys::when<Maneuvering>(ConstantVelocity<Position, Velocity>{0.0})
+        ),
         Emrys::particleGaussian<Position>(State{}, ParticleSet<Position>{particlePositions()}, prior)
     };
     auto const before = filter.state();

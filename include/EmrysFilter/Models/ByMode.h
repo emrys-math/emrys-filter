@@ -369,6 +369,14 @@ public:
         return std::get<I>(m_alternatives);
     }
 
+    /** \returns alternative \a I, as given, to change its part's parameters */
+    template <std::size_t I>
+    [[nodiscard]] AlternativeType<I> &
+    alternative()
+    {
+        return std::get<I>(m_alternatives);
+    }
+
     /** \returns the alternatives, as given */
     [[nodiscard]] std::tuple<Alternatives...> const &
     alternatives() const

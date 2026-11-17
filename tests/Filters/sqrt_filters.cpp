@@ -402,7 +402,8 @@ TEST(SqrtFilters, PredictionsThroughASingularTransitionFail)
     auto root = SqrtKalmanFilter{exact, toSqrt(prior).value(), methods::unscented<0.5, 0.0>()};
     EXPECT_EQ(root.predict(1.0).error(), GaussianError::NotPositiveDefinite);
     auto imm = Emrys::ImmFilter{
-        Emrys::SwitchingModel{Emrys::ContinuousTimeMarkovChain<Single>{}, exact},
+        Emrys::ContinuousTimeMarkovChain<Single>{},
+        exact,
         Emrys::HybridParams<Emrys::SqrtGaussian<Held>, Single>{
             Emrys::CategoricalParams<Single>{},
             toSqrt(prior).value()

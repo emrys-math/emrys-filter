@@ -1496,8 +1496,8 @@ state is a `HybridGaussian`, and a branch's mode is a flat index into its mode s
 
 *A switching process model is a set of per-mode models plus a chain over their step.*
 
-**Rule.** A `SwitchingModel` holds one process model per mode and a chain on the modes, owned by the
-filter as a single process model is. With models stepped by a time step the chain is a
+**Rule.** A `SwitchingModel` holds a chain on the modes and the motion, one process model or a
+`byMode` of them [by-mode], which a filter over a hybrid takes first: `ImmFilter{chain, motion, prior}`. With models stepped by a time step the chain is a
 `ContinuousTimeMarkovChain`, moving the mode by $\Pi = e^{Q \Delta t}$ over each prediction; with
 fixed-step models it is a `MarkovChain`, and a continuous-time chain given there is taken over their
 step. A `MarkovChain` with models stepped by a time step doesn't compile. All modes share one state
@@ -1537,7 +1537,8 @@ axis [imm]; a filter without the axis reads it as the mixture of the alternative
 `.weight(w)`, and refuses it without weights. A `byMode` of measurements is a measurement per
 value, which every filter holding hybrids takes; `observe()` of a `byMode` of models makes one.
 Alternatives nest, each reading its own axis, and an axis chooses at most once along a nesting.
-Every mode's update has one type. The process side is to follow (roadmap 17zf).
+Every mode's update has one type. The motion of a switching model is the same: a process model, or
+a `byMode` of them, without weights [switching-models].
 
 **Why.** One spelling for every part that varies by mode, where before noise and measurements each
 had their own and the two did not combine (imm-filter.md Q19, Q20). Labels make the alternatives'
@@ -1552,7 +1553,7 @@ tags, since a tag may name a value of two axes. A choice by the same axis inside
 could take only one alternative.
 
 **Where.** `Models/ByMode.h`, `Models/Policies.h` (`ModeNoise`), `Models/SwitchingModel.h`
-(`observe()`), `Filters/ImmFilter.h` (`forMode()`).
+(the motion, `observe()`), `Filters/ImmFilter.h` (`forMode()`).
 
 ### unused-blocks
 
@@ -2412,7 +2413,7 @@ measurement contradicts with a weight it can't be given consistently.
 
 **Rule.** The IMM's state is a `Hybrid`: mode weights over a discrete mode space and one component
 per mode. Its `SwitchingModel` holds a model per value of a mode axis, or one shared
-(`switchingModel<Maneuver>(chain, cruise, turn)`), and its chain moves over the models' step
+(`ImmFilter{chain, byMode<Maneuver>(when<Cruise>(cruise), when<Turn>(turn)), prior}`), and its chain moves over the models' step
 [switching-models].
 `predict()` mixes each mode's Gaussian through the chain and predicts it by its mode's model;
 `update()` updates each mode, reduces with a policy that keeps one Gaussian (`Keep` doesn't

@@ -216,7 +216,7 @@ struct GaussianMixturePredictedJoint
  * auto const kept = filter.update(robustFix, reductions::keep());  // an inlier and an outlier branch per component
  * auto const pruned = filter.state().pruneToSize(16);  // the 16 heaviest components kept
  *
- * auto bank = MixtureFilter{switchingModel<Maneuver>(chain, cruise, turn), hybrids};  // a mixture of IMMs
+ * auto bank = MixtureFilter{chain, byMode<Maneuver>(when<Cruise>(cruise), when<Turn>(turn)), hybrids};  // IMMs
  * bank.predict(dt);
  * auto const robust = bank.update(robustFix);  // noise by Sensor: each IMM's Markov outlier axis
  * auto const biased = bank.update(byMode<Sensor>(when<Inlier>(fix), when<Outlier>(biasedFix)));  // per value
@@ -320,6 +320,21 @@ public:
     MixtureFilter(Model_ model, StateType state, std::type_identity_t<Upkeep_> upkeep)
         requires(!std::same_as<Upkeep_, Emrys::upkeep::None>)
         : MixtureFilter{std::move(model), std::move(state), MethodFor<Model_, Method_>{}, std::move(upkeep)}
+    {}
+
+    /** As the constructor that takes a switching model, with the SwitchingModel of the chain \a chain on
+     * the modes and the motion \a motion, one process model or a byMode() of them [by-mode]:
+     * <tt>MixtureFilter{chain, motion, hybrids}, a mixture of IMMs</tt>. The arguments after them are that
+     * constructor's.
+     */
+    template <typename Chain, typename Motion, typename... Rest>
+        requires internal::isModeChain<Chain>
+    MixtureFilter(Chain chain, Motion motion, StateType state, Rest &&... rest)
+        : MixtureFilter{
+              Model_(SwitchingModel{std::move(chain), std::move(motion)}),
+              std::move(state),
+              std::forward<Rest>(rest)...
+          }
     {}
 
     /** A filter that runs \a recursion, the library's or one of the user's own (see Recursion), on
@@ -1266,6 +1281,23 @@ MixtureFilter(Model, MixtureParams<C, Allocator>, Method = {}) -> MixtureFilter<
     Method,
     Allocator>;
 
+template <
+    Component C,
+    typename Chain,
+    typename Motion,
+    typename Method = DefaultMethodFor<internal::SwitchingModelOf<Chain, Motion>>,
+    typename Allocator>
+    requires(
+        internal::isModeChain<Chain>
+        && (!Recursion<internal::SwitchingModelOf<Chain, Motion>> && !internal::UpkeepArgument<Method>)
+    )
+MixtureFilter(Chain, Motion, MixtureParams<C, Allocator>, Method = {}) -> MixtureFilter<
+    C,
+    internal::
+        BoundStep<internal::SwitchingModelOf<Chain, Motion>, typename Params<C>::SpaceType, typename Params<C>::Scalar>,
+    Method,
+    Allocator>;
+
 template <Component C, RecursionOver<C> R, typename Allocator>
 MixtureFilter(R, MixtureParams<C, Allocator>)
     -> MixtureFilter<C, typename R::ModelType, typename R::MethodType, Allocator, R>;
@@ -1284,6 +1316,27 @@ MixtureFilter(Model, MixtureParams<C, Allocator>, U) -> MixtureFilter<
         Allocator>,
     U>;
 
+template <Component C, typename Chain, typename Motion, typename Allocator, typename U>
+    requires(
+        internal::isModeChain<Chain>
+        && (!Recursion<internal::SwitchingModelOf<Chain, Motion>> && internal::UpkeepArgument<U>)
+    )
+MixtureFilter(Chain, Motion, MixtureParams<C, Allocator>, U) -> MixtureFilter<
+    C,
+    internal::
+        BoundStep<internal::SwitchingModelOf<Chain, Motion>, typename Params<C>::SpaceType, typename Params<C>::Scalar>,
+    DefaultMethodFor<internal::SwitchingModelOf<Chain, Motion>>,
+    Allocator,
+    internal::RecursionForType<
+        C,
+        internal::BoundStep<
+            internal::SwitchingModelOf<Chain, Motion>,
+            typename Params<C>::SpaceType,
+            typename Params<C>::Scalar>,
+        DefaultMethodFor<internal::SwitchingModelOf<Chain, Motion>>,
+        Allocator>,
+    U>;
+
 template <Component C, typename Model, typename Method, typename Allocator, typename U>
     requires(!Recursion<Model>)
 MixtureFilter(Model, MixtureParams<C, Allocator>, Method, U) -> MixtureFilter<
@@ -1294,6 +1347,24 @@ MixtureFilter(Model, MixtureParams<C, Allocator>, Method, U) -> MixtureFilter<
     internal::RecursionForType<
         C,
         internal::BoundStep<Model, typename Params<C>::SpaceType, typename Params<C>::Scalar>,
+        Method,
+        Allocator>,
+    U>;
+
+template <Component C, typename Chain, typename Motion, typename Method, typename Allocator, typename U>
+    requires(internal::isModeChain<Chain> && (!Recursion<internal::SwitchingModelOf<Chain, Motion>>))
+MixtureFilter(Chain, Motion, MixtureParams<C, Allocator>, Method, U) -> MixtureFilter<
+    C,
+    internal::
+        BoundStep<internal::SwitchingModelOf<Chain, Motion>, typename Params<C>::SpaceType, typename Params<C>::Scalar>,
+    Method,
+    Allocator,
+    internal::RecursionForType<
+        C,
+        internal::BoundStep<
+            internal::SwitchingModelOf<Chain, Motion>,
+            typename Params<C>::SpaceType,
+            typename Params<C>::Scalar>,
         Method,
         Allocator>,
     U>;

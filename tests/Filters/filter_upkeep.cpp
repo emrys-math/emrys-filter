@@ -1,8 +1,7 @@
-// The upkeep a filter holds ([upkeep]): each filter takes an optional upkeep last to its constructor (the AMM's
-// before its state, its models being a pack), deduces its type, holds upkeep::None when given none, and runs it
-// on its state by maintain(), which takes no arguments, as calling it on state() would. Headers under test:
-// Filters/FilterUpkeep.h, the filters' constructors and deduction guides in Filters/, and Sequence and None in
-// Distributions/Upkeep.h.
+// The upkeep a filter holds ([upkeep]): each filter takes an optional upkeep last to its constructor, deduces its
+// type, holds upkeep::None when given none, and runs it on its state by maintain(), which takes no arguments, as
+// calling it on state() would. Headers under test: Filters/FilterUpkeep.h, the filters' constructors and deduction
+// guides in Filters/, and Sequence and None in Distributions/Upkeep.h.
 
 #include <EmrysFilter/EmrysFilter.h>
 
@@ -16,6 +15,7 @@
 #include <utility>
 
 using Emrys::AmmFilter;
+using Emrys::byMode;
 using Emrys::CategoricalParams;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
@@ -41,7 +41,7 @@ using Emrys::PointMassFilter;
 using Emrys::RbParticleFilter;
 using Emrys::RbPointMassFilter;
 using Emrys::SharedCovariance;
-using Emrys::SwitchingModel;
+using Emrys::when;
 
 namespace methods = Emrys::methods;
 namespace upkeep = Emrys::upkeep;
@@ -297,20 +297,29 @@ TEST(FilterUpkeep, AMixtureFilterPrunesByItsUpkeep)
     EXPECT_EQ(general.state().size(), 1);
 }
 
-// The IMM takes its upkeep last; the AMM, whose models are a pack, before its state and after a method.
+// The IMM and the AMM take their upkeep last, the AMM's after a method.
 // maintain() floors a mode as FloorModes on state() does.
 TEST(FilterUpkeep, MultipleModelFiltersFloorByTheirUpkeep)
 {
     auto imm = ImmFilter{
-        SwitchingModel{ContinuousTimeMarkovChain<Regime>{}, makeModel(0.01), makeModel(4.0)},
+        ContinuousTimeMarkovChain<Regime>{},
+        byMode<Regime>(when<Slow>(makeModel(0.01)), when<Fast>(makeModel(4.0))),
         makeHybrid(1.0),
         upkeep::floorModes(0.01)
     };
     static_assert(std::is_same_v<decltype(imm)::UpkeepType, upkeep::FloorModes<double>>);
-    auto amm = AmmFilter{upkeep::floorModes(0.01), makeHybrid(1.0), makeModel(0.01), makeModel(4.0)};
+    auto amm = AmmFilter{
+        byMode<Regime>(when<Slow>(makeModel(0.01)), when<Fast>(makeModel(4.0))),
+        makeHybrid(1.0),
+        upkeep::floorModes(0.01)
+    };
     static_assert(std::is_same_v<decltype(amm)::UpkeepType, upkeep::FloorModes<double>>);
-    auto unscented =
-        AmmFilter{methods::unscented(), upkeep::floorModes(0.01), makeHybrid(1.0), makeModel(0.01), makeModel(4.0)};
+    auto unscented = AmmFilter{
+        byMode<Regime>(when<Slow>(makeModel(0.01)), when<Fast>(makeModel(4.0))),
+        makeHybrid(1.0),
+        methods::unscented(),
+        upkeep::floorModes(0.01)
+    };
     static_assert(std::is_same_v<decltype(unscented)::UpkeepType, upkeep::FloorModes<double>>);
     static_assert(std::is_same_v<decltype(unscented)::MethodType, std::remove_cvref_t<decltype(methods::unscented())>>);
 
@@ -348,7 +357,8 @@ TEST(FilterUpkeep, HiddenMarkovAndMixtureOfImmFiltersFloorByTheirUpkeep)
     prior.add(std::log(0.5), makeHybrid(1.0));
     prior.add(std::log(0.5), makeHybrid(0.995));
     auto mixture = MixtureFilter{
-        SwitchingModel{ContinuousTimeMarkovChain<Regime>{}, makeModel(0.01), makeModel(4.0)},
+        ContinuousTimeMarkovChain<Regime>{},
+        byMode<Regime>(when<Slow>(makeModel(0.01)), when<Fast>(makeModel(4.0))),
         prior,
         upkeep::floorModes(0.01)
     };

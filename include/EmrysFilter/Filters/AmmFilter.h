@@ -37,20 +37,21 @@ namespace Emrys
  * probability by \f$ p(z \mid m) \f$. The combined estimate is the collapsed() of the state's density.
  *
  * \code
- * auto filter = AmmFilter{HybridGaussianParams<State, Regime>{CategoricalParams<Regime>{}, initial},
- *                                             slow, fast};   // one process model per regime
+ * auto filter = AmmFilter{byMode<Regime>(when<Slow>(slow), when<Fast>(fast)),   // a model per regime
+ *                         HybridGaussianParams<State, Regime>{CategoricalParams<Regime>{}, initial}};
  * filter.predict(dt);
  * auto const updated = filter.update(fix);
  * upkeep::floorModes(1e-3)(filter.state());   // keep every mode recoverable
  * filter.state().modes().toDensity()->probability<Fast>();
  * \endcode
  *
- * The models are a pack, so the filter's upkeep comes before the state, after the method if one is
- * given, and maintain() runs it:
+ * The method and the upkeep come after the state, as the other filters take them, and maintain()
+ * runs the upkeep:
  *
  * \code
- * auto floored = AmmFilter{upkeep::floorModes(1e-3), HybridGaussianParams<State, Regime>{CategoricalParams<Regime>{},
- * initial}, slow, fast}; auto const updated = floored.update(fix); (void)floored.maintain();
+ * auto floored = AmmFilter{motion, prior, upkeep::floorModes(1e-3)};
+ * auto const updated = floored.update(fix);
+ * (void)floored.maintain();
  * \endcode
  *
  * Its known failure is a mode probability that falls to zero, or so near it that no run of
@@ -67,8 +68,8 @@ namespace Emrys
  *
  * \tparam Component_  the component given one mode (see Component), a Gaussian over the state
  *                     space (see \ref Spaces)
- * \tparam Model_      a SwitchingModel over the mode space, with the mode space as its own axis:
- *                     one process model per mode, or one shared
+ * \tparam Model_      a SwitchingModel over the mode space: its motion is one process model, or
+ *                     a byMode() of them per value of a mode axis [by-mode]
  * \tparam Method_     the prediction method of every mode whose model carries none of its own
  *                    (see withMethod()); ModelsMethod with fixed-step models, which all carry one
  * \tparam Allocator_  the state's allocator (see \ref Allocation)
@@ -106,108 +107,84 @@ public:
         ImmRecursion<Component_, Model_, Method_, Allocator_>,
         Upkeep_>;
 
-    /** A filter with initial state \a state whose modes follow \a models, one per mode in
-     * flat-index order or one shared by every mode, each predicting by its models' default method.
+    /** A filter whose modes follow the motion \a motion, one process model or a byMode() of them
+     * [by-mode], from the initial state \a state, with prediction method \a method, which fixed-step
+     * models carry instead, and upkeep \a upkeep, which maintain() runs. The chain is the identity on
+     * the state's modes.
      */
-    template <typename... Models>
-        requires std::constructible_from<Model_, typename Model_::ChainType, Models...>
-    AmmFilter(typename Base::StateType state, Models... models)
+    template <typename Motion>
+        requires std::
+            constructible_from<Model_, SwitchingModel<typename Model_::ModeSpaceType, typename Model_::Scalar, Motion>>
+        AmmFilter(
+            Motion motion,
+            typename Base::StateType state,
+            MethodFor<Model_, Method_> method = {},
+            std::type_identity_t<Upkeep_> upkeep = {}
+        )
         // The braces sequence the arguments, so the chain copies the modes before the state moves.
-        : Base{Model_{typename Model_::ChainType{state.modeSpace()}, std::move(models)...}, std::move(state)}
-    {}
-
-    /** As AmmFilter(state, models...), predicting by \a method. The method
-     * comes first because the models are a pack; fixed-step models carry their own, so there is
-     * none to give.
-     */
-    template <typename... Models>
-        requires(!isFixedStep<Model_> && std::constructible_from<Model_, typename Model_::ChainType, Models...>)
-    AmmFilter(Method_ method, typename Base::StateType state, Models... models)
         : Base{
-              Model_{typename Model_::ChainType{state.modeSpace()}, std::move(models)...},
-              std::move(state),
-              std::move(method)
-          }
-    {}
-
-    /** As AmmFilter(state, models...), with upkeep \a upkeep, which maintain() runs. The upkeep
-     * comes before the state because the models are a pack.
-     */
-    template <typename... Models>
-        requires(
-            !std::same_as<Upkeep_, Emrys::upkeep::None>
-            && std::constructible_from<Model_, typename Model_::ChainType, Models...>
-        )
-    AmmFilter(std::type_identity_t<Upkeep_> upkeep, typename Base::StateType state, Models... models)
-        : Base{
-              Model_{typename Model_::ChainType{state.modeSpace()}, std::move(models)...},
-              std::move(state),
-              MethodFor<Model_, Method_>{},
-              std::move(upkeep)
-          }
-    {}
-
-    /** As AmmFilter(method, state, models...), with upkeep \a upkeep, which maintain() runs. */
-    template <typename... Models>
-        requires(
-            !isFixedStep<Model_> && !std::same_as<Upkeep_, Emrys::upkeep::None>
-            && std::constructible_from<Model_, typename Model_::ChainType, Models...>
-        )
-    AmmFilter(Method_ method, std::type_identity_t<Upkeep_> upkeep, typename Base::StateType state, Models... models)
-        : Base{
-              Model_{typename Model_::ChainType{state.modeSpace()}, std::move(models)...},
+              // The motion's fixed-step models are bound to the state's space as the model converts.
+              Model_(
+                  SwitchingModel<typename Model_::ModeSpaceType, typename Model_::Scalar, Motion>{
+                      typename Model_::ChainType{state.modeSpace()},
+                      std::move(motion)
+                  }
+              ),
               std::move(state),
               std::move(method),
               std::move(upkeep)
           }
     {}
+
+    /** As AmmFilter(motion, state, method, upkeep), with the default prediction method. */
+    template <typename Motion>
+        requires(
+            !std::same_as<Upkeep_, Emrys::upkeep::None>
+            && std::constructible_from<
+                Model_,
+                SwitchingModel<typename Model_::ModeSpaceType, typename Model_::Scalar, Motion>>
+        )
+    AmmFilter(Motion motion, typename Base::StateType state, std::type_identity_t<Upkeep_> upkeep)
+        : AmmFilter{std::move(motion), std::move(state), MethodFor<Model_, Method_>{}, std::move(upkeep)}
+    {}
 };
 
 /// \cond DEDUCTION_GUIDES
-template <Component C, typename ModeSpace, typename Allocator, typename... Models>
-AmmFilter(HybridParams<C, ModeSpace, Allocator>, Models...) -> AmmFilter<
-    C,
-    SwitchingModel<
-        ModeSpace,
-        typename C::Scalar,
-        ModeSpace,
-        internal::BoundStep<Models, typename Params<C>::SpaceType, typename Params<C>::Scalar>...>,
-    DefaultMethodFor<SwitchingModel<ModeSpace, typename C::Scalar, ModeSpace, Models...>>,
-    Allocator>;
-
-template <typename Method, Component C, typename ModeSpace, typename Allocator, typename... Models>
+template <
+    typename Motion,
+    Component C,
+    typename ModeSpace,
+    typename Allocator,
+    typename Method = DefaultMethodFor<SwitchingModel<ModeSpace, typename C::Scalar, Motion>>>
     requires(!internal::UpkeepArgument<Method>)
-AmmFilter(Method, HybridParams<C, ModeSpace, Allocator>, Models...) -> AmmFilter<
+AmmFilter(Motion, HybridParams<C, ModeSpace, Allocator>, Method = {}) -> AmmFilter<
     C,
-    SwitchingModel<
-        ModeSpace,
-        typename C::Scalar,
-        ModeSpace,
-        internal::BoundStep<Models, typename Params<C>::SpaceType, typename Params<C>::Scalar>...>,
+    internal::BoundStep<
+        SwitchingModel<ModeSpace, typename C::Scalar, Motion>,
+        typename Params<C>::SpaceType,
+        typename Params<C>::Scalar>,
     Method,
     Allocator>;
 
-template <typename U, Component C, typename ModeSpace, typename Allocator, typename... Models>
+template <typename Motion, Component C, typename ModeSpace, typename Allocator, typename U>
     requires internal::UpkeepArgument<U>
-AmmFilter(U, HybridParams<C, ModeSpace, Allocator>, Models...) -> AmmFilter<
+AmmFilter(Motion, HybridParams<C, ModeSpace, Allocator>, U) -> AmmFilter<
     C,
-    SwitchingModel<
-        ModeSpace,
-        typename C::Scalar,
-        ModeSpace,
-        internal::BoundStep<Models, typename Params<C>::SpaceType, typename Params<C>::Scalar>...>,
-    DefaultMethodFor<SwitchingModel<ModeSpace, typename C::Scalar, ModeSpace, Models...>>,
+    internal::BoundStep<
+        SwitchingModel<ModeSpace, typename C::Scalar, Motion>,
+        typename Params<C>::SpaceType,
+        typename Params<C>::Scalar>,
+    DefaultMethodFor<SwitchingModel<ModeSpace, typename C::Scalar, Motion>>,
     Allocator,
     U>;
 
-template <typename Method, typename U, Component C, typename ModeSpace, typename Allocator, typename... Models>
-AmmFilter(Method, U, HybridParams<C, ModeSpace, Allocator>, Models...) -> AmmFilter<
+template <typename Motion, Component C, typename ModeSpace, typename Allocator, typename Method, typename U>
+AmmFilter(Motion, HybridParams<C, ModeSpace, Allocator>, Method, U) -> AmmFilter<
     C,
-    SwitchingModel<
-        ModeSpace,
-        typename C::Scalar,
-        ModeSpace,
-        internal::BoundStep<Models, typename Params<C>::SpaceType, typename Params<C>::Scalar>...>,
+    internal::BoundStep<
+        SwitchingModel<ModeSpace, typename C::Scalar, Motion>,
+        typename Params<C>::SpaceType,
+        typename Params<C>::Scalar>,
     Method,
     Allocator,
     U>;

@@ -1416,7 +1416,7 @@ struct RecursionFor<Hybrid<Component_, ModeSpace_, HybridAllocator>, Model, Meth
  * using Chain = ContinuousTimeMarkovChain<Mode>;  // rates per unit of dt
  * auto const chain = Chain::independent(ContinuousTimeMarkovChain<Maneuver>::persistent(0.05),
  *                                       ContinuousTimeMarkovChain<Sensor>::persistent(0.2));
- * auto filter = ImmFilter{switchingModel<Maneuver>(chain, cruise, turn),
+ * auto filter = ImmFilter{chain, byMode<Maneuver>(when<Cruise>(cruise), when<Turn>(turn)),
  *                  Hybrid{CategoricalParams<Mode>{}, initial}};
  * filter.predict(dt);
  * auto const updated = filter.update(fix);  // every mode, with the fix's own noise
@@ -1518,6 +1518,21 @@ public:
         requires(!std::same_as<Upkeep_, Emrys::upkeep::None>)
              && std::constructible_from<Recursion_, Model_, MethodFor<Model_, Method_>, Allocator_ const &>
         : ImmFilter{std::move(model), std::move(state), MethodFor<Model_, Method_>{}, std::move(upkeep)}
+    {}
+
+    /** As the constructor that takes a switching model, with the SwitchingModel of the chain \a chain on
+     * the modes and the motion \a motion, one process model or a byMode() of them [by-mode]:
+     * <tt>ImmFilter{chain, byMode<Maneuver>(when<Cruise>(cruise), when<Turn>(turn)), prior}</tt>. The arguments after
+     * them are that constructor's.
+     */
+    template <typename Chain, typename Motion, typename... Rest>
+        requires internal::isModeChain<Chain>
+    ImmFilter(Chain chain, Motion motion, StateType state, Rest &&... rest)
+        : ImmFilter{
+              Model_(SwitchingModel{std::move(chain), std::move(motion)}),
+              std::move(state),
+              std::forward<Rest>(rest)...
+          }
     {}
 
     /** A filter that runs \a recursion, the library's or one of the user's own (see Recursion), on
@@ -1802,6 +1817,24 @@ ImmFilter(Model, HybridParams<C, ModeSpace, Allocator>, Method = {}) -> ImmFilte
     Method,
     Allocator>;
 
+template <
+    Component C,
+    typename Chain,
+    typename Motion,
+    typename Method = DefaultMethodFor<internal::SwitchingModelOf<Chain, Motion>>,
+    typename Allocator,
+    typename ModeSpace>
+    requires(
+        internal::isModeChain<Chain>
+        && (!Recursion<internal::SwitchingModelOf<Chain, Motion>> && !internal::UpkeepArgument<Method>)
+    )
+ImmFilter(Chain, Motion, HybridParams<C, ModeSpace, Allocator>, Method = {}) -> ImmFilter<
+    C,
+    internal::
+        BoundStep<internal::SwitchingModelOf<Chain, Motion>, typename Params<C>::SpaceType, typename Params<C>::Scalar>,
+    Method,
+    Allocator>;
+
 template <Component C, typename R, typename Allocator, typename ModeSpace>
     requires RecursionOver<R, Hybrid<C, ModeSpace, Allocator>>
 ImmFilter(R, HybridParams<C, ModeSpace, Allocator>)
@@ -1821,6 +1854,27 @@ ImmFilter(Model, HybridParams<C, ModeSpace, Allocator>, U) -> ImmFilter<
         Allocator>,
     U>;
 
+template <Component C, typename Chain, typename Motion, typename Allocator, typename ModeSpace, typename U>
+    requires(
+        internal::isModeChain<Chain>
+        && (!Recursion<internal::SwitchingModelOf<Chain, Motion>> && internal::UpkeepArgument<U>)
+    )
+ImmFilter(Chain, Motion, HybridParams<C, ModeSpace, Allocator>, U) -> ImmFilter<
+    C,
+    internal::
+        BoundStep<internal::SwitchingModelOf<Chain, Motion>, typename Params<C>::SpaceType, typename Params<C>::Scalar>,
+    DefaultMethodFor<internal::SwitchingModelOf<Chain, Motion>>,
+    Allocator,
+    ImmRecursion<
+        C,
+        internal::BoundStep<
+            internal::SwitchingModelOf<Chain, Motion>,
+            typename Params<C>::SpaceType,
+            typename Params<C>::Scalar>,
+        DefaultMethodFor<internal::SwitchingModelOf<Chain, Motion>>,
+        Allocator>,
+    U>;
+
 template <Component C, typename Model, typename Method, typename Allocator, typename ModeSpace, typename U>
     requires(!Recursion<Model>)
 ImmFilter(Model, HybridParams<C, ModeSpace, Allocator>, Method, U) -> ImmFilter<
@@ -1831,6 +1885,31 @@ ImmFilter(Model, HybridParams<C, ModeSpace, Allocator>, Method, U) -> ImmFilter<
     ImmRecursion<
         C,
         internal::BoundStep<Model, typename Params<C>::SpaceType, typename Params<C>::Scalar>,
+        Method,
+        Allocator>,
+    U>;
+
+template <
+    Component C,
+    typename Chain,
+    typename Motion,
+    typename Method,
+    typename Allocator,
+    typename ModeSpace,
+    typename U>
+    requires(internal::isModeChain<Chain> && (!Recursion<internal::SwitchingModelOf<Chain, Motion>>))
+ImmFilter(Chain, Motion, HybridParams<C, ModeSpace, Allocator>, Method, U) -> ImmFilter<
+    C,
+    internal::
+        BoundStep<internal::SwitchingModelOf<Chain, Motion>, typename Params<C>::SpaceType, typename Params<C>::Scalar>,
+    Method,
+    Allocator,
+    ImmRecursion<
+        C,
+        internal::BoundStep<
+            internal::SwitchingModelOf<Chain, Motion>,
+            typename Params<C>::SpaceType,
+            typename Params<C>::Scalar>,
         Method,
         Allocator>,
     U>;

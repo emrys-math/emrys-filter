@@ -698,36 +698,46 @@ squareRootOtherScalar()
 }
 #endif
 
-#if defined(SWITCHING_WITHOUT_MODELS)  // static_assert: SwitchingModel.h: a switching model needs a process model
-[[maybe_unused]] constexpr auto size = sizeof(Emrys::SwitchingModel<Maneuver, double, Maneuver>);
-#endif
-
 #if defined(SWITCHING_FIXED_AND_NOT)  // static_assert: SwitchingModel.h: a switching model's process models are all
-[[maybe_unused]] constexpr auto size =
-    sizeof(Emrys::SwitchingModel<Maneuver, double, Maneuver, decltype(makeFixed()), decltype(makeModel())>);
+[[maybe_unused]] auto const switching = Emrys::SwitchingModel{
+    Emrys::MarkovChain<Maneuver>::persistent(0.9).value(),
+    Emrys::byMode<Maneuver>(Emrys::when<Cruise>(makeFixed()), Emrys::when<Turn>(makeModel()))
+};
 #endif
 
 #if defined(SWITCHING_PER_STEP_CHAIN)  // static_assert: SwitchingModel.h: a MarkovChain moves the mode one step
 // A MarkovChain moves the mode one step of the chain whatever the time step that moves the models.
-[[maybe_unused]] auto const switching =
-    Emrys::SwitchingModel{Emrys::MarkovChain<Maneuver>::persistent(0.9).value(), makeModel(), makeModel()};
-#endif
-
-#if defined(SWITCHING_MODEL_COUNT)  // static_assert: SwitchingModel.h: give one process model per value of the axis
 [[maybe_unused]] auto const switching = Emrys::SwitchingModel{
-    Emrys::ContinuousTimeMarkovChain<Maneuver>::persistent(0.1),
-    makeModel(),
-    makeModel(),
-    makeModel()
+    Emrys::MarkovChain<Maneuver>::persistent(0.9).value(),
+    Emrys::byMode<Maneuver>(Emrys::when<Cruise>(makeModel()), Emrys::when<Turn>(makeModel()))
 };
 #endif
 
-#if defined(SWITCHING_AXIS_ONE_MODEL)  // static_assert: SwitchingModel.h: or no path for one model shared by every mode
-// One model where the path names a two-value axis is a forgotten model, not one shared by every mode.
-[[maybe_unused]] auto const switching = Emrys::switchingModel<Maneuver>(
-    Emrys::ContinuousTimeMarkovChain<Emrys::DiscreteProduct<Maneuver, Sensor>>::persistent(0.1),
-    makeModel()
-);
+#if defined(SWITCHING_AXIS_MISSING)  // static_assert: SwitchingModel.h: a process model by mode axis, byMode<Axis>(),
+                                     // chooses
+[[maybe_unused]] auto const switching = Emrys::SwitchingModel{
+    Emrys::ContinuousTimeMarkovChain<Maneuver>::persistent(0.1),
+    Emrys::byMode<Sensor>(Emrys::when<Inlier>(makeModel()), Emrys::when<Outlier>(makeModel()))
+};
+#endif
+
+#if defined(SWITCHING_SAME_AXIS_TWICE)  // static_assert: SwitchingModel.h: a process model chosen by a mode axis
+                                        // chooses
+[[maybe_unused]] auto const switching = Emrys::SwitchingModel{
+    Emrys::ContinuousTimeMarkovChain<Maneuver>::persistent(0.1),
+    Emrys::byMode<Maneuver>(
+        Emrys::when<Cruise>(Emrys::byMode<Maneuver>(Emrys::when<Cruise>(makeModel()), Emrys::when<Turn>(makeModel()))),
+        Emrys::when<Turn>(makeModel())
+    )
+};
+#endif
+
+#if defined(SWITCHING_WEIGHTED)  // static_assert: SwitchingModel.h: a process model per value of a mode axis takes no
+                                 // weight
+[[maybe_unused]] auto const switching = Emrys::SwitchingModel{
+    Emrys::ContinuousTimeMarkovChain<Maneuver>::persistent(0.1),
+    Emrys::byMode<Maneuver>(Emrys::when<Cruise>(makeModel()).weight(0.5), Emrys::when<Turn>(makeModel()).weight(0.5))
+};
 #endif
 
 #if defined(WITH_METHOD_FIXED_STEP)  // static_assert: SwitchingModel.h: a fixed-step model carries its own method

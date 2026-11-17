@@ -13,6 +13,7 @@
 #include <type_traits>
 #include <vector>
 
+using Emrys::byMode;
 using Emrys::CategoricalParams;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
@@ -24,6 +25,7 @@ using Emrys::Linear;
 using Emrys::MarkovChain;
 using Emrys::Named;
 using Emrys::SwitchingModel;
+using Emrys::when;
 
 namespace methods = Emrys::methods;
 
@@ -181,27 +183,33 @@ TEST(FixedStepBinding, AMixtureFilterBindsTheStepToItsComponents)
     expectSameGaussian(bound.state().begin()->component, byHand.state().begin()->component);
 }
 
-// A switching model of fixedStep() results holds them unbound, and the IMM and AMM filters bind
-// each to the state's space, as the switching model of FixedStepModel built by hand.
+// A switching model whose motion is of fixedStep() results holds them unbound, and the IMM and AMM
+// filters bind each to the state's space, as the motion of FixedStepModel built by hand.
 TEST(FixedStepBinding, SwitchingFiltersBindEachModel)
 {
     auto const chain = MarkovChain<Maneuver>::create(Eigen::Matrix2d{{0.95, 0.05}, {0.1, 0.9}}).value();
     auto const quiet = Emrys::fixedStep(makeModel(), timeStep);
     auto const agile = Emrys::fixedStep(makeModel(4.0), timeStep);
-    auto const unbound = SwitchingModel{chain, quiet, agile};
+    auto const motion = byMode<Maneuver>(when<Cruise>(quiet), when<Turn>(agile));
+    auto const unbound = SwitchingModel{chain, motion};
     static_assert(!Emrys::isFixedStep<std::remove_cvref_t<decltype(unbound)>>);
 
-    using Bound =
-        SwitchingModel<Maneuver, double, Maneuver, FixedStepModel<State, Motion>, FixedStepModel<State, Motion>>;
-    auto bound = Emrys::ImmFilter{unbound, makeHybrid()};
+    using Bound = SwitchingModel<
+        Maneuver,
+        double,
+        Emrys::ByMode<
+            Maneuver,
+            Emrys::When<Cruise, FixedStepModel<State, Motion>>,
+            Emrys::When<Turn, FixedStepModel<State, Motion>>>>;
+    auto bound = Emrys::ImmFilter{chain, motion, makeHybrid()};
     static_assert(std::is_same_v<decltype(bound)::ModelType, Bound>);
     static_assert(Emrys::isFixedStep<decltype(bound)::ModelType>);
     auto byHand = Emrys::ImmFilter{
-        SwitchingModel{
-            chain,
-            FixedStepModel{makeModel(), State{}, timeStep},
-            FixedStepModel{makeModel(4.0), State{}, timeStep}
-        },
+        chain,
+        byMode<Maneuver>(
+            when<Cruise>(FixedStepModel{makeModel(), State{}, timeStep}),
+            when<Turn>(FixedStepModel{makeModel(4.0), State{}, timeStep})
+        ),
         makeHybrid()
     };
     bound.predict();
@@ -211,7 +219,7 @@ TEST(FixedStepBinding, SwitchingFiltersBindEachModel)
         expectSameGaussian(bound.state().conditional(m), byHand.state().conditional(m));
     }
 
-    auto adaptive = Emrys::AmmFilter{makeHybrid(), quiet, agile};
+    auto adaptive = Emrys::AmmFilter{motion, makeHybrid()};
     static_assert(std::is_same_v<decltype(adaptive)::ModelType, Bound>);
     adaptive.predict();
 }

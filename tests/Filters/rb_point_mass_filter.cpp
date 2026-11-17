@@ -1250,13 +1250,24 @@ struct Clock : Emrys::Named<Steady, Wander>
 {};
 
 auto
+makeChain()
+{
+    return ContinuousTimeMarkovChain<Clock>::persistent(0.1);
+}
+
+auto
+makeMotion()
+{
+    return Emrys::byMode<Clock>(
+        Emrys::when<Steady>(ConstantVelocity<Bias, Drift>{biasDensity}),
+        Emrys::when<Wander>(ConstantVelocity<Bias, Drift>{1.0})
+    );
+}
+
+auto
 makeSwitching()
 {
-    return Emrys::SwitchingModel{
-        ContinuousTimeMarkovChain<Clock>::persistent(0.1),
-        ConstantVelocity<Bias, Drift>{biasDensity},
-        ConstantVelocity<Bias, Drift>{1.0}
-    };
+    return Emrys::SwitchingModel{makeChain(), makeMotion()};
 }
 
 Emrys::HybridGaussianParams<Rest, Clock>
@@ -1371,13 +1382,13 @@ TEST(RbPointMassFilter, AnImmUpdateGivenABlockMatchesTheUpdateWithTheBlockKnown)
 TEST(RbPointMassFilter, HybridCellsMatchAnImmFilterPerCell)
 {
     auto const grid = regularGrid<State, Position>(Eigen::Vector2d{-4, -6}, Eigen::Vector2d{3, 4}, {4, 5});
-    auto filter = RbPointMassFilter{makeSwitching(), grid, initialHybrid()};
+    auto filter = RbPointMassFilter{makeChain(), makeMotion(), grid, initialHybrid()};
     static_assert(std::is_same_v<decltype(filter)::StateType::CovarianceType, PerPointCovariance>);
     static_assert(std::is_same_v<decltype(filter)::ConditionalType, Emrys::HybridGaussianParams<Rest, Clock>>);
-    auto imm = std::vector<decltype(Emrys::ImmFilter{makeSwitching(), initialHybrid()})>{};
+    auto imm = std::vector<decltype(Emrys::ImmFilter{makeChain(), makeMotion(), initialHybrid()})>{};
     for (Eigen::Index c = 0; c < grid.size(); ++c)
     {
-        imm.emplace_back(makeSwitching(), initialHybrid());
+        imm.emplace_back(makeChain(), makeMotion(), initialHybrid());
     }
     Eigen::ArrayXd logLikelihoods = Eigen::ArrayXd::Zero(grid.size());
 
@@ -1422,7 +1433,7 @@ TEST(RbPointMassFilter, HybridCellsMatchAnImmFilterPerCell)
 TEST(GridGaussian, HoldsAHybridPerCell)
 {
     auto const grid = regularGrid<State, Position>(Eigen::Vector2d{-4, -6}, Eigen::Vector2d{3, 4}, {4, 5});
-    auto filter = RbPointMassFilter{makeSwitching(), grid, initialHybrid()};
+    auto filter = RbPointMassFilter{makeChain(), makeMotion(), grid, initialHybrid()};
     filter.predict(timeStep);
     ASSERT_TRUE(filter.update(makeRange(30.0, beacons[0])));
     filter.predict(timeStep);

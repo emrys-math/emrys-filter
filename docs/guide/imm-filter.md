@@ -55,6 +55,13 @@ chosen by one axis may have noise by another (Q20), and every filter that holds 
 (Q19). §7's code spells the new forms, and its printed numbers, from the same arithmetic, were not
 rerun. Elsewhere this document's mentions of the old forms describe the code before that decision.
 
+The same spelling took over the process side the same day: a filter over a hybrid takes the chain
+and the motion as separate first arguments, `ImmFilter{chain, motion, prior}`, the motion one
+process model or `byMode<Maneuver>(when<Cruise>(cruise), when<Turn>(turn))`, nested where a model
+depends on two axes, and `AmmFilter{motion, prior}`. This document's `SwitchingModel{chain, cruise,
+turn}`, `switchingModel<Maneuver>(chain, ...)`, and `AmmFilter{prior, models...}` are the spellings
+before that change, which compute the same; the tests spell the new ones.
+
 Q1 has since been decided: a `SwitchingModel` whose models are stepped by `predict(dt)` takes a
 `ContinuousTimeMarkovChain`, and a `MarkovChain` with them doesn't compile (§2). The examples that
 built such a model on a `MarkovChain` now give it the rates that the old chain's off-diagonal

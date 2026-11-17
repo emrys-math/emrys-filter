@@ -60,6 +60,7 @@
 #include <vector>
 
 using Emrys::additiveNoise;
+using Emrys::byMode;
 using Emrys::CategoricalParams;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
@@ -81,7 +82,7 @@ using Emrys::ParticleHistory;
 using Emrys::ParticleSet;
 using Emrys::PredictedJoint;
 using Emrys::ScalarOf;
-using Emrys::SwitchingModel;
+using Emrys::when;
 
 namespace methods = Emrys::methods;
 namespace upkeep = Emrys::upkeep;
@@ -585,13 +586,12 @@ ContinuousTimeMarkovChain<Maneuver> const chain =
     ContinuousTimeMarkovChain<Maneuver>::create(Eigen::Matrix2d{{0.0, 0.1}, {0.3, 0.0}}).value();
 
 auto
-makeSwitching()
+makeMotion()
 {
-    return SwitchingModel{
-        chain,
-        ConstantVelocity<Position, Velocity>{quiet},
-        ConstantVelocity<Position, Velocity>{agile}
-    };
+    return byMode<Maneuver>(
+        when<Cruise>(ConstantVelocity<Position, Velocity>{quiet}),
+        when<Maneuvering>(ConstantVelocity<Position, Velocity>{agile})
+    );
 }
 
 auto
@@ -599,7 +599,8 @@ makeImm()
 {
     auto const start = Eigen::Vector2d{0.7, 0.3};
     return ImmFilter{
-        makeSwitching(),
+        chain,
+        makeMotion(),
         HybridParams{CategoricalParams<Maneuver>::fromWeights(Maneuver{}, start), makeInitial()}
     };
 }
@@ -646,7 +647,8 @@ struct HandMode
 TEST(Smoothing, OneModeImmSmootherIsTheKalmanSmoother)
 {
     auto imm = ImmFilter{
-        SwitchingModel{ContinuousTimeMarkovChain<Alone>{}, makeModel()},
+        ContinuousTimeMarkovChain<Alone>{},
+        makeModel(),
         HybridParams{CategoricalParams<Alone>{}, makeInitial()}
     };
     auto kalman = KalmanFilter{makeModel(), makeInitial()};
@@ -675,11 +677,8 @@ TEST(Smoothing, OneModeImmSmootherIsTheKalmanSmoother)
 TEST(Smoothing, ImmSmootherKeepsAModeNeverEntered)
 {
     auto filter = ImmFilter{
-        SwitchingModel{
-            ContinuousTimeMarkovChain<Maneuver>{},
-            ConstantVelocity<Position, Velocity>{quiet},
-            ConstantVelocity<Position, Velocity>{agile}
-        },
+        ContinuousTimeMarkovChain<Maneuver>{},
+        makeMotion(),
         HybridParams{CategoricalParams<Maneuver>::fromWeights(Maneuver{}, Eigen::Vector2d{1.0, 0.0}), makeInitial()}
     };
     auto kalman = KalmanFilter{ConstantVelocity<Position, Velocity>{quiet}, makeInitial()};
@@ -702,11 +701,8 @@ TEST(Smoothing, ImmSmootherKeepsAModeNeverEntered)
     // Under a chain that leaves the mode only toward the other, nothing reaches it either, so a
     // prediction mixes it from its own Gaussian alone and leaves its probability at zero.
     auto leaving = ImmFilter{
-        SwitchingModel{
-            ContinuousTimeMarkovChain<Maneuver>::create(Eigen::Matrix2d{{0.0, 0.0}, {0.5, 0.0}}).value(),
-            ConstantVelocity<Position, Velocity>{quiet},
-            ConstantVelocity<Position, Velocity>{agile}
-        },
+        ContinuousTimeMarkovChain<Maneuver>::create(Eigen::Matrix2d{{0.0, 0.0}, {0.5, 0.0}}).value(),
+        makeMotion(),
         HybridParams{CategoricalParams<Maneuver>::fromWeights(Maneuver{}, Eigen::Vector2d{1.0, 0.0}), makeInitial()}
     };
     leaving.predict(timeStep);
@@ -754,11 +750,11 @@ TEST(Smoothing, ImmPredictJointRecordsModeMatchedPredictions)
 
     // Fixed-step models record the same joint over their step.
     auto fixed = ImmFilter{
-        SwitchingModel{
-            chain,
-            FixedStepModel{makeModel(quiet), State{}, timeStep},
-            FixedStepModel{makeModel(agile), State{}, timeStep}
-        },
+        chain,
+        byMode<Maneuver>(
+            when<Cruise>(FixedStepModel{makeModel(quiet), State{}, timeStep}),
+            when<Maneuvering>(FixedStepModel{makeModel(agile), State{}, timeStep})
+        ),
         before
     };
     auto const fixedJoint = fixed.predictJoint();
@@ -885,11 +881,8 @@ TEST(Smoothing, ImmSmootherMatchesTheBackwardEquationsByHand)
 TEST(Smoothing, ImmSmootherKeepsAFixedModesProbability)
 {
     auto filter = ImmFilter{
-        SwitchingModel{
-            ContinuousTimeMarkovChain<Maneuver>{},
-            ConstantVelocity<Position, Velocity>{quiet},
-            ConstantVelocity<Position, Velocity>{agile}
-        },
+        ContinuousTimeMarkovChain<Maneuver>{},
+        makeMotion(),
         HybridParams{CategoricalParams<Maneuver>{}, makeInitial()}
     };
     auto history = HybridGaussianHistory<State, Maneuver>{};
@@ -922,12 +915,12 @@ TEST(Smoothing, ImmSmootherLeavesTheBackwardTransitionWhereNoPredictionHasADensi
 {
     Eigen::Matrix3d const p{{0.0, 0.5, 0.5}, {0.6, 0.0, 0.4}, {0.3, 0.7, 0.0}};
     auto filter = ImmFilter{
-        SwitchingModel{
-            MarkovChain<ThreeManeuvers>::create(p).value(),
-            FixedStepModel{makeModel(quiet), State{}, timeStep},
-            FixedStepModel{makeModel(agile), State{}, timeStep},
-            FixedStepModel{makeModel(1.0), State{}, timeStep}
-        },
+        MarkovChain<ThreeManeuvers>::create(p).value(),
+        byMode<ThreeManeuvers>(
+            when<Cruise>(FixedStepModel{makeModel(quiet), State{}, timeStep}),
+            when<Maneuvering>(FixedStepModel{makeModel(agile), State{}, timeStep}),
+            when<Turning>(FixedStepModel{makeModel(1.0), State{}, timeStep})
+        ),
         HybridParams{
             CategoricalParams<ThreeManeuvers>::fromWeights(ThreeManeuvers{}, Eigen::Vector3d{0.5, 0.3, 0.2}),
             makeInitial()
@@ -1064,7 +1057,8 @@ TEST(Smoothing, ImmSmootherPlacesAManeuverWhereTheFilterLags)
         return makeFix(truthAt(k) + error);
     };
     auto filter = ImmFilter{
-        SwitchingModel{ContinuousTimeMarkovChain<Maneuver>::persistent(0.05), makeModel(quiet), makeModel(agile)},
+        ContinuousTimeMarkovChain<Maneuver>::persistent(0.05),
+        byMode<Maneuver>(when<Cruise>(makeModel(quiet)), when<Maneuvering>(makeModel(agile))),
         HybridParams{
             CategoricalParams<Maneuver>{},
             GaussianParams<State>{State{}, Vector4{0.0, 0.0, 1.0, 0.0}, Matrix4{Matrix4::Identity()}}

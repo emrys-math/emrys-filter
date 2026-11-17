@@ -352,6 +352,21 @@ public:
           }
     {}
 
+    /** As the constructor that takes a switching model, with the SwitchingModel of the chain \a chain on
+     * the modes and the motion \a motion, one process model or a byMode() of them [by-mode]:
+     * <tt>RbPointMassFilter{chain, motion, grid, conditional}</tt>. The arguments after them are that constructor's.
+     */
+    template <typename Chain, typename Motion, typename... Rest>
+        requires internal::isModeChain<Chain>
+    RbPointMassFilter(Chain chain, Motion motion, Grid_ grid, ConditionalType const & conditional, Rest &&... rest)
+        : RbPointMassFilter{
+              Model_(SwitchingModel{std::move(chain), std::move(motion)}),
+              std::move(grid),
+              conditional,
+              std::forward<Rest>(rest)...
+          }
+    {}
+
     /** A filter whose points cover the whole state (see PointMassFilter), with every cell equally
      * probable.
      */
@@ -990,6 +1005,23 @@ RbPointMassFilter(Model_, Grid_, Conditional, Covariance_ = {}, Method_ = {}) ->
 
 template <
     typename Grid_,
+    typename Chain,
+    typename Motion,
+    typename Covariance_ = internal::PointCovarianceFor<internal::SwitchingModelOf<Chain, Motion>>,
+    typename Method_ = DefaultMethodFor<internal::SwitchingModelOf<Chain, Motion>>,
+    typename Conditional>
+    requires(
+        internal::isModeChain<Chain>
+        && (!internal::GridUpkeepArgument<Covariance_> && !internal::UpkeepArgument<Method_>)
+    )
+RbPointMassFilter(Chain, Motion, Grid_, Conditional, Covariance_ = {}, Method_ = {}) -> RbPointMassFilter<
+    Grid_,
+    internal::BoundStep<internal::SwitchingModelOf<Chain, Motion>, typename Grid_::RestSpace, typename Grid_::Scalar>,
+    Covariance_,
+    Method_>;
+
+template <
+    typename Grid_,
     typename Model_,
     typename Covariance_ = internal::PointCovarianceFor<Model_>,
     typename Method_ = DefaultMethodFor<Model_>,
@@ -999,6 +1031,22 @@ template <
 RbPointMassFilter(Model_, Grid_, Conditional, Upkeep_) -> RbPointMassFilter<
     Grid_,
     internal::BoundStep<Model_, typename Grid_::RestSpace, typename Grid_::Scalar>,
+    Covariance_,
+    Method_,
+    Upkeep_>;
+
+template <
+    typename Grid_,
+    typename Chain,
+    typename Motion,
+    typename Covariance_ = internal::PointCovarianceFor<internal::SwitchingModelOf<Chain, Motion>>,
+    typename Method_ = DefaultMethodFor<internal::SwitchingModelOf<Chain, Motion>>,
+    typename Upkeep_,
+    typename Conditional>
+    requires(internal::isModeChain<Chain> && (internal::GridUpkeepArgument<Upkeep_>))
+RbPointMassFilter(Chain, Motion, Grid_, Conditional, Upkeep_) -> RbPointMassFilter<
+    Grid_,
+    internal::BoundStep<internal::SwitchingModelOf<Chain, Motion>, typename Grid_::RestSpace, typename Grid_::Scalar>,
     Covariance_,
     Method_,
     Upkeep_>;
@@ -1020,6 +1068,25 @@ RbPointMassFilter(Model_, Grid_, Conditional, Covariance_, Upkeep_) -> RbPointMa
 
 template <
     typename Grid_,
+    typename Chain,
+    typename Motion,
+    typename Covariance_,
+    typename Method_ = DefaultMethodFor<internal::SwitchingModelOf<Chain, Motion>>,
+    typename Upkeep_,
+    typename Conditional>
+    requires(
+        internal::isModeChain<Chain>
+        && (!internal::GridUpkeepArgument<Covariance_> && internal::GridUpkeepArgument<Upkeep_>)
+    )
+RbPointMassFilter(Chain, Motion, Grid_, Conditional, Covariance_, Upkeep_) -> RbPointMassFilter<
+    Grid_,
+    internal::BoundStep<internal::SwitchingModelOf<Chain, Motion>, typename Grid_::RestSpace, typename Grid_::Scalar>,
+    Covariance_,
+    Method_,
+    Upkeep_>;
+
+template <
+    typename Grid_,
     typename Model_,
     typename Covariance_,
     typename Method_,
@@ -1028,6 +1095,22 @@ template <
 RbPointMassFilter(Model_, Grid_, Conditional, Covariance_, Method_, Upkeep_) -> RbPointMassFilter<
     Grid_,
     internal::BoundStep<Model_, typename Grid_::RestSpace, typename Grid_::Scalar>,
+    Covariance_,
+    Method_,
+    Upkeep_>;
+
+template <
+    typename Grid_,
+    typename Chain,
+    typename Motion,
+    typename Covariance_,
+    typename Method_,
+    typename Upkeep_,
+    typename Conditional>
+    requires internal::isModeChain<Chain>
+RbPointMassFilter(Chain, Motion, Grid_, Conditional, Covariance_, Method_, Upkeep_) -> RbPointMassFilter<
+    Grid_,
+    internal::BoundStep<internal::SwitchingModelOf<Chain, Motion>, typename Grid_::RestSpace, typename Grid_::Scalar>,
     Covariance_,
     Method_,
     Upkeep_>;

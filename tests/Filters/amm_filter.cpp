@@ -25,6 +25,7 @@
 
 using Emrys::additiveNoise;
 using Emrys::AmmFilter;
+using Emrys::byMode;
 using Emrys::CategoricalParams;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
@@ -40,6 +41,7 @@ using Emrys::Linear;
 using Emrys::Named;
 using Emrys::ScalarOf;
 using Emrys::SwitchingModel;
+using Emrys::when;
 
 namespace methods = Emrys::methods;
 namespace reductions = Emrys::reductions;
@@ -76,6 +78,13 @@ auto
 makeModel(double density)
 {
     return ConstantVelocity<Position, Velocity>{density};
+}
+
+// The motion: the quiet model in the slow regime and the agile one in the fast.
+auto
+makeMotion()
+{
+    return byMode<Regime>(when<Slow>(makeModel(quiet)), when<Fast>(makeModel(agile)));
 }
 
 GaussianParams<State>
@@ -124,8 +133,8 @@ makeInitial()
 // the log of their sum. The tolerance is rounding: the two run the same steps.
 TEST(AmmFilter, IsABankOfKalmanFilters)
 {
-    auto filter = AmmFilter{makeInitial(), makeModel(quiet), makeModel(agile)};
-    using Switching = SwitchingModel<Regime, double, Regime, decltype(makeModel(quiet)), decltype(makeModel(agile))>;
+    auto filter = AmmFilter{makeMotion(), makeInitial()};
+    using Switching = SwitchingModel<Regime, double, decltype(makeMotion())>;
     static_assert(std::is_base_of_v<ImmFilter<Gaussian<State>, Switching>, decltype(filter)>);
     static_assert(std::is_same_v<decltype(filter)::RecursionType, Emrys::ImmRecursion<Gaussian<State>, Switching>>);
     EXPECT_TRUE(filter.model().chain().generator().isZero(0.0));
@@ -172,10 +181,10 @@ TEST(AmmFilter, IsABankOfKalmanFilters)
 // differ from the identity's by about 1e-300 of the probabilities.
 TEST(AmmFilter, SkipsTheMixingAndAgreesWithTheFullCollapse)
 {
-    auto filter = AmmFilter{makeInitial(), makeModel(quiet), makeModel(agile)};
+    auto filter = AmmFilter{makeMotion(), makeInitial()};
     auto const nearlyStill =
         ContinuousTimeMarkovChain<Regime>::create(Eigen::Matrix2d{{0, 1e-300}, {1e-300, 0}}).value();
-    auto imm = ImmFilter{SwitchingModel{nearlyStill, makeModel(quiet), makeModel(agile)}, makeInitial()};
+    auto imm = ImmFilter{nearlyStill, makeMotion(), makeInitial()};
     for (int k = 1; k <= 6; ++k)
     {
         auto const before = filter.state().modes().toDensity().value().logProbabilities();
@@ -200,29 +209,31 @@ TEST(AmmFilter, SkipsTheMixingAndAgreesWithTheFullCollapse)
     }
 }
 
-// The filter deduces its type with the default method, with a method given first, and with
+// The filter deduces its type with the default method, with a method given, and with
 // fixed-step models, whose predict() takes no step and moves the modes as
 // the same models' filter with a time step does (the fixed step is that step).
 TEST(AmmFilter, DeducesItsArguments)
 {
-    auto const linearized = AmmFilter{makeInitial(), makeModel(quiet), makeModel(agile)};
+    auto const linearized = AmmFilter{makeMotion(), makeInitial()};
     static_assert(std::is_same_v<std::remove_cvref_t<decltype(linearized)>::MethodType, methods::Linearized>);
 
-    auto unscented = AmmFilter{methods::unscented(), makeInitial(), makeModel(quiet), makeModel(agile)};
+    auto unscented = AmmFilter{makeMotion(), makeInitial(), methods::unscented()};
     static_assert(std::is_same_v<decltype(unscented)::MethodType, methods::Unscented<>>);
     unscented.predict(timeStep);
     EXPECT_TRUE(unscented.update(makeFix(fixAt(1))).value().accepted);
 
     // One model shared by every mode.
-    auto const shared = AmmFilter{makeInitial(), makeModel(quiet)};
+    auto const shared = AmmFilter{makeModel(quiet), makeInitial()};
     static_assert(std::remove_cvref_t<decltype(shared)>::ModelType::Shared);
 
     auto fixedStep = AmmFilter{
-        makeInitial(),
-        FixedStepModel{makeModel(quiet), State{}, timeStep},
-        FixedStepModel{makeModel(agile), State{}, timeStep}
+        byMode<Regime>(
+            when<Slow>(FixedStepModel{makeModel(quiet), State{}, timeStep}),
+            when<Fast>(FixedStepModel{makeModel(agile), State{}, timeStep})
+        ),
+        makeInitial()
     };
-    auto timed = AmmFilter{makeInitial(), makeModel(quiet), makeModel(agile)};
+    auto timed = AmmFilter{makeMotion(), makeInitial()};
     fixedStep.predict();
     timed.predict(timeStep);
     for (Eigen::Index m = 0; m < 2; ++m)
@@ -245,8 +256,8 @@ TEST(AmmFilter, FloorKeepsARuledOutModeRecoverable)
         makeGaussian(Vector4::Zero(), Vector4{400, 400, 1, 1})
     };
     auto const initial = HybridGaussianParams<State, Regime>{CategoricalParams<Regime>{}, conditionals};
-    auto plain = AmmFilter{initial, makeModel(quiet), makeModel(agile)};
-    auto floored = AmmFilter{initial, makeModel(quiet), makeModel(agile)};
+    auto plain = AmmFilter{makeMotion(), initial};
+    auto floored = AmmFilter{makeMotion(), initial};
     auto const floor = upkeep::floorModes(1e-3);
 
     auto const outlier = plain.update(makeFix(Eigen::Vector2d{30, 0}), reductions::gate(0.997));

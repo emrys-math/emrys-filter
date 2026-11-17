@@ -36,6 +36,22 @@ instead.
 
 ### Changed
 
+- **Breaking:** a filter over a hybrid takes the mode chain and the motion as its first two
+  arguments, `ImmFilter{chain, motion, prior}`, and so do `MixtureFilter`, `RbParticleFilter`,
+  and `RbPointMassFilter` (`RbPointMassFilter{chain, motion, grid, conditional}`). The motion is
+  one process model every mode follows, or `byMode<Maneuver>(when<Cruise>(cruise),
+  when<Turn>(turn))`, a model per value of a mode axis in any order, nested where a model depends
+  on two axes. Write `ImmFilter{chain, byMode<Maneuver>(when<Cruise>(cruise), when<Turn>(turn)),
+  prior}` in place of `ImmFilter{SwitchingModel{chain, cruise, turn}, prior}` or
+  `ImmFilter{switchingModel<Maneuver>(chain, cruise, turn), prior}`; a model per mode of a product
+  in flat-index order is `byMode<Mode>(m0, m1, m2, m3)` by the product itself. `AmmFilter` takes
+  the motion first and the method and upkeep after the state, as the other filters do:
+  `AmmFilter{motion, prior}`, `AmmFilter{motion, prior, method}`, `AmmFilter{motion, prior,
+  upkeep}`, in place of `AmmFilter{prior, slow, fast}`, `AmmFilter{method, prior, ...}`, and
+  `AmmFilter{upkeep, prior, ...}`. `SwitchingModel<ModeSpace, Scalar, Motion>` replaces
+  `SwitchingModel<ModeSpace, Scalar, Path, Models...>`, built `SwitchingModel{chain, motion}`;
+  `switchingModel<Path>()`, `model<I>()`, and `modelIndex()` are gone, and `motion()` returns the
+  motion, whose `alternative<I>().part()` is a model.
 - **Breaking:** a part of a model that depends on the mode is
   `byMode<Axis>(when<Value>(part), ...)`, its alternatives labeled by the value of the mode axis
   each serves, in any order; a value named twice, left out, or not the axis's fails to compile,

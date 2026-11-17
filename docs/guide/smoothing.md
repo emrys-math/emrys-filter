@@ -361,9 +361,9 @@ the model of the step into $k$:
 
 ```cpp
 auto filter = ImmFilter{
-    SwitchingModel{ContinuousTimeMarkovChain<Maneuver>::persistent(0.05),
-                   ConstantVelocity<Position, Velocity>{0.01},
-                   ConstantVelocity<Position, Velocity>{4.0}},
+    ContinuousTimeMarkovChain<Maneuver>::persistent(0.05),
+    byMode<Maneuver>(when<Cruise>(ConstantVelocity<Position, Velocity>{0.01}),
+                     when<Turn>(ConstantVelocity<Position, Velocity>{4.0})),
     HybridParams{CategoricalParams<Maneuver>{}, GaussianParams<State>{State{}, Eigen::Vector2d{0.0, 1.0}, initialCov}}};
 auto history = HybridGaussianHistory<State, Maneuver>{};
 HybridPredictedJoint<State, Maneuver> joint;               // refilled by every predictJoint() (Q12)
@@ -414,9 +414,9 @@ fixes of the same cruise:
 
 ```cpp
 auto filter = AmmFilter{
-    HybridGaussianParams<State, Regime>{CategoricalParams<Regime>{}, initial},
-    ConstantVelocity<Position, Velocity>{0.01},    // Slow
-    ConstantVelocity<Position, Velocity>{1.0}};    // Fast
+    byMode<Regime>(when<Slow>(ConstantVelocity<Position, Velocity>{0.01}),
+                   when<Fast>(ConstantVelocity<Position, Velocity>{1.0})),
+    HybridGaussianParams<State, Regime>{CategoricalParams<Regime>{}, initial}};
 // ... eight steps recorded through predictJoint(1.0, joint) as above, z_k = k + 0.4 sin(2.3 k)
 // final filtered P(fast) = 0.047
 // k=0  P(fast): filtered 0.500  smoothed 0.047

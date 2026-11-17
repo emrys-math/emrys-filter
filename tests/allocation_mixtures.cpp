@@ -31,6 +31,7 @@
 using namespace EmrysTest::Allocation;
 
 using Emrys::AmmFilter;
+using Emrys::byMode;
 using Emrys::Capacity;
 using Emrys::CategoricalParams;
 using Emrys::ContinuousTimeMarkovChain;
@@ -47,7 +48,7 @@ using Emrys::ImmFilter;
 using Emrys::Lag;
 using Emrys::MixtureFilter;
 using Emrys::MixtureParams;
-using Emrys::switchingModel;
+using Emrys::when;
 
 namespace reductions = Emrys::reductions;
 namespace upkeep = Emrys::upkeep;
@@ -158,7 +159,11 @@ TEST(Allocation, ImmFilterWithMixtureNoiseStepsWithinItsResource)
         ContinuousTimeMarkovChain<Sensor>::persistent(0.2)
     );
     auto initial = HybridGaussianParams<State, Mode, double, Pmr>{CategoricalParams<Mode>{}, makeInitial(), allocator};
-    auto filter = ImmFilter{switchingModel<Maneuver>(chain, makeModel(0.01), makeModel(4.0)), std::move(initial)};
+    auto filter = ImmFilter{
+        chain,
+        byMode<Maneuver>(when<Cruise>(makeModel(0.01)), when<Maneuvering>(makeModel(4.0))),
+        std::move(initial)
+    };
     auto z = Eigen::Vector2d{};
     auto const fix = makeMixtureFix(z);
     auto result = filter.emptyUpdate<decltype(fix)>();
@@ -213,10 +218,11 @@ expectImmFilterStepsWithinItsResource(Quiet const & quiet, Agile const & agile)
         ContinuousTimeMarkovChain<Sensor>::persistent(0.2)
     );
     auto initial = HybridGaussianParams<State, Mode, double, Pmr>{CategoricalParams<Mode>{}, makeInitial(), allocator};
-    auto filter = ImmFilter{switchingModel<Maneuver>(chain, quiet, agile), std::move(initial)};
+    auto filter = ImmFilter{chain, byMode<Maneuver>(when<Cruise>(quiet), when<Maneuvering>(agile)), std::move(initial)};
     EXPECT_EQ(filter.get_allocator(), allocator);
     // The abbreviation deduces the same filter.
-    auto const abbreviated = Emrys::ImmFilter{switchingModel<Maneuver>(chain, quiet, agile), filter.state()};
+    auto const abbreviated =
+        Emrys::ImmFilter{chain, byMode<Maneuver>(when<Cruise>(quiet), when<Maneuvering>(agile)), filter.state()};
     static_assert(std::is_same_v<decltype(abbreviated), const decltype(filter)>);
 
     auto result = filter.template emptyUpdate<decltype(makeFix(fixAt(0)))>();
@@ -262,7 +268,8 @@ TEST(Allocation, ImmFilterScratchFollowsAPropagatingAllocator)
         ContinuousTimeMarkovChain<Sensor>::persistent(0.2)
     );
     auto filter = ImmFilter{
-        switchingModel<Maneuver>(chain, makeModel(0.01), makeModel(4.0)),
+        chain,
+        byMode<Maneuver>(when<Cruise>(makeModel(0.01)), when<Maneuvering>(makeModel(4.0))),
         HybridState{CategoricalParams<Mode>{}, makeInitial(), Allocator{1}}
     };
     EXPECT_EQ(filter.recursion().get_allocator(), Allocator{1});
@@ -336,8 +343,11 @@ TEST(Allocation, MixtureOfImmsScratchFollowsAPropagatingAllocator)
         prior.add(std::log(0.4), HybridState{CategoricalParams<Mode>{}, offset, allocator});
         return prior;
     };
-    auto filter =
-        MixtureFilter{switchingModel<Maneuver>(chain, makeModel(0.01), makeModel(4.0)), makePrior(Allocator{1})};
+    auto filter = MixtureFilter{
+        chain,
+        byMode<Maneuver>(when<Cruise>(makeModel(0.01)), when<Maneuvering>(makeModel(4.0))),
+        makePrior(Allocator{1})
+    };
     EXPECT_EQ(filter.recursion().get_allocator(), Allocator{1});
     filter.setState(makePrior(Allocator{2}));
     EXPECT_EQ(filter.get_allocator(), Allocator{2});
@@ -358,7 +368,7 @@ expectAmmFilterStepsWithinItsResource(Quiet const & quiet, Agile const & agile)
     auto const allocator = Pmr{&resource};
     auto initial =
         HybridGaussianParams<State, Maneuver, double, Pmr>{CategoricalParams<Maneuver>{}, makeInitial(), allocator};
-    auto filter = AmmFilter{std::move(initial), quiet, agile};
+    auto filter = AmmFilter{byMode<Maneuver>(when<Cruise>(quiet), when<Maneuvering>(agile)), std::move(initial)};
     EXPECT_EQ(filter.get_allocator(), allocator);
 
     auto result = filter.template emptyUpdate<decltype(makeFix(fixAt(0)))>();
@@ -401,7 +411,8 @@ expectMixtureOfImmsStepsWithinItsResource(Quiet const & quiet, Agile const & agi
     prior.add(std::log(0.6), HybridState{CategoricalParams<Mode>{}, makeInitial(), allocator});
     auto const offset = GaussianParams<State>{State{}, Vector4{1.0, -1.0, 0.5, 0.5}, makeInitial().covarianceLower()};
     prior.add(std::log(0.4), HybridState{CategoricalParams<Mode>{}, offset, allocator});
-    auto filter = MixtureFilter{switchingModel<Maneuver>(chain, quiet, agile), std::move(prior)};
+    auto filter =
+        MixtureFilter{chain, byMode<Maneuver>(when<Cruise>(quiet), when<Maneuvering>(agile)), std::move(prior)};
     EXPECT_EQ(filter.get_allocator(), allocator);
 
     auto result = filter.template emptyUpdate<decltype(makeFix(fixAt(0)))>();
@@ -470,7 +481,7 @@ expectImmSmoothingWithinItsResource(Quiet const & quiet, Agile const & agile)
         ContinuousTimeMarkovChain<Sensor>::persistent(0.2)
     );
     auto initial = HybridGaussianParams<State, Mode, double, Pmr>{CategoricalParams<Mode>{}, makeInitial(), allocator};
-    auto filter = ImmFilter{switchingModel<Maneuver>(chain, quiet, agile), std::move(initial)};
+    auto filter = ImmFilter{chain, byMode<Maneuver>(when<Cruise>(quiet), when<Maneuvering>(agile)), std::move(initial)};
     auto result = filter.template emptyUpdate<decltype(makeFix(fixAt(0)))>();
     using Joint = HybridPredictedJoint<State, Mode, double, Pmr>;
     auto joint = Joint{

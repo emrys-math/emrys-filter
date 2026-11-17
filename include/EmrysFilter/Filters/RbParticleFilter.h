@@ -392,6 +392,20 @@ public:
         : RbParticleFilter{std::move(model), std::move(state), MethodFor<Model_, Method_>{}, std::move(upkeep)}
     {}
 
+    /** As the constructor that takes a switching model, with the SwitchingModel of the chain \a chain on
+     * the modes and the motion \a motion, one process model or a byMode() of them [by-mode]:
+     * <tt>RbParticleFilter{chain, motion, particles}</tt>. The arguments after them are that constructor's.
+     */
+    template <typename Chain, typename Motion, typename... Rest>
+        requires internal::isModeChain<Chain>
+    RbParticleFilter(Chain chain, Motion motion, StateType state, Rest &&... rest)
+        : RbParticleFilter{
+              Model_(SwitchingModel{std::move(chain), std::move(motion)}),
+              std::move(state),
+              std::forward<Rest>(rest)...
+          }
+    {}
+
     /** \returns the allocator of the state and scratch */
     [[nodiscard]] allocator_type
     get_allocator() const
@@ -1327,6 +1341,32 @@ RbParticleFilter(Model, ParticleGaussianParams<Space, Path, Covariance, Scalar, 
 template <
     typename Space,
     typename Path,
+    typename Chain,
+    typename Motion,
+    typename Covariance,
+    typename Method = DefaultMethodFor<internal::SwitchingModelOf<Chain, Motion>>,
+    typename Scalar,
+    typename Allocator,
+    typename Component>
+    requires(internal::isModeChain<Chain> && (!internal::UpkeepArgument<Method>))
+RbParticleFilter(
+    Chain,
+    Motion,
+    ParticleGaussianParams<Space, Path, Covariance, Scalar, Allocator, Component>,
+    Method = {}
+)
+    -> RbParticleFilter<
+        Space,
+        Path,
+        internal::BoundStep<internal::SwitchingModelOf<Chain, Motion>, Space, Scalar>,
+        Covariance,
+        Method,
+        Scalar,
+        Allocator>;
+
+template <
+    typename Space,
+    typename Path,
     typename Model,
     typename Covariance,
     typename Scalar,
@@ -1348,6 +1388,28 @@ RbParticleFilter(Model, ParticleGaussianParams<Space, Path, Covariance, Scalar, 
 template <
     typename Space,
     typename Path,
+    typename Chain,
+    typename Motion,
+    typename Covariance,
+    typename Scalar,
+    typename Allocator,
+    typename Component,
+    typename U>
+    requires(internal::isModeChain<Chain> && (internal::UpkeepArgument<U>))
+RbParticleFilter(Chain, Motion, ParticleGaussianParams<Space, Path, Covariance, Scalar, Allocator, Component>, U)
+    -> RbParticleFilter<
+        Space,
+        Path,
+        internal::BoundStep<internal::SwitchingModelOf<Chain, Motion>, Space, Scalar>,
+        Covariance,
+        DefaultMethodFor<internal::SwitchingModelOf<Chain, Motion>>,
+        Scalar,
+        Allocator,
+        U>;
+
+template <
+    typename Space,
+    typename Path,
     typename Model,
     typename Covariance,
     typename Method,
@@ -1361,6 +1423,35 @@ RbParticleFilter(
     Method,
     U
 ) -> RbParticleFilter<Space, Path, internal::BoundStep<Model, Space, Scalar>, Covariance, Method, Scalar, Allocator, U>;
+template <
+    typename Space,
+    typename Path,
+    typename Chain,
+    typename Motion,
+    typename Covariance,
+    typename Method,
+    typename Scalar,
+    typename Allocator,
+    typename Component,
+    typename U>
+    requires internal::isModeChain<Chain>
+RbParticleFilter(
+    Chain,
+    Motion,
+    ParticleGaussianParams<Space, Path, Covariance, Scalar, Allocator, Component>,
+    Method,
+    U
+)
+    -> RbParticleFilter<
+        Space,
+        Path,
+        internal::BoundStep<internal::SwitchingModelOf<Chain, Motion>, Space, Scalar>,
+        Covariance,
+        Method,
+        Scalar,
+        Allocator,
+        U>;
+
 /// \endcond
 
 }  // namespace Emrys

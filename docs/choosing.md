@@ -111,7 +111,8 @@ use.
 - **One process model**, whatever its nonlinearity: the filters above.
 - **Switching during the run**, where the motion differs qualitatively from time to time, such as
   a target that alternates between straight flight and turns, or a vehicle that stops and starts:
-  `ImmFilter` over a `SwitchingModel`, one process model per mode, with a
+  `ImmFilter{chain, motion, prior}`, the motion a process model per value of the mode,
+  `byMode<Maneuver>(when<Cruise>(cruise), when<Turn>(turn))`, and the chain a
   `ContinuousTimeMarkovChain` of the switching rates, which each prediction takes over its time
   step, or with fixed-step models a `MarkovChain` of the switching probabilities per step. Its
   estimate at each step mixes the modes by their probabilities, and a mode that was ruled out comes
