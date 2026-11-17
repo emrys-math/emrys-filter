@@ -841,7 +841,6 @@ The front door:
 Getting the word out, once the front door is done: the README's comparison table and its numbers
 are what a reader checks in the first hour, and a thread that finds them wrong is the launch.
 
-- [ ] `CODE_OF_CONDUCT.md`, before the advertised launch.
 - [ ] The OpenSSF Best Practices badge at the passing level, beside the DOI in the README, added
       in the 0.2.0 release (decided 2026-11-16). The project is registered on bestpractices.dev
       and its criteria answered before then; the badge waits for 0.2.0 because clang-tidy first

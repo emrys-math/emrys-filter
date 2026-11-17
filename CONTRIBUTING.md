@@ -7,6 +7,12 @@ says what the code takes from it, and says where it departs. That rule shapes ho
 proposed and how open problems are handled. It also obliges the library to leave room: a method it
 won't take must be writable against its public contracts, without a fork ([user-extension-points]).
 
+## Conduct
+
+Everyone who takes part in the project follows the [Code of Conduct](CODE_OF_CONDUCT.md). It says
+which topics belong in the project's spaces, the rules that discussion follows, and how to report
+a violation.
+
 ## Proposing a feature
 
 Open a **Feature request** issue. The form asks for the need and for the literature: the paper,
