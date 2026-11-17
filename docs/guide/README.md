@@ -12,11 +12,10 @@ They are listed in reading order, and each builds on the ones before it.
 
 | # | Document | Status |
 |---|---|---|
-| 1 | [imm-filter.md](imm-filter.md): mode chains, hybrid states, mixing, Markov outliers, and the AMM | not yet reviewed; refreshed for roadmap 17z (models by `compose()`, error quotes rerun, §11's floor corrected to the 0.001 it printed); since then Q1 decided [switching-models], its examples' chains made continuous-time or their models fixed-step, the numbers printed with per-step chains not rerun; Q3, Q5, Q8, Q10 [imm], Q6 [unused-blocks], Q11, Q12 [switching-models], Q13, Q16 [autonomous-multiple-model], Q17 decided; Q2, Q4, Q7, Q9, Q14, Q15, Q18 done; Q19, Q20 open |
-| 2 | [hidden-markov-filter.md](hidden-markov-filter.md): the forward recursion, emissions, continuous-time chains, and modulated arrivals | written; not yet reviewed; refreshed for roadmap 17z (the `Sensor` tag restored, since the library no longer defines one; examples not rerun); Q4 decided, Q7 with imm-filter.md Q1 [switching-models]; Q8 half settled (`simulate()` takes a chain); Q9 no longer reproduces; Q1 to Q3, Q5, Q6, Q8, Q10 open |
-| 3 | [particle-filter.md](particle-filter.md): sampled prediction, likelihood weighting, resampling, and roughening | not yet reviewed; refreshed for roadmap 17z (models and likelihood-only measurements rewritten, §1, §3, §5, §11, §14 rerun with Clang; §8's tenth roughening not reproduced); Q6 [likelihood-measurements], Q8 [allocation], Q12, Q15 decided; Q1 to Q5, Q7, Q9 to Q11, Q13, Q14, Q16 open |
-| 4 | [rao-blackwellized-filters.md](rao-blackwellized-filters.md): point-mass, grid, and particle | not yet reviewed; refreshed for roadmap 17z (§6 and the misuse table rewritten, the prediction ignoring `affineIn()` where it refused `FactoredUnscented`, error quotes rerun with Clang); Q2, Q7, Q15, Q18 [allocation], Q27 [rb-particle-filter] decided; Q11 partly decided; Q1, Q3 to Q6, Q8 to Q10, Q12 to Q14, Q16, Q17, Q19 to Q26 open |
-| 5 | [smoothing.md](smoothing.md): the record of the forward pass and the backward passes over it | written; not yet reviewed; refreshed for roadmap 17z (models rewritten, §3 to §5 and §6's IMM columns rerun with Clang; since then §6's chain made continuous-time for imm-filter.md Q1, its numbers not rerun); Q4 decided; Q1 to Q3, Q5 to Q11 open; Q12 open |
+| 1 | [hidden-markov-filter.md](hidden-markov-filter.md): the forward recursion, emissions, continuous-time chains, and modulated arrivals | written; not yet reviewed; refreshed for roadmap 17z (the `Sensor` tag restored, since the library no longer defines one; examples not rerun); Q4 decided, Q7 [switching-models]; Q8 half settled (`simulate()` takes a chain); Q9 no longer reproduces; Q1 to Q3, Q5, Q6, Q8, Q10 open |
+| 2 | [particle-filter.md](particle-filter.md): sampled prediction, likelihood weighting, resampling, and roughening | not yet reviewed; refreshed for roadmap 17z (models and likelihood-only measurements rewritten, §1, §3, §5, §11, §14 rerun with Clang; §8's tenth roughening not reproduced); Q6 [likelihood-measurements], Q8 [allocation], Q12, Q15 decided; Q1 to Q5, Q7, Q9 to Q11, Q13, Q14, Q16 open |
+| 3 | [rao-blackwellized-filters.md](rao-blackwellized-filters.md): point-mass, grid, and particle | not yet reviewed; refreshed for roadmap 17z (§6 and the misuse table rewritten, the prediction ignoring `affineIn()` where it refused `FactoredUnscented`, error quotes rerun with Clang); Q2, Q7, Q15, Q18 [allocation], Q27 [rb-particle-filter] decided; Q11 partly decided; Q1, Q3 to Q6, Q8 to Q10, Q12 to Q14, Q16, Q17, Q19 to Q26 open |
+| 4 | [smoothing.md](smoothing.md): the record of the forward pass and the backward passes over it | written; not yet reviewed; refreshed for roadmap 17z (models rewritten, §3 to §5 and §6's IMM columns rerun with Clang; since then §6's chain made continuous-time [switching-models], its numbers not rerun); Q4 decided; Q1 to Q3, Q5 to Q11 open; Q12 open |
 
 When you write or finish reviewing a document, update its status here. A finished review moves
 out, as the roadmap's Documentation section says, and is deleted: Core and Spaces were the first,
@@ -58,6 +57,14 @@ Rao-Blackwellized particle set, which is in the roadmap's allocation items: the 
 the state's type means, what each action's return means, and what each allocates, and in
 `FilterUpkeep.h`; the rules in [upkeep], [rao-blackwellized-core], [autonomous-multiple-model], and
 [covariance-repair], and the reasons for Q6 and Q10 in [upkeep]'s rejections.
+The interacting multiple model filter followed on 2026-11-16, with every question decided: the
+explanation is in `ImmFilter.h`, whose class comment gained what unmarked mixture noise does on a
+mode space with a sensor axis, where a revived mode starts from, and the cost of each step, and
+whose result says what its likelihood includes; in `AmmFilter.h`, which gained that the AMM
+identifies and does not track; in `SwitchingModel.h`, which gained what `Zero`'s variance sets;
+in `Hybrid.h`, `ByMode.h`, `Categorical.h`, and on the Filters module page, which gained the
+memoryless IMM as the first-order generalized pseudo-Bayesian estimator; and the rules in
+[switching-models], [imm], [by-mode], [unused-blocks], and [autonomous-multiple-model].
 
 ## How a document is written
 
@@ -102,27 +109,12 @@ comment saying what it verifies, so the tests are a map of the evidence. The dec
 [../design/decisions.md](../design/decisions.md), and the roadmap notes in
 [../design/roadmap.md](../design/roadmap.md) give the test evidence for each step.
 
-### 1. Interacting multiple model filter
-
-The hybrid state (`Hybrid`, `HybridGaussian`), switching process models by mode axis
-(`SwitchingModel`) and the chain over their step (a `ContinuousTimeMarkovChain`, or with
-fixed-step models a `MarkovChain`), `MarkovChain` and its Kronecker-product construction, mixing,
-measurement-side outlier modes, and the autonomous multiple model filter, the IMM on the identity
-chain. `Spaces/Discrete.h` covers the mode spaces; `FloorModes` is `Upkeep.h`'s, the IMM smoother
-smoothing.md's, and mixtures of IMMs `MixtureFilter.h`'s.
-
-- Decisions: [switching-models], [imm], [component-first], [filters-and-recursions],
-  [autonomous-multiple-model].
-- Headers: `Filters/ImmFilter.h`, `Filters/AmmFilter.h`, `Distributions/Hybrid.h`,
-  `Models/SwitchingModel.h`, `MarkovChain` in `Distributions/Categorical.h`.
-- Tests: `tests/Filters/imm_filter`, `amm_filter`; `tests/allocation_mixtures`.
-
-### 2. Hidden Markov filter
+### 1. Hidden Markov filter
 
 The forward recursion over a `CategoricalParams`, emission models (`EmissionTable`, `DensityEmission`,
 `PoissonEmission`, `ExponentialEmission`), the continuous-time chain and its transition over an
 interval, and Markov-modulated arrivals observed by the prediction (`ArrivalInterval`).
-`MarkovChain` is imm-filter.md's, `CategoricalParams` `Distributions/Categorical.h`'s, and the smoother
+`MarkovChain` and `CategoricalParams` are `Distributions/Categorical.h`'s, and the smoother
 smoothing.md's.
 
 - Decisions: [emissions]; [discrete-spaces], [filters-and-recursions], [smoothing],
@@ -133,7 +125,7 @@ smoothing.md's.
   `tests/Distributions/continuous_time_markov_chain`; the hidden Markov cases in
   `tests/Smoothers/smoothing`, `tests/Filters/time_steps`, and `tests/allocation`.
 
-### 3. Particle filter
+### 2. Particle filter
 
 Propagation with sampled process noise, weighting by likelihood, `logLikelihoods()` at many
 points, ESS, the resamplers (multinomial, stratified, systematic, residual), roughening, and the
@@ -148,7 +140,7 @@ execution-policy overloads. `ParticleSet` itself is `Distributions/ParticleSet.h
 - It covers the statistics of resampling and roughening; `Upkeep.h` covers the `Resample`,
   `Roughen`, and `WhenEss` objects as actions.
 
-### 4. Rao-Blackwellized filters
+### 3. Rao-Blackwellized filters
 
 The shared Rao-Blackwellized core, `PointGrid` and `GridCells`, the sparse `GridGaussianParams`
 state, the Rao-Blackwellized point-mass filter, the Bayesian grid filter (`PointMassFilter`) as
@@ -167,7 +159,7 @@ and these filters' policies, time steps, allocation, result views, and printing.
   `tests/allocation_particles`, `tests/parallel`, `tests/Filters/time_steps`.
 - The prune and `Subdivide` actions are `Upkeep.h`'s.
 
-### 5. Smoothing
+### 4. Smoothing
 
 The record the caller keeps of the forward pass and the backward pass over it: `predictJoint()`
 and `PredictedJoint`, `smoothStep()`, `GaussianHistory` with `Lag` (fixed-interval and

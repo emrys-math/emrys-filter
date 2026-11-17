@@ -7,8 +7,7 @@
  * internal::ElementsOf, which make a hybrid state a component in its own right, so a
  * Mixture of hybrids is the state of a mixture of interacting multiple model filters [filters-and-recursions]; and
  * the HybridGaussian alias for the hybrid of Gaussians, the interacting multiple model filter's
- * state. Read ParticleSet.h next; the design review is
- * docs/guide/imm-filter.md.
+ * state. Read ParticleSet.h next.
  */
 
 #include <concepts>

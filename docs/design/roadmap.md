@@ -525,24 +525,12 @@ The distributed-fusion operations that are pure functions of the library's types
 
 Done when: the above pass on all three compilers, with the consensus step's parallel case.
 
-## 17zs. One spelling for what depends on the mode — in progress
-
-A part of a model that depends on the mode is `byMode<Axis>(when<Value>(part), ...)` [by-mode].
-The measurement side is built: noise by mode axis, a measurement per value of an axis, their
-nesting, and every filter that holds hybrids taking them (imm-filter.md Q19, Q20). So is the
-process side: a filter over a hybrid takes the chain and the motion, `ImmFilter{chain, motion,
-prior}`, the motion a process model or a `byMode` of them. What is left:
-
-- [ ] Rerun imm-filter.md §7's printouts under the new spelling.
-
-Done when: every item passes its test on all three compilers.
-
 ## 17za. Mixture arguments of a model — not started
 
 A mixture as an uncertain argument of `predict()` or `observe()` [prediction-inputs], in stages after
 the first, which exists (additive mixture noise, [additive-noise]): a mixture through the function;
 then several mixtures each naming a mode axis, as `additiveNoise(byMode<Axis>(...))` names one for
-additive noise (imm-filter.md Q10); then several memoryless mixtures.
+additive noise [imm]; then several memoryless mixtures.
 The Kalman filter refuses a mixture argument, and the mixture filters take it, with a branch per
 component. Each stage is an addition; the first two change no spelling.
 
@@ -550,7 +538,7 @@ component. Each stage is an addition; the first two change no spelling.
       component pushed through by the method, the branches weighted by the component weights. Test:
       a `GaussianMixtureFilter` prediction with a two-component input equals the mixture of the two
       predictions with each component as a Gaussian argument.
-- [ ] Several mixtures each naming a mode axis, for an `ImmFilter` (imm-filter.md Q10).
+- [ ] Several mixtures each naming a mode axis, for an `ImmFilter` [imm].
 - [ ] Several memoryless mixtures, their components crossed.
 
 Done when: each stage passes its test on all three compilers.
@@ -1126,3 +1114,4 @@ resolve.
 | 17zb | Whole-state models, function forms, and `transform()` with a measurement model's policies | [whole-state-models], [transform-policies], [model-policies], [sensors] |
 | 17zc | A function takes its scalar as a template parameter, `zeros<T>(out)` replaces `vectorIn()`, and the examples name the steps their models apply | [function-scalars] |
 | 17ze | A measurement per value of a mode axis, `switchingMeasurement<Path>()`, for the IMM's update | [imm] |
+| 17zs | One spelling for what depends on the mode, `byMode<Axis>(when<Value>(part), ...)`: noise by mode axis, a measurement per value, nested, in every filter that holds hybrids; a hybrid filter takes the chain and the motion, `ImmFilter{chain, motion, prior}` | [by-mode], [switching-models], [imm] |

@@ -1512,12 +1512,12 @@ A method per model, because a constant-velocity mode is exact under `Linearized`
 coordinated-turn mode beside it may need `Unscented`. The chain follows the models' step because the
 mode and the state move over the same interval [continuous-time-noise].
 
-**Rejected.** A `MarkovChain` beside models stepped by a time step, one $\Pi$ per prediction (until
-imm-filter.md Q1): a changing rate silently changed the switching rate, and `predict(0.0)` moved the
-mode. Resizable spaces for dimensions that depend on the mode. One method for every mode (until Q7).
+**Rejected.** A `MarkovChain` beside models stepped by a time step, one $\Pi$ per prediction: a
+changing rate silently changed the switching rate, and `predict(0.0)` moved the
+mode. Resizable spaces for dimensions that depend on the mode. One method for every mode.
 `withMethod()` as a process model every filter takes: outside a switching model it only moves the
 filter's method into the model. The first model's method as the filter's `method()`. A transform
-shared by modes differing only in $Q$ (claimed until Q12, never built): each mode transforms its own
+shared by modes differing only in $Q$ (claimed once, never built): each mode transforms its own
 mixed component.
 
 **Where.** `Models/SwitchingModel.h`; the modes' predictions in `Filters/ImmFilter.h` and
@@ -1539,10 +1539,10 @@ refuses it without weights. A `byMode` of measurements and a switching model's m
 nest, each reading its own axis; an axis chooses once along a nesting; a mode's update has one type.
 
 **Why.** One spelling for every part that varies by mode, where before noise and measurements each
-had their own and did not combine (imm-filter.md Q19, Q20). Labels make the order irrelevant and
-let the compiler check that each value is served once. Nesting keeps each part at the axis it
-depends on, so the spelling grows with how parts depend on axes, not with the number of axes.
-Weights beside their values keep one sensor model for both readings.
+had their own and did not combine. Labels make the order irrelevant and let the compiler check
+that each value is served once. Nesting keeps each part at the axis it depends on, so the spelling
+grows with how parts depend on axes, not with the number of axes. Weights beside their values keep
+one sensor model for both readings.
 
 **Rejected.** A positional list on a named axis, whose order the reader must know. A map literal,
 whose values have one type and whose keys are checked at run time. `otherwise()` implied for a
@@ -1572,7 +1572,7 @@ constant-acceleration mode at the next mixing, with covariances that only that m
 and a reset bias loses its estimate at every switch. A reset whatever the step is
 `OrnsteinUhlenbeck`'s limit as $\tau \to 0$, for any positive step.
 
-**Rejected.** Holding every unused block (until imm-filter.md Q6). `OrnsteinUhlenbeck` with a short
+**Rejected.** Holding every unused block. `OrnsteinUhlenbeck` with a short
 $\tau$ as the reset: it keeps $e^{-\Delta t / \tau}$ of the block, nearly all of it over a short
 step. Filling the block at mixing from the modes that use it, as IMMs on states of unequal dimension
 do: a mode's model writes its whole component, and mixing knows no blocks.

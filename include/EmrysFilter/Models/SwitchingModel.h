@@ -7,8 +7,7 @@
  * every model is a FixedStepModel [fixed-step-models]. The interacting multiple model filter's process model, which a
  * filter over a Hybrid builds from its first two arguments, the chain and the motion. withMethod() gives one mode's
  * model a prediction method of its own, ModelWithMethod. A measurement per value of a mode axis is a ByMode of
- * measurements, which observe() also makes of a ByMode of models. Read Reduction.h next; the design review is
- * docs/guide/imm-filter.md.
+ * measurements, which observe() also makes of a ByMode of models. Read Reduction.h next.
  */
 
 #include <algorithm>
@@ -362,7 +361,10 @@ convertMotion(Motion const & motion)
  * state space. A mode's model writes even a block the mode doesn't use: with Constant or RandomWalk
  * where the quantity persists through the mode, such as a sensor bias, and with Zero where it is zero
  * in the mode, such as the acceleration of a constant-velocity mode beside a constant-acceleration
- * one (decisions.md [unused-blocks]).
+ * one (decisions.md [unused-blocks]). Zero's variance sets what the mode hands the others at mixing: a
+ * small one says the acceleration is zero in the mode, and a maneuver then starts from near zero; one
+ * on the scale of a maneuver's acceleration is a prior for the onset, taken up faster, at the cost of
+ * a merged variance larger by the mode's probability times it.
  *
  * The chain moves the mode over the same step as the models, so its kind follows theirs
  * [switching-models]:

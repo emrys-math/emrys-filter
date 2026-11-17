@@ -17,7 +17,7 @@ and `tests/allocation.cpp`. Roadmap step 15.
 Other documents own the pieces this one uses. `CategoricalParams` and `Categorical` are
 `Distributions/Categorical.h`'s [categorical-params], the discrete spaces (`Named`, `Finite`, `DiscreteProduct`) are
 `Spaces/Discrete.h`'s, and `MarkovChain`, with its persistent and Kronecker-product constructions,
-is imm-filter.md §2. The smoother over a `CategoricalHistory` belongs to smoothing.md, and how a
+is `Distributions/Categorical.h`'s. The smoother over a `CategoricalHistory` belongs to smoothing.md, and how a
 `TimeStep` converts to a scalar [time-steps] to `Core/Time.h`. This document says what the filter
 does with them.
 
@@ -344,7 +344,7 @@ finite set, held as its generator $Q$: a row per value moved from and a column p
 to, $Q_{ij} \ge 0$ for $i \ne j$ the rate of jumping from $i$ to $j$, and each row summing to zero,
 so $-Q_{ii}$ is the rate of leaving $i$. Its type is `MarkovChain`'s matrix type, fixed-size and
 row-major for a fixed space. It is built in four ways, each with a counterpart on `MarkovChain`
-(imm-filter.md §2):
+(`Distributions/Categorical.h`):
 
 | `ContinuousTimeMarkovChain` | builds | `MarkovChain` counterpart |
 |---|---|---|
@@ -363,7 +363,7 @@ long before the first measurement, or `ChainError::Reducible` when some value ca
 as for a chain that never moves. It is the algorithm of
 [Grassmann, Taksar, and Heyman (1985)](../reference/bibliography.md#grassmann1985), which reads only
 the off-diagonal rates and never subtracts, shared with `MarkovChain`'s `stationary()`
-(imm-filter.md §2); `Stationary` checks it against the closed form, and against the stationary
+(`Categorical.h`); `Stationary` checks it against the closed form, and against the stationary
 distribution of the transition over 0.7, to `1e-14`.
 
 The product is a sum, not a product, because two independent axes never jump at the same
@@ -461,12 +461,12 @@ What a fixed-step filter gives up is the arrival step of §5, which needs the ge
 > ~~**Q7.** `SwitchingModel` takes only a `MarkovChain`, so an IMM whose modes switch in continuous
 > time assigns `filter.model().chain() = generator.transition(dt)` before each irregular step
 > (both accessors have non-const overloads). Roadmap step 15 says "`SwitchingModel`
-> may later take this chain in place of $\Pi$". Is that for after 0.1, and should imm-filter.md
+> may later take this chain in place of $\Pi$". Is that for after 0.1, and should the IMM review
 > show the workaround?~~
 >
 > ~~**Scheduled:** the template's shape is decided first after the soft launch, since adding a chain
 > parameter later breaks more code; the continuous chain itself may follow (roadmap, "Launch", the
-> **breaking** guide questions).~~ *Decided [switching-models] (imm-filter.md Q1): a
+> **breaking** guide questions).~~ *Decided [switching-models]: a
 > `SwitchingModel` with models stepped by `predict(dt)` takes a `ContinuousTimeMarkovChain` and
 > moves the mode by $e^{Q \Delta t}$, with no template parameter added, the chain's kind following
 > the models'; a `MarkovChain` with them doesn't compile.*
@@ -683,7 +683,7 @@ rows do not sum to zero are assertions at run time.
 6. **Q6.** `persistent()` takes a probability of staying on `MarkovChain` and a rate of leaving
    on `ContinuousTimeMarkovChain`; rename one? (§4)
 7. ~~**Q7.** `SwitchingModel` takes no continuous-time chain; after 0.1, and document the
-   workaround in imm-filter.md? (§4)~~ *Decided [switching-models] (imm-filter.md Q1): models
+   workaround in the IMM review? (§4)~~ *Decided [switching-models]: models
    stepped by `predict(dt)` take a `ContinuousTimeMarkovChain`.*
 8. **Q8.** `simulate()` draws a chain's next value; the emission models have no draw of their observation; add one after 0.1? (§8)
 9. ~~**Q9.** GCC 14 `-Wmaybe-uninitialized` in `Categorical::fromLogWeights()` through the arrival

@@ -35,10 +35,10 @@ prediction of each mode through every other mode's model, so §6's examples were
 maneuver one on a track this refresh defines. A kept `HybridPredictedJoint` can no longer be
 written `auto joint = HybridPredictedJoint<...>{}` (Q12), and a fixed-step model is spelled
 `fixedStep<State>(model, dt)` [space-storage]. The particle example of §8 was rerun on a track and
-seed it now states. Since then imm-filter.md Q1 was decided: an IMM whose models are stepped by
+seed it now states. Since then [switching-models] made the chain continuous-time: an IMM whose models are stepped by
 `predict(dt)` takes a `ContinuousTimeMarkovChain`, so §6's maneuver example now spells one, and
 its printed numbers, from the per-step chain, were not rerun (§6). The filters themselves are
-reviewed in [imm-filter.md](imm-filter.md), [particle-filter.md](particle-filter.md), and
+reviewed in `ImmFilter.h`, [particle-filter.md](particle-filter.md), and
 [hidden-markov-filter.md](hidden-markov-filter.md), and the mixture filter in `MixtureFilter.h`;
 this document covers only what they record and what is done with it.
 
@@ -348,7 +348,7 @@ at step 20, the smoothed maneuver probability rises over steps 17 to 22, 0.998 a
 step (`ImmSmootherPlacesAManeuverWhereTheFilterLags`), and over nine fixes of a slowly turning
 target, 512 mode sequences, it is within 0.03 of enumeration
 (`ImmSmootherModeProbabilitiesTrackEnumeration`). The 0.998 was measured with a per-step chain
-before imm-filter.md Q1 was decided, and not remeasured with the continuous-time chain the test now
+before the chain became continuous-time [switching-models], and not remeasured with the continuous-time chain the test now
 takes.
 
 The example below checks the source against the exact posterior on a harder track. A 1-D target
@@ -391,7 +391,7 @@ history.smooth(filter.state());
 ```
 
 (Printed on 2026-11-04 with `MarkovChain<Maneuver>::persistent(0.95)`, one step per prediction,
-for the IMM and for the enumeration alike, before imm-filter.md Q1 was decided. Not rerun; the
+for the IMM and for the enumeration alike, before the chain became continuous-time [switching-models]. Not rerun; the
 numbers in the paragraph below are read from this printout.)
 
 The last column is Kim's $\sum_i b_{ij}\, \mu^i_{t+1 \mid N}$, computed by hand from the same
@@ -443,8 +443,7 @@ maneuver track they were certain of the maneuver at steps 5 to 7 where enumerati
 | [Kim (1994)](../reference/bibliography.md#kim1994), $\sum_i b_{ij} \mu^i_{t+1 \mid N}$ | 0.10 | exact |
 | [Barber (2006)](../reference/bibliography.md#barber2006), mean approximation | 0.024 | exact |
 
-(Measured with the per-step chain `MarkovChain<Maneuver>::create({{0.9, 0.1}, {0.3, 0.7}})`, before
-imm-filter.md Q1 was decided. The test now takes the rates 0.1 and 0.3 over its one-second step,
+(Measured with the per-step chain `MarkovChain<Maneuver>::create({{0.9, 0.1}, {0.3, 0.7}})`, before the chain became continuous-time [switching-models]. The test now takes the rates 0.1 and 0.3 over its one-second step,
 $e^{Q}$, and still checks Barber's error against 0.03; the errors above were not remeasured.)
 
 Kim's needs nothing new, being the total of the backward mixing weights, but it takes the mode at
@@ -482,7 +481,7 @@ and Barber's the other way, so one test case does not settle the choice (Q12).
 > it. Should the joint have a constructor, empty or from an allocator, as the IMM's update result
 > has?
 > *Update:* the numbers compared above, §6's example and the table of replacements, were measured
-> with per-step chains before imm-filter.md Q1 was decided. The example and the tests now use
+> with per-step chains before the chain became continuous-time [switching-models]. The example and the tests now use
 > continuous-time chains, so a comparison made for this question should be measured again with
 > them.
 

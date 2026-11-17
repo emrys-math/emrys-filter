@@ -38,7 +38,11 @@
  * persistent outlier process (bursts, a stuck sensor) is an IMM on the measurement side: the
  * noise <tt>additiveNoise(byMode<Sensor>(when<Inlier>(inlier), when<Outlier>(outlier)))</tt> (ModeNoise) names the mode
  * axis whose values its components are, which an IMM whose mode space has that axis updates by, and which a filter with
- * no mode space reads as memoryless mixture noise.
+ * no mode space reads as memoryless mixture noise. The two readings agree exactly where they should: an IMM whose chain
+ * on the sensor axis has identical rows, the alternatives' weights, is the first-order generalized pseudo-Bayesian
+ * estimator of \ref BarShalom2001 "Bar-Shalom, Li, and Kirubarajan (2001)", §11.6, and that is a KalmanFilter whose
+ * noise is the mixture, collapsed after each update, since mixing through identical rows starts every mode from the
+ * one collapsed %Gaussian (ImmFilter.NoiseByModeIsMemorylessWhereNoModeSpaceHasItsAxis).
  *
  * A filter owns a state distribution and a recursion: a process model and a prediction method,
  * with any scratch the steps need, acting on a state passed in (decisions.md [filters-and-recursions]). It moves the

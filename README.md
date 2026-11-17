@@ -210,7 +210,7 @@ and it is meant to sit beside a graduate course in state estimation.
 | Ill-conditioned covariances, `float`, long runs | `SqrtKalmanFilter` | [docs/choosing.md](docs/choosing.md), "Can the arithmetic be trusted?" |
 | Many sensors, fusion, uninformative priors | `InfoFilter`, `SqrtInfoFilter` | the same |
 | Outliers, clutter, ambiguous measurements | mixture measurement noise with `reductions::collapse()`, `select()`, or `gate()`; `GaussianMixtureFilter` to keep the components | [docs/choosing.md](docs/choosing.md), "How is the noise distributed?"; [examples/gaussian_mixture.cpp](examples/gaussian_mixture.cpp) |
-| Several motion regimes | `ImmFilter`, `AmmFilter`, `byMode`, `MarkovChain` | [imm-filter.md](docs/guide/imm-filter.md) |
+| Several motion regimes | `ImmFilter`, `AmmFilter`, `byMode`, `MarkovChain` | [docs/choosing.md](docs/choosing.md); [examples/imm.cpp](examples/imm.cpp) |
 | Multimodal or strongly nonlinear | `ParticleFilter` with `upkeep::resample(rng)` and `roughen(rng)` | [particle-filter.md](docs/guide/particle-filter.md) |
 | Part of the state is conditionally linear | `RbParticleFilter` | [rao-blackwellized-filters.md](docs/guide/rao-blackwellized-filters.md) |
 | A low-dimensional nonlinear part worth a grid | `RbPointMassFilter`, `PointMassFilter` | rao-blackwellized-filters.md |
@@ -266,8 +266,8 @@ and the ones before it, and CI checks that.
   [docs/choosing.md](docs/choosing.md) for the choice of filter, and
   [the reference](https://emrys-math.github.io/emrys-filter/), the public API of every header.
   The `docs` target builds it, or with the internals for the maintainer.
-- **Understanding it:** [docs/guide/](docs/guide/), the five design reviews still open, in reading order from
-  [imm-filter.md](docs/guide/imm-filter.md) to
+- **Understanding it:** [docs/guide/](docs/guide/), the four design reviews still open, in reading order from
+  [hidden-markov-filter.md](docs/guide/hidden-markov-filter.md) to
   [smoothing.md](docs/guide/smoothing.md), each
   showing real use with its printed results.
 - **Why it is this way:** [docs/design/decisions.md](docs/design/decisions.md), the decisions;

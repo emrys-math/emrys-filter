@@ -1134,7 +1134,7 @@ TEST(ImmFilter, FixedStepModelsTakeTheContinuousTimeChainOverTheirStep)
     }
 }
 
-// With a method per mode [switching-models] (imm-filter.md Q7 and Q14), each mode predicts by its
+// With a method per mode [switching-models], each mode predicts by its
 // model's own method where it carries one and by the filter's otherwise. On the chain that never
 // moves the modes don't mix, so over four fixes each matches a Kalman filter with its model and method, to
 // rounding: a constant-velocity mode under the filter's Linearized, and a drag mode given Unscented

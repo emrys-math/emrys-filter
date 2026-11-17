@@ -7,8 +7,7 @@
  * measurement per value of a mode axis through a ByMode [by-mode]; the recursion that does this to a hybrid
  * passed in, keeping the scratch it mixes and updates into, the filter that owns a hybrid and runs the recursion on it.
  * predictJoint() records a step as a HybridPredictedJoint for the IMM smoother in HybridGaussianHistory.h [smoothing],
- * and a MixtureFilter of hybrids runs the recursion on each of its components. Read AmmFilter.h next; the design review
- * is docs/guide/imm-filter.md.
+ * and a MixtureFilter of hybrids runs the recursion on each of its components. Read AmmFilter.h next.
  */
 
 #include <cstddef>
@@ -48,7 +47,10 @@ namespace Emrys
  * \c modes[m] is the update of mode \a m's component (see FilterUpdate), with its
  * log-likelihood \f$ \log p(z \mid m) \f$ and its branches labeled with \c mode = \a m. Its
  * \c accepted is false when the policy, such as a Gate, rejected the measurement in that mode.
- * When \c accepted is false here, every mode rejected it and the state kept its prior.
+ * When \c accepted is false here, every mode rejected it and the state kept its prior. No mode is
+ * ever dropped, so \c modes[m] is about the state's <tt>conditional(m)</tt>; the posterior mode
+ * probabilities are the state's. logLikelihood() is over every mode, those the policy rejected
+ * included, as the other filters report the likelihood from before a gate.
  *
  * The modes' updates come from \a Allocator. Passing the same result, made from the allocator, to each
  * ImmFilter::update(measurement, policy, result) reuses their storage, and a mode's update of
@@ -1432,8 +1434,16 @@ struct RecursionFor<Hybrid<Component_, ModeSpace_, HybridAllocator>, Model, Meth
  * filter.state().toDensity()->collapsed();  // the estimate as one GaussianParams
  * \endcode
  *
+ * Mixture noise that is not by mode axis is read by every mode as memoryless mixture noise, a
+ * branch per component. On a mode space with a sensor axis that models the outliers twice: each
+ * mode runs the memoryless model inside itself, and the sensor axis, explaining nothing, follows its
+ * chain alone. Nothing warns, since the same noise is the memoryless model in every filter; the
+ * sensor's model says which it means, once, by giving its noise by mode axis or not.
+ *
  * A mode whose update the policy rejects keeps its prior component and gets probability zero,
- * from which the chain can bring it back at the next prediction. When every mode rejects the
+ * from which the chain can bring it back at the next prediction. The component it comes back
+ * with is not its stale prior: mixing weights each mode's component by its probability, so the
+ * revived mode starts from the modes that kept the measurement. When every mode rejects the
  * measurement, it is rejected and the state is unchanged. With one mode the filter is a
  * KalmanFilter. With the chain that never moves, <tt>ContinuousTimeMarkovChain<Mode>{}</tt>, whose
  * every step is the identity, it is the autonomous
@@ -1444,6 +1454,15 @@ struct RecursionFor<Hybrid<Component_, ModeSpace_, HybridAllocator>, Model, Meth
  * The predicted and posterior components are built in scratch from the state's allocator and
  * exchanged with the state's, so on a bounded space its steps allocate nothing;
  * update(measurement, policy, result) also reuses the result's storage (see \ref Allocation).
+ *
+ * With \a M modes, a prediction costs \a M mixing collapses, each over the modes of nonzero
+ * weight, none on the identity chain, and \a M predictions through the modes' models; a
+ * continuous-time chain adds the exponential of its \a M × \a M generator. Every mode transforms
+ * its own mixed component, even where two modes' models differ only in their noise, since the
+ * mixing weights of mode \a j depend on \a j [switching-models]. An update costs \a M updates of a
+ * branch per noise component, or of one branch with noise by mode axis. The steps take no
+ * execution policy: the mode count is almost always a small constant, and the scratch makes the
+ * recursion not reentrant.
  *
  * A recursion of the user's own, one that meets Recursion over the hybrid, such as one that wraps
  * the ImmRecursion and changes its step, runs in place of the ImmRecursion:

@@ -4,7 +4,7 @@
  * AmmFilter (decisions.md [autonomous-multiple-model]): the ImmFilter on the
  * identity chain, whose constructor builds that chain from the state's modes, and the AmmFilter
  * alias. The floor that keeps its modes recoverable is FloorModes, in Upkeep.h. Read
- * ParticleFilter.h next; the design review is docs/guide/imm-filter.md.
+ * ParticleFilter.h next.
  */
 
 #include <concepts>
@@ -57,7 +57,11 @@ namespace Emrys
  * Its known failure is a mode probability that falls to zero, or so near it that no run of
  * measurements brings it back: the estimator then cannot follow a mode that changes after all,
  * nor recover from a mode that was wrongly ruled out. FloorModes, applied after each update,
- * bounds the probabilities below. The chain stays the base's to change through model(); a chain
+ * bounds the probabilities below. It identifies; it does not track. Once the evidence has decided a
+ * mode, the estimator stays in it, since without mixing the other modes' filters have drifted on
+ * their own and explain nothing better afterwards, and a floored mode that wins back must first
+ * reconverge from its own component. Where the mode can change, the IMM, whose mixing restarts
+ * every mode from the current estimate, is the filter. The chain stays the base's to change through model(); a chain
  * that is no longer the identity makes the filter the IMM it is built on.
  *
  * The multiple model estimator that \ref Athans1977 "Athans et al. (1977)", §V.B–C, credit to
