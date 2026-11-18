@@ -770,10 +770,10 @@ TEST(Batched, HybridParticlesCallABatchedModeOncePerTransform)
     };
     auto first = std::mt19937_64{31};
     auto second = std::mt19937_64{31};
-    ASSERT_TRUE(byPoint.predict(first, 0.5));
+    ASSERT_TRUE(byPoint.predict(0.5, first));
     stepCalls = 0;
     stepColumns = 0;
-    ASSERT_TRUE(byBatch.predict(second, 0.5));
+    ASSERT_TRUE(byBatch.predict(0.5, second));
     EXPECT_EQ(stepCalls, 2 * 5);
     EXPECT_EQ(stepColumns, 2 * 5 * 5);
     for (Eigen::Index i = 0; i < 5; ++i)
@@ -901,8 +901,8 @@ TEST(Batched, ParticleFilterMatchesThePerPointModels)
     auto byBatch = Emrys::ParticleFilter{batchedVelocityModel(), makeParticles(500, 5)};
     auto first = std::mt19937_64{9};
     auto second = std::mt19937_64{9};
-    byPoint.predict(first, 0.5);
-    byBatch.predict(second, 0.5);
+    byPoint.predict(0.5, first);
+    byBatch.predict(0.5, second);
     EXPECT_LT((byBatch.state().states() - byPoint.state().states()).cwiseAbs().maxCoeff(), 1e-12);
     auto const z = Eigen::Matrix<double, 1, 1>{3.0};
     auto const expected = byPoint.update(observe(rangeModel(), z));
@@ -923,7 +923,7 @@ TEST(Batched, ParticleFilterCallsBatchedModelsOncePerSetOrChunk)
     stepColumns = 0;
     rangeCalls = 0;
     rangeColumns = 0;
-    sequential.predict(rng, 0.5);
+    sequential.predict(0.5, rng);
     auto const expected = sequential.update(observe(batchedRangeModel(), z));
     EXPECT_EQ(stepCalls, 1);
     EXPECT_EQ(stepColumns, 3000);
@@ -935,7 +935,7 @@ TEST(Batched, ParticleFilterCallsBatchedModelsOncePerSetOrChunk)
         stepCalls = 0;
         stepColumns = 0;
         rangeCalls = 0;
-        filter.predict(policy, same, 0.5);
+        filter.predict(policy, 0.5, same);
         auto const update = filter.update(policy, observe(batchedRangeModel(), z));
         EXPECT_EQ(stepCalls, Emrys::internal::chunkCount(3000));
         EXPECT_EQ(stepColumns, 3000);
@@ -958,8 +958,8 @@ TEST(Batched, ParticleFilterDrawsInputsForABatchedModelAsPerPoint)
     auto first = std::mt19937_64{23};
     auto second = std::mt19937_64{23};
     stepCalls = 0;
-    byPoint.predict(first, 0.5, accelerometer);
-    byBatch.predict(second, 0.5, accelerometer);
+    byPoint.predict(0.5, first, accelerometer);
+    byBatch.predict(0.5, second, accelerometer);
     EXPECT_EQ(stepCalls, 1);
     EXPECT_LT((byBatch.state().states() - byPoint.state().states()).cwiseAbs().maxCoeff(), 1e-12);
 }

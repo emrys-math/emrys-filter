@@ -267,11 +267,11 @@ drawnRows([[maybe_unused]] Input const & input)
  * \code
  * auto filter = ParticleFilter{ConstantVelocity<Position, Velocity>{0.1}, initial};
  * auto const upkeep = upkeep::whenEss(std::less{}, 0.5, upkeep::resample(rng), upkeep::roughen(rng));
- * filter.predict(rng, dt);
+ * filter.predict(dt, rng);
  * filter.update(fix);
  * filter.update(range);
  * upkeep(filter.state());   // resampled and roughened if the ESS is below half
- * filter.predict(std::execution::par, rng, dt);   // the same, on every core
+ * filter.predict(std::execution::par, dt, rng);   // the same, on every core
  * \endcode
  *
  * The filter can hold its upkeep, given last to the constructor, and run it where the caller calls
@@ -280,7 +280,7 @@ drawnRows([[maybe_unused]] Input const & input)
  * \code
  * auto filter = ParticleFilter{model, initial, upkeep::whenEss(std::less{}, 0.5, upkeep::resample(rng),
  *                                                              upkeep::roughen(rng))};
- * filter.predict(rng, dt);
+ * filter.predict(dt, rng);
  * filter.update(fix);
  * (void)filter.maintain();   // the same as filter.upkeep()(filter.state())
  * \endcode
@@ -414,18 +414,18 @@ public:
      * order the model reads them.
      *
      * \code
-     * filter.predict(rng, dt, slips.toDensity().value());   // slips: a GaussianMixtureParams<Slip>
+     * filter.predict(dt, rng, slips.toDensity().value());   // slips: a GaussianMixtureParams<Slip>
      * \endcode
      */
     template <std::uniform_random_bit_generator G, typename... Inputs>
         requires(!isFixedStep<Model_>)
     void
-    predict(G & rng, TimeStep<Scalar_> auto const & dt, Inputs const &... inputs)
+    predict(TimeStep<Scalar_> auto const & dt, G & rng, Inputs const &... inputs)
     {
-        predict(execution::sequential, rng, dt, inputs...);
+        predict(execution::sequential, dt, rng, inputs...);
     }
 
-    /** predict(rng, dt, inputs...) under \a policy: the draws are taken first, as the sequential
+    /** predict(dt, rng, inputs...) under \a policy: the draws are taken first, as the sequential
      * prediction takes them, and the particles then move as a for-each, so the result is
      * Sequential's (see \ref Execution). The process model's propagate() then runs for several
      * particles at once.
@@ -433,7 +433,7 @@ public:
     template <ExecutionPolicy P, std::uniform_random_bit_generator G, typename... Inputs>
         requires(!isFixedStep<Model_>)
     void
-    predict(P && policy, G & rng, TimeStep<Scalar_> auto const & dt, Inputs const &... inputs)
+    predict(P && policy, TimeStep<Scalar_> auto const & dt, G & rng, Inputs const &... inputs)
     {
         auto const & space = m_state.space();
         Scalar_ const step = internal::toScalarTime<Scalar_>(dt);
@@ -469,7 +469,7 @@ public:
         );
     }
 
-    /** Moves each particle forward by the fixed-step model's step, as predict(rng, dt, inputs...)
+    /** Moves each particle forward by the fixed-step model's step, as predict(dt, rng, inputs...)
      * does, with the model's cached factor of \f$ Q \f$ (FixedStepModel::noiseRoot()).
      */
     template <std::uniform_random_bit_generator G, typename... Inputs>
@@ -482,7 +482,7 @@ public:
     }
 
     /** predict(rng, inputs...) with a fixed-step model, under \a policy, as
-     * predict(policy, rng, dt, inputs...) runs.
+     * predict(policy, dt, rng, inputs...) runs.
      */
     template <ExecutionPolicy P, std::uniform_random_bit_generator G, typename... Inputs>
         requires(isFixedStep<Model_> && !internal::leadsWithSteps<Inputs...>)

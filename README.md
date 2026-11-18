@@ -89,7 +89,7 @@ int main()
         return updated.has_value();
     };
     for (int k = 0; k < 50; ++k) {
-        truth = simulate<State>(truth, motion, rng, 1.0);  // moves
+        truth = simulate<State>(truth, motion, 1.0, rng);  // moves
         filter.predict(1.0);
         if (!measure(radar) || (k % 10 == 9 && !measure(gps))) {
             return 1;

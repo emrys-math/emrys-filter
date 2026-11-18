@@ -35,7 +35,7 @@ namespace Emrys
  *
  * \code
  * #include <execution>
- * filter.predict(std::execution::par, rng, dt);
+ * filter.predict(std::execution::par, dt, rng);
  * filter.update(std::execution::par, fix);
  * upkeep(std::execution::par, filter.state(), rng);
  * auto const moments = filter.state().moments(std::execution::par);
@@ -79,7 +79,7 @@ namespace Emrys
  *     }
  * };
  *
- * filter.predict(PoolPolicy{&pool, &arena}, rng, dt);
+ * filter.predict(PoolPolicy{&pool, &arena}, dt, rng);
  * \endcode
  *  - A for-each, which writes one element per index, gives the same result under every policy.
  *    A reduction or a scan, such as a log-sum-exp, a weighted mean, or a cumulative sum, splits

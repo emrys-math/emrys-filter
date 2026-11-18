@@ -623,7 +623,7 @@ static_cast<void>(resampling(filter.state()));
 for (int k = 1; k <= 15; ++k)
 {
     history.push(filter.state());                          // before the prediction
-    filter.predict(rng, 1.0);
+    filter.predict(1.0, rng);
     static_cast<void>(filter.update(fix(z(k))));
     static_cast<void>(resampling(filter.state()));  // resamples at most once per step
 }

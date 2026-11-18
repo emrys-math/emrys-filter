@@ -93,7 +93,7 @@ TEST(Simulate, WithoutNoiseIsThePropagation)
 {
     auto const model = ConstantVelocity<Position, Velocity>{0.0};
     auto rng = std::mt19937_64{1};
-    EXPECT_EQ(simulate(State{}, origin, model, rng, 0.5), Emrys::propagate(State{}, origin, model, 0.5));
+    EXPECT_EQ(simulate(State{}, origin, model, 0.5, rng), Emrys::propagate(State{}, origin, model, 0.5));
 }
 
 // From one state, 20000 draws have the propagated mean and the model's process noise as their
@@ -107,7 +107,7 @@ TEST(Simulate, DrawsHaveTheModelsMoments)
     Eigen::Matrix<double, 4, Eigen::Dynamic> draws(4, count);
     for (int i = 0; i < count; ++i)
     {
-        draws.col(i) = simulate(State{}, origin, model, rng, 1.0);
+        draws.col(i) = simulate(State{}, origin, model, 1.0, rng);
     }
     Eigen::Vector4d const mean = draws.rowwise().mean();
     Eigen::Matrix<double, 4, Eigen::Dynamic> const centered = draws.colwise() - mean;
@@ -130,8 +130,8 @@ TEST(Simulate, ASeedFixesTheRunUnderAnyTimeStep)
     Eigen::Vector4d bySteps = origin;
     for (int k = 0; k < 10; ++k)
     {
-        bySeconds = simulate(State{}, bySeconds, model, seconds, 0.1);
-        byChrono = simulate(State{}, byChrono, model, chrono, std::chrono::milliseconds{100});
+        bySeconds = simulate(State{}, bySeconds, model, 0.1, seconds);
+        byChrono = simulate(State{}, byChrono, model, std::chrono::milliseconds{100}, chrono);
         bySteps = simulate(State{}, bySteps, fixed, steps);
     }
     EXPECT_NE(bySeconds, origin);
@@ -149,7 +149,7 @@ TEST(Simulate, PeriodicStatesStayInTheirInterval)
     int wrapped = 0;
     for (int i = 0; i < 1000; ++i)
     {
-        double const heading = simulate(HeadingState{}, nearSeam, model, rng, 1.0)(0);
+        double const heading = simulate(HeadingState{}, nearSeam, model, 1.0, rng)(0);
         ASSERT_GE(heading, -std::numbers::pi);
         ASSERT_LT(heading, std::numbers::pi);
         wrapped += heading < 0 ? 1 : 0;
@@ -164,7 +164,7 @@ TEST(Simulate, InputsReachTheBlocks)
     auto rng = std::mt19937_64{5};
     auto const push = Eigen::Vector2d{3, -1};
     auto const expected = Eigen::Vector4d{1 + 2 * 3, 2 - 2 * 1, 0.5, -0.25};
-    EXPECT_EQ(simulate(State{}, origin, model, rng, 2.0, Emrys::sure<Push>(push)), expected);
+    EXPECT_EQ(simulate(State{}, origin, model, 2.0, rng, Emrys::sure<Push>(push)), expected);
 }
 
 // A sensor's draws from one true state have the measurement function's value as their mean and
@@ -325,7 +325,7 @@ TEST(Simulate, AFixedSizeSpaceNeedsNoInstance)
     );
     auto given = std::mt19937_64{9};
     auto named = std::mt19937_64{9};
-    EXPECT_EQ(simulate<State>(origin, model, named, 0.1), simulate(State{}, origin, model, given, 0.1));
+    EXPECT_EQ(simulate<State>(origin, model, 0.1, named), simulate(State{}, origin, model, 0.1, given));
     EXPECT_EQ(simulate<State>(origin, fixed, named), simulate(State{}, origin, fixed, given));
     EXPECT_EQ(simulate<State>(origin, gps, named), simulate(State{}, origin, gps, given));
 }
@@ -358,8 +358,8 @@ TEST(SimulateChain, DrawsTheNextValueFromTheRow)
     auto stepped = std::mt19937_64{4};
     for (Eigen::Index from = 0; from < 3; ++from)
     {
-        Eigen::Index const drawn = simulate(from, continuous, inSeconds, 0.25);
-        EXPECT_EQ(drawn, simulate(from, continuous, inMilliseconds, std::chrono::milliseconds{250}));
+        Eigen::Index const drawn = simulate(from, continuous, 0.25, inSeconds);
+        EXPECT_EQ(drawn, simulate(from, continuous, std::chrono::milliseconds{250}, inMilliseconds));
         EXPECT_EQ(drawn, simulate(from, continuous.transition(0.25), stepped));
     }
 }

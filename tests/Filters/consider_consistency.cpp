@@ -134,7 +134,7 @@ TEST(ConsiderConsistency, ConsideringTheBiasIsConsistentAndDroppingItIsNot)
         auto drop = Emrys::KalmanFilter{motionModel, makeMotionPrior()};
         for (int k = 0; k < 40; ++k)
         {
-            truth = Emrys::simulate(State{}, truth, model, rng, timeStep);
+            truth = Emrys::simulate(State{}, truth, model, timeStep, rng);
             Vector1 const z = Emrys::simulate(State{}, truth, makeBiasedSensor(), rng);
             considering.predict(timeStep);
             drop.predict(timeStep);

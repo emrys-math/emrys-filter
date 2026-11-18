@@ -891,7 +891,7 @@ true state from the process model, and a measurement of it from a sensor, from t
 the filter assumes:
 
 ```cpp
-truth = Emrys::simulate<State>(truth, motion, rng, dt);
+truth = Emrys::simulate<State>(truth, motion, dt, rng);
 auto const z = Emrys::simulate<State>(truth, gps, rng);
 ```
 

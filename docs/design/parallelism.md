@@ -132,8 +132,8 @@ result is the same at every thread count within one standard library, and differ
 standard libraries as the sequential path's does. The standard distributions are not callable
 on a device, which leaves the device's draws an open question below.
 
-The generator's place in the argument list (particle-filter.md Q3) doesn't change: first
-among the member function's arguments, after the policy.
+The generator's place in the argument list doesn't change [generator-arguments]: after the
+policy and the arguments the call requires, and before those it may leave out.
 
 ## GPU execution
 
@@ -254,7 +254,7 @@ on every container:
 ```cpp
 using DeviceParticles = ParticleSet<State, float, thrust::universal_allocator<std::byte>>;
 ParticleFilter filter{model, DeviceParticles{space, states, weights}};
-filter.predict(Emrys::Device{stream}, rng, dt);
+filter.predict(Emrys::Device{stream}, dt, rng);
 ```
 
 CUDA managed memory (`universal_allocator`) and SYCL shared USM (`usm_allocator<...,

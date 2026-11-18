@@ -135,7 +135,7 @@ main()
         Eigen::Index sighted = 0;
         for (int k = 0; k < steps; ++k)
         {
-            truth = Emrys::simulate(space, truth, motion, rng, dt);
+            truth = Emrys::simulate(space, truth, motion, dt, rng);
             filter.predict(dt);
 
             // The vehicle sights the landmarks in turn, one a step.

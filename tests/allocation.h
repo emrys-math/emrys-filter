@@ -353,7 +353,7 @@ predictOverTheStep(Filter & filter, Leading &... leading)
     }
     else
     {
-        filter.predict(leading..., timeStep);
+        filter.predict(timeStep, leading...);
     }
 }
 

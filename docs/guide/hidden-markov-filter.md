@@ -648,7 +648,7 @@ rows do not sum to zero are assertions at run time.
 - **Simulation.** `simulate(value, chain, rng)` [printing-and-simulation] draws a chain's next
   value, a draw from `chain.next(value)`, the distribution of the value after `value`, with no
   allocation [random-draws]; a continuous-time chain takes the interval after the generator,
-  `simulate(value, chain, rng, dt)`. `IdentityEmissionRecoversTheSequence` steps its truth so. An
+  `simulate(value, chain, dt, rng)`. `IdentityEmissionRecoversTheSequence` steps its truth so. An
   emission table still has no draw of its observation.
 
 > **Q8.** *Half settled: `simulate()` takes a chain.* Should the emission models have a draw of

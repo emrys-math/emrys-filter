@@ -255,8 +255,8 @@ TEST(TimeSteps, ParticleFilterTakesDurationsAndAdvancesByACount)
     auto milliseconds = Emrys::ParticleFilter{makeModel(), particles};
     auto first = std::mt19937_64{13};
     auto second = std::mt19937_64{13};
-    seconds.predict(first, timeStep);
-    milliseconds.predict(second, timeStepInMilliseconds);
+    seconds.predict(timeStep, first);
+    milliseconds.predict(timeStepInMilliseconds, second);
     expectSame(milliseconds.state().states(), seconds.state().states());
 
     auto stepped = Emrys::ParticleFilter{FixedStepModel{makeModel(), State{}, timeStep}, particles};
@@ -382,8 +382,8 @@ TEST(TimeSteps, RbFiltersTakeDurationsAndAdvanceByACount)
     auto milliseconds = Emrys::RbParticleFilter{makeModel(), particles};
     auto first = std::mt19937_64{19};
     auto second = std::mt19937_64{19};
-    seconds.predict(first, timeStep);
-    milliseconds.predict(second, timeStepInMilliseconds);
+    seconds.predict(timeStep, first);
+    milliseconds.predict(timeStepInMilliseconds, second);
     expectSame(milliseconds.state().particles().states(), seconds.state().particles().states());
     expectSameGaussian(milliseconds.state().conditional(7), seconds.state().conditional(7));
 

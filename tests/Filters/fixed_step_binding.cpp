@@ -265,7 +265,7 @@ TEST(FixedStepBinding, SimulateTakesTheUnboundStep)
     auto second = std::mt19937_64{5};
     auto third = std::mt19937_64{5};
     Eigen::Vector4d const unbound = Emrys::simulate(State{}, x, Emrys::fixedStep(makeModel(), timeStep), first);
-    Eigen::Vector4d const stepped = Emrys::simulate(State{}, x, makeModel(), second, timeStep);
+    Eigen::Vector4d const stepped = Emrys::simulate(State{}, x, makeModel(), timeStep, second);
     Eigen::Vector4d const named = Emrys::simulate<State>(x, Emrys::fixedStep(makeModel(), timeStep), third);
     expectSame(unbound, stepped);
     expectSame(named, stepped);

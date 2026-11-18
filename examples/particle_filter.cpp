@@ -106,8 +106,8 @@ main()
 
         for (int k = 1; k <= steps; ++k)
         {
-            truth = Emrys::simulate<State>(truth, motion, rng, dt);
-            filter.predict(rng, dt);
+            truth = Emrys::simulate<State>(truth, motion, dt, rng);
+            filter.predict(dt, rng);
 
             // An update multiplies each particle's weight by the measurement's likelihood there. It
             // fails if the weights are invalid, and is rejected, leaving the weights alone, if no

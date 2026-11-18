@@ -107,7 +107,7 @@ drawStep(R const & resolved, Eigen::MatrixBase<Derived> const & x, Scalar step, 
  * auto truth = Eigen::Vector4d{0, 0, 1, 0};
  * for (int k = 0; k < steps; ++k)
  * {
- *     truth = simulate(space, truth, model, rng, 0.1);
+ *     truth = simulate(space, truth, model, 0.1, rng);
  *     filter.predict(0.1);
  *     filter.update(observe(methods::linearized(), gps, simulate(space, truth, gps, rng)));
  * }
@@ -131,8 +131,8 @@ simulate(
     Space_ const & space,
     Eigen::MatrixBase<Derived> const & x,
     Model const & model,
-    G & rng,
     TimeStep<typename Derived::Scalar> auto const & dt,
+    G & rng,
     Args const &... args
 )
 {
@@ -152,7 +152,7 @@ simulate(
 
 /** \ingroup Models
  * \returns a draw of the true state one step of the fixed-step model \a model after the true
- * state \a x in \a space, with the call's \a args: simulate(space, x, model, rng, dt, args...) over
+ * state \a x in \a space, with the call's \a args: simulate(space, x, model, dt, rng, args...) over
  * the model's step, with its cached process noise.
  */
 template <Space Space_, typename Derived, typename Model, std::uniform_random_bit_generator G, typename... Args>
@@ -175,14 +175,14 @@ simulate(Space_ const & space, Eigen::MatrixBase<Derived> const & x, Model const
 
 /** \ingroup Models
  * \returns a draw of the true state one step of \a step, made by fixedStep(model, dt), after the
- * true state \a x in \a space, with the call's \a args: simulate(space, x, model, rng, dt, args...).
+ * true state \a x in \a space, with the call's \a args: simulate(space, x, model, dt, rng, args...).
  */
 template <Space Space_, typename Derived, typename Step, std::uniform_random_bit_generator G, typename... Args>
     requires isUnboundStep<Step>
 [[nodiscard]] typename Moments<Space_, typename Derived::Scalar>::VectorType
 simulate(Space_ const & space, Eigen::MatrixBase<Derived> const & x, Step const & step, G & rng, Args const &... args)
 {
-    return simulate(space, x, step.model(), rng, step.timeStep(), args...);
+    return simulate(space, x, step.model(), step.timeStep(), rng, args...);
 }
 
 /** \ingroup Models
@@ -261,8 +261,8 @@ simulate(Space_ const & space, Eigen::MatrixBase<Derived> const & x, M const & m
 }
 
 /** \ingroup Models
- * \returns simulate(space, x, model, rng, dt, inputs...) in the fixed-size space \a Space_,
- * given as a template argument: <tt>simulate<State>(truth, model, rng, dt)</tt>.
+ * \returns simulate(space, x, model, dt, rng, inputs...) in the fixed-size space \a Space_,
+ * given as a template argument: <tt>simulate<State>(truth, model, dt, rng)</tt>.
  */
 template <
     FixedSizeSpace Space_,
@@ -275,12 +275,12 @@ template <
 simulate(
     Eigen::MatrixBase<Derived> const & x,
     Model const & model,
-    G & rng,
     TimeStep<typename Derived::Scalar> auto const & dt,
+    G & rng,
     Inputs const &... inputs
 )
 {
-    return simulate(Space_{}, x, model, rng, dt, inputs...);
+    return simulate(Space_{}, x, model, dt, rng, inputs...);
 }
 
 /** \ingroup Models
@@ -355,8 +355,8 @@ template <typename Space, typename Scalar, std::uniform_random_bit_generator G>
 simulate(
     Eigen::Index from,
     ContinuousTimeMarkovChain<Space, Scalar> const & chain,
-    G & rng,
-    TimeStep<Scalar> auto const & dt
+    TimeStep<Scalar> auto const & dt,
+    G & rng
 )
 {
     return simulate(from, chain.transition(dt), rng);

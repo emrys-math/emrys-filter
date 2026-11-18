@@ -376,8 +376,8 @@ TEST(Parallel, ParticleFilterMatchesSequential)
     auto parallel = Emrys::ParticleFilter{model, sequential.state()};
     auto first = std::mt19937_64{29};
     auto second = std::mt19937_64{29};
-    sequential.predict(first, 0.5, accelerometer);
-    parallel.predict(std::execution::par, second, 0.5, accelerometer);
+    sequential.predict(0.5, first, accelerometer);
+    parallel.predict(std::execution::par, 0.5, second, accelerometer);
     expectSame(parallel.state().states(), sequential.state().states());
 
     auto const fix = makeFix(Eigen::Vector2d{0.5, 0.2});
@@ -415,11 +415,11 @@ TEST(Parallel, ParticleFilterMatchesSequential)
                                  .value();
     auto drawnSequentially = Emrys::ParticleFilter{model, makeParticles(manyParticles, 41)};
     auto drawnInParallel = Emrys::ParticleFilter{model, drawnSequentially.state()};
-    sequential.predict(first, 0.5, mixtureDensity);
-    parallel.predict(std::execution::par, second, 0.5, mixtureDensity);
+    sequential.predict(0.5, first, mixtureDensity);
+    parallel.predict(std::execution::par, 0.5, second, mixtureDensity);
     expectSame(parallel.state().states(), sequential.state().states());
-    drawnSequentially.predict(first, 0.5, heavyTailed);
-    drawnInParallel.predict(std::execution::par, second, 0.5, heavyTailed);
+    drawnSequentially.predict(0.5, first, heavyTailed);
+    drawnInParallel.predict(std::execution::par, 0.5, second, heavyTailed);
     expectSame(drawnInParallel.state().states(), drawnSequentially.state().states());
 }
 
@@ -462,13 +462,13 @@ TEST(Parallel, ParticleFilterUnderAUsersPolicyMatchesPar)
     auto const fix = makeFix(Eigen::Vector2d{0.5, 0.2});
     auto byPar = Emrys::ParticleFilter{model, makeParticles(manyParticles, 23)};
     auto rng = std::mt19937_64{29};
-    byPar.predict(std::execution::par, rng, 0.5, accelerometer);
+    byPar.predict(std::execution::par, 0.5, rng, accelerometer);
     auto const update = byPar.update(std::execution::par, fix);
     auto const moments = byPar.state().moments(std::execution::par).value();
     auto const check = [&](auto const & policy) {
         auto filter = Emrys::ParticleFilter{model, makeParticles(manyParticles, 23)};
         auto same = std::mt19937_64{29};
-        filter.predict(policy, same, 0.5, accelerometer);
+        filter.predict(policy, 0.5, same, accelerometer);
         expectSame(filter.state().states(), byPar.state().states());
         EXPECT_EQ(filter.update(policy, fix)->logLikelihood(), update->logLikelihood());
         expectSame(filter.state().logWeights(), byPar.state().logWeights());
@@ -594,8 +594,8 @@ TEST(Parallel, RbParticleFilterMatchesSequential)
         auto parallel = sequential;
         auto first = std::mt19937_64{59};
         auto second = std::mt19937_64{59};
-        sequential.predict(first, 1.0);
-        parallel.predict(std::execution::par, second, 1.0);
+        sequential.predict(1.0, first);
+        parallel.predict(std::execution::par, 1.0, second);
         expectSame(parallel.state().particles().states(), sequential.state().particles().states());
         for (Index i : {Index{0}, Index{777}, sequential.state().size() - 1})
         {

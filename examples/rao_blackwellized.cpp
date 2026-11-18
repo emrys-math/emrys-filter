@@ -107,11 +107,11 @@ main()
         Emrys::ValueVector<State> truth = Emrys::drawSample(priorDensity, rng);
         for (int k = 0; k < steps; ++k)
         {
-            truth = Emrys::simulate<State>(truth, motion, rng, dt);
+            truth = Emrys::simulate<State>(truth, motion, dt, rng);
             Emrys::ValueVector<Ranges> const z = Emrys::simulate<State>(truth, ranges, rng);
 
             // Unlike a Kalman filter's, the prediction draws new positions, so it takes the generator.
-            filter.predict(rng, dt);
+            filter.predict(dt, rng);
             auto const updated = filter.update(Emrys::observe(Emrys::methods::linearized(), ranges, z));
             if (!updated || !updated->accepted)
             {

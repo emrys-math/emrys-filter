@@ -130,7 +130,7 @@ main()
                 0.4 * std::cos(0.5 * t),
                 0.2 + 0.3 * std::sin(0.3 * t)
             };
-            truth = Emrys::simulate<State>(truth, motion, rng, dt, Emrys::sure<Gyro>(gyro));
+            truth = Emrys::simulate<State>(truth, motion, dt, rng, Emrys::sure<Gyro>(gyro));
             Emrys::ValueVector<Reading> const gravity = Emrys::simulate<State>(truth, accelerometer, rng);
             Emrys::ValueVector<Reading> const field = Emrys::simulate<State>(truth, magnetometer, rng);
 

@@ -801,7 +801,7 @@ TEST(NeesMonitor, FlagsMistunedProcessNoise)
         Vector4 truth = Emrys::drawSample(initial.toDensity().value(), rng);
         for (int step = 0; step < 20; ++step)
         {
-            truth = Emrys::simulate(State{}, truth, model, rng, timeStep);
+            truth = Emrys::simulate(State{}, truth, model, timeStep, rng);
             Eigen::Vector2d const z = truth.head<2>() + Emrys::drawSample(fixDensity, rng);
             for (auto & filter : filters)
             {

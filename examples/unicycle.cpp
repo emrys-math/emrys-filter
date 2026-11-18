@@ -151,7 +151,7 @@ main()
         Emrys::ValueVector<State> truth = Emrys::drawSample(prior.toDensity().value(), rng);
         for (int k = 0; k < steps; ++k)
         {
-            truth = Emrys::simulate<State>(truth, motion, rng, dt);
+            truth = Emrys::simulate<State>(truth, motion, dt, rng);
             ekf.predict(dt);
             ukf.predict(dt);
             for (std::size_t i = 0; i < landmarks.size(); ++i)

@@ -308,8 +308,8 @@ TEST(SelectedFilters, AParticleFilterStepsAsTheTaggedBlocks)
     auto byTag = Emrys::ParticleFilter{taggedMotion(), Emrys::ParticleSet<Tagged>{Tagged{}, states}};
     auto selectedRng = std::mt19937_64{7};
     auto taggedRng = std::mt19937_64{7};
-    selected.predict(selectedRng, 0.5);
-    byTag.predict(taggedRng, 0.5);
+    selected.predict(0.5, selectedRng);
+    byTag.predict(0.5, taggedRng);
     EXPECT_LT((selected.state().states() - byTag.state().states()).norm(), 1e-12);
     ASSERT_TRUE(selected.update(observe(selectedSighting(), observed)));
     ASSERT_TRUE(byTag.update(observe(taggedSighting(), observed)));
@@ -327,8 +327,8 @@ TEST(SelectedFilters, ARaoBlackwellizedFilterStepsAsTheTaggedBlocks)
         Emrys::RbParticleFilter{selectedMotion(), Emrys::drawParticleGaussian<Position>(mapPrior(), 20, selectedDraws)};
     auto byTag =
         Emrys::RbParticleFilter{taggedMotion(), Emrys::drawParticleGaussian<Position>(taggedPrior(), 20, taggedDraws)};
-    selected.predict(selectedDraws, 0.5);
-    byTag.predict(taggedDraws, 0.5);
+    selected.predict(0.5, selectedDraws);
+    byTag.predict(0.5, taggedDraws);
     ASSERT_TRUE(selected.update(observe(methods::unscented(), selectedSighting(), observed)));
     ASSERT_TRUE(byTag.update(observe(methods::unscented(), taggedSighting(), observed)));
     auto const & a = selected.state();
@@ -361,8 +361,8 @@ TEST(SelectedFilters, AParticleFilterMovesParticlesByABatchedFunctionThatWritesA
     auto batched = Emrys::ParticleFilter{byBatch, Emrys::ParticleSet<Map>{prior.space(), states}};
     auto first = std::mt19937_64{11};
     auto second = std::mt19937_64{11};
-    byPoint.predict(first, 0.5);
-    batched.predict(second, 0.5);
+    byPoint.predict(0.5, first);
+    batched.predict(0.5, second);
     EXPECT_LT((batched.state().states() - byPoint.state().states()).cwiseAbs().maxCoeff(), 1e-12);
     EXPECT_GT((batched.state().states() - states).cwiseAbs().maxCoeff(), 1e-3);
 }

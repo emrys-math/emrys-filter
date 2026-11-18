@@ -81,7 +81,7 @@ expectParticleFilterStepsWithinItsResource(Model const & model, Predict const & 
 TEST(Allocation, ParticleFilterStepsWithinItsResource)
 {
     expectParticleFilterStepsWithinItsResource(makeModel(), [](auto & filter, auto & rng) {
-        filter.predict(rng, timeStep);
+        filter.predict(timeStep, rng);
     });
     expectParticleFilterStepsWithinItsResource(
         FixedStepModel{makeModel(), State{}, timeStep},
@@ -145,7 +145,7 @@ TEST(Allocation, ParticleFilterWithBatchedModelsStepsWithinItsResource)
     auto filter = ParticleFilter{batchedModel(), std::move(particles)};
     expectStepsAllocateNothing(
         [&](int k) {
-            filter.predict(rng, timeStep);
+            filter.predict(timeStep, rng);
             static_cast<void>(filter.update(batchedFix(fixAt(k))));
         },
         &resource
@@ -172,17 +172,17 @@ TEST(Allocation, ParticleFilterSetStateFollowsTheAllocator)
     kept.setState(draw(Pmr{&other}, 2 * particleCount));
     EXPECT_EQ(kept.get_allocator(), Pmr{&resource});
     EXPECT_EQ(kept.state().size(), 2 * particleCount);
-    kept.predict(rng, timeStep);
+    kept.predict(timeStep, rng);
     EXPECT_TRUE(kept.update(makeFix(fixAt(1)))->accepted);
 
     using Allocator = Propagating<std::byte>;
     auto filter = ParticleFilter{makeModel(), draw(Allocator{1}, particleCount)};
-    filter.predict(rng, timeStep);
+    filter.predict(timeStep, rng);
     EXPECT_TRUE(filter.update(makeFix(fixAt(0)))->accepted);
     filter.setState(draw(Allocator{2}, 2 * particleCount));
     EXPECT_EQ(filter.get_allocator(), Allocator{2});
     auto const before = propagatingAllocations;
-    filter.predict(rng, timeStep);
+    filter.predict(timeStep, rng);
     EXPECT_TRUE(filter.update(makeFix(fixAt(1)))->accepted);
     EXPECT_TRUE(upkeep::resample(rng)(filter.state()));
     EXPECT_EQ(propagatingAllocations[1], before[1]);
@@ -233,7 +233,7 @@ TEST(Allocation, ParticleFilterUnderAUsersPolicyStaysOffTheHeap)
     auto filter = ParticleFilter{makeModel(), std::move(particles)};
     auto const resampling = upkeep::whenEss(policy, std::less{}, 0.5, upkeep::resample(policy, rng));
     auto const step = [&](int k) {
-        filter.predict(policy, rng, timeStep);
+        filter.predict(policy, timeStep, rng);
         static_cast<void>(filter.update(policy, makeFix(fixAt(k))));
         static_cast<void>(resampling(filter.state()));
         EXPECT_TRUE(filter.state().moments(policy));
@@ -322,7 +322,7 @@ TEST(Allocation, ParticleFilterPredictsWithAnUncertainInputFromConstructionOn)
         auto const watch = HeapWatch{};
         for (int k = 0; k < 100; ++k)
         {
-            filter.predict(rng, timeStep, accelerometer);
+            filter.predict(timeStep, rng, accelerometer);
         }
         heap = watch.allocations();
     }
@@ -354,7 +354,7 @@ TEST(Allocation, ParticleFilterPredictsWithASampledInputFromConstructionOn)
         auto const watch = HeapWatch{};
         for (int k = 0; k < 100; ++k)
         {
-            filter.predict(rng, timeStep, density);
+            filter.predict(timeStep, rng, density);
         }
         heap = watch.allocations();
     }
@@ -380,7 +380,7 @@ TEST(Allocation, ParticleFilterUnderAUsersPolicyReusesItsDrawsForAnUncertainInpu
     auto filter = ParticleFilter{accelerated(), std::move(particles)};
     auto const accelerometer = makeAccelerometer();
     auto const step = [&](int) {
-        filter.predict(policy, rng, timeStep, accelerometer);
+        filter.predict(policy, timeStep, rng, accelerometer);
     };
     int const constructed = resource.allocations();
     step(0);
@@ -522,7 +522,7 @@ TEST(Allocation, CopiesKeepTheirSourcesResourceAndCapacity)
             auto const watch = HeapWatch{};
             for (int k = 0; k < 10; ++k)
             {
-                stepped.predict(rng, timeStep);
+                stepped.predict(timeStep, rng);
                 static_cast<void>(stepped.update(makeFix(fixAt(k))));
                 static_cast<void>(resampling(stepped.state()));
             }
@@ -562,7 +562,7 @@ TEST(Allocation, FixedLagParticleSmoothingStepsWithinItsResource)
     auto const resampling = upkeep::whenEss(std::less{}, 0.5, upkeep::resample(rng));
     auto const step = [&](int k) {
         window.push(filter.state());
-        filter.predict(rng, timeStep);
+        filter.predict(timeStep, rng);
         static_cast<void>(filter.update(makeFix(fixAt(k))));
         static_cast<void>(resampling(filter.state()));
         window.smooth(filter.state());
@@ -658,7 +658,7 @@ TEST(Allocation, ParticlePrunesStayWithinTheResource)
     auto filter = ParticleFilter{makeModel(), std::move(particles)};
     expectStepsAllocateNothing(
         [&](int k) {
-            filter.predict(rng, timeStep);
+            filter.predict(timeStep, rng);
             static_cast<void>(filter.update(makeFix(fixAt(k))));
             prune(filter.state(), rng);
         },
@@ -696,13 +696,13 @@ expectRbpFilterScratchFollowsAPropagatingAllocator()
         return Emrys::drawParticleGaussian<Position>(makeInitial(), count, rng, Covariance{}, Allocator{id});
     };
     auto filter = RbParticleFilter{makeModel(), draw(1, particleCount)};
-    filter.predict(rng, timeStep);
+    filter.predict(timeStep, rng);
     ASSERT_TRUE(filter.update(makeFix<Position>(fixAt(0))));
     filter.setState(draw(2, 2 * particleCount));
     EXPECT_EQ(filter.get_allocator(), Allocator{2});
     EXPECT_EQ(filter.state().size(), 2 * particleCount);
     auto const before = propagatingAllocations;
-    filter.predict(rng, timeStep);
+    filter.predict(timeStep, rng);
     ASSERT_TRUE(filter.update(makeFix<Position>(fixAt(1))));
     ASSERT_TRUE(filter.update(makeFix<Velocity>(Eigen::Vector2d{1.0, 0.5})));
     EXPECT_TRUE(upkeep::resample(rng)(filter.state()));

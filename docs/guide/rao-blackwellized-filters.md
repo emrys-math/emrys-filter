@@ -951,7 +951,7 @@ updates. It is built as `{model, state, [method]}`, with everything deduced
 (`DeducesItsTypeAndHoldsItsParts`). One deduction guide, with the method defaulted and the
 parameters in the class's order, is what lets MSVC deduce through the alias.
 
-**`predict(rng, dt, inputs...)`** moves each particle $p_i$ with its Gaussian. It transforms the
+**`predict(dt, rng, inputs...)`** moves each particle $p_i$ with its Gaussian. It transforms the
 Gaussian over the rest through the process model with the particle as a known input, and adds
 $Q$, which gives a Gaussian $(m, P)$ over the whole new state. It draws the particle's new value
 $p' = m_p \boxplus F z$ with $F F^T = P_{pp}$ (the default root, pivoted where $P_{pp}$ is singular,
@@ -994,7 +994,7 @@ auto const resample = upkeep::whenEss(std::less{}, 0.5, upkeep::resample(rng));
 auto truth = Vector4{2, -2, 1.5, -1.0};
 for (int k = 1; k <= 20; ++k) {
   truth.head<2>() += truth.tail<2>();
-  filter.predict(rng, 1.0);
+  filter.predict(1.0, rng);
   for (std::size_t b = 0; b < 3; ++b) {
     double const z = (truth.head<2>() - beacons[b]).norm() + 0.5 * normal(rng);
     if (!filter.update(positionRange(z, beacons[b], 0.5))) { ... }  // Linearized; reads Position only
@@ -1040,7 +1040,7 @@ auto const chain = ContinuousTimeMarkovChain<Mode>::persistent(0.1);
 auto const motion = byMode<Mode>(when<Steady>(ConstantVelocity<Position, Velocity>{0.01}),
                                  when<Maneuvering>(ConstantVelocity<Position, Velocity>{2.0}));
 auto filter = RbParticleFilter{chain, motion, particleGaussian<Position>(State{}, ParticleSet<Position>{positions}, hybrid)};
-filter.predict(rng, 1.0);                         // std::expected<void, NumericError>
+filter.predict(1.0, rng);                         // std::expected<void, NumericError>
 filter.update(makeRangeRate(z, beacon));          // each particle: an IMM update given its position
 filter.update(makeBiasedRangeRate(z, beacon));   // noise by Mode: a Gaussian per value of Mode
 filter.state().conditional(i);                    // HybridGaussianParams<Rest, Mode>
@@ -1185,7 +1185,7 @@ before, bitwise:
 |---|---|
 | `RbPointMassFilter::predict(policy, dt, inputs...)`, and the fixed-step forms | a for-each over the live cells, so the result is Sequential's exactly |
 | `RbPointMassFilter::update(policy, measurement[, reduction][, result])`, a likelihood's included | a for-each over the cells into slots, then the evidence as a chunked reduction: the per-cell results are Sequential's, the total matches to rounding; removing dead cells stays sequential |
-| `RbParticleFilter::predict(policy, rng, dt, inputs...)`, and the fixed-step forms | the standard normals drawn first, in Sequential's order, then a for-each over the particles: Sequential's exactly from the same seed |
+| `RbParticleFilter::predict(policy, dt, rng, inputs...)`, and the fixed-step forms | the standard normals drawn first, in Sequential's order, then a for-each over the particles: Sequential's exactly from the same seed |
 | `RbParticleFilter::update(policy, measurement[, reduction][, result])` | as the point-mass update |
 | `ParticleGaussianParams::resample(policy, rng, ...)`, `logTotalWeight(policy)`, `ess(policy)` | the `ParticleSet`'s, with the ancestors' Gaussians gathered as a for-each |
 
@@ -1207,8 +1207,8 @@ auto one =
 auto many = one;
 auto first = std::mt19937_64{59};
 auto second = std::mt19937_64{59};
-one.predict(first, 1.0);
-many.predict(std::execution::par, second, 1.0);           // the particles bitwise equal to one's
+one.predict(1.0, first);
+many.predict(std::execution::par, 1.0, second);           // the particles bitwise equal to one's
 auto const resampled = many.state().resample(std::execution::par, second);
 ```
 

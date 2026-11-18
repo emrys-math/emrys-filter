@@ -40,6 +40,12 @@ evidence. The sampled digits in particle-filter.md predate it.
 `Allocation.ParticleFilterPredictsWithASampledInputFromConstructionOn`, and the
 `PREDICT_SAMPLED_INPUT` and `MEASUREMENT_SAMPLED_INPUT` cases are the evidence.
 
+[generator-arguments] records Q3: a call that draws takes the generator after the arguments it
+requires and before those it may leave out, so a particle filter's and an `RbParticleFilter`'s
+prediction is `predict(dt, rng, inputs...)`, and `simulate()` takes the step before the generator.
+The tests, examples, and documents that called the old order are the evidence; the draws from a
+seed are unchanged.
+
 Done when: the `land` checks pass, with MSVC.
 
 ## 17g. Posterior Cramér-Rao bound — in progress
@@ -347,7 +353,7 @@ Proposals that use the measurement, and moves that rejuvenate a resampled set. P
 deferred past the advertised launch.
 
 - [ ] The shape of a step that proposes from the measurement, decided first, since it changes the
-      filter's API. Today `predict(rng, dt)` and `update(z)` are separate calls, and every proposal
+      filter's API. Today `predict(dt, rng)` and `update(z)` are separate calls, and every proposal
       below needs $z$ while it predicts: a fused step, a proposal given to `predict()`, or another
       shape, and what several measurements at one time do. Decide it with particle-filter.md Q11
       (a recursion for the particle filter).

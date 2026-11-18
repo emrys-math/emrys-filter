@@ -259,7 +259,7 @@ expectSetStateReplacesTheState()
     auto filter = RbParticleFilter{makeModel(), drawParticleGaussian<Position, Covariance>(makeInitial(), 10, rng)};
     auto reference = RbParticleFilter{makeModel(), replacement};
     auto const fix = makeFix(Eigen::Vector2d{1.0, 0.5});
-    filter.predict(rng, timeStep);
+    filter.predict(timeStep, rng);
     ASSERT_TRUE(filter.update(fix));
 
     filter.setState(replacement);
@@ -267,7 +267,7 @@ expectSetStateReplacesTheState()
     for (auto * const each : {&filter, &reference})
     {
         auto stepRng = std::mt19937_64{4};
-        each->predict(stepRng, timeStep);
+        each->predict(timeStep, stepRng);
         ASSERT_TRUE(each->update(fix));
     }
     EXPECT_EQ(filter.state().particles().states(), reference.state().particles().states());
@@ -389,7 +389,7 @@ TEST(ParticleGaussianDeathTest, ADensityReadAfterAStepFails)
     ASSERT_TRUE(before);
     EXPECT_DEATH(
         {
-            filter.predict(rng, 0.1);
+            filter.predict(0.1, rng);
             std::ignore = before->collapsed();
         },
         "changed while a view"
@@ -444,7 +444,7 @@ expectPredictConditionsTheRestOnEachDraw()
     auto initial = drawParticleGaussian<Position, Covariance>(makeInitial(), 3, rng);
     auto filter = RbParticleFilter{makeModel(), initial};
     auto copy = std::mt19937_64{rng};
-    filter.predict(rng, timeStep);
+    filter.predict(timeStep, rng);
     using Draws = Emrys::SampleSet<Position>;
     Draws const z = Emrys::internal::standardNormal<Draws>(2, 3, copy);
     for (Eigen::Index i = 0; i < 3; ++i)
@@ -519,9 +519,9 @@ expectFixedStepMatchesTheStep()
     for (Eigen::Vector2d const & z : fixes)
     {
         cached.predict(draws[0]);
-        continuousCached.predict(draws[1], timeStep);
+        continuousCached.predict(timeStep, draws[1]);
         unscented.predict(draws[2]);
-        continuousUnscented.predict(draws[3], timeStep);
+        continuousUnscented.predict(timeStep, draws[3]);
         ASSERT_TRUE(cached.update(makeFix(z)));
         ASSERT_TRUE(continuousCached.update(makeFix(z)));
         ASSERT_TRUE(unscented.update(makeFix(z)));
@@ -554,8 +554,8 @@ TEST(RbParticleFilter, EveryMethodPredictsTheSameOnALinearModel)
             drawParticleGaussian<Position, PerPointCovariance>(makeInitial(), 20, rng),
             method
         };
-        filter.predict(rng, timeStep);
-        filter.predict(rng, 0.5);
+        filter.predict(timeStep, rng);
+        filter.predict(0.5, rng);
         return filter.state();
     };
     auto const linearized = run(methods::linearized());
@@ -586,7 +586,7 @@ TEST(RbParticleFilter, PredictWrapsAPeriodicBlock)
         GaussianParams<Turning>{Turning{}, Eigen::Vector2d{pi - 0.05, 0.2}, Eigen::Matrix2d{{0.01, 0}, {0, 0.001}}};
     auto rng = std::mt19937_64{7};
     auto filter = RbParticleFilter{model, drawParticleGaussian<Heading>(initial, 1000, rng)};
-    filter.predict(rng, 1.0);
+    filter.predict(1.0, rng);
     auto const headings = filter.state().particles().states().row(0);
     EXPECT_GE(headings.minCoeff(), -pi);
     EXPECT_LT(headings.maxCoeff(), pi);
@@ -603,7 +603,7 @@ TEST(RbParticleFilter, PredictMatchesTheKalmanPredictionInDistribution)
     constexpr Eigen::Index count = 40000;
     auto filter = RbParticleFilter{makeModel(), drawParticleGaussian<Position>(makeInitial(), count, rng)};
     auto const exact = Emrys::predict(methods::linearized(), makeInitial(), makeModel(), timeStep);
-    filter.predict(rng, timeStep);
+    filter.predict(timeStep, rng);
     expectMomentsNear(filter.state().toDensity()->collapsed(), exact.mean(), exact.covarianceLower(), double(count), 5);
 }
 
@@ -701,7 +701,7 @@ checkLikelihoodOverTheParticles()
 {
     auto rng = std::mt19937_64{7};
     auto filter = RbParticleFilter{makeModel(), drawParticleGaussian<Position, Covariance>(makeInitial(), 20, rng)};
-    filter.predict(rng, 1.0);
+    filter.predict(1.0, rng);
     auto const prior = filter.state();
     auto const z = Eigen::Vector2d{0.5, -0.5};
     auto const fix = makeLaplaceFix(z);
@@ -749,8 +749,8 @@ TEST(RbParticleFilter, SharedCovarianceMatchesPerParticleOnALinearProblem)
     for (int step = 1; step <= 5; ++step)
     {
         truth = transitionMatrix() * truth;
-        shared.predict(sharedRng, timeStep);
-        per.predict(perRng, timeStep);
+        shared.predict(timeStep, sharedRng);
+        per.predict(timeStep, perRng);
         Eigen::Vector2d const z = truth.head<2>() + Eigen::Vector2d{0.3, -0.2};
         auto const a = shared.update(makeFix(z));
         auto const b = per.update(makeFix(z));
@@ -887,7 +887,7 @@ runLinear(Filter & filter, Moments const & moments, bool velocity, std::mt19937_
         Eigen::Vector2d const z = truth.head<2>() + 0.8 * Eigen::Vector2d{std::cos(2.4 * step), std::sin(2.4 * step)};
         Eigen::Vector2d const w = truth.tail<2>() + 0.1 * Eigen::Vector2d{std::sin(1.7 * step), std::cos(1.7 * step)};
         kalman.predict(timeStep);
-        filter.predict(rng, timeStep);
+        filter.predict(timeStep, rng);
         double exact = kalman.update(makeFix(z)).value().logLikelihood();
         auto const fixed = updateValue(filter.update(makeFix(z)));
         EXPECT_TRUE(fixed.accepted);
@@ -1012,7 +1012,7 @@ TEST(RbParticleFilter, LearnsAVelocityFromRanges)
     for (int step = 1; step <= 30; ++step)
     {
         truth = transitionMatrix() * truth;
-        filter.predict(rng, timeStep);
+        filter.predict(timeStep, rng);
         for (auto const & beacon : beacons)
         {
             double const z = (truth.head<2>() - beacon).norm() + 0.5 * normal(rng);
@@ -1258,7 +1258,7 @@ TEST(RbParticleFilter, HybridParticlesMatchAnImmFilterPerParticle)
     for (int k = 0; k < 4; ++k)
     {
         auto const before = filter.state();
-        ASSERT_TRUE(filter.predict(rng, timeStep));
+        ASSERT_TRUE(filter.predict(timeStep, rng));
         for (Eigen::Index i = 0; i < before.size(); ++i)
         {
             EXPECT_EQ(filter.state().logWeight(i), before.logWeight(i)) << i;
@@ -1336,9 +1336,9 @@ TEST(RbParticleFilter, HybridParticlesOfOneDynamicsMatchTheFilterOfOneGaussian)
     {
         auto plainRng = rng;
         auto fixedRng = rng;
-        ASSERT_TRUE(hybrid.predict(rng, timeStep));
+        ASSERT_TRUE(hybrid.predict(timeStep, rng));
         ASSERT_TRUE(fixed.predict(fixedRng));
-        plain.predict(plainRng, timeStep);
+        plain.predict(timeStep, plainRng);
         Eigen::Vector2d const z{0.5 * k, -0.3 * k};
         ASSERT_TRUE(hybrid.update(makeFix(z)));
         ASSERT_TRUE(fixed.update(makeFix(z)));
@@ -1371,9 +1371,9 @@ TEST(ParticleGaussian, HoldsAHybridPerParticle)
 {
     auto rng = std::mt19937_64{33};
     auto filter = RbParticleFilter{makeChain(), makeMotion(), makeHybridState()};
-    ASSERT_TRUE(filter.predict(rng, timeStep));
+    ASSERT_TRUE(filter.predict(timeStep, rng));
     ASSERT_TRUE(filter.update(makeRangeRate(0.4, beacons[0])));
-    ASSERT_TRUE(filter.predict(rng, timeStep));
+    ASSERT_TRUE(filter.predict(timeStep, rng));
     ASSERT_TRUE(filter.update(makeBiasedRangeRate(-0.2, beacons[1])));
     auto const & state = filter.state();
 
@@ -1429,7 +1429,7 @@ TEST(RbParticleFilter, AHybridPredictionWithoutADensityLeavesTheState)
         Emrys::particleGaussian<Position>(State{}, ParticleSet<Position>{particlePositions()}, prior)
     };
     auto const before = filter.state();
-    auto const moved = filter.predict(rng, timeStep);
+    auto const moved = filter.predict(timeStep, rng);
     ASSERT_FALSE(moved);
     EXPECT_EQ(moved.error(), Emrys::NumericError::NotPositiveDefinite);
     EXPECT_EQ(filter.state().particles().states(), before.particles().states());

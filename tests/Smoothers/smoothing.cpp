@@ -496,7 +496,7 @@ runParticles(unsigned seed, Eigen::Index count)
     for (int k = 1; k <= stepCount; ++k)
     {
         run.history.push(filter.state());
-        filter.predict(rng, timeStep);
+        filter.predict(timeStep, rng);
         static_cast<void>(filter.update(makeFix(fixAt(k))));
         run.resampled += resampling(filter.state()).value() ? 1 : 0;
     }

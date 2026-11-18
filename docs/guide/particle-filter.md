@@ -72,9 +72,9 @@ This document covers the statistics behind them and how the particle filter uses
 
 ## Decisions so far
 
-This review decided Q1 (roadmap 17zw) and Q2 [sampled-inputs]. Changes made elsewhere settled Q6
-[likelihood-measurements], Q8 [allocation], and Q12. These decisions from
-[decisions.md](../design/decisions.md) are in place and should be taken as given:
+This review decided Q1 (roadmap 17zw), Q2 [sampled-inputs], and Q3 [generator-arguments].
+Changes made elsewhere settled Q6 [likelihood-measurements], Q8 [allocation], and Q12. These
+decisions from [decisions.md](../design/decisions.md) are in place and should be taken as given:
 
 - **[likelihood-measurements].** A filter that needs $\log p(z \mid x)$ at state points takes it
   from the measurement model's own `logLikelihood(g)` if it has one, and otherwise from the
@@ -82,7 +82,7 @@ This review decided Q1 (roadmap 17zw) and Q2 [sampled-inputs]. Changes made else
   no function, noise, or method, is enough, and a model that has both is weighted by its
   likelihood (§4).
 - **[filters-and-recursions], [upkeep].** `ParticleFilter<Space, Model, Scalar, Allocator>` is
-  spelled like the other filters, without a method. `predict(rng, dt, inputs...)` moves each
+  spelled like the other filters, without a method. `predict(dt, rng, inputs...)` moves each
   particle through the process model and adds a draw of $Q$; `update(measurement)` multiplies the
   weights by the likelihood and returns the log-likelihood and whether any particle could explain
   the observation, `[[nodiscard]]`. The generator is passed to each call rather than owned.
@@ -105,6 +105,10 @@ This review decided Q1 (roadmap 17zw) and Q2 [sampled-inputs]. Changes made else
   distribution over a tagged space that is not Gaussian, such as a mixture's density, drawn once
   per particle by its `drawSample()`. The Kalman-family filters, a simulation, and a measurement
   refuse one at compile time (§3).
+- **[generator-arguments].** A call that draws takes the generator after the policy and the
+  arguments it requires, and before those it may leave out: `predict(dt, rng, inputs...)`,
+  `predict(rng, Steps{n}, inputs...)` with a fixed-step model, `drawSamples(density, n, rng)`,
+  `particles.resample(rng, newSize, resampler)`, and `simulate(space, x, model, dt, rng)` (§3).
 - **[filters-and-recursions].** A filter holds a state and runs a recursion. The particle filter has
   the state's half (`state()`, `model()`, the steps) and no separate recursion; §15 and Q11 ask
   whether it should.
@@ -116,7 +120,7 @@ $\sum_i \hat w_i \, \delta(x - x_i)$ with $\hat w_i = w_i / \sum_j w_j$.
 
 | Step | What it does to particle $i$ |
 |---|---|
-| `predict(rng, dt, inputs...)` | $x_i \leftarrow f(x_i, u_i) \boxplus L z_i$, with $L L^T = Q(dt)$ and $z_i \sim \mathcal{N}(0, I)$; weights unchanged |
+| `predict(dt, rng, inputs...)` | $x_i \leftarrow f(x_i, u_i) \boxplus L z_i$, with $L L^T = Q(dt)$ and $z_i \sim \mathcal{N}(0, I)$; weights unchanged |
 | `update(measurement)` | $\log w_i \leftarrow \log \hat w_i + \log p(z \mid x_i) - \log p(z)$; points unchanged |
 
 With `Resample` applied by the caller this is the bootstrap filter of [Gordon, Salmond, and Smith
@@ -143,7 +147,7 @@ auto const resampling = upkeep::whenEss(std::less{}, 0.5, upkeep::resample(rng),
 
 for (int step = 1; step <= 3; ++step) {
   auto const z = Eigen::Vector2d{1.0 * step + 0.3, 0.5 * step - 0.2};
-  filter.predict(rng, 1.0);
+  filter.predict(1.0, rng);
   kalman.predict(1.0);
   auto const result = filter.update(fix(z));
   auto const exact = kalman.update(fix(z));
@@ -227,7 +231,7 @@ auto const withBias = compose(ConstantVelocity<Position, Velocity>{0.1}, Constan
 auto const start =
     GaussianParams<Biased>{Eigen::Matrix<double, 5, 1>{0, 0, 1, 0.5, 0}, Eigen::Matrix<double, 5, 5>::Identity()};
 auto biased = ParticleFilter{withBias, ParticleSet<Biased>{drawSamples(start.toDensity().value(), 4, rng)}};
-biased.predict(rng, 1.0);
+biased.predict(1.0, rng);
 // std::mt19937_64 rng{42}: bias row before and after: [1.119, 0.015, 0.450, -2.524], unchanged
 ```
 
@@ -268,10 +272,10 @@ auto const drivenModel = processModel(
 
 // std::mt19937_64 rng{42}
 auto const accel = GaussianParams<SpecificForce>{Eigen::Vector2d{0.3, -0.1}, diag(0.2, 0.1)};
-uncertain.predict(rng, 1.0, accel);                       // sd [0.225, 0.157, 0.451, 0.315]
+uncertain.predict(1.0, rng, accel);                       // sd [0.225, 0.157, 0.451, 0.315]
 // sd [0.224, 0.158, 0.447, 0.316]
 predict(methods::linearized(), exact, drivenModel, 1.0, accel).covarianceLower();
-known.predict(rng, 1.0, sure<SpecificForce>(Eigen::Vector2d{0.3, -0.1}));
+known.predict(1.0, rng, sure<SpecificForce>(Eigen::Vector2d{0.3, -0.1}));
 // sd [0, 0, 0, 0], mean [1.150, 0.450, 1.300, 0.400]
 ```
 
@@ -313,7 +317,7 @@ had. The parameters `GaussianMixtureParams` are not an input; their density is:
 auto slips = GaussianMixtureParams<SpecificForce>{SpecificForce{}};
 slips.add(std::log(0.7), Eigen::Vector2d{2.0, 0.0}, 1e-4 * Eigen::Matrix2d::Identity());
 slips.add(std::log(0.3), Eigen::Vector2d{-2.0, 0.0}, 1e-4 * Eigen::Matrix2d::Identity());
-filter.predict(rng, 2.0, slips.toDensity().value());   // the particles split 70/30 into two clusters
+filter.predict(2.0, rng, slips.toDensity().value());   // the particles split 70/30 into two clusters
 ```
 
 `ParticleFilter.ASampledInputKeepsItsShape` checks that split from one starting state, and
@@ -340,22 +344,22 @@ shape depends on the state still needs a generator of the model's own.
 > inside the moves would break [execution-policies]'s rule that the draws come before a parallel
 > loop.~~
 
-The generator comes first in `predict(rng, dt, inputs...)` because the inputs are a trailing
-pack; under a policy the policy comes first and the generator second. Elsewhere it comes last
-(`drawSamples(density, n, rng)`, `h(state, rng)` and `h(policy, state, rng)` for upkeep,
-`r(weights, ancestors, rng)` and `r(policy, weights, ancestors, rng)` for a resampler) or first
-again (`ParticleSet::resample(rng, newSize, resampler)`). Passing it in the wrong place fails,
-though the first note Clang gives names the fixed-step overload's `Steps`, which a filter with an
-ordinary model doesn't have:
+The generator comes after the policy and the arguments a call requires, and before those it may
+leave out [generator-arguments]. `predict(dt, rng, inputs...)` is a Kalman filter's
+`predict(dt, inputs...)` with the generator after the step; under a policy it is
+`predict(policy, dt, rng, inputs...)`. A fixed-step model's step is its own, so
+`predict(rng, inputs...)` and `predict(rng, Steps{n}, inputs...)` start with the generator, the
+count being optional. Elsewhere `drawSamples(density, n, rng)`, a resampler's
+`r(policy, weights, ancestors, rng)`, `ParticleSet::resample(rng, newSize, resampler)`, and the
+upkeep factories `upkeep::resample(rng, size, resampler)` and `upkeep::roughen(rng, scale)` follow
+the same rule; an upkeep object holds its generator and is called as `h(state)`. Passing the
+generator in the wrong place fails to compile (§10), with a message about the overloads rather
+than the order.
 
-```
-error: no matching member function for call to 'predict'
-ParticleFilter.h:366:5: note: candidate function template not viable: no known conversion from
-'std::mt19937_64' (aka 'mersenne_twister_engine<...>') to 'Steps' for 2nd argument
-ParticleFilter.h:282:15: note: because 'double' does not satisfy 'uniform_random_bit_generator'
-```
-
-> **Q3.** Is there a rule for where the generator goes? Two that fit:
+> **Q3.** *Decided [generator-arguments]: neither option as written. The generator follows the
+> arguments a call requires and comes before those it may leave out, which the code already did
+> but for `predict(rng, dt, inputs...)` and `simulate(..., rng, dt, ...)`; those now take the step
+> first.* ~~Is there a rule for where the generator goes? Two that fit:
 > 1. Last, unless the function ends in a pack, then first. Only `resample()` changes, to
 >    `resample(newSize, resampler, rng)`, and its defaulted resampler then needs overloads
 >    rather than a default argument.
@@ -365,7 +369,11 @@ ParticleFilter.h:282:15: note: because 'double' does not satisfy 'uniform_random
 > [parallelism.md](../design/parallelism.md) assumes option 2 ("first among the member
 > function's arguments, after the policy") for the counter-based generators of step 18b, and the
 > upkeep objects put the generator last, so [execution-policies] has made
-> option 2 the practice without recording it.
+> option 2 the practice without recording it.~~
+>
+> Option 2 turned out not to be the practice: `simulate()`, `drawParticleSet()`,
+> `MixtureFitter::run()`, and the upkeep factories, which hold the generator rather than take it
+> at the call, break it.
 
 ## 4. Update
 
@@ -797,8 +805,8 @@ or a `std::chrono` step (the time tests cover the Kalman-family filters).
 | Misuse | Fails | First error (Clang) |
 |---|---|---|
 | `predict(1.0)`, no generator | compile | no matching member function for call to 'predict': 'double' does not satisfy 'uniform_random_bit_generator' |
-| `predict(1.0, rng)` | compile | no known conversion from 'std::mt19937_64' to 'Steps' for 2nd argument (§3) |
-| `predict(rng, 1)`, an integer step | compile | 'TimeStep<int, double>' evaluated to false |
+| `predict(rng, 1.0)`, the generator before the step | compile | no known conversion from 'double' to 'Steps' for 2nd argument, a note on the fixed-step overload, which a filter with an ordinary model doesn't have (§3) |
+| `predict(1, rng)`, an integer step | compile | 'TimeStep<int, double>' evaluated to false |
 | a `GaussianParams` as the initial state | compile | could not match 'ParticleSet' against 'Gaussian' |
 | `upkeep::resample(rng)(filter)` instead of `filter.state()` | compile | no member named 'resample' in 'Emrys::ParticleFilter<...>' |
 | a resampler with the wrong signature | compile | 'Resampler<...>' evaluated to false |
@@ -820,7 +828,7 @@ Both steps take a policy first ([execution-policies]; `Core/Execution.h` covers 
 loop primitives), and upkeep takes it in its factories (the Upkeep module page):
 
 ```cpp
-filter.predict(std::execution::par, rng, 1.0);
+filter.predict(std::execution::par, 1.0, rng);
 auto const updated = filter.update(std::execution::par, fix(z));
 auto const inParallel = upkeep::whenEss(std::execution::par, std::less{}, 0.5,
                                         upkeep::resample(std::execution::par, rng),
@@ -839,8 +847,8 @@ same from run to run:
 
 ```cpp
 // Two copies of a filter over §1's 5,000 draws from std::mt19937_64{42}; a{7}, b{7}, c{7}; z = (1.3, 0.3)
-seconds.predict(a, 1.0);
-parallel.predict(std::execution::par, c, 1.0);
+seconds.predict(1.0, a);
+parallel.predict(std::execution::par, 1.0, c);
 // states equal: 1
 seconds.update(fix(z))->logLikelihood();                        // -3.648045177606063
 parallel.update(std::execution::par, fix(z))->logLikelihood();  // -3.648045177606062
@@ -869,14 +877,14 @@ away from `Sequential`.
 
 ## 12. Time steps and fixed-step models
 
-`predict(rng, dt, inputs...)` takes `dt` as a `TimeStep<Scalar>` ([time-steps]), so a
+`predict(dt, rng, inputs...)` takes `dt` as a `TimeStep<Scalar>` ([time-steps]), so a
 `std::chrono` duration works and gives the same particles bitwise as the same span in seconds; an
 integer does not compile (§10). The step is converted once, with `internal::toScalarTime<Scalar>()`,
 and below that the process model sees the filter's scalar:
 
 ```cpp
-seconds.predict(a, 1.0);
-millis.predict(b, 1000ms);   // same seed: states equal, 1
+seconds.predict(1.0, a);
+millis.predict(1000ms, b);   // same seed: states equal, 1
 ```
 
 With a `FixedStepModel` [fixed-step-models] the step is the model's, so
@@ -888,7 +896,7 @@ count exclude a leading `Steps`, as they exclude a leading policy:
 auto fixed = ParticleFilter{fixedStep<State>(model, 1.0), particles};
 for (int k = 0; k < 3; ++k) fixed.predict(d);
 stepped.predict(e, Steps{3});      // same seed: states equal, 1
-onestep.predict(g);                // equals plain.predict(f, 1.0) from the same seed: 1
+onestep.predict(g);                // equals plain.predict(1.0, f) from the same seed: 1
 ```
 
 ## 13. Allocation
@@ -968,7 +976,8 @@ filter today. The Rao-Blackwellized particle filter keeps its own steps too
    `drawSamples()`, constructors that take it, and `drawParticleSet()` (roadmap 17zw).
 2. ~~Non-Gaussian process noise: draw any samplable input per particle, or a model's own
    sampling policy (§3).~~ Decided [sampled-inputs]: a sampled input, drawn per particle.
-3. Where the generator argument goes; [execution-policies] has made option 2 the practice (§3).
+3. ~~Where the generator argument goes; [execution-policies] has made option 2 the practice
+   (§3).~~ Decided [generator-arguments]: after the required arguments, before the optional ones.
 4. A gate for the particle filter, on the evidence (§4).
 5. Return the per-particle log-likelihoods from `update()` (§4).
 6. ~~A likelihood-only measurement concept for sample-based filters (§4).~~ Decided

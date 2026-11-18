@@ -126,7 +126,7 @@ main()
         for (int k = 1; k <= steps; ++k)
         {
             auto const gyro = Emrys::ValueVector<Gyro>{0.2 * std::sin(0.4 * k * dt)};
-            truth = Emrys::simulate<State>(truth, motion, rng, dt, Emrys::sure<Gyro>(gyro));
+            truth = Emrys::simulate<State>(truth, motion, dt, rng, Emrys::sure<Gyro>(gyro));
             estimating.predict(dt, Emrys::sure<Gyro>(gyro));
             considering.predict(dt, Emrys::sure<Gyro>(gyro));
             dropping.predict(dt, Emrys::sure<Gyro>(gyro));

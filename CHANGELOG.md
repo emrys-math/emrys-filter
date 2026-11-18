@@ -109,7 +109,7 @@ instead.
   names some of the blocks read.
 - A particle filter's prediction draws an input that is not Gaussian, such as a mixture's density,
   a kernel density, or a Student-t over a tagged space, once per particle:
-  `filter.predict(rng, dt, mixture.toDensity().value())`. The concept `SampledInput` names such an
+  `filter.predict(dt, rng, mixture.toDensity().value())`. The concept `SampledInput` names such an
   input; a Kalman-family prediction, a simulation, and a measurement refuse one at compile time.
 - `ParticleSet{drawSamples(prior, count, rng), allocator}` and `ParticleFilter{model,
   drawSamples(prior, count, rng)}` build the particles from the draws, read straight into the
@@ -214,6 +214,16 @@ instead.
   least-squares fit to the first measurements, and says when to convert once the state is
   determined. It and [docs/usage.md](docs/usage.md) now say that `InfoFilter` can't predict
   until the measurements determine every direction, where `SqrtInfoFilter` can.
+- **Breaking:** a time step comes before the generator. Write `filter.predict(dt, rng, inputs...)`
+  and `filter.predict(policy, dt, rng, inputs...)` for a `ParticleFilter` or an `RbParticleFilter`,
+  where it was `predict(rng, dt, inputs...)`; `simulate(space, x, model, dt, rng, inputs...)` and
+  `simulate<State>(x, model, dt, rng, inputs...)`, where it was `simulate(space, x, model, rng, dt,
+  inputs...)`; and `simulate(from, chain, dt, rng)` for a continuous-time chain, where it was
+  `simulate(from, chain, rng, dt)`. The draws from a seed are unchanged. Every call that draws now
+  takes the generator after the arguments it requires and before the ones it may leave out, and a
+  particle filter's prediction is a Kalman filter's `predict(dt, inputs...)` with the generator
+  after the step. The fixed-step forms, `predict(rng, inputs...)` and `predict(rng, Steps{n},
+  inputs...)`, have no step and don't change.
 - **Breaking:** `drawSamples(density, n, rng)` and `drawSamplesWithLogDensity()` return `Draws`, a
   range that draws from `rng` as it is read, each element one `drawSample()` (or
   `drawSampleWithLogDensity()`) of the density, so a stream of single draws and the range give

@@ -77,6 +77,7 @@ Read the index, then the decisions your change touches.
 | [sigma-point-axes](#sigma-point-axes) | A sigma-point method is a rule spread by axes the caller may choose, and the default axes are the Cholesky factor, falling back to a pivoted root |
 | [conditional-evidence](#conditional-evidence) | `conditional()` returns a plain distribution; the evidence of the given values stays in its weights, or comes beside a single Gaussian |
 | [random-draws](#random-draws) | A density draws from the caller's generator through the standard distributions, so a seed fixes the draws within one standard library only |
+| [generator-arguments](#generator-arguments) | A call that draws takes the generator after the arguments it requires and before those it may leave out |
 | [lazy-draws](#lazy-draws) | `drawSamples()` returns a range that draws as it is read, and a constructor takes the range |
 | **Models** | |
 | [method-per-measurement](#method-per-measurement) | Each measurement chooses its transform method |
@@ -409,7 +410,7 @@ size, and moments, never its particles. A type opts in with an `internal::descri
 found by argument-dependent lookup, so the generic `operator<<` and formatter claim no other type.
 `EMRYS_FILTER_NO_IO`, which `EIGEN_NO_IO` implies, removes all of it.
 
-`simulate(space, x, model, rng, dt, inputs...)` draws the next true state, one step per call, and
+`simulate(space, x, model, dt, rng, inputs...)` draws the next true state, one step per call, and
 `simulate(space, x, model, rng, inputs...)` with a measurement model draws a measurement, and
 `simulate(value, chain, rng)` a Markov chain's next value, from `chain.next(value)`. `nees()` and `NeesMonitor` test estimates
 against the truth as `NisMonitor` tests innovations, after Bar-Shalom, Li, and Kirubarajan (2001),
@@ -1485,6 +1486,37 @@ built on `internal::` functions and keeps mutable state that every call shares.
 
 **Where.** `Distributions/Sampling.h` and each distribution's header; usage.md tells a user what a
 seed fixes.
+
+### generator-arguments
+
+*A call that draws takes the generator after the arguments it requires and before those it may
+leave out.*
+
+**Rule.** Every public function, member function, and function object that draws takes the
+caller's bit generator after the execution policy, if it has one [execution-policies], and after
+the arguments the call requires, and before those it may leave out: a defaulted argument, an
+argument that only another overload takes, and a trailing pack. So `drawSamples(kde, n, rng,
+resampler)`, a resampler's `r(policy, weights, ancestors, rng)`, a particle filter's
+`predict(policy, dt, rng, inputs...)` and, with a fixed-step model, `predict(rng, Steps{n},
+inputs...)`; `simulate(space, x, model, dt, rng, inputs...)` and a continuous-time chain's
+`simulate(from, chain, dt, rng)`; `particles.resample(rng, newSize, resampler)` and
+`upkeep::roughen(rng, scale)`. An upkeep object holds the generator it was made with and is called
+on the state alone. Private members and functions in `internal` are not held to the rule.
+
+**Why.** With one rule, a reader who knows the arguments a call requires knows where its generator
+goes. The required arguments say what the call does and the generator supplies its randomness, so
+it follows them, as in `std::shuffle(first, last, g)`; what may be left out has to trail, and a
+pack has to come last. A time step is required, so a particle filter's prediction is a Kalman
+filter's `predict(dt, inputs...)` with the generator after the step.
+
+**Rejected.** The generator first in member functions and last in free functions and function
+objects, which particle-filter.md took to be the practice: `simulate()`, `drawParticleSet()`, the
+upkeep factories, and `MixtureFitter::run()` don't follow it, and it gives two places to learn. The
+generator last unless the function ends in a pack: a defaulted resampler or allocator would need
+overloads in place of a default argument, and `predict()` would still put it first.
+
+**Where.** `Filters/ParticleFilter.h`, `Filters/RbParticleFilter.h`, `Models/Simulation.h`, and
+every header that draws; particle-filter.md Q3.
 
 ### lazy-draws
 

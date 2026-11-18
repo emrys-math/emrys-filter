@@ -417,7 +417,7 @@ rbParticleHybridInParallel()
         )
     };
     auto rng = std::mt19937_64{1};
-    [[maybe_unused]] auto const moved = filter.predict(InOrder{}, rng, 1.0);
+    [[maybe_unused]] auto const moved = filter.predict(InOrder{}, 1.0, rng);
 }
 #endif
 

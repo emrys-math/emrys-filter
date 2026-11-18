@@ -326,7 +326,7 @@ TEST(ParticleFilter, SetStateReplacesTheParticles)
     auto filter = ParticleFilter{makeModel(), drawParticles(makeInitial(), 10, rng)};
     auto reference = ParticleFilter{makeModel(), replacement};
     auto const fix = makeFix(Eigen::Vector2d{1.0, 0.5});
-    filter.predict(rng, timeStep);
+    filter.predict(timeStep, rng);
     static_cast<void>(filter.update(fix));
 
     filter.setState(replacement);
@@ -334,7 +334,7 @@ TEST(ParticleFilter, SetStateReplacesTheParticles)
     for (auto * const each : {&filter, &reference})
     {
         auto stepRng = std::mt19937_64{4};
-        each->predict(stepRng, timeStep);
+        each->predict(timeStep, stepRng);
         EXPECT_TRUE(each->update(fix)->accepted);
     }
     EXPECT_EQ(filter.state().states(), reference.state().states());
@@ -354,7 +354,7 @@ TEST(ParticleFilter, PredictMatchesTheKalmanPredictionInDistribution)
     auto const model = accelerometerDriven<Position, Velocity>();
     auto rng = std::mt19937_64{11};
     auto filter = ParticleFilter{model, drawParticles(makeInitial(), count, rng)};
-    filter.predict(rng, 2.0, accelerometer);
+    filter.predict(2.0, rng, accelerometer);
 
     auto const expected = Emrys::predict(methods::linearized(), makeInitial(), model, 2.0, accelerometer);
     expectMomentsNear(weightedMoments(filter.state()), expected.mean(), expected.covarianceLower(), double(count), 5.0);
@@ -390,7 +390,7 @@ TEST(ParticleFilter, PredictDrawsASampledInputPerParticle)
     auto const model = accelerometerDriven<Position, Velocity>();
     auto rng = std::mt19937_64{13};
     auto filter = ParticleFilter{model, drawParticles(makeInitial(), count, rng)};
-    filter.predict(rng, 2.0, density);
+    filter.predict(2.0, rng, density);
 
     auto const expected = Emrys::predict(methods::linearized(), makeInitial(), model, 2.0, matched);
     expectMomentsNear(weightedMoments(filter.state()), expected.mean(), expected.covarianceLower(), double(count), 5.0);
@@ -413,7 +413,7 @@ TEST(ParticleFilter, PredictDrawsASampledInputPerParticle)
     );
     auto const wind = Eigen::Vector2d{0.25, -0.5};
     auto blown = ParticleFilter{windBlown, drawParticles(makeInitial(), count, rng)};
-    blown.predict(rng, 1.0, density, Emrys::sure<Wind>(wind));
+    blown.predict(1.0, rng, density, Emrys::sure<Wind>(wind));
     auto const expectedBlown =
         Emrys::predict(methods::linearized(), makeInitial(), windBlown, 1.0, matched, Emrys::sure<Wind>(wind));
     expectMomentsNear(
@@ -436,7 +436,7 @@ TEST(ParticleFilter, ASampledInputKeepsItsShape)
     auto const start = GaussianParams<State>{State{}, Vector4{0.0, 0.0, 1.0, 0.5}, Matrix4{1e-8 * Matrix4::Identity()}};
     auto rng = std::mt19937_64{37};
     auto filter = ParticleFilter{accelerometerDriven<Position, Velocity>(), drawParticles(start, count, rng)};
-    filter.predict(rng, 2.0, density);
+    filter.predict(2.0, rng, density);
 
     // The first velocity is 1 + 2a: near 5 from the first component and near -3 from the second,
     // spread by the model's own velocity noise, of standard deviation 0.32.
@@ -463,7 +463,7 @@ TEST(ParticleFilter, AFixedStepModelMovesParticlesAsTheStepDoes)
     auto fixedRng = std::mt19937_64{23};
     for (int k = 0; k < 3; ++k)
     {
-        continuous.predict(continuousRng, 2.0, accelerometer);
+        continuous.predict(2.0, continuousRng, accelerometer);
         fixed.predict(fixedRng, accelerometer);
     }
     for (Eigen::Index i = 0; i < fixed.state().size(); ++i)
@@ -484,7 +484,7 @@ TEST(ParticleFilter, ANoiselessBlockMovesOnlyByItsDynamics)
     auto rng = std::mt19937_64{5};
     auto filter = ParticleFilter{model, drawParticles(initial, 100, rng)};
     Eigen::MatrixXd const before = filter.state().states();
-    filter.predict(rng, timeStep);
+    filter.predict(timeStep, rng);
     EXPECT_EQ(filter.state().states().row(4), before.row(4));
     EXPECT_GT((filter.state().states().topRows(4) - before.topRows(4)).cwiseAbs().minCoeff(), 0.0);
 }
@@ -505,7 +505,7 @@ TEST(ParticleFilter, PredictWrapsAPeriodicCoordinate)
         GaussianParams<Turning>{Turning{}, Eigen::Vector2d{pi - 0.05, 0.2}, Eigen::Matrix2d{{0.01, 0}, {0, 0.001}}};
     auto rng = std::mt19937_64{7};
     auto filter = ParticleFilter{model, drawParticles(initial, 1000, rng)};
-    filter.predict(rng, 1.0);
+    filter.predict(1.0, rng);
     auto const headings = filter.state().states().row(0);
     EXPECT_GE(headings.minCoeff(), -pi);
     EXPECT_LT(headings.maxCoeff(), pi);
@@ -631,7 +631,7 @@ runLinear(unsigned seed, Eigen::Index count)
         truth = transitionMatrix() * truth;
         Eigen::Vector2d const z = truth.head<2>() + 0.8 * Eigen::Vector2d{std::cos(2.4 * step), std::sin(2.4 * step)};
         kalman.predict(timeStep);
-        particles.predict(rng, timeStep);
+        particles.predict(timeStep, rng);
         auto const exact = kalman.update(makeFix(z));
         auto const sampled = particles.update(makeFix(z));
         EXPECT_TRUE(sampled->accepted);
@@ -703,8 +703,8 @@ TEST(ParticleFilter, MixtureNoiseRidesOutInjectedOutliers)
         bool const outlier = step % 7 == 0;
         Eigen::Vector2d const z = truth.head<2>() + Eigen::Vector2d{gaussian(rng), gaussian(rng)}
                                 + (outlier ? Eigen::Vector2d{60.0, 0.0} : Eigen::Vector2d::Zero());
-        robust.predict(rng, timeStep);
-        plain.predict(rng, timeStep);
+        robust.predict(timeStep, rng);
+        plain.predict(timeStep, rng);
         ASSERT_TRUE(robust.update(makeFix(z, robustNoise))->accepted);
         ASSERT_TRUE(plain.update(makeFix(z, plainNoise))->accepted);
         ASSERT_TRUE(resampling(robust.state()));
@@ -753,7 +753,7 @@ TEST(ParticleFilter, CarriesAnAmbiguityUntilAMeasurementResolvesIt)
     for (int step = 1; step <= 5; ++step)
     {
         truth += Eigen::Vector2d{0.5, 0.0};
-        filter.predict(rng, timeStep);
+        filter.predict(timeStep, rng);
         ASSERT_TRUE(filter.update(makeRange(truth.norm()))->accepted);
         ASSERT_TRUE(resampling(filter.state()));
         EXPECT_NEAR(rightWeight(), 0.5, 0.1) << "step " << step;

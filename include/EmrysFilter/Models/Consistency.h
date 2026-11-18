@@ -604,7 +604,7 @@ nees(Eigen::MatrixBase<Derived> const & truth, Estimate const & estimate, Choice
  *     auto filter = KalmanFilter{model, prior};
  *     for (int k = 0; k < 50; ++k)
  *     {
- *         truth = simulate(space, truth, model, rng, dt);
+ *         truth = simulate(space, truth, model, dt, rng);
  *         filter.predict(dt);
  *         filter.update(observe(gps, simulate(space, truth, gps, rng)));
  *     }

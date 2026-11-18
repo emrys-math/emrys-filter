@@ -279,7 +279,7 @@ private:
  * auto initial = drawParticleGaussian<Position>(prior, 500, rng);
  * auto filter =
  *     RbParticleFilter{ConstantVelocity<Position, Velocity>{0.1},
- * std::move(initial)}; filter.predict(rng, dt);
+ * std::move(initial)}; filter.predict(dt, rng);
  * auto const updated = filter.update(range);  // nonlinear in Position
  * upkeep::whenEss(std::less{}, 0.5, upkeep::resample(rng))(filter.state());
  * filter.state().toDensity()->collapsed();
@@ -487,12 +487,12 @@ public:
     template <std::uniform_random_bit_generator G, typename... Inputs>
         requires(!isFixedStep<Model_>)
     [[nodiscard]] auto
-    predict(G & rng, TimeStep<Scalar_> auto const & dt, Inputs const &... inputs)
+    predict(TimeStep<Scalar_> auto const & dt, G & rng, Inputs const &... inputs)
     {
-        return predict(execution::sequential, rng, dt, inputs...);
+        return predict(execution::sequential, dt, rng, inputs...);
     }
 
-    /** predict(rng, dt, inputs...) under \a policy: the draws are taken first, as the sequential
+    /** predict(dt, rng, inputs...) under \a policy: the draws are taken first, as the sequential
      * prediction takes them, and each particle and its %Gaussian then move as a for-each, so the
      * result is Sequential's (see \ref Execution). The process model's propagate() then runs for
      * several particles at once. Hybrid particles take Sequential alone.
@@ -500,7 +500,7 @@ public:
     template <ExecutionPolicy P, std::uniform_random_bit_generator G, typename... Inputs>
         requires(!isFixedStep<Model_>)
     [[nodiscard]] auto
-    predict(P && policy, G & rng, TimeStep<Scalar_> auto const & dt, Inputs const &... inputs)
+    predict(P && policy, TimeStep<Scalar_> auto const & dt, G & rng, Inputs const &... inputs)
     {
         Scalar_ const step = internal::toScalarTime<Scalar_>(dt);
         if constexpr (Switching)
@@ -537,13 +537,13 @@ public:
     }
 
     /** Moves each particle and its %Gaussian forward by the fixed-step model's step, as
-     * predict(rng, dt, inputs...) does, with the model's cached \f$ Q \f$. Under a cached
+     * predict(dt, rng, inputs...) does, with the model's cached \f$ Q \f$. Under a cached
      * transition and with no inputs, the prediction given each particle is
      * \f$ F_r P_i F_r^T + Q \f$, with \f$ F_r \f$ the transition's columns for the rest of the
      * state, rather than a transform; with a hybrid per particle, each mode predicts by its model's
      * transform.
      *
-     * \returns as predict(rng, dt, inputs...) does
+     * \returns as predict(dt, rng, inputs...) does
      */
     template <std::uniform_random_bit_generator G, typename... Inputs>
         requires(isFixedStep<Model_> && !internal::leadsWithSteps<Inputs...>)
@@ -554,7 +554,7 @@ public:
         return predict(execution::sequential, rng, inputs...);
     }
 
-    /** predict(rng, inputs...) under \a policy, as predict(policy, rng, dt, inputs...) runs. */
+    /** predict(rng, inputs...) under \a policy, as predict(policy, dt, rng, inputs...) runs. */
     template <ExecutionPolicy P, std::uniform_random_bit_generator G, typename... Inputs>
         requires(isFixedStep<Model_> && !internal::leadsWithSteps<Inputs...>)
     [[nodiscard]] auto
@@ -901,7 +901,7 @@ private:
     }
 
     /** Moves the particles by the process model, \a step forward, with \a inputs: the body of
-     * predict(policy, rng, dt, inputs...) without a switching model.
+     * predict(policy, dt, rng, inputs...) without a switching model.
      */
     template <typename P, typename G, typename... Inputs>
     void

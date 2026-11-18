@@ -129,8 +129,8 @@ main()
         Emrys::ValueVector<State> truth = Emrys::drawSample(priorDensity, rng);
         for (int k = 1; k <= steps; ++k)
         {
-            truth = Emrys::simulate<State>(truth, motion, rng, dt);
-            filter.predict(rng, dt);
+            truth = Emrys::simulate<State>(truth, motion, dt, rng);
+            filter.predict(dt, rng);
 
             // The simulated measurement calls the function at the one true position, a batch of one
             // column, which the counter leaves out.

@@ -42,7 +42,7 @@ namespace Emrys
  * for (auto const & z : measurements)
  * {
  *     window.push(filter.state());
- *     filter.predict(rng, dt);
+ *     filter.predict(dt, rng);
  *     static_cast<void>(filter.update(fix(z)));
  *     static_cast<void>(upkeep(filter.state(), rng));
  *     window.smooth(filter.state());
