@@ -953,6 +953,11 @@ updateInPlace(
         "repairing the innovation covariance is the covariance form's (decisions.md [gaussian-forms])"
     );
     static_assert(
+        std::is_same_v<typename M::CarryType, carries::Reset> || hasIdentityReset<Space>,
+        "a carry other than carries::reset() is the covariance form's so far (docs/design/groups.md): filter in a "
+        "Gaussian"
+    );
+    static_assert(
         !hasConsider<M>,
         "a consider() update is the covariance form's: the square-root and information forms keep no block's "
         "covariance as it was (decisions.md [consider-states]); filter in a Gaussian"
@@ -1099,6 +1104,11 @@ updateInPlace(
     static_assert(
         !hasInnovationRepair<M>,
         "repairing the innovation covariance is the covariance form's (decisions.md [gaussian-forms])"
+    );
+    static_assert(
+        std::is_same_v<typename M::CarryType, carries::Reset> || hasIdentityReset<Space>,
+        "a carry other than carries::reset() is the covariance form's so far (docs/design/groups.md): filter in a "
+        "Gaussian"
     );
     static_assert(
         !hasConsider<M>,
@@ -1299,6 +1309,11 @@ updateInPlace(
     static_assert(
         !hasInnovationRepair<M>,
         "repairing the innovation covariance is the covariance form's (decisions.md [gaussian-forms])"
+    );
+    static_assert(
+        std::is_same_v<typename M::CarryType, carries::Reset> || hasIdentityReset<Space>,
+        "a carry other than carries::reset() is the covariance form's so far (docs/design/groups.md): filter in a "
+        "Gaussian"
     );
     static_assert(
         !hasConsider<M>,

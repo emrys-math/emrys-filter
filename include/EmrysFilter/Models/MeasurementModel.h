@@ -1041,6 +1041,7 @@ enum class ArgumentKind
     uncertain,  ///< an uncertain input, a distribution over a tagged space
     sure,       ///< a sure input, sure<Tag>(value)
     form,       ///< a covariance update form, updates::...
+    carry,      ///< what carries the covariance when the update moves the mean, carries::...
     repair,     ///< a repair of the innovation covariance, roots::ridge()
     consider,   ///< the blocks a Kalman update considers, consider()
     reference,  ///< a linearizedAbout() reference, which a prediction's step linearizes about
@@ -1075,6 +1076,10 @@ inline constexpr ArgumentKind argumentKind = [] {
     else if constexpr (CovarianceUpdate<Plain>)
     {
         return ArgumentKind::form;
+    }
+    else if constexpr (CovarianceCarry<Plain>)
+    {
+        return ArgumentKind::carry;
     }
     else if constexpr (Repair<Plain>)
     {
@@ -1128,7 +1133,8 @@ checkArguments()
     static_assert(
         ((argumentKind<Args> != ArgumentKind::other) && ...),
         "an argument after the observation is an uncertain input over a tagged space, sure<Tag>(value), a covariance "
-        "update form such as updates::joseph(), a repair of the innovation covariance such as roots::ridge(), or the "
+        "update form such as updates::joseph(), a carry such as carries::adjoint(), a repair of the innovation "
+        "covariance such as roots::ridge(), or the "
         "blocks to consider, consider(path<Bias>); after a prediction's step, an uncertain or a sure input, or a "
         "linearizedAbout() reference first"
     );
@@ -1144,6 +1150,10 @@ checkArguments()
     static_assert(
         (std::size_t{argumentKind<Args> == ArgumentKind::form} + ... + 0) <= 1,
         "give the covariance update form once"
+    );
+    static_assert(
+        (std::size_t{argumentKind<Args> == ArgumentKind::carry} + ... + 0) <= 1,
+        "give the covariance's carry once"
     );
     static_assert(
         (std::size_t{argumentKind<Args> == ArgumentKind::repair} + ... + 0) <= 1,
@@ -1211,6 +1221,25 @@ argumentOfKind(std::tuple<Args...> const & args, Default const & fallback)
     }
 }
 
+/** The carry of a measurement by the model \a Model that names none: the model's own, where it declares a
+ * \c DefaultCarry as the models of a known form do (GroupModels.h), and otherwise carries::Reset.
+ */
+template <typename Model>
+struct DefaultCarryOf
+{
+    using type = carries::Reset;  ///< the reset
+};
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename Model>
+    requires requires { typename Model::DefaultCarry; }
+struct DefaultCarryOf<Model>
+{
+    using type = typename Model::DefaultCarry;
+};
+
+/// \endcond
+
 }  // namespace internal
 
 /** \ingroup Models
@@ -1244,6 +1273,14 @@ public:
 
     /** The covariance update form given, or updates::Standard. */
     using FormType = internal::ArgumentOfKind<internal::ArgumentKind::form, updates::Standard, Args...>;
+
+    /** What carries the covariance when the update moves the mean: the carry given, or the model's own, or
+     * carries::Reset (docs/design/groups.md).
+     */
+    using CarryType = internal::ArgumentOfKind<
+        internal::ArgumentKind::carry,
+        typename internal::DefaultCarryOf<std::remove_cvref_t<Model>>::type,
+        Args...>;
 
     /** The repair of an innovation covariance that is not positive definite, or internal::NoRepair
      * (decisions.md [innovation-cholesky]).
@@ -1303,6 +1340,15 @@ public:
     covarianceUpdate() const
     {
         return internal::argumentOfKind<internal::ArgumentKind::form>(m_arguments, m_standard);
+    }
+
+    /** \returns what carries the covariance when the update moves the mean: the carry given, or the model's own,
+     * or carries::Reset
+     */
+    [[nodiscard]] CarryType
+    covarianceCarry() const
+    {
+        return {};
     }
 
 private:
@@ -1391,7 +1437,8 @@ using MethodWithoutOne =
  * \returns the Measurement of \a observation, a value in the measurement space, by \a model,
  * pushed through by \a method, with the call's \a args after it in any order: an uncertain input
  * over a tagged space for each item of the model's reads() that the state lacks, or
- * <tt>sure<Tag>(value)</tt> for one known exactly; a covariance update form (updates::joseph()); and
+ * <tt>sure<Tag>(value)</tt> for one known exactly; a covariance update form (updates::joseph()); what carries the
+ * covariance when the update moves the mean (carries::adjoint()); and
  * a repair of an innovation covariance that is not positive definite (roots::ridge()). The model is
  * held by copy, or for <tt>std::cref(model)</tt> by reference to one that outlives the measurement
  * (decisions.md [method-per-measurement], [model-policies]).

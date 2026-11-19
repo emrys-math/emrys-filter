@@ -342,7 +342,8 @@ struct ConditionedInPlace
  * \f$ K \Sigma_{xy}^T \f$ where it is; the other forms read the symmetric prior while forming
  * theirs. The covariance, formed in the tangent space at the prior mean, is then carried to the
  * one at the posterior mean by resetCovariance() [covariance-reset], which does nothing on a space with an
- * identity reset. \a residual, \a outputCov, and \a cross must not refer to \a state.
+ * identity reset, or by the carry \a Carry where the measurement names another (\ref carries).
+ * \a residual, \a outputCov, and \a cross must not refer to \a state.
  *
  * An \a outputCov that is not positive definite is repaired as \a Repair says and replaced by the
  * repaired matrix (see innovationCholesky()), \a Repair being a Repair or NoRepair, which then gives the gain, the
@@ -377,7 +378,8 @@ template <
     typename Form,
     typename Linearize,
     std::size_t K,
-    typename Accept = AcceptEvery>
+    typename Accept = AcceptEvery,
+    typename Carry = carries::Reset>
 [[nodiscard]] std::expected<ConditionedInPlace<Scalar>, GaussianError>
 kalmanConditionInPlace(
     GaussianParams<Space, Scalar> & state,
@@ -387,7 +389,8 @@ kalmanConditionInPlace(
     Form const & form,
     Linearize const & linearize,
     [[maybe_unused]] ConsideredRows<K> const & considered,
-    Accept const & accept = {}
+    Accept const & accept = {},
+    Carry const & = {}
 )
 {
     using Matrix = typename GaussianParams<Space, Scalar>::MatrixType;
@@ -447,7 +450,7 @@ kalmanConditionInPlace(
             auto const symmetric = symmetricFromLower<Matrix>(cov);
             cov = posteriorCov(form, symmetric, gain, cross, outputCov, linearize);
         }
-        if constexpr (hasIdentityReset<Space>)
+        if constexpr (carriesNothing<Carry, Space>)
         {
             moments.mean() = Emrys::plus(state.space(), moments.mean(), multiply(gain, residual));
         }
@@ -460,7 +463,8 @@ kalmanConditionInPlace(
             step.resize(nd);
             step.noalias() = multiply(gain, residual);
             moments.mean() = Emrys::plus(state.space(), start, step);
-            resetCovarianceAt(state.space(), start, step, moments.mean(), cov);
+            // carries::Adjoint reads the whole matrix, and the standard form leaves it so.
+            carryCovarianceAt<Carry>(state.space(), start, step, moments.mean(), cov);
         }
     }
     return result;
@@ -484,7 +488,8 @@ template <
     typename Cross,
     typename Form,
     typename Linearize,
-    std::size_t K>
+    std::size_t K,
+    typename Carry = carries::Reset>
 [[nodiscard]] std::expected<KalmanConditioned<typename Prior::SpaceType, typename Prior::Scalar>, GaussianError>
 kalmanCondition(
     Prior const & prior,
@@ -493,7 +498,8 @@ kalmanCondition(
     Cross const & cross,
     Form const & form,
     Linearize const & linearize,
-    ConsideredRows<K> const & considered
+    ConsideredRows<K> const & considered,
+    Carry const & carry = {}
 )
 {
     using Posterior = GaussianParams<typename Prior::SpaceType, typename Prior::Scalar>;
@@ -512,7 +518,9 @@ kalmanCondition(
         cross,
         form,
         linearize,
-        considered
+        considered,
+        AcceptEvery{},
+        carry
     );
     if (!conditioned)
     {

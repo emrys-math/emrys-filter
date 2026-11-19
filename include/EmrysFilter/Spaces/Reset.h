@@ -4,7 +4,9 @@
  * The covariance reset (decisions.md [covariance-reset]): hasIdentityReset<>, resetJacobian(), and
  * resetCovariance(), which carry a covariance from the tangent space at a value to the one at that
  * value moved by a step, block by block, and compile to nothing on a space whose every block moves
- * its differences unchanged. The Kalman update and the %Gaussian conditional call it (Condition.h,
+ * its differences unchanged; and the carries, carries::reset(), carries::none(), and carries::adjoint(), the
+ * policy by which a measurement's update chooses what carries its covariance, with carryCovariance()
+ * (docs/design/groups.md, a prototype). The Kalman update and the %Gaussian conditional call it (Condition.h,
  * Indexing.h), and so does the smoother (GaussianHistory.h); the information forms of the %Gaussian move
  * their reference through the inverse Jacobians (internal::resetInfoAt(), [gaussian-forms]). Read
  * UnitQuaternion.h next, for a space that supplies its reset in closed form.
@@ -22,6 +24,7 @@
 #include <EmrysFilter/Core/Multiply.h>
 #include <EmrysFilter/Core/Solve.h>
 #include <EmrysFilter/Spaces/Composite.h>
+#include <EmrysFilter/Spaces/Group.h>
 #include <EmrysFilter/Spaces/Space.h>
 
 namespace Emrys
@@ -73,6 +76,10 @@ identityResetOf()
     {
         return false;
     }
+    else if constexpr (HasGroupMembers<S>)
+    {
+        return isAbelianGroup<S>();
+    }
     else if constexpr (IsComposite<S>)
     {
         return AllIdentityReset<CompositeBlocks<S>>::value;
@@ -122,6 +129,11 @@ blockResetJacobian(
     {
         block.resetJacobian(x, d, out);
     }
+    else if constexpr (HasGroupMembers<Block>)
+    {
+        // A group's reset is its right Jacobian at the step, whatever the value.
+        block.rightJacobian(d, out);
+    }
     else
     {
         using Scalar = typename Out::Scalar;
@@ -170,7 +182,7 @@ forEachResetBlock(S const & space, F && f, Eigen::Index valueOffset = 0, Eigen::
 {
     if constexpr (hasIdentityReset<S>)
     {}
-    else if constexpr (IsComposite<S> && !HasResetJacobian<S>)
+    else if constexpr (IsComposite<S> && !HasResetJacobian<S> && !HasGroupMembers<S>)
     {
         [&]<std::size_t... I>(std::index_sequence<I...>) {
             ((forEachResetBlock(space.template block<I>(), f, valueOffset, differenceOffset),
@@ -179,7 +191,7 @@ forEachResetBlock(S const & space, F && f, Eigen::Index valueOffset = 0, Eigen::
              ...);
         }(std::make_index_sequence<std::tuple_size_v<CompositeBlocks<S>>>{});
     }
-    else if constexpr (IsRepeated<S> && !HasResetJacobian<S>)
+    else if constexpr (IsRepeated<S> && !HasResetJacobian<S> && !HasGroupMembers<S>)
     {
         auto const & block = space.block();
         Eigen::Index const values = valueDimension(block);
@@ -192,6 +204,61 @@ forEachResetBlock(S const & space, F && f, Eigen::Index valueOffset = 0, Eigen::
     else
     {
         f(space, valueOffset, differenceOffset);
+    }
+}
+
+/** Refuses, with a message that names it, the block \a Block of a space whose update asked for the adjoint carry
+ * though the block is not a Lie group.
+ */
+template <typename Block>
+struct AdjointCarryNeedsGroup
+{
+    static_assert(
+        isLieGroup<Block>(),
+        "carries::adjoint() carries a covariance by a group's adjoint, and this block of the state is not a Lie group: "
+        "its space has a plus() of its own and no group members (see LieGroup). Use carries::reset()"
+    );
+
+    static constexpr bool value = true;  ///< read to make the assertion
+};
+
+/** Calls \a f(block, valueOffset, differenceOffset) for each block of \a space whose adjoint is not the identity, in
+ * order: each such block of a Composite, each repetition of a Repeated block, and a group with members of its own as
+ * a whole. A block that is not a group fails to compile (AdjointCarryNeedsGroup).
+ */
+template <typename S, typename F>
+void
+forEachAdjointBlock(S const & space, F && f, Eigen::Index valueOffset = 0, Eigen::Index differenceOffset = 0)
+{
+    if constexpr (HasGroupMembers<S>)
+    {
+        if constexpr (!isAbelianGroup<S>())
+        {
+            f(space, valueOffset, differenceOffset);
+        }
+    }
+    else if constexpr (IsComposite<S>)
+    {
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+            ((forEachAdjointBlock(space.template block<I>(), f, valueOffset, differenceOffset),
+              valueOffset += valueDimension(space.template block<I>()),
+              differenceOffset += differenceDimension(space.template block<I>())),
+             ...);
+        }(std::make_index_sequence<std::tuple_size_v<CompositeBlocks<S>>>{});
+    }
+    else if constexpr (IsRepeated<S>)
+    {
+        auto const & block = space.block();
+        Eigen::Index const values = valueDimension(block);
+        Eigen::Index const differences = differenceDimension(block);
+        for (Eigen::Index k = 0; k < space.count(); ++k)
+        {
+            forEachAdjointBlock(block, f, valueOffset + k * values, differenceOffset + k * differences);
+        }
+    }
+    else
+    {
+        static_assert(AdjointCarryNeedsGroup<S>::value);
     }
 }
 
@@ -434,6 +501,156 @@ resetCovariance(
     {
         auto const moved = Emrys::plus(space, x, d);
         internal::resetCovarianceAt(space, x, d, moved, cov);
+    }
+}
+
+/** \ingroup Spaces
+ * \brief What carries a covariance when an update moves its mean, each made by its factory (docs/design/groups.md, a
+ * prototype): reset(), none(), and adjoint(). The types beside them name a carry where a type is needed.
+ *
+ * An update computes its posterior covariance in the tangent space at the prior mean and moves the mean by a step
+ * \f$ \delta \f$. The covariance then becomes \f$ G P G^T \f$, and the three carries are three choices of
+ * \f$ G \f$, which agree at zeroth order in \f$ \delta \f$ and differ by half its adjoint each:
+ * \f$ I \f$, \f$ J_r(\delta) \approx I - \tfrac12 \mathrm{ad}_\delta \f$, and
+ * \f$ \mathrm{Ad}_{\mathrm{Exp}(-\delta)} \approx I - \mathrm{ad}_\delta \f$. On a space whose differences add,
+ * all three are the identity.
+ */
+namespace carries
+{
+
+/** \ingroup Spaces
+ * The reset: \f$ G \f$ the space's reset Jacobian (resetJacobian(), decisions.md [covariance-reset]), which for a
+ * group is its right Jacobian at the step. The default, the only carry defined for a space that is not a group, and
+ * the one that makes a filter the same filter whichever side its differences are on.
+ */
+struct Reset
+{};
+
+/** \ingroup Spaces
+ * \returns the Reset carry, the default
+ */
+[[nodiscard]] constexpr Reset
+reset()
+{
+    return {};
+}
+
+/** \ingroup Spaces
+ * No carry: \f$ G = I \f$, the covariance kept as the update computed it. On a group whose differences are steps
+ * in the body frame, as every group here has them, this is the left-invariant extended Kalman filter of
+ * \ref Barrau2017 "Barrau and Bonnabel (2017)", which suits a measurement of something fixed in the body, observed in
+ * the world, \f$ y = X \cdot b \f$: a position or a velocity fix.
+ */
+struct None
+{};
+
+/** \ingroup Spaces
+ * \returns the None carry
+ */
+[[nodiscard]] constexpr None
+none()
+{
+    return {};
+}
+
+/** \ingroup Spaces
+ * The adjoint carry: \f$ G = \mathrm{Ad}_{\mathrm{Exp}(-\delta)} \f$, block by block. On a group whose differences
+ * are steps in the body frame this is the right-invariant extended Kalman filter of
+ * \ref Barrau2017 "Barrau and Bonnabel (2017)" with its covariance held in body coordinates, which suits a
+ * measurement of something fixed in the world, observed from the body, \f$ y = X^{-1} \cdot b \f$: a landmark, a
+ * magnetic field, a gravity direction. Every block of the space must be a LieGroup; a block that is not fails to
+ * compile.
+ */
+struct Adjoint
+{};
+
+/** \ingroup Spaces
+ * \returns the Adjoint carry
+ */
+[[nodiscard]] constexpr Adjoint
+adjoint()
+{
+    return {};
+}
+
+}  // namespace carries
+
+/** \ingroup Spaces
+ * One of the carries: carries::Reset, carries::None, or carries::Adjoint.
+ */
+template <typename T>
+concept CovarianceCarry =
+    std::is_same_v<T, carries::Reset> || std::is_same_v<T, carries::None> || std::is_same_v<T, carries::Adjoint>;
+
+namespace internal
+{
+
+/** Carries \a cov, read and written whole, by the carry \a Carry of \a space after its mean moved from \a x by the
+ * step \a d to \a moved: the reset (resetCovarianceAt()), nothing, or the congruence by
+ * \f$ \mathrm{Ad}_{\mathrm{Exp}(-d)} \f$ of each block whose adjoint is not the identity.
+ */
+template <typename Carry, typename S, typename X, typename D, typename Moved, typename Cov>
+void
+carryCovarianceAt(
+    S const & space,
+    [[maybe_unused]] Eigen::MatrixBase<X> const & x,
+    [[maybe_unused]] Eigen::MatrixBase<D> const & d,
+    [[maybe_unused]] Eigen::MatrixBase<Moved> const & moved,
+    [[maybe_unused]] Eigen::MatrixBase<Cov> const & cov
+)
+{
+    if constexpr (std::is_same_v<Carry, carries::Reset>)
+    {
+        resetCovarianceAt(space, x, d, moved, cov);
+    }
+    else if constexpr (std::is_same_v<Carry, carries::Adjoint>)
+    {
+        forEachAdjointBlock(space, [&](auto const & block, Eigen::Index, Eigen::Index differences) {
+            using Block = std::remove_cvref_t<decltype(block)>;
+            using Scalar = typename Cov::Scalar;
+            constexpr int K = valueDimensionAtCompileTime<DifferenceSpace<Block>>;
+            constexpr int V = valueDimensionAtCompileTime<Block>;
+            constexpr int KMax = maxValueDimensionAtCompileTime<DifferenceSpace<Block>>;
+            constexpr int VMax = maxValueDimensionAtCompileTime<Block>;
+            Eigen::Index const k = differenceDimension(block);
+            Eigen::Matrix<Scalar, K, 1, Eigen::ColMajor, KMax, 1> const back = -middleRowsOf<K>(d, differences, k);
+            auto step = Eigen::Matrix<Scalar, V, 1, Eigen::ColMajor, VMax, 1>{};
+            step.resize(valueDimension(block));
+            expInto(block, back, step);
+            MatrixOf<Scalar, K, K, KMax, KMax> g = MatrixOf<Scalar, K, K, KMax, KMax>::Zero(k, k);
+            adjointInto(block, step, g);
+            congruence(cov, differences, g);
+        });
+    }
+}
+
+/** Whether the carry \a Carry changes nothing on the space \a S, so that an update need not keep the step. */
+template <typename Carry, typename S>
+inline constexpr bool carriesNothing =
+    std::is_same_v<Carry, carries::None> || (std::is_same_v<Carry, carries::Reset> && hasIdentityReset<S>)
+    || (std::is_same_v<Carry, carries::Adjoint> && isLieGroup<S>() && isAbelianGroup<S>());
+
+}  // namespace internal
+
+/** \ingroup Spaces
+ * Carries the covariance \a cov by \a carry after its mean moved from \a x by the step \a d, in place:
+ * \f$ P \leftarrow G P G^T \f$ with \f$ G \f$ the carry's (see \ref carries). With carries::reset() it is
+ * resetCovariance().
+ */
+template <CovarianceCarry Carry, Space S, typename XDerived, typename DDerived, typename CovDerived>
+void
+carryCovariance(
+    Carry const &,
+    S const & space,
+    Eigen::MatrixBase<XDerived> const & x,
+    Eigen::MatrixBase<DDerived> const & d,
+    Eigen::MatrixBase<CovDerived> const & cov
+)
+{
+    if constexpr (!internal::carriesNothing<Carry, S>)
+    {
+        auto const moved = Emrys::plus(space, x, d);
+        internal::carryCovarianceAt<Carry>(space, x, d, moved, cov);
     }
 }
 

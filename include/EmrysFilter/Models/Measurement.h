@@ -495,6 +495,7 @@ conditionOnPrediction(
     // product of the prediction's, never Sigma_yy less H P H^T (decisions.md [linearization-forms]).
     auto const & form = resolved.covarianceUpdate();
     using Form = std::remove_cvref_t<decltype(form)>;
+    auto const carry = resolved.covarianceCarry();
     auto const linearization = [&] {
         if constexpr (std::is_same_v<Form, updates::Joseph>)
         {
@@ -561,7 +562,8 @@ conditionOnPrediction(
             cross,
             form,
             termsFor(noise),
-            considered
+            considered,
+            carry
         );
         if (!conditioned)
         {
@@ -647,7 +649,8 @@ conditionOnPrediction(
                                     form,
                                     terms,
                                     considered,
-                                    into.accept
+                                    into.accept,
+                                    carry
                                 );
                                 if (!conditioned)
                                 {

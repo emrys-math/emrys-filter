@@ -111,6 +111,14 @@ static_assert(CovarianceUpdate<decltype(updates::standard())>);
 static_assert(CovarianceUpdate<decltype(updates::symmetric())>);
 static_assert(CovarianceUpdate<decltype(updates::joseph())>);
 
+// carries: each a CovarianceCarry.
+static_assert(Emrys::CovarianceCarry<Emrys::carries::Reset>);
+static_assert(Emrys::CovarianceCarry<Emrys::carries::None>);
+static_assert(Emrys::CovarianceCarry<Emrys::carries::Adjoint>);
+static_assert(Emrys::CovarianceCarry<decltype(Emrys::carries::reset())>);
+static_assert(Emrys::CovarianceCarry<decltype(Emrys::carries::none())>);
+static_assert(Emrys::CovarianceCarry<decltype(Emrys::carries::adjoint())>);
+
 // reductions: a ReductionPolicy to a Gaussian, or a MixtureReductionPolicy for Keep and a gate over it.
 static_assert(ReductionPolicy<reductions::Collapse, Update, Posterior>);
 static_assert(ReductionPolicy<reductions::Select, Update, Posterior>);

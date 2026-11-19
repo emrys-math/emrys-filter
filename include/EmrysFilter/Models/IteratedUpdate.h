@@ -219,6 +219,13 @@ public:
         return m_measurement.covarianceUpdate();
     }
 
+    /** \returns what carries the covariance when the update moves the mean */
+    [[nodiscard]] auto
+    covarianceCarry() const
+    {
+        return m_measurement.covarianceCarry();
+    }
+
 private:
 
     M const & m_measurement;  ///< the observation

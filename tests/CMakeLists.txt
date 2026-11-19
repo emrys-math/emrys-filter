@@ -64,6 +64,7 @@ add_executable(emrys_filter_tests
   Models/transform.cpp
   Models/affine_coordinates.cpp
   Models/covariance_updates.cpp
+  Models/carries.cpp
   Models/consider.cpp
   Models/linearization_forms.cpp
   Models/iterated.cpp

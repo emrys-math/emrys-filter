@@ -1,6 +1,6 @@
 """Checks that each policy namespace holds only its kind (decisions.md [policy-factories]).
 
-Emrys::methods holds transform methods, updates covariance update forms, reductions reduction
+Emrys::methods holds transform methods, updates covariance update forms, carries covariance carries, reductions reduction
 policies, resamplers resamplers, upkeep upkeep operations, execution execution policies, and
 jacobians the marks of a batched function's Jacobians, and
 each kind has a concept. C++ can't enumerate a namespace, so this reads the Doxygen XML of a build
@@ -22,6 +22,7 @@ TEST = ROOT / 'tests' / 'policies.cpp'
 CONCEPTS = {
     'methods': ['TransformMethod'],
     'updates': ['CovarianceUpdate'],
+    'carries': ['CovarianceCarry'],
     'reductions': ['ReductionPolicy', 'MixtureReductionPolicy'],
     'resamplers': ['Resampler'],
     'upkeep': ['UpkeepOperation'],
