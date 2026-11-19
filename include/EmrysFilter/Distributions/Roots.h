@@ -27,6 +27,8 @@
 #include <EmrysFilter/Core/Math.h>
 #include <EmrysFilter/Core/NumericError.h>
 #include <EmrysFilter/Core/Triangularization.h>
+#include <EmrysFilter/Spaces/Group.h>
+#include <EmrysFilter/Spaces/Space.h>
 
 namespace Emrys
 {
@@ -1346,6 +1348,91 @@ squareRootWithReport(A const & axes, Eigen::MatrixBase<Derived> const & cov)
     }
 }
 
+/** \ingroup Distributions
+ * \brief Axes for a sigma-point spread on the world side of a Lie group (docs/design/groups.md, open question 9; a
+ * prototype): the root \f$ \mathrm{Ad}_{\hat X}^{-1} \, S_w \f$, with \f$ S_w \f$ the root by \a Inner of the
+ * covariance in world-frame differences, \f$ \mathrm{Ad}_{\hat X} P \, \mathrm{Ad}_{\hat X}^T \f$.
+ *
+ * Every group here has its differences in the body frame, \f$ X = \hat X \cdot \mathrm{Exp}(\xi) \f$, and a
+ * sigma-point method spreads its points along the columns of a root of the covariance of \f$ \xi \f$. The points
+ * these axes give are \f$ \mathrm{Exp}(\zeta_j) \cdot \hat X \f$ with \f$ \zeta_j \f$ the columns of
+ * \f$ S_w \f$: those of a filter that keeps its differences on the world side, as the right-invariant filters do
+ * (\ref Brossard2020 "Brossard, Barrau, and Bonnabel (2020)"). They need the mean, which root() is not given, so
+ * they have a second member, <tt>rootAt(space, mean, cov)</tt>, which a transform calls where axes have one. On a
+ * space whose adjoint is the identity they are \a Inner.
+ *
+ * A measurement with carries::adjoint() under a sigma-point method spreads by these without being told; a
+ * prediction is given them in its method, <tt>methods::spread(methods::unscented(), roots::worldSide())</tt>.
+ */
+template <typename Inner = DefaultAxes>
+struct WorldSide
+{
+    static_assert(!Inner::canFail, "the world side takes its root by axes that cannot fail, such as the default");
+
+    static constexpr bool canFail = false;  ///< as the axes within
+
+    Inner inner{};  ///< the axes that take the root of the covariance in world-frame differences
+
+    /** \returns the root of \a cov by the axes within: the spread where no mean is at hand */
+    template <typename Derived>
+    [[nodiscard]] auto
+    root(Eigen::MatrixBase<Derived> const & cov) const
+    {
+        return inner.root(cov);
+    }
+
+    /** \returns \f$ \mathrm{Ad}^{-1} S_w \f$, with \f$ \mathrm{Ad} \f$ the adjoint of the group \a space at
+     * \a mean and \f$ S_w \f$ the root by the axes within of \f$ \mathrm{Ad} \, \mathrm{cov} \, \mathrm{Ad}^T \f$;
+     * \a cov is read whole and must be symmetric
+     */
+    template <typename S, typename Mean, typename Derived>
+    [[nodiscard]] internal::SquareMatrixOf<Derived>
+    rootAt(S const & space, Eigen::MatrixBase<Mean> const & mean, Eigen::MatrixBase<Derived> const & cov) const
+    {
+        static_assert(
+            LieGroup<S>,
+            "roots::worldSide() spreads sigma points on the world side of a Lie group, and this input's space is "
+            "not one"
+        );
+        using Matrix = internal::SquareMatrixOf<Derived>;
+        if constexpr (hasIdentityAdjoint<S>)
+        {
+            return Matrix{inner.root(cov)};
+        }
+        else
+        {
+            Matrix const adjoint = Emrys::adjoint(space, mean);
+            Matrix const world = adjoint * cov * adjoint.transpose();
+            Matrix const worldRoot = inner.root(Matrix{typename Matrix::Scalar(0.5) * (world + world.transpose())});
+            return Matrix{adjoint.partialPivLu().solve(worldRoot)};
+        }
+    }
+};
+
+/** \ingroup Distributions
+ * \returns the WorldSide axes over \a inner, by default the library's default axes
+ */
+template <typename Inner = DefaultAxes>
+[[nodiscard]] constexpr WorldSide<Inner>
+worldSide(Inner inner = {})
+{
+    return {std::move(inner)};
+}
+
 }  // namespace roots
+
+namespace internal
+{
+
+/** Whether \a A is roots::WorldSide over some axes. */
+template <typename A>
+inline constexpr bool isWorldSide = false;
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename Inner>
+inline constexpr bool isWorldSide<roots::WorldSide<Inner>>{true};
+/// \endcond
+
+}  // namespace internal
 
 }  // namespace Emrys

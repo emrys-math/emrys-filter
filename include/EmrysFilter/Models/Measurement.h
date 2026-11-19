@@ -249,8 +249,22 @@ updateResolved(Prior const & prior, R const & resolved, Sink sink, Reference con
         // (decisions.md [linearization-forms]).
         // A spread by axes that can fail gives the update its error when their root does (decisions.md
         // [sigma-point-axes]).
+        // A measurement carried by the adjoint is the right-invariant filter's, whose sigma points are spread
+        // on the world side (docs/design/groups.md).
+        using Carry = std::remove_cvref_t<decltype(resolved.covarianceCarry())>;
+        auto const sided = [&] {
+            if constexpr (std::is_same_v<Carry, carries::Adjoint>
+                          && !hasIdentityAdjoint<typename Reads::JointSpace>)
+            {
+                return internal::onWorldSide(method);
+            }
+            else
+            {
+                return method;
+            }
+        }();
         return internal::withValue(
-            internal::transformMeasurement(resolved, method, f, read),
+            internal::transformMeasurement(resolved, sided, f, read),
             [&](auto const & predicted) -> decltype(auto) {
                 using Predicted = std::remove_cvref_t<decltype(predicted)>;
                 using Solved = typename Predicted::CrossMatrix;

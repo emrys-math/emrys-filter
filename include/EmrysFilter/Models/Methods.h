@@ -823,6 +823,30 @@ axesOf(Method const & method)
     }
 }
 
+/** \returns the sigma-point method \a method with its points spread on the world side of a Lie group: its rule
+ * by roots::WorldSide over its own axes, or itself if it is spread so already (docs/design/groups.md)
+ */
+template <typename Method>
+[[nodiscard]] constexpr auto
+onWorldSide(Method const & method)
+{
+    if constexpr (isSpread<Method>)
+    {
+        if constexpr (isWorldSide<std::remove_cvref_t<decltype(method.axes)>>)
+        {
+            return method;
+        }
+        else
+        {
+            return methods::spread(method.rule, roots::worldSide(method.axes));
+        }
+    }
+    else
+    {
+        return methods::spread(method, roots::worldSide());
+    }
+}
+
 /** The rule of the sigma-point method \a Method (ruleOf()). */
 template <typename Method>
 using RuleOf = std::remove_cvref_t<decltype(ruleOf(std::declval<Method const &>()))>;

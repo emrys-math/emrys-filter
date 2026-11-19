@@ -4,7 +4,8 @@
 // Eigen: the left-invariant one in the pose's body-frame differences with no carry, and the right-invariant one in
 // world-frame differences with no carry there, its covariance then brought to body-frame differences by the adjoint
 // at the posterior mean. Also a prediction on the pose, whose Jacobian under a body-frame twist is the adjoint of
-// the twist's step at every estimate.
+// the twist's step at every estimate. Under a sigma-point method the adjoint carry also spreads the points on the
+// world side (roots::worldSide()), checked against a cubature filter written out in world-frame differences.
 
 #include <EmrysFilter/Filters/KalmanFilter.h>
 #include <EmrysFilter/Models/Measurement.h>
@@ -246,6 +247,97 @@ TEST(Carries, TwistPredictionHasTheAdjointAsItsJacobian)
             1e-12
         );
     }
+}
+
+// The sightings at one pose, in plain doubles.
+Vector6
+sightingsAt(Vector7 const & x)
+{
+    Eigen::Quaterniond const q{x(3), x(0), x(1), x(2)};
+    Vector6 y;
+    y << q.conjugate() * (landmarkA - x.tail<3>()), q.conjugate() * (landmarkB - x.tail<3>());
+    return y;
+}
+
+TEST(Carries, AdjointCarryUnderSigmaPointsIsTheWorldSideFilter)
+{
+    // A cubature filter with its differences on the world side, X = Exp(zeta) X_hat: 12 points at
+    // Exp(+-sqrt(6) L_j) X_hat with L the Cholesky factor of the covariance in world-frame differences.
+    Vector7 const x = priorMean();
+    Matrix6 const ad = Emrys::adjoint<Pose>(x);
+    Matrix6 const worldCov = ad * priorCovariance() * ad.transpose();
+    Matrix6 const lower = worldCov.llt().matrixL();
+    Eigen::Matrix<double, 6, 12> offsets;
+    Eigen::Matrix<double, 6, 12> outputs;
+    for (int j = 0; j < 6; ++j)
+    {
+        offsets.col(2 * j) = std::sqrt(6.0) * lower.col(j);
+        offsets.col(2 * j + 1) = -offsets.col(2 * j);
+    }
+    for (int k = 0; k < 12; ++k)
+    {
+        outputs.col(k) = sightingsAt(Emrys::compose<Pose>(Emrys::exp<Pose>(offsets.col(k).eval()), x));
+    }
+    Vector6 const predicted = outputs.rowwise().mean();
+    Eigen::Matrix<double, 6, 12> const deviations = outputs.colwise() - predicted;
+    Matrix6 const s = deviations * deviations.transpose() / 12.0 + sightingNoise();
+    Matrix6 const cross = offsets * deviations.transpose() / 12.0;
+    Matrix6 const k = cross * s.inverse();
+    Vector6 const zeta = k * (observed() - predicted);
+    Vector7 const mean = Emrys::compose<Pose>(Emrys::exp<Pose>(zeta), x);
+    Matrix6 const worldPosterior = worldCov - k * s * k.transpose();
+    Matrix6 const back = Emrys::adjoint<Pose>(mean).inverse();
+    Matrix6 const expected = back * worldPosterior * back.transpose();
+
+    auto const prior = GaussianParams<Pose>{priorMean(), priorCovariance()};
+    auto const updated =
+        Emrys::update(prior, Emrys::observe(methods::cubature(), sightings(), observed(), carries::adjoint()));
+    ASSERT_TRUE(updated.has_value());
+    auto const & posterior = updated->branches[0].posterior;
+    Matrix6 const cov = Matrix6{posterior.covarianceLower().selfadjointView<Eigen::Lower>()};
+    EXPECT_LT(Emrys::minus<Pose>(posterior.mean(), mean).norm(), 1e-10);
+    EXPECT_LT((cov - expected).norm(), 1e-9);
+
+    // Named in the method, the same; and on the body side with the same carry, another filter.
+    auto const named = Emrys::update(
+        prior,
+        Emrys::observe(
+            methods::spread(methods::cubature(), Emrys::roots::worldSide()),
+            sightings(),
+            observed(),
+            carries::adjoint()
+        )
+    );
+    ASSERT_TRUE(named.has_value());
+    EXPECT_EQ(named->branches[0].posterior.mean(), posterior.mean());
+    auto const body = Emrys::update(prior, Emrys::observe(methods::cubature(), sightings(), observed(), carries::none()));
+    ASSERT_TRUE(body.has_value());
+    EXPECT_GT(Emrys::minus<Pose>(body->branches[0].posterior.mean(), mean).norm(), 1e-3);
+}
+
+TEST(Carries, PredictionSpreadsOnTheWorldSideByItsMethod)
+{
+    // A motion that is not group-affine, so that the side of the spread shows: the position drifts by a
+    // function of the attitude.
+    auto const motion = Emrys::processModel(
+        []<typename T>(auto const & x, double dt) {
+            Eigen::Matrix<T, 7, 1> y = x;
+            y(4) += T(dt) * x(0) * x(1);
+            y(5) += T(dt) * Eigen::numext::sin(x(2));
+            return y;
+        },
+        Emrys::additiveNoise(Matrix6{0.01 * Matrix6::Identity()})
+    );
+    auto const prior = GaussianParams<Pose>{priorMean(), priorCovariance()};
+    auto const body = Emrys::predict(methods::cubature(), prior, motion, 0.5);
+    auto const world =
+        Emrys::predict(methods::spread(methods::cubature(), Emrys::roots::worldSide()), prior, motion, 0.5);
+    Matrix6 const bodyCov = Matrix6{body.covarianceLower().selfadjointView<Eigen::Lower>()};
+    Matrix6 const worldCov = Matrix6{world.covarianceLower().selfadjointView<Eigen::Lower>()};
+    // Two square roots of one covariance: the results agree to the function's curvature and no further.
+    EXPECT_LT((bodyCov - worldCov).norm(), 0.5);
+    EXPECT_GT((bodyCov - worldCov).norm(), 1e-6);
+    EXPECT_TRUE((Eigen::SelfAdjointEigenSolver<Matrix6>{worldCov}.eigenvalues().array() > 0).all());
 }
 
 }  // namespace
