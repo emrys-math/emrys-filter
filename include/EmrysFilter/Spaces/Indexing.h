@@ -22,6 +22,7 @@
 #include <EmrysFilter/Core/Math.h>
 #include <EmrysFilter/Core/Multiply.h>
 #include <EmrysFilter/Core/Solve.h>
+#include <EmrysFilter/Spaces/ExtendedPose.h>
 #include <EmrysFilter/Spaces/Reset.h>
 #include <EmrysFilter/Spaces/Space.h>
 #include <EmrysFilter/Spaces/Subspace.h>
@@ -316,6 +317,12 @@ tagConditional(Space const & space, Condition condition)
     constexpr int DMax = maxValueDimensionAtCompileTime<DifferenceSpace<Space>>;
     Eigen::Index const n = valueDimension(space);
     Eigen::Index const d = differenceDimension(space);
+    static_assert(
+        posePartOf<Space, GivenPath> == PosePart::none,
+        "a conditional given a part of an ExtendedPose is not defined yet (docs/design/groups.md, open question 2): the "
+        "part's rows are steps in the pose's body frame, so its value alone gives no residual in them. Condition on "
+        "the pose whole, or update by a measurement of the part"
+    );
     auto const given = pathCoordinates<GivenPath>(space);
     auto const target =
         Coordinates{complementIndices<N, NMax>(n, given.values), complementIndices<D, DMax>(d, given.differences)};
@@ -331,7 +338,78 @@ template <typename Path, typename Space, typename Make>
 [[nodiscard]] auto
 marginalOverPath(Space const & space, Make make)
 {
-    return make(pathCoordinates<Path>(space), pathSubspace<Path>(space));
+    if constexpr (posePartOf<Space, Path> == PosePart::vectors)
+    {
+        // A vector of a pose has no distribution of its own: its rows are steps in the pose's body frame. Its
+        // marginal is that of the smaller pose of the rotation and the vector, which is exact, since dropping the
+        // other vectors is a homomorphism of the group (docs/design/groups.md, open question 2).
+        using Location = typename PoseLocationOf<Space, Path>::type;
+        auto const & pose = [&]() -> auto const & {
+            if constexpr (std::is_same_v<typename Location::UnitPath, WholeSpace>)
+            {
+                return space;
+            }
+            else
+            {
+                return pathBlock<typename Location::UnitPath>(space);
+            }
+        }();
+        using Pose = std::remove_cvref_t<decltype(pose)>;
+        using Rotation = std::tuple_element_t<0, CompositeBlocks<Pose>>;
+        using Part = PathTag<Path>;
+        auto const & part = pathBlock<Path>(space);
+        auto const sub = ExtendedPose<Rotation, Part>{pose.rotation(), part};
+        using Sub = ExtendedPose<Rotation, Part>;
+        BlockRows const partRows = blockRows<Path>(space);
+        BlockRows const partDifferences = differenceBlockRows<Path>(space);
+        Eigen::Index const poseStart = [&] {
+            if constexpr (std::is_same_v<typename Location::UnitPath, WholeSpace>)
+            {
+                return Eigen::Index{0};
+            }
+            else
+            {
+                return blockRows<typename Location::UnitPath>(space).start;
+            }
+        }();
+        Eigen::Index const poseDifferenceStart = [&] {
+            if constexpr (std::is_same_v<typename Location::UnitPath, WholeSpace>)
+            {
+                return Eigen::Index{0};
+            }
+            else
+            {
+                return differenceBlockRows<typename Location::UnitPath>(space).start;
+            }
+        }();
+        auto values = IndexVector<valueDimensionAtCompileTime<Sub>, maxValueDimensionAtCompileTime<Sub>>{};
+        values.resize(Pose::RotationValueDimension + partRows.size);
+        auto differences = IndexVector<
+            valueDimensionAtCompileTime<DifferenceSpace<Sub>>,
+            maxValueDimensionAtCompileTime<DifferenceSpace<Sub>>>{};
+        differences.resize(Pose::RotationDifferenceDimension + partDifferences.size);
+        for (Eigen::Index i = 0; i < Pose::RotationValueDimension; ++i)
+        {
+            values(i) = poseStart + i;
+        }
+        for (Eigen::Index i = 0; i < partRows.size; ++i)
+        {
+            values(Pose::RotationValueDimension + i) = partRows.start + i;
+        }
+        for (Eigen::Index i = 0; i < Pose::RotationDifferenceDimension; ++i)
+        {
+            differences(i) = poseDifferenceStart + i;
+        }
+        for (Eigen::Index i = 0; i < partDifferences.size; ++i)
+        {
+            differences(Pose::RotationDifferenceDimension + i) = partDifferences.start + i;
+        }
+        return make(Coordinates{std::move(values), std::move(differences)}, sub);
+    }
+    else
+    {
+        return make(pathCoordinates<Path>(space), pathSubspace<Path>(space));
+    }
 }
 
 /** Shared implementation of marginal<Path>(element) for distributions that own their

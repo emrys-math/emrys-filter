@@ -223,6 +223,37 @@ TEST(GroupParts, ModelsSideBySideWriteThePartsOfOnePose)
     EXPECT_LT((footCov - footExpected).norm(), 1e-12);
 }
 
+// The marginal of a vector of a pose is over the smaller pose of the rotation and that vector, with the rotation's
+// rows and the vector's (docs/design/groups.md, open question 2). The rotation's marginal is its own.
+TEST(GroupParts, MarginalOfAVectorIsThePoseOfTheRotationAndTheVector)
+{
+    auto const prior = GaussianParams<State>{priorMean(), priorCovariance()};
+    auto const marginal = prior.marginal<Emrys::TagPath<Body, Position>>();
+    static_assert(std::is_same_v<
+                  std::remove_cvref_t<decltype(marginal.space())>,
+                  ExtendedPose<Attitude, Position>>);
+    Eigen::Matrix<double, 7, 1> const mean = marginal.mean();
+    EXPECT_EQ(mean.head<4>(), prior.mean().head<4>());
+    EXPECT_EQ(mean.tail<3>(), prior.mean().segment<3>(7));
+    Eigen::Matrix<double, 6, 6> const cov = marginal.covarianceLower().template selfadjointView<Eigen::Lower>();
+    StateMatrix const p = priorCovariance();
+    EXPECT_LT((cov.topLeftCorner<3, 3>() - p.topLeftCorner<3, 3>()).norm(), 1e-15);
+    EXPECT_LT((cov.bottomRightCorner<3, 3>() - p.block<3, 3>(6, 6)).norm(), 1e-15);
+    EXPECT_LT((cov.bottomLeftCorner<3, 3>() - p.block<3, 3>(6, 0)).norm(), 1e-15);
+
+    // Exact, not first order: a state moved by a difference has the smaller pose moved by that difference's rows.
+    Emrys::DifferenceVector<State> step = Emrys::DifferenceVector<State>::LinSpaced(15, -0.8, 0.9);
+    StateVector const moved = Emrys::plus<State>(prior.mean(), step);
+    Eigen::Matrix<double, 6, 1> subStep;
+    subStep << step.head<3>(), step.segment<3>(6);
+    Eigen::Matrix<double, 7, 1> const subMoved = Emrys::plus(marginal.space(), mean, subStep);
+    EXPECT_LT((subMoved.head<4>() - moved.head<4>()).norm(), 1e-14);
+    EXPECT_LT((subMoved.tail<3>() - moved.segment<3>(7)).norm(), 1e-14);
+
+    auto const attitude = prior.marginal<Attitude>();
+    static_assert(std::is_same_v<std::remove_cvref_t<decltype(attitude.space())>, Attitude>);
+}
+
 // additiveNoise() placed by path on an output whose differences have other sizes than its values: the pose's 12
 // rows and one of its parts' 3, each given as a covariance over the block's differences. A part's is in the pose's
 // body frame, as its rows are.

@@ -1559,20 +1559,35 @@ namespace internal
 {
 
 /** Shared implementation of marginal<Path>(): the marginal over idx() and diffIdx() of
- * \a Path, whose space is the named subspace.
+ * \a Path, whose space is the named subspace. Of a vector of an ExtendedPose, the marginal over the rotation's
+ * coordinates and the vector's, whose space is the pose of the two (marginalOverPath()).
  */
 template <template <typename, typename, typename> typename Marginal, typename Path, typename Source>
 [[nodiscard]] auto
 tagMarginal(Source const & source)
 {
-    auto const selection =
-        Coordinates{asIndexSet(idx<Path>(source.space())), asIndexSet(diffIdx<Path>(source.space()))};
-    auto space = pathSubspace<Path>(source.space());
-    return Marginal<Source, std::remove_cvref_t<decltype(selection)>, decltype(space)>{
-        source,
-        selection,
-        std::move(space)
-    };
+    using SourceSpace = std::remove_cvref_t<decltype(source.space())>;
+    if constexpr (posePartOf<SourceSpace, Path> == PosePart::vectors)
+    {
+        return marginalOverPath<Path>(source.space(), [&](auto const & coordinates, auto space) {
+            return Marginal<Source, std::remove_cvref_t<decltype(coordinates)>, decltype(space)>{
+                source,
+                coordinates,
+                std::move(space)
+            };
+        });
+    }
+    else
+    {
+        auto const selection =
+            Coordinates{asIndexSet(idx<Path>(source.space())), asIndexSet(diffIdx<Path>(source.space()))};
+        auto space = pathSubspace<Path>(source.space());
+        return Marginal<Source, std::remove_cvref_t<decltype(selection)>, decltype(space)>{
+            source,
+            selection,
+            std::move(space)
+        };
+    }
 }
 
 /** Shared implementation of marginal<Path>(element): the marginal over idx() and

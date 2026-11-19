@@ -5,6 +5,7 @@ set(EMRYS_FILTER_EXAMPLES
   linear_kalman
   unicycle
   attitude
+  invariant_ekf
   consider_bias
   particle_filter
   imm
