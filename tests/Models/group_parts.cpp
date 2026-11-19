@@ -223,4 +223,44 @@ TEST(GroupParts, ModelsSideBySideWriteThePartsOfOnePose)
     EXPECT_LT((footCov - footExpected).norm(), 1e-12);
 }
 
+// additiveNoise() placed by path on an output whose differences have other sizes than its values: the pose's 12
+// rows and one of its parts' 3, each given as a covariance over the block's differences. A part's is in the pose's
+// body frame, as its rows are.
+TEST(GroupParts, AdditiveNoisePlacedOnAPoseAndOnAPart)
+{
+    Eigen::Matrix<double, 12, 12> const bodyNoise =
+        Eigen::Matrix<double, 12, 1>::LinSpaced(12, 0.01, 0.12).asDiagonal();
+    Eigen::Matrix3d const biasNoise = 0.002 * Eigen::Matrix3d::Identity();
+    auto const hold = Emrys::processModel(
+        [](auto const & x, double) {
+            return x.eval();
+        },
+        Emrys::reads(path<Body>, path<Bias>),
+        Emrys::writes(path<Body>, path<Bias>),
+        Emrys::additiveNoise(Emrys::on<Body>(bodyNoise), Emrys::on<Bias>(biasNoise))
+    );
+    auto const prior = GaussianParams<State>{priorMean(), priorCovariance()};
+    auto const predicted = Emrys::predict(methods::linearized(), prior, hold, 1.0);
+    StateMatrix expected = priorCovariance();
+    expected.topLeftCorner<12, 12>() += bodyNoise;
+    expected.bottomRightCorner<3, 3>() += biasNoise;
+    StateMatrix const cov = predicted.covarianceLower().selfadjointView<Eigen::Lower>();
+    EXPECT_LT((cov - expected).norm(), 1e-12);
+
+    Eigen::Matrix3d const footNoise = Eigen::Vector3d{0.1, 0.2, 0.3}.asDiagonal();
+    auto const holdFoot = Emrys::processModel(
+        [](auto const & x, double) {
+            return x.eval();
+        },
+        Emrys::reads(path<Body>, path<Bias>),
+        Emrys::writes(path<Body>, path<Bias>),
+        Emrys::additiveNoise(Emrys::on<Emrys::TagPath<Body, Foot>>(footNoise))
+    );
+    StateMatrix const withFoot =
+        Emrys::predict(methods::linearized(), prior, holdFoot, 1.0).covarianceLower().selfadjointView<Eigen::Lower>();
+    StateMatrix expectedFoot = priorCovariance();
+    expectedFoot.block<3, 3>(9, 9) += footNoise;
+    EXPECT_LT((withFoot - expectedFoot).norm(), 1e-12);
+}
+
 }  // namespace

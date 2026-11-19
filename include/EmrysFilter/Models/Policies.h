@@ -983,6 +983,68 @@ noiseFactor(Space const &, OnEach<X, Path> const & part)
     }
 }
 
+/** The scalar of the covariance that \a Part, an on() or onEach() of a covariance, places. */
+template <typename Part>
+struct PlacedScalarOf;
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename X, typename Path>
+struct PlacedScalarOf<OnPath<X, Path>>
+{
+    using type = typename X::Scalar;
+};
+
+template <typename X, typename Path>
+struct PlacedScalarOf<OnEach<X, Path>>
+{
+    using type = typename X::Scalar;
+};
+
+/// \endcond
+
+/** Writes the covariance \a part places on a block of \a space into that block's rows and columns of \a cov, a
+ * matrix over the differences of \a space.
+ */
+template <typename Space, typename X, typename Path, typename Cov>
+void
+placeCovariance(Space const & space, OnPath<X, Path> const & part, Cov & cov)
+{
+    BlockRows const rows = differenceBlockRows<Path>(space);
+    EMRYS_FILTER_ASSERT(
+        part.value.rows() == rows.size && part.value.cols() == rows.size
+        && "a covariance placed on a block is square over the block's differences"
+    );
+    cov.block(rows.start, rows.start, rows.size, rows.size) = part.value.template cast<typename Cov::Scalar>();
+}
+
+/** Writes the covariance \a part places on each repetition of a repeated block of \a space into each repetition's
+ * rows and columns of \a cov, a matrix over the differences of \a space.
+ */
+template <typename Space, typename X, typename Path, typename Cov>
+void
+placeCovariance(Space const & space, OnEach<X, Path> const & part, Cov & cov)
+{
+    BlockRows const rows = [&] {
+        if constexpr (std::is_same_v<Path, WholeSpace>)
+        {
+            return BlockRows{0, differenceDimension(space)};
+        }
+        else
+        {
+            return differenceBlockRows<Path>(space);
+        }
+    }();
+    Eigen::Index const each = part.value.rows();
+    EMRYS_FILTER_ASSERT(
+        each > 0 && part.value.cols() == each && rows.size % each == 0
+        && "a covariance placed on each repetition is square over one repetition's differences"
+    );
+    for (Eigen::Index start = rows.start; start < rows.start + rows.size; start += each)
+    {
+        cov.block(start, start, each, each) = part.value.template cast<typename Cov::Scalar>();
+    }
+}
+
 /** \returns the additive noise \a noise placed in \a space, the output space instance, as one
  * AdditiveNoise over the whole space: the unplaced distribution itself, by reference; a covariance
  * alone as a zero-mean %Gaussian over the space's differences in a Linear space; or the Product of
@@ -1009,6 +1071,30 @@ placeNoise(Space const & space, AdditiveNoise<Parts...> const & noise)
         );
         using Noise = GaussianParams<Linear<Rows, maxValueDimensionAtCompileTime<Differences>>, typename Cov::Scalar>;
         return AdditiveNoise<Noise>{Noise{ZeroMeanOf<Cov>::Zero(cov.rows()), cov}};
+    }
+    else if constexpr (AdditiveNoise<Parts...>::Placed && !hasEqualSizes<Space>)
+    {
+        // A Product places its factors by value coordinate, which a space whose differences have other sizes than
+        // its values, such as one with a quaternion, does not offer: the covariances go to their blocks' rows.
+        static_assert(
+            (placesCovariance<Parts> && ...),
+            "additive noise placed on an output whose differences have other sizes than its values, such as one with "
+            "a UnitQuaternion, is given by covariances: on<Path>(R)"
+        );
+        using Scalar = std::common_type_t<typename PlacedScalarOf<Parts>::type...>;
+        using Differences = DifferenceSpace<Space>;
+        using Noise = GaussianParams<
+            Linear<valueDimensionAtCompileTime<Differences>, maxValueDimensionAtCompileTime<Differences>>,
+            Scalar>;
+        Eigen::Index const n = differenceDimension(space);
+        typename Noise::MatrixType cov = Noise::MatrixType::Zero(n, n);
+        std::apply(
+            [&](auto const &... parts) {
+                (placeCovariance(space, parts, cov), ...);
+            },
+            noise.parts()
+        );
+        return AdditiveNoise<Noise>{Noise{Noise::VectorType::Zero(n), std::move(cov)}};
     }
     else if constexpr (AdditiveNoise<Parts...>::Placed)
     {
