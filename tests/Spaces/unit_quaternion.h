@@ -46,7 +46,7 @@ template <typename D>
 Quaternion<typename D::Scalar>
 exponential(D const & d)
 {
-    return UnitQuaternion::exponential(d).coeffs();
+    return UnitQuaternion::exp(d).coeffs();
 }
 
 // The rotation vector of the unit quaternion q.
@@ -55,7 +55,7 @@ Eigen::Matrix<typename Q::Scalar, 3, 1>
 logarithm(Q const & q)
 {
     Quaternion<typename Q::Scalar> const fixed = q;
-    return UnitQuaternion::logarithm(Eigen::Quaternion<typename Q::Scalar>{fixed});
+    return UnitQuaternion::log(Eigen::Quaternion<typename Q::Scalar>{fixed});
 }
 
 // v rotated by the unit quaternion q.

@@ -35,7 +35,7 @@ TYPED_TEST_SUITE(AttitudeTest, Orientation::Cases);
 angleBetween(Scenario::StateVector const & state, Eigen::Quaterniond const & attitude)
 {
     auto const q = Eigen::Quaterniond{Eigen::Vector4d{state.head<4>()}};
-    return Emrys::UnitQuaternion::logarithm(attitude.conjugate() * q).norm();
+    return Emrys::UnitQuaternion::log(attitude.conjugate() * q).norm();
 }
 
 /// Drives the EmrysFilter EKF of case \a C and the plain-Eigen one that factorizes as \a F through

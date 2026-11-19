@@ -223,7 +223,7 @@ turnAttitude(In const & in, Out const & out, X const & x, TimeScalar dt)
     auto y = Emrys::zeros<T>(out);
     Eigen::Matrix<T, 3, 1> const turn = (block<GyroRate>(in, x) - block<GyroBias>(in, x)) * T(dt);
     Emrys::UnitQuaternion::map(block<Attitude>(out, y)) =
-        Emrys::UnitQuaternion::map(block<Attitude>(in, x)) * Emrys::UnitQuaternion::exponential(turn);
+        Emrys::UnitQuaternion::map(block<Attitude>(in, x)) * Emrys::UnitQuaternion::exp(turn);
     return y;
 }
 
@@ -257,7 +257,7 @@ struct GyroTurn
             [](auto const & in, auto const & out, auto const & x, double dt) {
                 Eigen::Vector3d const turn = (block<GyroRate>(in, x) - block<GyroBias>(in, x)) * dt;
                 Eigen::Matrix<double, 3, 9> jacobian = Eigen::Matrix<double, 3, 9>::Zero();
-                jacobian.leftCols<3>() = Emrys::UnitQuaternion::exponential(turn).toRotationMatrix().transpose();
+                jacobian.leftCols<3>() = Emrys::UnitQuaternion::exp(turn).toRotationMatrix().transpose();
                 jacobian.middleCols<3>(3) = -dt * Emrys::UnitQuaternion::rightJacobian(turn);
                 return Emrys::withJacobian(turnAttitude(in, out, x, dt), jacobian);
             },

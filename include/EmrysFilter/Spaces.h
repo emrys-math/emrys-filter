@@ -97,6 +97,9 @@
 #include <EmrysFilter/Spaces/Composite.h>
 #include <EmrysFilter/Spaces/Coordinates.h>
 #include <EmrysFilter/Spaces/Discrete.h>
+#include <EmrysFilter/Spaces/ExtendedPose.h>
+#include <EmrysFilter/Spaces/Group.h>
+#include <EmrysFilter/Spaces/GroupChecks.h>
 #include <EmrysFilter/Spaces/Indexing.h>
 #include <EmrysFilter/Spaces/Reset.h>
 #include <EmrysFilter/Spaces/Space.h>

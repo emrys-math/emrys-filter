@@ -99,7 +99,7 @@ std::array<Eigen::Vector3d, 5> const steps{
 // coordinates is Eigen's rotation matrix. 1e-15 is rounding in sin and cos.
 TEST(UnitQuaternion, StoresEigensCoefficientOrder)
 {
-    Eigen::Vector4d const q = UnitQuaternion::exponential(0.9 * axis).coeffs();
+    Eigen::Vector4d const q = UnitQuaternion::exp(0.9 * axis).coeffs();
     EXPECT_LT((q - turned.coeffs()).norm(), 1e-15);
     EXPECT_GT(q(3), 0.0);
     EXPECT_DOUBLE_EQ(q(3), std::cos(0.45));
@@ -159,9 +159,9 @@ TEST(UnitQuaternion, PlusIsBodyFrameAndMinusInvertsIt)
 TEST(UnitQuaternion, LogarithmTakesTheShortWay)
 {
     auto const far = Eigen::Quaterniond{Eigen::AngleAxisd{1.5 * std::numbers::pi, Eigen::Vector3d::UnitX()}};
-    Eigen::Vector3d const d = UnitQuaternion::logarithm(far);
+    Eigen::Vector3d const d = UnitQuaternion::log(far);
     EXPECT_LT((d - Eigen::Vector3d{-0.5 * std::numbers::pi, 0.0, 0.0}).norm(), 1e-15);
-    EXPECT_LT((UnitQuaternion::logarithm(UnitQuaternion::exponential(d)) - d).norm(), 1e-15);
+    EXPECT_LT((UnitQuaternion::log(UnitQuaternion::exp(d)) - d).norm(), 1e-15);
 }
 
 // The space's reset Jacobian is its closed-form right Jacobian, which the reset computed by
@@ -260,7 +260,7 @@ bodyRate(Eigen::Vector3d const & rate, double spectralDensity)
             auto y = Emrys::zeros<T>(out);
             Eigen::Matrix<T, 3, 1> const turn = (dt * rate).template cast<T>();
             UnitQuaternion::map(block<Tag>(out, y)) =
-                UnitQuaternion::map(block<Tag>(in, x)) * UnitQuaternion::exponential(turn);
+                UnitQuaternion::map(block<Tag>(in, x)) * UnitQuaternion::exp(turn);
             return y;
         },
         Emrys::reads(Emrys::path<Path>),
@@ -326,7 +326,7 @@ TEST(UnitQuaternion, KalmanFilterRunsModelsThroughMap)
     copied.predict(0.5);
     unscented.predict(0.5);
 
-    Eigen::Quaterniond const turnedOn = turned * UnitQuaternion::exponential(Eigen::Vector3d{0.5 * rate});
+    Eigen::Quaterniond const turnedOn = turned * UnitQuaternion::exp(Eigen::Vector3d{0.5 * rate});
     EXPECT_TRUE(UnitQuaternion::map(block<Attitude>(Body{}, linearized.state().mean())).isApprox(turnedOn, 1e-14));
     EXPECT_TRUE(UnitQuaternion::map(block<Attitude>(Body{}, unscented.state().mean())).isApprox(turnedOn, 1e-12));
 

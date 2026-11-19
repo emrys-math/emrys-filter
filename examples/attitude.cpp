@@ -99,7 +99,7 @@ main()
     // 0.01 rad/s (0.6 degrees per second).
     // The mean's attitude is a rotation by the vector (0.3, -0.2, 1.0) radians.
     Eigen::Quaterniond const attitude =
-        Emrys::UnitQuaternion::exponential(Emrys::DifferenceVector<Attitude>{0.3, -0.2, 1.0});
+        Emrys::UnitQuaternion::exp(Emrys::DifferenceVector<Attitude>{0.3, -0.2, 1.0});
     Emrys::ValueVector<State> const mean = (Emrys::ValueVector<State>{} << attitude.coeffs(), 0.0, 0.0, 0.0).finished();
     auto const variances = Emrys::DifferenceVector<State>{{0.01, 0.01, 0.01, 1e-4, 1e-4, 1e-4}};
     auto const prior = Emrys::GaussianParams<State>{mean, variances.asDiagonal()};

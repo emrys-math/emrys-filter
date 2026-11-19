@@ -3,7 +3,8 @@
 /** \file
  * The unit quaternion space (decisions.md [unit-quaternion]): UnitQuaternion, an attitude stored in
  * <tt>Eigen::Quaternion</tt>'s own coefficient order with body-frame rotation vectors as its
- * differences, its exponential and logarithm, the closed-form reset Jacobian of [covariance-reset], and map(),
+ * differences, its exponential exp() and logarithm log(), the closed-form reset Jacobian of [covariance-reset], the
+ * members that make it a LieGroup (Group.h) and a rotation that can head an ExtendedPose (ExtendedPose.h), and map(),
  * which views an attitude block, such as block<Attitude>(space, x) of a state (TagPath.h), as an
  * <tt>Eigen::Quaternion</tt> without copying it.
  *
@@ -96,7 +97,7 @@ struct UnitQuaternion
         auto & o = writable(out);
         for (Eigen::Index j = 0; j < o.cols(); ++j)
         {
-            o.col(j) = (quaternionOf<T>(x.col(j)) * exponential(d.col(j).template cast<T>())).coeffs();
+            o.col(j) = (quaternionOf<T>(x.col(j)) * exp(d.col(j).template cast<T>())).coeffs();
         }
         normalize(o);
     }
@@ -112,7 +113,7 @@ struct UnitQuaternion
         auto & o = writable(out);
         for (Eigen::Index j = 0; j < o.cols(); ++j)
         {
-            o.col(j) = logarithm(quaternionOf<T>(b.col(j)).conjugate() * quaternionOf<T>(a.col(j)));
+            o.col(j) = log(quaternionOf<T>(b.col(j)).conjugate() * quaternionOf<T>(a.col(j)));
         }
     }
 
@@ -131,15 +132,118 @@ struct UnitQuaternion
         writable(out) = rightJacobian(d.template cast<T>());
     }
 
+    /** Writes the product \f$ a \otimes b \f$ through \a out, normalized: the group's compose() (Group.h). */
+    template <typename A, typename B, typename Out>
+    void
+    compose(Eigen::MatrixBase<A> const & a, Eigen::MatrixBase<B> const & b, Eigen::MatrixBase<Out> const & out) const
+    {
+        using T = typename Out::Scalar;
+        auto & o = writable(out);
+        o = (quaternionOf<T>(a) * quaternionOf<T>(b)).coeffs();
+        normalize(o);
+    }
+
+    /** Writes the inverse of \a a, its conjugate, through \a out. */
+    template <typename A, typename Out>
+    void
+    inverse(Eigen::MatrixBase<A> const & a, Eigen::MatrixBase<Out> const & out) const
+    {
+        using T = typename Out::Scalar;
+        writable(out) = quaternionOf<T>(a).conjugate().coeffs();
+    }
+
+    /** Writes the identity rotation, (0, 0, 0, 1), through \a out. */
+    template <typename Out>
+    void
+    identity(Eigen::MatrixBase<Out> const & out) const
+    {
+        writable(out) = identity<typename Out::Scalar>();
+    }
+
+    /** Writes the coordinates of \f$ \mathrm{Exp}(d) \f$ through \a out: exp(d) as the group's member. */
+    template <typename D, typename Out>
+    void
+    exp(Eigen::MatrixBase<D> const & d, Eigen::MatrixBase<Out> const & out) const
+    {
+        using T = typename Out::Scalar;
+        writable(out) = exp(d.template cast<T>()).coeffs();
+    }
+
+    /** Writes the rotation vector \f$ \mathrm{Log}(a) \f$ through \a out: log(q) as the group's member. */
+    template <typename A, typename Out>
+    void
+    log(Eigen::MatrixBase<A> const & a, Eigen::MatrixBase<Out> const & out) const
+    {
+        using T = typename Out::Scalar;
+        writable(out) = log(quaternionOf<T>(a));
+    }
+
+    /** Writes the adjoint of \a a through \a out: its rotation matrix, which takes a rotation vector in the body
+     * frame to the same rotation in the world frame.
+     */
+    template <typename A, typename Out>
+    void
+    adjoint(Eigen::MatrixBase<A> const & a, Eigen::MatrixBase<Out> const & out) const
+    {
+        rotationMatrix(a, out);
+    }
+
+    /** Writes rightJacobian() of \a d through \a out: the group's member. */
+    template <typename D, typename Out>
+    void
+    rightJacobian(Eigen::MatrixBase<D> const & d, Eigen::MatrixBase<Out> const & out) const
+    {
+        using T = typename Out::Scalar;
+        writable(out) = rightJacobian(d.template cast<T>());
+    }
+
+    /// the size of the vectors this rotation turns, for a rotation that heads an ExtendedPose
+    static constexpr int ActionDimension = 3;
+
+    /** Writes the rotation matrix of \a q through \a out, 3 by 3: what a rotation that heads an ExtendedPose turns
+     * its vectors by.
+     */
+    template <typename Q, typename Out>
+    void
+    rotationMatrix(Eigen::MatrixBase<Q> const & q, Eigen::MatrixBase<Out> const & out) const
+    {
+        using T = typename Out::Scalar;
+        writable(out) = quaternionOf<T>(q).toRotationMatrix();
+    }
+
+    /** Writes \f$ V(d) = \int_0^1 R(\mathrm{Exp}(s d)) \, ds \f$ through \a out, 3 by 3: the left Jacobian of SO(3),
+     * \f$ J_r(-d) \f$, by which an ExtendedPose's exp() turns a vector's step.
+     */
+    template <typename D, typename Out>
+    void
+    integratedRotation(Eigen::MatrixBase<D> const & d, Eigen::MatrixBase<Out> const & out) const
+    {
+        using T = typename Out::Scalar;
+        Eigen::Matrix<T, 3, 1> const reversed = -d.template cast<T>();
+        writable(out) = rightJacobian(reversed);
+    }
+
+    /** Writes through \a out, 3 by 3, the derivative of \f$ R(\mathrm{Exp}(\phi)) v \f$ in \f$ \phi \f$ at zero,
+     * \f$ -[v]_\times \f$: how a small rotation moves the vector \a v.
+     */
+    template <typename V, typename Out>
+    void
+    actionJacobian(Eigen::MatrixBase<V> const & v, Eigen::MatrixBase<Out> const & out) const
+    {
+        using T = typename Out::Scalar;
+        auto & o = writable(out);
+        o << T(0), T(v(2)), -T(v(1)), -T(v(2)), T(0), T(v(0)), T(v(1)), -T(v(0)), T(0);
+    }
+
     /** \returns the unit quaternion of the rotation vector \a d, the exponential map of SO(3):
      * \f$ \mathrm{Exp}(\delta) = (\hat\delta \sin\tfrac\theta2, \cos\tfrac\theta2) \f$ with
      * \f$ \theta = |\delta| \f$, and its series below a small angle, where it stays
      * differentiable. A process model that integrates a body rate \f$ \omega \f$ over \f$ \Delta t \f$
-     * writes <tt>auto q = map(block<Attitude>(out, y)); q = q * exponential(omega * dt);</tt>.
+     * writes <tt>auto q = map(block<Attitude>(out, y)); q = q * exp(omega * dt);</tt>.
      */
     template <typename Derived>
     [[nodiscard]] static Eigen::Quaternion<typename Derived::Scalar>
-    exponential(Eigen::MatrixBase<Derived> const & d)
+    exp(Eigen::MatrixBase<Derived> const & d)
     {
         using T = typename Derived::Scalar;
         T const angle2 = d.squaredNorm();
@@ -158,7 +262,7 @@ struct UnitQuaternion
      */
     template <typename Derived>
     [[nodiscard]] static Eigen::Matrix<typename Derived::Scalar, 3, 1>
-    logarithm(Eigen::QuaternionBase<Derived> const & q)
+    log(Eigen::QuaternionBase<Derived> const & q)
     {
         using T = typename Derived::Scalar;
         T const sign = q.w() < T(0) ? T(-1) : T(1);

@@ -48,7 +48,7 @@ gyroIntegration(double noiseDensity)
     return Emrys::processModel(
         [](auto const & in, auto const & out, auto const & x, double dt) {
             Eigen::Vector3d const turn = (Emrys::block<Gyro>(in, x) - Emrys::block<Bias>(in, x)) * dt;
-            auto const step = Emrys::UnitQuaternion::exponential(turn);
+            auto const step = Emrys::UnitQuaternion::exp(turn);
             Eigen::Vector4d y;
             Emrys::UnitQuaternion::map(Emrys::block<Attitude>(out, y)) =
                 Emrys::UnitQuaternion::map(Emrys::block<Attitude>(in, x)) * step;

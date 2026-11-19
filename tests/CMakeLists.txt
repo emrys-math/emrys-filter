@@ -34,6 +34,7 @@ add_executable(emrys_filter_tests
   Spaces/blocks.cpp
   Spaces/reset.cpp
   Spaces/unit_quaternion.cpp
+  Spaces/group.cpp
   Distributions/moments.cpp
   Distributions/gaussian.cpp
   Distributions/gaussian_mixture.cpp

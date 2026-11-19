@@ -59,7 +59,7 @@ agree(char const * label, Library const & emrys, Reference const & eigen)
 {
     auto const & mean = emrys.state().mean();
     auto const attitude = ::Eigen::Quaterniond{::Eigen::Vector4d{mean.template head<4>()}};
-    double const attitudeError = Emrys::UnitQuaternion::logarithm(eigen.attitude().conjugate() * attitude).norm();
+    double const attitudeError = Emrys::UnitQuaternion::log(eigen.attitude().conjugate() * attitude).norm();
     double const biasError = (mean.template tail<3>() - eigen.bias()).norm() / eigen.bias().norm();
     Orientation::Scenario::DifferenceMatrix const difference =
         (emrys.state().covarianceLower() - eigen.covarianceLower()).template triangularView<::Eigen::Lower>();

@@ -227,7 +227,7 @@ rate plus a bias, which drifts as a random walk, plus white noise. Each step is 
 the reading and then an update by gravity and by the magnetic field in turn, each a unit vector seen
 in the body frame with independent noise on its three coordinates. The library's side is what a user
 writes: a `gyroIntegration()` process model that turns the attitude by the reading, a sure input
-tagged `Gyro`, less the bias, through `UnitQuaternion::map()` and `exponential()`, composed with
+tagged `Gyro`, less the bias, through `UnitQuaternion::map()` and `exp()`, composed with
 `RandomWalk<Bias>`, and a measurement model on `Attitude` per reference vector. The hand code is Markley's filter in the body-frame form of Solà
 (2017): a quaternion mean, a 6×6 covariance, the analytic transition
 $F = [R(u)^T, -J_r(u)\,\Delta t; 0, I]$ for the turn $u$, and a reset. Where the two would otherwise
