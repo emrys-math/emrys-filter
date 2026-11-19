@@ -319,7 +319,7 @@ tagConditional(Space const & space, Condition condition)
     Eigen::Index const d = differenceDimension(space);
     static_assert(
         posePartOf<Space, GivenPath> == PosePart::none,
-        "a conditional given a part of an ExtendedPose is not defined yet (docs/design/groups.md, open question 2): "
+        "a conditional given a part of an ExtendedPose is not defined yet (docs/guide/groups.md, open question 2): "
         "the "
         "part's rows are steps in the pose's body frame, so its value alone gives no residual in them. Condition on "
         "the pose whole, or update by a measurement of the part"
@@ -343,7 +343,7 @@ marginalOverPath(Space const & space, Make make)
     {
         // A vector of a pose has no distribution of its own: its rows are steps in the pose's body frame. Its
         // marginal is that of the smaller pose of the rotation and the vector, which is exact, since dropping the
-        // other vectors is a homomorphism of the group (docs/design/groups.md, open question 2).
+        // other vectors is a homomorphism of the group (docs/guide/groups.md, open question 2).
         using Location = typename PoseLocationOf<Space, Path>::type;
         auto const & pose = [&]() -> auto const & {
             if constexpr (std::is_same_v<typename Location::UnitPath, WholeSpace>)

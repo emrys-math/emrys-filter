@@ -1349,7 +1349,7 @@ squareRootWithReport(A const & axes, Eigen::MatrixBase<Derived> const & cov)
 }
 
 /** \ingroup Distributions
- * \brief Axes for a sigma-point spread on the world side of a Lie group (docs/design/groups.md, open question 9; a
+ * \brief Axes for a sigma-point spread on the world side of a Lie group (docs/guide/groups.md, open question 9; a
  * prototype): the root \f$ \mathrm{Ad}_{\hat X}^{-1} \, S_w \f$, with \f$ S_w \f$ the root by \a Inner of the
  * covariance in world-frame differences, \f$ \mathrm{Ad}_{\hat X} P \, \mathrm{Ad}_{\hat X}^T \f$.
  *

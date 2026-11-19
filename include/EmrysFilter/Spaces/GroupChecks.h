@@ -1,7 +1,7 @@
 #pragma once
 
 /** \file
- * A check of a Lie group's members against each other (docs/design/groups.md; a prototype): checkGroup(), for the
+ * A check of a Lie group's members against each other (docs/guide/groups.md; a prototype): checkGroup(), for the
  * author of a group written from scratch to run in a test, and GroupCheck, what it returns.
  */
 

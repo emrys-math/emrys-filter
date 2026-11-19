@@ -16,6 +16,7 @@ They are listed in reading order, and each builds on the ones before it.
 | 2 | [particle-filter.md](particle-filter.md): sampled prediction, likelihood weighting, resampling, and roughening | not yet reviewed; refreshed for roadmap 17z (models and likelihood-only measurements rewritten, §1, §3, §5, §11, §14 rerun with Clang; §8's tenth roughening not reproduced); Q6 [likelihood-measurements], Q8 [allocation], Q12, Q15 decided; Q1 to Q5, Q7, Q9 to Q11, Q13, Q14, Q16 open |
 | 3 | [rao-blackwellized-filters.md](rao-blackwellized-filters.md): point-mass, grid, and particle | not yet reviewed; refreshed for roadmap 17z (§6 and the misuse table rewritten, the prediction ignoring `affineIn()` where it refused `FactoredUnscented`, error quotes rerun with Clang); Q2, Q7, Q15, Q18 [allocation], Q27 [rb-particle-filter] decided; Q11 partly decided; Q1, Q3 to Q6, Q8 to Q10, Q12 to Q14, Q16, Q17, Q19 to Q26 open |
 | 4 | [smoothing.md](smoothing.md): the record of the forward pass and the backward passes over it | written; not yet reviewed; refreshed for roadmap 17z (models rewritten, §3 to §5 and §6's IMM columns rerun with Clang; since then §6's chain made continuous-time [switching-models], its numbers not rerun); Q4 decided; Q1 to Q3, Q5 to Q11 open; Q12 open |
+| 5 | [groups.md](groups.md): Lie groups as spaces, the pose family, the covariance carry, models on a pose, and the invariant EKF | written 2026-11-21 over a prototype on the branch `groups-prototype`, which has not landed (roadmap 17zf); not yet reviewed; examples run with Clang, GCC, and MSVC, the tests with Clang alone; Q1 to Q12 open, Q1 to Q9 each with the answer the prototype implements |
 
 When you write or finish reviewing a document, update its status here. A finished review moves
 out, as the roadmap's Documentation section says, and is deleted: Core and Spaces were the first,
@@ -175,3 +176,27 @@ fixed-lag), `HybridGaussianHistory` for the IMM and AMM, `GaussianMixtureHistory
 - Tests: `tests/Smoothers/smoothing`, `mixture_smoothing`, and the smoothing cases in
   `tests/unequal_dimensions_filters`, `allocation`, `allocation_mixtures`,
   `allocation_particles`, and `parallel`.
+
+### 5. Lie groups and the invariant EKF
+
+The `LieGroup` concept and its free functions, `checkGroup()`, `ExtendedPose` and the `Rotation`
+that heads it, what a part's rows of a difference mean, the carries of an update
+(`carries::reset()`, `none()`, `adjoint()`), models that read and write parts of a pose, the models
+whose Jacobians are formed (`bodyVelocity()`, `observedInWorld()`, `observedInBody()`),
+`roots::worldSide()` for the sigma-point methods, `insert()` by a model, and the example. It
+reviews a prototype that has not landed, so it describes the branch `groups-prototype`, and each
+of its first nine questions carries the answer the prototype implements.
+
+- Decisions: none of its own yet; its "Decisions so far" lists what was decided and where
+  [lie-groups], [covariance-reset], [model-placement], and [unit-quaternion] will change.
+  [difference-spaces], [tag-addressing], [several-resizable-blocks], [returned-jacobians],
+  [sigma-point-axes], and [published-algorithms-only] as given.
+- Headers: `Spaces/Group.h`, `GroupChecks.h`, `ExtendedPose.h`, and the group members of
+  `UnitQuaternion.h`; the carries in `Spaces/Reset.h` and `Models/Condition.h`;
+  `Models/GroupModels.h` and `Insertion.h`; `roots::WorldSide` in `Distributions/Roots.h`; and the
+  handling of a pose's parts in `Models/ResolvedReads.h`, `MeasurementReads.h`, `ProcessModel.h`,
+  and `Policies.h`, `Spaces/Indexing.h`, and `Distributions/Gaussian.h`.
+- Tests: `tests/Spaces/group`, `tests/Models/carries`, `group_parts`, `group_run_time`, and
+  `group_models`; `examples/invariant_ekf.cpp`.
+- `UnitQuaternion` as a space, and the reset it had before this step, are the Spaces module
+  page's.

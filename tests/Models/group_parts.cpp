@@ -1,4 +1,4 @@
-// Models that read or write a part of an ExtendedPose (docs/design/groups.md, open question 1; a prototype): a
+// Models that read or write a part of an ExtendedPose (docs/guide/groups.md, open question 1; a prototype): a
 // measurement that reads the position alone, as a function and as a matrix; and process models side by side that
 // each write some parts of one pose, one of them returning its Jacobian. A part's rows of the covariance are steps
 // in the pose's body frame, so a model that names a part sees the part's own values and differences, and the
@@ -226,7 +226,7 @@ TEST(GroupParts, ModelsSideBySideWriteThePartsOfOnePose)
 }
 
 // The marginal of a vector of a pose is over the smaller pose of the rotation and that vector, with the rotation's
-// rows and the vector's (docs/design/groups.md, open question 2). The rotation's marginal is its own.
+// rows and the vector's (docs/guide/groups.md, open question 2). The rotation's marginal is its own.
 TEST(GroupParts, MarginalOfAVectorIsThePoseOfTheRotationAndTheVector)
 {
     auto const prior = GaussianParams<State>{priorMean(), priorCovariance()};

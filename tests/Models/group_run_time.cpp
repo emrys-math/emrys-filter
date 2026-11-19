@@ -1,4 +1,4 @@
-// An ExtendedPose whose size is known at run time (docs/design/groups.md, "What to find out first" 2 and open
+// An ExtendedPose whose size is known at run time (docs/guide/groups.md, section 9 and open
 // question 3; a prototype): a body with a Repeated block of feet among its vectors. A foot is inserted as a function
 // of the pose and a leg's kinematics by insert<Path>(state, element, method, model, inputs...) (Models/Insertion.h),
 // a model placed on each foot predicts beside the body's, a measurement reads the feet, and a foot is erased.

@@ -161,12 +161,12 @@ updateResolved(Prior const & prior, R const & resolved, Sink sink, Reference con
     {
         // Under sigma points the adjoint carry is the world-side filter's, whose iterates would be spread on the
         // world side too. That is not written, and the body-side spread with this carry is a filter no paper
-        // describes (docs/design/groups.md, open question 9).
+        // describes (docs/guide/groups.md, open question 9).
         static_assert(
             !(isSigmaPointMethod<std::remove_cvref_t<decltype(method.method)>>
               && std::is_same_v<std::remove_cvref_t<decltype(resolved.covarianceCarry())>, carries::Adjoint>
               && !carriesNothing<carries::Adjoint, typename Reads::JointSpace>),
-            "carries::adjoint() is not yet taken by an iterated sigma-point method (docs/design/groups.md): iterate "
+            "carries::adjoint() is not yet taken by an iterated sigma-point method (docs/guide/groups.md): iterate "
             "methods::linearized(), or use the sigma-point method without iterating"
         );
         if constexpr (R::MixtureNoise)
@@ -260,7 +260,7 @@ updateResolved(Prior const & prior, R const & resolved, Sink sink, Reference con
         // A spread by axes that can fail gives the update its error when their root does (decisions.md
         // [sigma-point-axes]).
         // A measurement carried by the adjoint is the right-invariant filter's, whose sigma points are spread
-        // on the world side (docs/design/groups.md).
+        // on the world side (docs/guide/groups.md).
         using Carry = std::remove_cvref_t<decltype(resolved.covarianceCarry())>;
         auto const sided = [&] {
             if constexpr (std::is_same_v<Carry, carries::Adjoint>

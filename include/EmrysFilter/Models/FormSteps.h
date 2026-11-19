@@ -954,7 +954,7 @@ updateInPlace(
     );
     static_assert(
         std::is_same_v<typename M::CarryType, carries::Reset> || hasIdentityReset<Space>,
-        "a carry other than carries::reset() is the covariance form's so far (docs/design/groups.md): filter in a "
+        "a carry other than carries::reset() is the covariance form's so far (docs/guide/groups.md): filter in a "
         "Gaussian"
     );
     static_assert(
@@ -1107,7 +1107,7 @@ updateInPlace(
     );
     static_assert(
         std::is_same_v<typename M::CarryType, carries::Reset> || hasIdentityReset<Space>,
-        "a carry other than carries::reset() is the covariance form's so far (docs/design/groups.md): filter in a "
+        "a carry other than carries::reset() is the covariance form's so far (docs/guide/groups.md): filter in a "
         "Gaussian"
     );
     static_assert(
@@ -1312,7 +1312,7 @@ updateInPlace(
     );
     static_assert(
         std::is_same_v<typename M::CarryType, carries::Reset> || hasIdentityReset<Space>,
-        "a carry other than carries::reset() is the covariance form's so far (docs/design/groups.md): filter in a "
+        "a carry other than carries::reset() is the covariance form's so far (docs/guide/groups.md): filter in a "
         "Gaussian"
     );
     static_assert(

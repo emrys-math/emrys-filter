@@ -1275,7 +1275,7 @@ public:
     using FormType = internal::ArgumentOfKind<internal::ArgumentKind::form, updates::Standard, Args...>;
 
     /** What carries the covariance when the update moves the mean: the carry given, or the model's own, or
-     * carries::Reset (docs/design/groups.md).
+     * carries::Reset (docs/guide/groups.md).
      */
     using CarryType = internal::ArgumentOfKind<
         internal::ArgumentKind::carry,

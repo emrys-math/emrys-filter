@@ -53,6 +53,15 @@ D. Barber. Expectation correction for smoothed inference in switching linear dyn
 and (13) give the smoothed switch given the next one, and the mean approximation evaluates the
 average in (12) at the mean of the smoothed %Gaussian. Free: [JMLR](https://jmlr.org/papers/v7/barber06a.html).
 
+\anchor Barrau2017
+A. Barrau and S. Bonnabel. The invariant extended Kalman filter as a stable observer. *IEEE
+Transactions on Automatic Control*, 62(4):1797–1812, 2017. The left- and right-invariant extended
+Kalman filters and the group-affine dynamics on which their error's Jacobian does not depend on
+the estimate. Free: [arXiv](https://arxiv.org/abs/1410.1465). **Not read.**
+\ref Brossard2020 "Brossard, Barrau, and Bonnabel (2020)" and
+\ref Sola2018 "Solà, Deray, and Atchuthan (2018)" describe the two error definitions and the
+groups; the filters' updates as implemented are in docs/guide/groups.md.
+
 \anchor BarShalom1975
 Y. Bar-Shalom and E. Tse. Tracking in a cluttered environment with probabilistic data
 association. *Automatica*, 11(5):451–460, 1975.
@@ -90,6 +99,12 @@ array.
 H. A. P. Blom and Y. Bar-Shalom. The interacting multiple model algorithm for systems with
 Markovian switching coefficients. *IEEE Transactions on Automatic Control*, 33(8):780–783, 1988.
 **Not read.** Described in \ref Hashimzade2024 "Hashimzade et al. (2024)", §2.2.3.
+
+\anchor Brossard2020
+M. Brossard, A. Barrau, and S. Bonnabel. A code for unscented Kalman filtering on manifolds
+(UKF-M). In *IEEE International Conference on Robotics and Automation (ICRA)*, pages 5701–5708,
+2020. The unscented filter on a Lie group with its uncertainty on the left or on the right of the
+mean. Free: [arXiv](https://arxiv.org/abs/2002.00878).
 
 \anchor Bucy1971
 R. S. Bucy and K. D. Senne. Digital synthesis of non-linear filters. *Automatica*, 7(3):287–298,
@@ -190,6 +205,15 @@ distributions for Markov chains. *Operations Research*, 33(5):1107–1116, 1985.
 from the last, the diagonal never read), is described in Q. Bu and Y. Q. Zhao, GTH algorithm,
 censored Markov chains, and RG-factorization in block-form,
 [arXiv:2604.14347](https://arxiv.org/abs/2604.14347), §2.
+
+\anchor Hartley2020
+R. Hartley, M. Ghaffari, R. M. Eustice, and J. W. Grizzle. Contact-aided invariant extended Kalman
+filtering for robot state estimation. *The International Journal of Robotics Research*,
+39(4):402–430, 2020. The invariant filter of a legged robot, whose state keeps the position of
+each foot in contact inside the group, so that the group's size changes as feet touch down and
+lift. Free: [arXiv](https://arxiv.org/abs/1904.09251). **Not read.** The library takes no
+algorithm from it: it is the use that ExtendedPose's run-time size is designed for
+(docs/guide/groups.md, §9).
 
 \anchor Hashimzade2024
 N. Hashimzade, O. Kirsanov, T. Kirsanova, and J. Maih. On Bayesian filtering for Markov regime

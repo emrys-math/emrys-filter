@@ -1,6 +1,6 @@
 // A body's attitude, velocity, and position estimated from an inertial unit and landmarks seen from the body,
-// started with its heading nearly unknown, by two extended Kalman filters that differ only in the state's space. In
-// the first the three are one Lie group, an ExtendedPose, whose differences are steps in the body frame: the
+// started with its heading known only to 0.6 rad, by two extended Kalman filters that differ only in the state's space.
+// In the first the three are one Lie group, an ExtendedPose, whose differences are steps in the body frame: the
 // invariant extended Kalman filter. In the second they are three blocks of a Composite: the conventional filter.
 // The process model and the prior are the same objects for both, since a model names blocks by tag and each space
 // has them. The program simulates the body and the readings, runs both filters, and reports each one's errors and
@@ -116,13 +116,15 @@ main()
     auto const landmarks =
         std::array{Eigen::Vector3d{10.0, 0.0, 2.0}, Eigen::Vector3d{-4.0, 9.0, -1.0}, Eigen::Vector3d{-3.0, -8.0, 4.0}};
 
-    // The prior: the heading known to a radian, the tilt to 0.2 rad, the velocity to 1 m/s, and the position to
+    // The prior: the heading known to 0.6 rad, the tilt to 0.2 rad, the velocity to 1 m/s, and the position to
     // 2 m. The same thirteen values and twelve variances serve both spaces; in the group the velocity's and the
-    // position's are of steps in the body frame, which for equal variances on the three axes is the same.
+    // position's are of steps in the body frame, which for equal variances on the three axes is the same. The
+    // heading is no wider because each run's truth is drawn from the prior: at 1 rad a run in a few dozen starts
+    // facing nearly backward, and from there the invariant filter's covariance does not match its error either.
     Emrys::ValueVector<GroupState> mean = Emrys::ValueVector<GroupState>::Zero();
     mean.head<4>() = Emrys::UnitQuaternion::identity();
     auto const variances =
-        Emrys::DifferenceVector<GroupState>{{0.04, 0.04, 1.0, 1.0, 1.0, 1.0, 4.0, 4.0, 4.0, 1e-4, 1e-4, 1e-4}};
+        Emrys::DifferenceVector<GroupState>{{0.04, 0.04, 0.36, 1.0, 1.0, 1.0, 4.0, 4.0, 4.0, 1e-4, 1e-4, 1e-4}};
     auto const groupPrior = Emrys::GaussianParams<GroupState>{mean, variances.asDiagonal()};
     auto const blockPrior = Emrys::GaussianParams<BlockState>{mean, variances.asDiagonal()};
 

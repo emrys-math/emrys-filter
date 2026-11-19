@@ -1,4 +1,4 @@
-// Lie groups as spaces (docs/design/groups.md, a prototype): which spaces satisfy LieGroup; the group members of
+// Lie groups as spaces (docs/guide/groups.md, a prototype): which spaces satisfy LieGroup; the group members of
 // Linear, Periodic, UnitQuaternion, Composite, and Repeated through the free functions of Spaces/Group.h; and
 // ExtendedPose, the family of a rotation and the vectors it turns, of fixed size, of run-time size, and in the plane
 // under a heading in degrees. checkGroup() checks each group's members against each other; expected values for the

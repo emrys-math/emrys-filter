@@ -1,4 +1,4 @@
-// The models on a Lie group whose Jacobians are formed in closed form (docs/design/groups.md, open question 8; a
+// The models on a Lie group whose Jacobians are formed in closed form (docs/guide/groups.md, open question 8; a
 // prototype; Models/GroupModels.h): bodyVelocity(), observedInWorld(), and observedInBody(). Each is checked against
 // the same model written as a plain function and differentiated automatically, and each measurement's carry against
 // the one named by hand. The error Jacobian of bodyVelocity() is the same at every estimate.

@@ -6,7 +6,7 @@
  * value moved by a step, block by block, and compile to nothing on a space whose every block moves
  * its differences unchanged; and the carries, carries::reset(), carries::none(), and carries::adjoint(), the
  * policy by which a measurement's update chooses what carries its covariance, with carryCovariance()
- * (docs/design/groups.md, a prototype). The Kalman update and the %Gaussian conditional call it (Condition.h,
+ * (docs/guide/groups.md, a prototype). The Kalman update and the %Gaussian conditional call it (Condition.h,
  * Indexing.h), and so does the smoother (GaussianHistory.h); the information forms of the %Gaussian move
  * their reference through the inverse Jacobians (internal::resetInfoAt(), [gaussian-forms]). Read
  * UnitQuaternion.h next, for a space that supplies its reset in closed form.
@@ -505,7 +505,7 @@ resetCovariance(
 }
 
 /** \ingroup Spaces
- * \brief What carries a covariance when an update moves its mean, each made by its factory (docs/design/groups.md, a
+ * \brief What carries a covariance when an update moves its mean, each made by its factory (docs/guide/groups.md, a
  * prototype): reset(), none(), and adjoint(). The types beside them name a carry where a type is needed.
  *
  * An update computes its posterior covariance in the tangent space at the prior mean and moves the mean by a step

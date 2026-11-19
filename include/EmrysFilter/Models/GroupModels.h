@@ -1,7 +1,7 @@
 #pragma once
 
 /** \file
- * Models on a Lie group whose Jacobians are formed, not differentiated (docs/design/groups.md, "Jacobians that do
+ * Models on a Lie group whose Jacobians are formed, not differentiated (docs/guide/groups.md, "Jacobians that do
  * not depend on the estimate" and open question 8; a prototype): bodyVelocity(), the motion of a group by a velocity
  * in its body frame, and observedInWorld() and observedInBody(), the two measurements of an ExtendedPose that the
  * invariant extended Kalman filters are built on. Each returns its Jacobian in closed form [returned-jacobians], and

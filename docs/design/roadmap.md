@@ -81,7 +81,7 @@ predict and update and the Rao-Blackwellized reweighting once per set or chunk; 
 transforms, the factored one, the iterated posterior linearization filter, the update given a block
 (`PinnedMeasurement`), and the Rao-Blackwellized prediction of hybrid particles once per point set,
 through `Transform::evaluateEach()` and the function objects the resolvers give; the likelihood
-widened by uncertain inputs once per set or chunk; `on()`, `compose()` part by part, and `onEach()`
+widened by uncertain inputs once per set or chunk; `on()`, `blockwise()` part by part, and `onEach()`
 once per repetition. `Linearized` and the iterated updates call `Batched::operator()`, a batch of
 one column, which is their final form. Where a method needs the Jacobian at every point,
 `internal::callBatchedWithJacobians()` takes it from the function's mark or by dual numbers over
@@ -173,7 +173,7 @@ would otherwise break is found and changed now, with no GPU needed.
 Done when: the device-only syntax check passes with only function bodies left to change, those
 listed in step 19, and parallelism.md's open questions that reach the API are decided.
 
-## 17zf. Invariant EKF and pose spaces — not started
+## 17zf. Invariant EKF and pose spaces — prototyped, not landed
 
 Barrau and Bonnabel (2017): an EKF on a Lie group whose error is the group error, which converges
 from large initial errors on group-affine dynamics ($SE(3)$, $SE_2(3)$). It is `KalmanFilter` with
@@ -182,9 +182,15 @@ it is spaces, an example, and tests, not a filter. The groups go in `Spaces/` [l
 largest user base is legged robots, by contact-aided estimation (Hartley et al. 2020); the
 mechanization and contact models stay EmrysNavigation's.
 
-[groups.md](groups.md) is the plan for this step, and it replaces the items below where they
-differ: no space has a side, one group family of run-time size stands in place of $SE(3)$ and
-$SE_2(3)$, and the side becomes a policy of the update. Start from its steps and open questions.
+[../guide/groups.md](../guide/groups.md) is the design review for this step, and it replaces the
+items below where they differ: no space has a side, one group family of run-time size stands in
+place of $SE(3)$ and $SE_2(3)$, and the side becomes a policy of the update.
+
+A prototype of the step is on the branch `groups-prototype` (2026-11-19), and the review describes
+it: each section shows a piece in use, and each of its twelve questions is open, with the answer
+the prototype implements beside it. To continue: close the questions with the user, then finish
+what the review's §12 lists as missing, write the decisions it names, and run the `land` checks,
+which the prototype has not had. GCC and MSVC have compiled the review's examples and no test.
 
 - [ ] The side of the increment on `UnitQuaternion`: right (the body frame, today's) by default,
       left as the alternative, each with its reset Jacobian [covariance-reset].

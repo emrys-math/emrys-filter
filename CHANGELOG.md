@@ -41,6 +41,30 @@ instead.
   the axes cannot take the root of the blocks the measurement reads; it was a compile error. A
   transform or prediction still refuses such axes, and so does an update whose model's `affineIn()`
   names some of the blocks read.
+- A prototype of Lie groups as spaces and of the invariant extended Kalman filter
+  (docs/guide/groups.md), whose names and behavior are proposals and may change:
+  - `LieGroup`, a concept that refines `Space`, satisfied by `Linear`, `Periodic`,
+    `UnitQuaternion`, and a `Composite` or `Repeated` of groups, with the free functions
+    `compose()`, `inverse()`, `identity()`, `exp()`, `log()`, `adjoint()`, `rightJacobian()`, and
+    `leftJacobian()`, and `checkGroup()`, which checks a group's members against each other.
+  - `ExtendedPose<Rotation, Vectors...>`, a rotation and the vectors that turn with it as one
+    group, $SE_k(3)$ under a `UnitQuaternion` and $SE_k(2)$ under a `Periodic` heading, with a
+    `Repeated` allowed among the vectors. Its blocks are named by tag as a `Composite`'s are, and a
+    model that reads or writes one of them is written as it would be for a `Composite`.
+  - `carries::reset()`, `carries::none()`, and `carries::adjoint()`, an argument of `observe()`
+    that says what carries the covariance when the update moves the mean. `none()` is the
+    left-invariant extended Kalman filter's update and `adjoint()` the right-invariant one's.
+  - `bodyVelocity<Group, Velocity>()`, `observedInWorld<Pose>()`, and `observedInBody<Pose>()`,
+    models that return their Jacobians in closed form. A measurement by either of the last two
+    needs neither a method nor a carry: `observe(model, z)`.
+  - `roots::worldSide()`, axes that spread sigma points on the world side of a group, which a
+    measurement with `carries::adjoint()` takes without being told.
+  - `insert<Path>(state, element, method, model, inputs...)`, which inserts into a resizable block
+    of a `GaussianParams` what a measurement model computes from the state, with its covariance
+    and its cross-covariance with the rest.
+  - `marginal<Path>()` of a vector of an `ExtendedPose` is over the pose of the rotation and that
+    vector.
+  - `examples/invariant_ekf.cpp`.
 - `SECURITY.md`: how to report a vulnerability privately, and what counts as one. Among them is
   undefined behavior, or a call that never returns, caused by a floating-point value passed to the
   library, NaN and infinities included, in a build with `NDEBUG`.
@@ -128,6 +152,11 @@ instead.
   least-squares fit to the first measurements, and says when to convert once the state is
   determined. It and [docs/usage.md](docs/usage.md) now say that `InfoFilter` can't predict
   until the measurements determine every direction, where `SqrtInfoFilter` can.
+- **Breaking:** `compose()` of models is `blockwise()`, and `Composition` is `Blockwise`:
+  write `Emrys::blockwise(unicycle, Emrys::RandomWalk<Speed>{0.1})`. `compose(space, a, b)` is now
+  the product of two values of a Lie group.
+- **Breaking:** `UnitQuaternion::exponential()` and `UnitQuaternion::logarithm()` are
+  `UnitQuaternion::exp()` and `UnitQuaternion::log()`.
 - **Breaking:** a filter over a hybrid takes the mode chain and the motion as its first two
   arguments, `ImmFilter{chain, motion, prior}`, and so do `MixtureFilter`, `RbParticleFilter`,
   and `RbPointMassFilter` (`RbPointMassFilter{chain, motion, grid, conditional}`). The motion is
@@ -222,6 +251,9 @@ instead.
   upper triangle need not hold the covariance.
 - `PointMassFilter{grid}` and its other whole-state forms deduce under MSVC 19.52, which deduced
   the model's type as the covariance form too through the alias's deduction guides.
+- `additiveNoise(on<Path>(R))` on an output whose differences have other sizes than its values,
+  such as a state with a `UnitQuaternion`, failed to compile. The covariances now go to their
+  blocks' rows of the differences.
 - `UpdateBranch::component` and `FilterBranch::component` are 0 in a default-constructed branch,
   not indeterminate.
 

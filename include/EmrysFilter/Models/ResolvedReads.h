@@ -39,7 +39,7 @@ class ReadBlocks;
 /** What a model's read of a block takes from the state: the block at \a Path itself, or when \a Pose the
  * ExtendedPose at \a Path (WholeSpace for the state itself) that the block is a part of. A part of a pose has no
  * difference of its own, since its rows are steps in the pose's body frame, so the read takes the whole pose
- * (docs/design/groups.md).
+ * (docs/guide/groups.md).
  */
 template <typename Path, bool Pose>
 struct ReadUnit
@@ -1042,10 +1042,29 @@ public:
         }(std::make_index_sequence<InputCount>{});
     }
 
+    /** \returns which part of an ExtendedPose item \a I of the state is, if any: from the item's own path and not
+     * from Reads, since GCC 14 does not take StatePaths, an alias of a lambda's return type, inside a function that
+     * a member declaration of this class evaluates
+     */
+    template <std::size_t I>
+    [[nodiscard]] static consteval PosePart
+    itemPart()
+    {
+        using Path = typename Item<I>::PathType;
+        if constexpr (std::is_same_v<Path, WholeSpace>)
+        {
+            return PosePart::none;
+        }
+        else
+        {
+            return posePartOf<Space, Path>;
+        }
+    }
+
     /** \returns whether item \a I is one the method factors out: named in the model's affineIn(), in a
      * linear space, and a block of the state or an uncertain input, since a sure input has no spread. A part of
      * an ExtendedPose is not factored out: its rows are steps in the pose's body frame, in which a function
-     * affine in the part is affine only given the rotation (docs/design/groups.md).
+     * affine in the part is affine only given the rotation (docs/guide/groups.md).
      */
     template <std::size_t I>
     [[nodiscard]] static consteval bool
@@ -1055,8 +1074,7 @@ public:
         using Name = typename Item<I>::NameType;
         if constexpr (inState(I))
         {
-            return affineNames<Affine, Name> && isLinear<Name>
-                && ReadBlocks<Space, StatePaths>::part(stateIndexOf(I)) == PosePart::none;
+            return affineNames<Affine, Name> && isLinear<Name> && itemPart<I>() == PosePart::none;
         }
         else
         {

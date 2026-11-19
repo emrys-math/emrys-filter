@@ -1,7 +1,7 @@
 #pragma once
 
 /** \file
- * Growing a state by what a model computes from it (docs/design/groups.md, open question 3; a prototype):
+ * Growing a state by what a model computes from it (docs/guide/groups.md, open question 3; a prototype):
  * insert<Path>(state, element, method, model, inputs...), which inserts into a resizable block of a %Gaussian state
  * the output of a measurement model at the state, with the covariance and the cross-covariance that the method
  * gives it. A new landmark seen from a pose, or a foot placed through a leg's kinematics, is correlated with the

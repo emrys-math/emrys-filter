@@ -24,8 +24,8 @@ header's. The library was eigen-filter until roadmap step 13, and its repository
   [docs/design/benchmarks.md](docs/design/benchmarks.md) is the plan for the benchmarks and the
   rule that separates them from the tests: a test checks the implementation, a benchmark backs
   a claim.
-  [docs/design/groups.md](docs/design/groups.md) is the plan behind step 17zf (Lie groups as
-  spaces and the invariant EKF), not yet built.
+  [docs/guide/groups.md](docs/guide/groups.md) is the design review of step 17zf (Lie groups as
+  spaces and the invariant EKF), a prototype whose questions are open.
 
 ## Before starting work
 

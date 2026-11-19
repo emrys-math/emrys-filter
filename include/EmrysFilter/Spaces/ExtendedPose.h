@@ -1,7 +1,7 @@
 #pragma once
 
 /** \file
- * The family of groups of a rotation and the vectors it turns (docs/design/groups.md; a prototype, not yet a
+ * The family of groups of a rotation and the vectors it turns (docs/guide/groups.md; a prototype, not yet a
  * decision): ExtendedPose, which is \f$ SE(3) \f$ with one vector, \f$ SE_2(3) \f$ with two, and \f$ SE_k(3) \f$ with
  * a Repeated block among them, whose count is known at run time; and the Rotation concept, which says what a space
  * provides to head one. UnitQuaternion heads the groups of space, and a Periodic heading those of the plane,
@@ -186,7 +186,7 @@ concept Rotation =
 
 /** \ingroup Spaces
  * \brief A rotation followed by vectors that turn with it, as one Lie group: \f$ SE(3) \f$ with one vector,
- * \f$ SE_2(3) \f$ with two, and \f$ SE_k(3) \f$ with any number (docs/design/groups.md).
+ * \f$ SE_2(3) \f$ with two, and \f$ SE_k(3) \f$ with any number (docs/guide/groups.md).
  *
  * The blocks are the user's tags, as in a Composite, and a Repeated may be among the vectors, so that the group's
  * size is known only at run time:

@@ -1,7 +1,7 @@
 #pragma once
 
 /** \file
- * Lie groups as spaces (docs/design/groups.md; a prototype, not yet a decision): the LieGroup concept, which refines
+ * Lie groups as spaces (docs/guide/groups.md; a prototype, not yet a decision): the LieGroup concept, which refines
  * Space, and the free functions that reach a group's members, as plus() and minus() reach a space's: compose(),
  * inverse(), identity(), exp(), log(), adjoint(), rightJacobian(), and leftJacobian(). Linear and Periodic are groups
  * under addition, and a Composite or Repeated of groups is one block by block, each without a member of its own. Read
@@ -125,7 +125,7 @@ isAbelianGroup()
 
 /** \ingroup Spaces
  * \brief A Space that is a Lie group: two values combine into a third, every value has an inverse, and one value is
- * the identity (docs/design/groups.md).
+ * the identity (docs/guide/groups.md).
  *
  * In a group the product determines the space's operations,
  * \f[ x \boxplus \delta = x \cdot \mathrm{Exp}(\delta), \qquad a \boxminus b = \mathrm{Log}(b^{-1} \cdot a), \f]

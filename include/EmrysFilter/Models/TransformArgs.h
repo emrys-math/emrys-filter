@@ -584,11 +584,16 @@ public:
                 if constexpr (internal::isWorldSide<Entry>)
                 {
                     // Axes that need the mean: the root of the covariance in world-frame differences, brought back.
-                    static_assert(
-                        !requires { input.root(); },
-                        "roots::worldSide() spreads from a covariance so far, not from a square-root form's factor "
-                        "(docs/design/groups.md): filter in a Gaussian"
-                    );
+                    if constexpr (requires { input.root(); })
+                    {
+                        // False here. MSVC takes this requires-expression as the condition above and not inside
+                        // the static_assert, where it reports a missing member.
+                        static_assert(
+                            !internal::isWorldSide<Entry>,
+                            "roots::worldSide() spreads from a covariance so far, not from a square-root form's "
+                            "factor (docs/guide/groups.md): filter in a Gaussian"
+                        );
+                    }
                     using Root = std::remove_cvref_t<decltype(symmetricCov(input))>;
                     typename Moments<std::remove_cvref_t<decltype(input.space())>, Scalar>::VectorType const mean =
                         input.mean();

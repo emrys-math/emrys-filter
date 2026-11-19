@@ -657,13 +657,40 @@ private:
         return vectorReturned(callForm(m_measurement.model().function(), m_in, m_out, x));
     }
 
+    /** Turns the columns of \a stateBlock that are block \a K's of the state read, when the block is among the
+     * vectors of an ExtendedPose, from the block's own differences to its rows in the pose, by the pose's rotation
+     * at \a point; nothing for any other block. A member function, since GCC 14 does not find the class's members
+     * from a lambda that a pack expansion repeats.
+     */
+    template <bool Whole, std::size_t K, typename Point, typename StateBlock>
+    void
+    turnReadColumns([[maybe_unused]] Point const & point, [[maybe_unused]] StateBlock & stateBlock) const
+    {
+        if constexpr (Reads::template Part<K> == PosePart::vectors)
+        {
+            m_reads.template withPoseOf<K>([&](auto const & pose) {
+                using Pose = std::remove_cvref_t<decltype(pose)>;
+                turnColumns(
+                    pose,
+                    point.template middleRows<Pose::RotationValueDimension>(
+                        Whole ? m_reads.unitRows(K).start : m_reads.unitJointStart(K)
+                    ),
+                    stateBlock.middleCols(
+                        Whole ? m_reads.differenceRows(K).start : m_reads.jointDifferenceStart(K),
+                        m_differenceRows[stateItems(K)].size
+                    )
+                );
+            });
+        }
+    }
+
     /** \returns what the function returned, \a returned, with a Jacobian it returned over the whole
      * input split into a block for the blocks read and a block per uncertain input, as the transform
      * takes them: the blocks read in their joint difference coordinates, or when \a Whole over the
      * whole state's differences, zero outside them. The columns of a block that is among the vectors of an
      * ExtendedPose, which the function returned over the block's own differences, are turned to the block's rows
      * in the pose by the pose's rotation at \a point, the joint vector the function was called at, or when
-     * \a Whole the state (docs/design/groups.md).
+     * \a Whole the state (docs/guide/groups.md).
      */
     template <bool Whole, typename R, typename Point>
     [[nodiscard]] auto
@@ -709,27 +736,7 @@ private:
                           m_differenceRows[stateItems(K)].size
                       )),
                  ...);
-                (
-                    [&] {
-                        if constexpr (Reads::template Part<K> == PosePart::vectors)
-                        {
-                            m_reads.template withPoseOf<K>([&](auto const & pose) {
-                                using Pose = std::remove_cvref_t<decltype(pose)>;
-                                turnColumns(
-                                    pose,
-                                    point.template middleRows<Pose::RotationValueDimension>(
-                                        Whole ? m_reads.unitRows(K).start : m_reads.unitJointStart(K)
-                                    ),
-                                    stateBlock.middleCols(
-                                        Whole ? m_reads.differenceRows(K).start : m_reads.jointDifferenceStart(K),
-                                        m_differenceRows[stateItems(K)].size
-                                    )
-                                );
-                            });
-                        }
-                    }(),
-                    ...
-                );
+                (turnReadColumns<Whole, K>(point, stateBlock), ...);
             }(std::make_index_sequence<StateCount>{});
             if constexpr (InputCount == 0)
             {

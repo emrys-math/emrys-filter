@@ -2200,7 +2200,7 @@ readsOnlyState()
 /** \returns whether \a Model reads from the state space \a Space, or writes, a block that is a part of an
  * ExtendedPose and not the pose whole. Such a block's rows are steps in the pose's body frame, so the Jacobian of
  * the model's step over the state's differences depends on the pose's rotation even where the function is affine
- * (docs/design/groups.md).
+ * (docs/guide/groups.md).
  */
 template <typename Model, typename Space>
 [[nodiscard]] consteval bool
@@ -2705,6 +2705,73 @@ private:
         }(std::make_index_sequence<WriteCount>{});
     }
 
+    /** Turns the columns of \a jacobian that are block \a I's of the state read, when the block is among the vectors
+     * of an ExtendedPose, from the block's own differences to its rows in the pose, by the pose's rotation at
+     * \a state; nothing for any other block. A member function, as turnWrittenRows() is, since GCC 14 does not find
+     * the class's members from a lambda that a pack expansion repeats.
+     */
+    template <std::size_t I, typename State, typename Jacobian>
+    void
+    turnReadColumns([[maybe_unused]] State const & state, [[maybe_unused]] Jacobian & jacobian) const
+    {
+        if constexpr (Reads::template Part<I> == PosePart::vectors)
+        {
+            m_reads.template withPoseOf<I>([&](auto const & pose) {
+                using Pose = std::remove_cvref_t<decltype(pose)>;
+                turnColumns(
+                    pose,
+                    state.template middleRows<Pose::RotationValueDimension>(m_reads.unitRows(I).start),
+                    jacobian.middleCols(m_differenceRows[stateItems(I)].start, m_differenceRows[stateItems(I)].size)
+                );
+            });
+        }
+    }
+
+    /** Turns the rows of \a jacobian that are written block \a K's, when the block is among the vectors of an
+     * ExtendedPose of the state space \a space, from the block's own differences to its rows in the pose, by the
+     * pose's rotation at the next state \a next; nothing for any other block.
+     */
+    template <std::size_t K, typename Next, typename Jacobian>
+    void
+    turnWrittenRows(
+        [[maybe_unused]] Space const & space,
+        [[maybe_unused]] Next const & next,
+        [[maybe_unused]] Jacobian & jacobian
+    ) const
+    {
+        using Location =
+            typename PoseLocationOf<Space, std::tuple_element_t<K, typename PathsOf<WritePaths>::type>>::type;
+        if constexpr (Location::part == PosePart::vectors)
+        {
+            BlockRows const unit = [&] {
+                if constexpr (std::is_same_v<typename Location::UnitPath, WholeSpace>)
+                {
+                    return BlockRows{0, m_stateSize};
+                }
+                else
+                {
+                    return blockRows<typename Location::UnitPath>(space);
+                }
+            }();
+            auto const & pose = [&]() -> auto const & {
+                if constexpr (std::is_same_v<typename Location::UnitPath, WholeSpace>)
+                {
+                    return space;
+                }
+                else
+                {
+                    return pathBlock<typename Location::UnitPath>(space);
+                }
+            }();
+            using Pose = std::remove_cvref_t<decltype(pose)>;
+            turnRowsBack(
+                pose,
+                next.template middleRows<Pose::RotationValueDimension>(unit.start),
+                jacobian.middleRows(m_outDifferenceRows[K].start, m_outDifferenceRows[K].size)
+            );
+        }
+    }
+
     /** \returns the Jacobian \a jacobian of the function, rows in the output's differences and
      * columns in the input's, expanded to the whole state: the identity on the blocks not written,
      * the function's rows on the blocks written, in the columns of the blocks read; and with
@@ -2712,7 +2779,7 @@ private:
      * among its vectors that the function reads or writes has its columns or rows turned from the block's own
      * differences to its rows in the pose, by the pose's rotation at \a state for a block read and at \a next,
      * the next state, for a block written; and a vector the step does not write, which stays where it was in the
-     * world, gets the turn from the old body frame to the new in place of the identity (docs/design/groups.md).
+     * world, gets the turn from the old body frame to the new in place of the identity (docs/guide/groups.md).
      */
     template <typename Returned, typename State, typename Next>
     [[nodiscard]] auto
@@ -2762,64 +2829,10 @@ private:
             });
             // The function's own columns and rows, for the blocks among a pose's vectors.
             [&]<std::size_t... I>(std::index_sequence<I...>) {
-                (
-                    [&] {
-                        if constexpr (Reads::template Part<I> == PosePart::vectors)
-                        {
-                            m_reads.template withPoseOf<I>([&](auto const & pose) {
-                                using Pose = std::remove_cvref_t<decltype(pose)>;
-                                turnColumns(
-                                    pose,
-                                    state.template middleRows<Pose::RotationValueDimension>(m_reads.unitRows(I).start),
-                                    jacobian.middleCols(
-                                        m_differenceRows[stateItems(I)].start,
-                                        m_differenceRows[stateItems(I)].size
-                                    )
-                                );
-                            });
-                        }
-                    }(),
-                    ...
-                );
+                (turnReadColumns<I>(state, jacobian), ...);
             }(std::make_index_sequence<StateCount>{});
             [&]<std::size_t... K>(std::index_sequence<K...>) {
-                (
-                    [&] {
-                        using Location = typename PoseLocationOf<
-                            Space,
-                            std::tuple_element_t<K, typename PathsOf<WritePaths>::type>>::type;
-                        if constexpr (Location::part == PosePart::vectors)
-                        {
-                            BlockRows const unit = [&] {
-                                if constexpr (std::is_same_v<typename Location::UnitPath, WholeSpace>)
-                                {
-                                    return BlockRows{0, m_stateSize};
-                                }
-                                else
-                                {
-                                    return blockRows<typename Location::UnitPath>(space);
-                                }
-                            }();
-                            auto const & pose = [&]() -> auto const & {
-                                if constexpr (std::is_same_v<typename Location::UnitPath, WholeSpace>)
-                                {
-                                    return space;
-                                }
-                                else
-                                {
-                                    return pathBlock<typename Location::UnitPath>(space);
-                                }
-                            }();
-                            using Pose = std::remove_cvref_t<decltype(pose)>;
-                            turnRowsBack(
-                                pose,
-                                next.template middleRows<Pose::RotationValueDimension>(unit.start),
-                                jacobian.middleRows(m_outDifferenceRows[K].start, m_outDifferenceRows[K].size)
-                            );
-                        }
-                    }(),
-                    ...
-                );
+                (turnWrittenRows<K>(space, next, jacobian), ...);
             }(std::make_index_sequence<WriteCount>{});
         }
         [&]<std::size_t... K>(std::index_sequence<K...>) {

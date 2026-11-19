@@ -824,7 +824,7 @@ axesOf(Method const & method)
 }
 
 /** \returns the sigma-point method \a method with its points spread on the world side of a Lie group: its rule
- * by roots::WorldSide over its own axes, or itself if it is spread so already (docs/design/groups.md)
+ * by roots::WorldSide over its own axes, or itself if it is spread so already (docs/guide/groups.md)
  */
 template <typename Method>
 [[nodiscard]] constexpr auto

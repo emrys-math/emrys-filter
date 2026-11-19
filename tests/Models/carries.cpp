@@ -1,4 +1,4 @@
-// What carries a covariance when an update moves its mean (docs/design/groups.md, a prototype; Spaces/Reset.h,
+// What carries a covariance when an update moves its mean (docs/guide/groups.md, a prototype; Spaces/Reset.h,
 // Models/Condition.h): carries::none(), carries::reset(), and carries::adjoint() as an argument of observe(), on a pose
 // with landmarks seen from the body. Expected values are the two published invariant filters written out in plain
 // Eigen: the left-invariant one in the pose's body-frame differences with no carry, and the right-invariant one in

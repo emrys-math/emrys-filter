@@ -210,13 +210,15 @@ It holds the same values as `Composite<Attitude, Velocity, Position>` and names 
 tags, so a model that reads or writes `Position` is written the same for both. What differs is the
 covariance: a vector's rows are steps in the body frame at the mean, not in the world frame, so
 `Emrys::plus<Body>(x, delta)` moves the position by the attitude's rotation of `delta`'s position
-rows. The Kalman filter on this space is the invariant extended Kalman filter, which converges from
-a large initial attitude error where the filter on the `Composite` grows overconfident. A
-measurement of a point fixed in the world and seen from the body, such as a landmark or a magnetic
-field, is `Emrys::observedInBody<Body>(point, std::tuple{Emrys::on<Position>(1.0)}, noise)`, and one
-of a point fixed in the body and seen in the world, such as a position fix, is
+rows. A prior's variances for a vector, the covariance read back for one, and a matrix of noise
+placed on one are all in that frame. The Kalman filter on this space is the invariant extended
+Kalman filter, which converges from a large initial attitude error where the filter on the
+`Composite` grows overconfident, though not from one near a half turn. A measurement of a point
+fixed in the world and seen from the body, such as a landmark or a magnetic field, is
+`Emrys::observedInBody<Body>(point, std::tuple{Emrys::on<Position>(1.0)}, noise)`, and one of a
+point fixed in the body and seen in the world, such as a position fix, is
 `Emrys::observedInWorld<Body>(...)`; each is observed with no method, `observe(model, z)`. This part
-of the library is a prototype (docs/design/groups.md), and its names may change.
+of the library is a prototype (docs/guide/groups.md), and its names may change.
 
 **A process model.** A process model writes some blocks of the state from the blocks it reads, and
 `Emrys::blockwise(models...)` puts models side by side: `ConstantVelocity<Position, Velocity>{q}`,

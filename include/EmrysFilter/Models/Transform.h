@@ -1127,7 +1127,7 @@ transformResult(FactoredAt<AffineSize, AffineMaxSize, Points> const & method, Pr
             static_assert(
                 !isWorldSide<AxesOf<Points>>,
                 "roots::worldSide() is not yet taken by a transform that factors out affineIn() coordinates "
-                "(docs/design/groups.md)"
+                "(docs/guide/groups.md)"
             );
             restRoot = rootValue(axesOf(method.points).root(lowerSymmetricBlock(cov, rest, rest)));
         }
