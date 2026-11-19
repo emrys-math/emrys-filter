@@ -19,7 +19,7 @@
 
 using Emrys::additiveNoise;
 using Emrys::block;
-using Emrys::compose;
+using Emrys::blockwise;
 using Emrys::Composite;
 using Emrys::Constant;
 using Emrys::ConstantVelocity;
@@ -250,7 +250,8 @@ TEST(PosteriorCramerRaoBound, IsInTheTangentSpaceOfAUnitQuaternion)
     cov.topLeftCorner<5, 5>() = Pose::poseCov();
     cov.bottomRightCorner<2, 2>() = 0.25 * Eigen::Matrix2d::Identity();
     auto const initial = GaussianParams<Motion>{mean, cov};
-    auto const model = compose(attitudeWalk<Orientation>(0.01), ConstantVelocity<Pose::Position, Pose::Velocity>{0.1});
+    auto const model =
+        blockwise(attitudeWalk<Orientation>(0.01), ConstantVelocity<Pose::Position, Pose::Velocity>{0.1});
     auto filter = KalmanFilter{model, initial};
     auto bound = PosteriorCramerRaoBound<Motion>::create(initial).value();
     Eigen::Matrix<double, 8, 1> truth = mean;
@@ -371,7 +372,7 @@ TEST(PosteriorCramerRaoBound, RefusesASingularNoiseOrPrior)
     auto bound = PosteriorCramerRaoBound<State>::create(initial).value();
     Matrix4 const before = bound.info();
     Vector4 const truth = Vector4::Zero();
-    auto const noiseless = compose(Constant<Position>{}, Constant<Velocity>{});
+    auto const noiseless = blockwise(Constant<Position>{}, Constant<Velocity>{});
     EXPECT_EQ(bound.predict(noiseless, truth, 1.0).error(), GaussianError::NotPositiveDefinite);
     EXPECT_EQ(bound.info(), before);
 

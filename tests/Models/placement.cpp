@@ -1,6 +1,6 @@
 // Models placed in a larger state, and measurement models side by side ([model-placement]): two
 // placements of one vehicle model, one with its input renamed, predict a two-vehicle state as the model written out
-// by hand does; a fleet placed by onEach() with an input per repetition does too; and compose(range, bearing) updates
+// by hand does; a fleet placed by onEach() with an input per repetition does too; and blockwise(range, bearing) updates
 // as one radar model written as a function.
 
 #include <cmath>
@@ -16,7 +16,7 @@
 
 using Emrys::additiveNoise;
 using Emrys::block;
-using Emrys::compose;
+using Emrys::blockwise;
 using Emrys::Composite;
 using Emrys::continuousNoise;
 using Emrys::GaussianParams;
@@ -104,7 +104,7 @@ kinematics()
 [[nodiscard]] auto
 vehicle()
 {
-    return compose(kinematics(), RandomWalk<Bias>{biasDensity});
+    return blockwise(kinematics(), RandomWalk<Bias>{biasDensity});
 }
 
 // One vehicle's step at its blocks (position, velocity, bias) and force, as a vector of six.
@@ -171,7 +171,7 @@ stateCovariance(Eigen::Index size)
 // by hand over the pair does, bitwise: the placement changes where the model reads, never what it computes.
 TEST(Placement, TwoPlacementsOfOneModelMatchTheModelWrittenOut)
 {
-    auto const pair = compose(on<Ownship>(vehicle()), on<Target>(vehicle(), on<TargetForce>(path<SpecificForce>)));
+    auto const pair = blockwise(on<Ownship>(vehicle()), on<Target>(vehicle(), on<TargetForce>(path<SpecificForce>)));
     auto const byHand = processModel(
         []<typename T>(auto const & in, auto const & out, auto const & x, double dt) {
             auto y = zeros<T>(out);
@@ -222,7 +222,7 @@ TEST(Placement, TwoPlacementsOfOneModelMatchTheModelWrittenOut)
 // A placement without a rename shares the input with the other placement: both vehicles read one force.
 TEST(Placement, AnInputNotRenamedIsShared)
 {
-    auto const pair = compose(on<Ownship>(vehicle()), on<Target>(vehicle()));
+    auto const pair = blockwise(on<Ownship>(vehicle()), on<Target>(vehicle()));
     Eigen::VectorXd const x = statePoint(12);
     Eigen::Vector2d const force{0.4, -0.1};
     auto const y = Emrys::propagate(Pair{}, x, pair, timeStep, sure<SpecificForce>(force));
@@ -238,7 +238,7 @@ TEST(Placement, AFleetByOnEachMatchesTheModelWrittenOut)
 {
     constexpr Eigen::Index count = 3;
     auto const fleet =
-        compose(on<Ownship>(vehicle()), onEach<Targets>(vehicle(), on<TargetForces>(path<SpecificForce>)));
+        blockwise(on<Ownship>(vehicle()), onEach<Targets>(vehicle(), on<TargetForces>(path<SpecificForce>)));
     auto const byHand = processModel(
         []<typename T>(auto const & in, auto const & out, auto const & x, double dt) {
             auto y = zeros<T>(out);
@@ -304,7 +304,7 @@ using Plane = Composite<Position, Velocity>;
 
 }  // namespace
 
-// compose(range, bearing) measures Composite<Range, Bearing> and updates as one radar model written as a function
+// blockwise(range, bearing) measures Composite<Range, Bearing> and updates as one radar model written as a function
 // over both, with the noise of each on its block.
 TEST(Placement, ComposedMeasurementsMatchOneModel)
 {
@@ -350,7 +350,7 @@ TEST(Placement, ComposedMeasurementsMatchOneModel)
     auto const prior = GaussianParams<Plane>{Plane{}, mean, stateCovariance(4)};
     Eigen::Vector2d const z{5.1, 0.95};
 
-    auto const composed = update(prior, observe(methods::unscented(), compose(range, bearing), z));
+    auto const composed = update(prior, observe(methods::unscented(), blockwise(range, bearing), z));
     auto const one = update(prior, observe(methods::unscented(), radar, z));
     ASSERT_TRUE(composed && one);
     EXPECT_LT((composed->branches.front().posterior.mean() - one->branches.front().posterior.mean()).norm(), 1e-12);
@@ -360,7 +360,7 @@ TEST(Placement, ComposedMeasurementsMatchOneModel)
         1e-12
     );
 
-    auto const composedLinearized = update(prior, observe(methods::linearized(), compose(range, bearing), z));
+    auto const composedLinearized = update(prior, observe(methods::linearized(), blockwise(range, bearing), z));
     auto const oneLinearized = update(prior, observe(methods::linearized(), radar, z));
     ASSERT_TRUE(composedLinearized && oneLinearized);
     EXPECT_LT(

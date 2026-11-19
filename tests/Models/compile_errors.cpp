@@ -517,7 +517,7 @@ struct Landmarks : Emrys::Linear<Eigen::Dynamic, 8>
 #endif
 
 #if defined(COMPOSE_WHOLE_STATE_MODELS)  // static_assert: ResolvedReads.h: a model without reads() and writes() reads
-[[maybe_unused]] auto const composed = Emrys::compose(makeWholeFix(), makeFixModel());
+[[maybe_unused]] auto const composed = Emrys::blockwise(makeWholeFix(), makeFixModel());
 #endif
 
 #if defined(FUNCTION_IN_NO_FORM)  // static_assert: Methods.h: a model's function takes h(x), h(in, x), or h(in, out, x)
@@ -625,27 +625,27 @@ struct Landmarks : Emrys::Linear<Eigen::Dynamic, 8>
 #endif
 
 #if defined(COMPOSE_NOTHING)  // static_assert: ProcessModel.h: a composition needs a process model
-[[maybe_unused]] constexpr auto size = sizeof(Emrys::Composition<>);
+[[maybe_unused]] constexpr auto size = sizeof(Emrys::Blockwise<>);
 #endif
 
 #if defined(COMPOSE_WRITES_TWICE)  // static_assert: ProcessModel.h: two parts of a composition write the same block
-[[maybe_unused]] auto const model = Emrys::compose(Emrys::RandomWalk<Position>{0.1}, Emrys::Constant<Position>{});
+[[maybe_unused]] auto const model = Emrys::blockwise(Emrys::RandomWalk<Position>{0.1}, Emrys::Constant<Position>{});
 #endif
 
 #if defined(COMPOSE_TWO_SCALARS)  // static_assert: ProcessModel.h: the parts of a composition must have one scalar
 [[maybe_unused]] auto const model =
-    Emrys::compose(Emrys::RandomWalk<Position>{0.1}, Emrys::RandomWalk<Velocity, float>{0.1f});
+    Emrys::blockwise(Emrys::RandomWalk<Position>{0.1}, Emrys::RandomWalk<Velocity, float>{0.1f});
 #endif
 
 #if defined(COMPOSE_NESTED_TWO_SCALARS)  // static_assert: ProcessModel.h: the parts of a composition must have one
-[[maybe_unused]] auto const model = Emrys::compose(
-    Emrys::compose(Emrys::Constant<Position>{}, Emrys::RandomWalk<Velocity, float>{0.1f}),
+[[maybe_unused]] auto const model = Emrys::blockwise(
+    Emrys::blockwise(Emrys::Constant<Position>{}, Emrys::RandomWalk<Velocity, float>{0.1f}),
     Emrys::RandomWalk<Speed>{0.1}
 );
 #endif
 
 #if defined(COMPOSITION_POLICY_MISSING)  // static_assert: ProcessModel.h: the composition was not given this policy
-[[maybe_unused]] auto const & noise = Emrys::compose(Emrys::Constant<Position>{}, Emrys::Constant<Velocity>{})
+[[maybe_unused]] auto const & noise = Emrys::blockwise(Emrys::Constant<Position>{}, Emrys::Constant<Velocity>{})
                                           .policy<Emrys::internal::PolicyKind::continuousNoise>();
 #endif
 
@@ -1485,7 +1485,7 @@ struct Target : Emrys::Composite<Position, Velocity>
 {};
 
 #if defined(COMPOSE_SHARED_NAME)  // static_assert: ProcessModel.h: two parts of a composition read different blocks
-[[maybe_unused]] auto const model = Emrys::compose(
+[[maybe_unused]] auto const model = Emrys::blockwise(
     Emrys::RandomWalk<Emrys::TagPath<Ownship, Position>>{0.1},
     Emrys::RandomWalk<Emrys::TagPath<Target, Position>>{0.1}
 );
@@ -1697,7 +1697,7 @@ scalarOf(auto... policies)
 #endif
 
 #if defined(COMPOSE_WRITES_ONE_NAME)  // static_assert: ProcessModel.h: two parts of a composition write blocks under
-[[maybe_unused]] auto const model = Emrys::compose(
+[[maybe_unused]] auto const model = Emrys::blockwise(
     Emrys::processModel(
         [](auto const &, auto const &, auto const & x, double) {
             return x.eval();
@@ -1715,15 +1715,15 @@ scalarOf(auto... policies)
 );
 #endif
 
-#if defined(COMPOSE_MEASUREMENT_NO_WRITES)  // static_assert: Placement.h: compose() takes measurement models that
-[[maybe_unused]] auto const model = Emrys::compose(
+#if defined(COMPOSE_MEASUREMENT_NO_WRITES)  // static_assert: Placement.h: blockwise() takes measurement models that
+[[maybe_unused]] auto const model = Emrys::blockwise(
     Emrys::measurementModel(Eigen::Matrix2d::Identity(), Emrys::reads(Emrys::path<Position>)),
     scalarOf<Range>()
 );
 #endif
 
-#if defined(COMPOSE_LIKELIHOOD_ALONE)  // static_assert: Placement.h: compose() takes measurement models with a
-[[maybe_unused]] auto const model = Emrys::compose(
+#if defined(COMPOSE_LIKELIHOOD_ALONE)  // static_assert: Placement.h: blockwise() takes measurement models with a
+[[maybe_unused]] auto const model = Emrys::blockwise(
     Emrys::measurementModel(
         Emrys::reads(Emrys::path<Position>),
         Emrys::writes(Emrys::path<Bearing>),
@@ -1735,13 +1735,13 @@ scalarOf(auto... policies)
 );
 #endif
 
-#if defined(COMPOSE_OUTPUT_SPACE)  // static_assert: Placement.h: compose() takes measurement models whose output
+#if defined(COMPOSE_OUTPUT_SPACE)  // static_assert: Placement.h: blockwise() takes measurement models whose output
 [[maybe_unused]] auto const model =
-    Emrys::compose(scalarOf<Range>(Emrys::outputSpace(Emrys::Composite<Range>{})), scalarOf<Bearing>());
+    Emrys::blockwise(scalarOf<Range>(Emrys::outputSpace(Emrys::Composite<Range>{})), scalarOf<Bearing>());
 #endif
 
 #if defined(COMPOSE_SOME_LIKELIHOODS)  // static_assert: Placement.h: in a composition of measurement models, every
-[[maybe_unused]] auto const model = Emrys::compose(
+[[maybe_unused]] auto const model = Emrys::blockwise(
     scalarOf<Range>(Emrys::logLikelihood([](auto const &, auto const &, auto const &) {
         return 0.0;
     })),
@@ -1750,7 +1750,7 @@ scalarOf(auto... policies)
 #endif
 
 #if defined(COMPOSE_WHOLE_NOISE)  // static_assert: Placement.h: a part of a composition whose additiveNoise() covers
-[[maybe_unused]] auto const model = Emrys::compose(
+[[maybe_unused]] auto const model = Emrys::blockwise(
     Emrys::measurementModel(
         [](auto const & in, auto const &, auto const & x) {
             return Emrys::block<Position>(in, x).eval();

@@ -295,7 +295,7 @@ expectAttitudeStepsAllocateNothing()
     Eigen::Matrix<double, 7, 7> cov = Eigen::Matrix<double, 7, 7>::Identity();
     cov.topLeftCorner<3, 3>() *= 0.5;
     auto filter = KalmanFilter{
-        compose(attitudeWalk<A>(0.01), ConstantVelocity<Position, Velocity>{0.1}),
+        blockwise(attitudeWalk<A>(0.01), ConstantVelocity<Position, Velocity>{0.1}),
         GaussianParams<Body>{mean, cov}
     };
     auto window = GaussianHistory<Body>{Lag{5}};
@@ -399,7 +399,7 @@ expectIteratedAttitudeStepsAllocateNothing()
     Eigen::Matrix<double, 7, 7> cov = Eigen::Matrix<double, 7, 7>::Identity();
     cov.topLeftCorner<3, 3>() *= 0.5;
     auto filter = KalmanFilter{
-        compose(attitudeWalk<A>(0.01), ConstantVelocity<Position, Velocity>{0.1}),
+        blockwise(attitudeWalk<A>(0.01), ConstantVelocity<Position, Velocity>{0.1}),
         GaussianParams<Body>{mean, cov}
     };
     auto const method = Emrys::methods::iterated(Inner{}, {.tolerance = 0.0, .maxIterations = 4});

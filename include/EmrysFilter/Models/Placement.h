@@ -4,8 +4,8 @@
  * Models placed in a larger state and measurement models side by side (decisions.md [model-placement],
  * [model-policies]): on<Path>(model), which places a process or a measurement model on the block that a path names,
  * prefixing every path into the state it reads and writes; onEach<Path>(model), which places one copy of a process
- * model on every repetition of a repeated block; and compose() of measurement models, whose output is their outputs
- * side by side. compose() of process models is in ProcessModel.h. Read Measurement.h next.
+ * model on every repetition of a repeated block; and blockwise() of measurement models, whose output is their outputs
+ * side by side. blockwise() of process models is in ProcessModel.h. Read Measurement.h next.
  */
 
 #include <array>
@@ -914,7 +914,7 @@ placedPolicy(Policy const & policy)
     }
 }
 
-/** The function of measurement models side by side (see compose()): each model's function on its
+/** The function of measurement models side by side (see blockwise()): each model's function on its
  * own input, gathered from the whole's by name, its result written into the whole's output by
  * block, and the Jacobian assembled from the models' where every one returns one.
  *
@@ -1059,7 +1059,7 @@ placedNoiseParts(Model const & model)
  * <tt>on<Name>(path<Tag>)</tt>, which gives the input \a Tag the name \a Name.
  *
  * \code
- * auto const pair = compose(on<Ownship>(vehicle), on<Target>(vehicle, on<TargetForce>(path<SpecificForce>)));
+ * auto const pair = blockwise(on<Ownship>(vehicle), on<Target>(vehicle, on<TargetForce>(path<SpecificForce>)));
  * \endcode
  */
 template <typename Path, ProcessModel Model, typename... Renames>
@@ -1130,7 +1130,7 @@ on(Model const & model, Renames const &...)
  * repetition; any other input is shared by every repetition.
  *
  * \code
- * auto const fleet = compose(on<Ownship>(vehicle), onEach<Targets>(vehicle, on<TargetForces>(path<SpecificForce>)));
+ * auto const fleet = blockwise(on<Ownship>(vehicle), onEach<Targets>(vehicle, on<TargetForces>(path<SpecificForce>)));
  * \endcode
  */
 template <typename Path, ProcessModel Model, typename... Renames>
@@ -1152,7 +1152,7 @@ onEach(Model const & model, Renames const &...)
 namespace internal
 {
 
-/** \returns the measurement model of \a models side by side (see compose()) */
+/** \returns the measurement model of \a models side by side (see blockwise()) */
 template <typename... Models>
 [[nodiscard]] auto
 composeMeasurements(Models... models)
@@ -1161,15 +1161,15 @@ composeMeasurements(Models... models)
     // A whole-state model has no writes() either, which its own refusal says.
     static_assert(
         ((Models::template has<PolicyKind::writes> || readsWholeState<Models>) && ...),
-        "compose() takes measurement models that name their output with writes()"
+        "blockwise() takes measurement models that name their output with writes()"
     );
     static_assert(
         (Models::HasFunction && ...),
-        "compose() takes measurement models with a function; one known by its likelihood alone has no output"
+        "blockwise() takes measurement models with a function; one known by its likelihood alone has no output"
     );
     static_assert(
         (!Models::template has<PolicyKind::outputSpace> && ...),
-        "compose() takes measurement models whose output writes() fixes, without outputSpace()"
+        "blockwise() takes measurement models whose output writes() fixes, without outputSpace()"
     );
     constexpr std::size_t likelihoods = (std::size_t{Models::template has<PolicyKind::logLikelihood>} + ...);
     static_assert(
@@ -1234,13 +1234,13 @@ composeMeasurements(Models... models)
  * has its own, their sum. Each must name its output with writes().
  *
  * \code
- * auto const radar = compose(range, bearing);  // measures Composite<Range, Bearing>
+ * auto const radar = blockwise(range, bearing);  // measures Composite<Range, Bearing>
  * \endcode
  */
 template <MeasurementModel... Models>
     requires(sizeof...(Models) > 0)
 [[nodiscard]] auto
-compose(Models &&... models)
+blockwise(Models &&... models)
 {
     return internal::composeMeasurements(std::remove_cvref_t<Models>{std::forward<Models>(models)}...);
 }

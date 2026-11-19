@@ -66,7 +66,8 @@ mechanization(double gyroDensity, double accelDensity)
             auto y = Emrys::zeros<T>(out);
             block<Attitude>(out, y) = Emrys::plus<Attitude>(block<Attitude>(in, x), turn);
             block<Velocity>(out, y) = block<Velocity>(in, x) + dt * acceleration;
-            block<Position>(out, y) = block<Position>(in, x) + dt * block<Velocity>(in, x) + 0.5 * dt * dt * acceleration;
+            block<Position>(out, y) =
+                block<Position>(in, x) + dt * block<Velocity>(in, x) + 0.5 * dt * dt * acceleration;
             return y;
         },
         Emrys::reads(
@@ -109,13 +110,11 @@ main()
     double const accelDensity = 1e-3;
     double const biasDensity = 1e-8;
     double const sightingVariance = 0.01;
-    auto const motion = Emrys::compose(mechanization(gyroDensity, accelDensity), Emrys::RandomWalk<Bias>{biasDensity});
+    auto const motion =
+        Emrys::blockwise(mechanization(gyroDensity, accelDensity), Emrys::RandomWalk<Bias>{biasDensity});
 
-    auto const landmarks = std::array{
-        Eigen::Vector3d{10.0, 0.0, 2.0},
-        Eigen::Vector3d{-4.0, 9.0, -1.0},
-        Eigen::Vector3d{-3.0, -8.0, 4.0}
-    };
+    auto const landmarks =
+        std::array{Eigen::Vector3d{10.0, 0.0, 2.0}, Eigen::Vector3d{-4.0, 9.0, -1.0}, Eigen::Vector3d{-3.0, -8.0, 4.0}};
 
     // The prior: the heading known to a radian, the tilt to 0.2 rad, the velocity to 1 m/s, and the position to
     // 2 m. The same thirteen values and twelve variances serve both spaces; in the group the velocity's and the
@@ -146,7 +145,8 @@ main()
             Eigen::Quaterniond const attitude{Eigen::Vector4d{truth.head<4>()}};
             Eigen::Vector3d const worldAcceleration{std::cos(0.4 * t), std::sin(0.6 * t), 0.3 * std::cos(0.9 * t)};
             Emrys::ValueVector<Accel> const accel = attitude.conjugate() * (worldAcceleration - gravity);
-            truth = Emrys::simulate<GroupState>(truth, motion, rng, dt, Emrys::sure<Gyro>(gyro), Emrys::sure<Accel>(accel));
+            truth =
+                Emrys::simulate<GroupState>(truth, motion, rng, dt, Emrys::sure<Gyro>(gyro), Emrys::sure<Accel>(accel));
             group.predict(dt, Emrys::sure<Gyro>(gyro), Emrys::sure<Accel>(accel));
             blocks.predict(dt, Emrys::sure<Gyro>(gyro), Emrys::sure<Accel>(accel));
 
@@ -166,7 +166,8 @@ main()
                     auto const byFunction = sightingByFunction(landmark, sightingVariance);
                     Emrys::ValueVector<Sighting> const z = Emrys::simulate<GroupState>(truth, sight, rng);
                     auto const groupUpdated = group.update(Emrys::observe(sight, z));
-                    auto const blocksUpdated = blocks.update(Emrys::observe(Emrys::methods::linearized(), byFunction, z));
+                    auto const blocksUpdated =
+                        blocks.update(Emrys::observe(Emrys::methods::linearized(), byFunction, z));
                     if (!groupUpdated || !blocksUpdated)
                     {
                         std::println("run {}, step {}: an update failed", run, k);

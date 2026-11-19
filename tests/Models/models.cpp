@@ -25,7 +25,7 @@
 
 using Emrys::additiveNoise;
 using Emrys::block;
-using Emrys::compose;
+using Emrys::blockwise;
 using Emrys::Composite;
 using Emrys::Constant;
 using Emrys::ConstantAcceleration;
@@ -104,7 +104,7 @@ makeState()
 auto
 makeModel()
 {
-    return compose(
+    return blockwise(
         ConstantAcceleration<Position, Velocity, Acceleration>{jerkDensity},
         OrnsteinUhlenbeck<Bias>{TimeConstant{tau}, StationaryVariance{biasVar}}
     );
@@ -266,7 +266,7 @@ TEST(ProcessModel, TransitionMatrixFromTheParts)
     EXPECT_LT((Emrys::FixedStepModel{makeModel(), State{}, timeStep}.transition() - transitionMatrix()).norm(), 1e-15);
 
     auto const evaluated =
-        compose(ConstantAcceleration<Position, Velocity, Acceleration>{jerkDensity}, untransitioned());
+        blockwise(ConstantAcceleration<Position, Velocity, Acceleration>{jerkDensity}, untransitioned());
     static_assert(hasTransition<decltype(makeModel())> && !hasTransition<decltype(evaluated)>);
     auto const x = makeState();
     auto const predicted = Emrys::predict(methods::linearized(), x, evaluated, timeStep);
@@ -291,7 +291,7 @@ TEST(ProcessModel, PartitionKnownFromTheTypes)
     using Full = decltype(makeModel());
     using Missing = ConstantAcceleration<Position, Velocity, Acceleration>;
     using Evaluated =
-        decltype(compose(ConstantAcceleration<Position, Velocity, Acceleration>{jerkDensity}, untransitioned()));
+        decltype(blockwise(ConstantAcceleration<Position, Velocity, Acceleration>{jerkDensity}, untransitioned()));
     static_assert(Full::staticPartition<State>() == StaticPartition::holds);
     static_assert(Missing::staticPartition<State>() == StaticPartition::fails);
     static_assert(Evaluated::staticPartition<State>() == StaticPartition::holds);
@@ -300,7 +300,7 @@ TEST(ProcessModel, PartitionKnownFromTheTypes)
     {};
 
     using Resizable = Composite<Position, Velocity, Acceleration, Bias, Extra>;
-    auto const allConstant = compose(
+    auto const allConstant = blockwise(
         Constant<Position>{},
         Constant<Velocity>{},
         Constant<Acceleration>{},
@@ -315,16 +315,16 @@ TEST(ProcessModel, PartitionKnownFromTheTypes)
 // states none, such as Constant, joins any, and a composition of parts that state none has double.
 TEST(ProcessModel, ACompositionHasItsPartsScalar)
 {
-    using Single = decltype(compose(
-        compose(Constant<Bias>{}, RandomWalk<Acceleration, float>{0.1f}),
+    using Single = decltype(blockwise(
+        blockwise(Constant<Bias>{}, RandomWalk<Acceleration, float>{0.1f}),
         ConstantVelocity<Position, Velocity, float>{0.1f}
     ));
     static_assert(std::is_same_v<Single::Scalar, float>);
 
-    using Unstated = decltype(compose(Constant<Position>{}, Constant<Velocity>{}));
+    using Unstated = decltype(blockwise(Constant<Position>{}, Constant<Velocity>{}));
     static_assert(std::is_same_v<Unstated::Scalar, double>);
-    auto const joined = compose(
-        compose(Constant<Position>{}, Constant<Velocity>{}),
+    auto const joined = blockwise(
+        blockwise(Constant<Position>{}, Constant<Velocity>{}),
         RandomWalk<Acceleration, float>{0.1f},
         Constant<Bias>{}
     );
@@ -342,7 +342,7 @@ TEST(ProcessModel, ConstantVelocityWithADensityMatrix)
 
     using Nested = Composite<Bias, Platform>;
     auto const density = Eigen::Matrix2d{{0.2, 0.05}, {0.05, 0.1}};
-    auto const model = compose(
+    auto const model = blockwise(
         ConstantVelocity<TagPath<Platform, Position>, TagPath<Platform, Velocity>>{density},
         RandomWalk<Bias>{0.01}
     );
@@ -367,7 +367,7 @@ TEST(ProcessModel, RandomWalkOnAnAttitude)
 
     using Oriented = Composite<Attitude, Bias>;
     auto const density = Eigen::Matrix3d{{0.2, 0.05, 0.0}, {0.05, 0.1, 0.02}, {0.0, 0.02, 0.3}};
-    auto const model = compose(RandomWalk<Attitude>{density}, RandomWalk<Bias>{0.01});
+    auto const model = blockwise(RandomWalk<Attitude>{density}, RandomWalk<Bias>{0.01});
     static_assert(RandomWalk<Attitude>::Dimension == 3);
     static_assert(decltype(model)::staticPartition<Oriented>() == Emrys::internal::StaticPartition::holds);
 
@@ -930,7 +930,7 @@ TYPED_TEST(ModelMethodTest, ZeroResetsItsBlockWhateverTheStep)
     constexpr double resetVar = 0.25;
     auto const x = makeState();
     auto const model =
-        compose(ConstantVelocity<Position, Velocity>{jerkDensity}, Zero<Acceleration>{resetVar}, Constant<Bias>{});
+        blockwise(ConstantVelocity<Position, Velocity>{jerkDensity}, Zero<Acceleration>{resetVar}, Constant<Bias>{});
     EXPECT_EQ(Zero<Acceleration>{resetVar}.variance(), resetVar);
     Eigen::Matrix2d const i2 = Eigen::Matrix2d::Identity();
     for (double const dt : {0.0, 0.1, timeStep, 10.0})
@@ -963,7 +963,7 @@ TYPED_TEST(ModelMethodTest, PredictTakesUncertainAndKnownInputs)
     auto const accelerometer =
         GaussianParams<SpecificForce>{Eigen::Vector2d{0.4, 9.6}, Eigen::Matrix2d{{0.02, 0.005}, {0.005, 0.03}}};
     auto const gravity = Eigen::Vector2d{0.0, -9.8};
-    auto const model = compose(
+    auto const model = blockwise(
         accelerometerDriven<Position, Velocity>(),
         OrnsteinUhlenbeck<Bias>{TimeConstant{tau}, StationaryVariance{biasVar}}
     );

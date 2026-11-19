@@ -181,7 +181,7 @@ TEST(GroupRunTime, PredictAndUpdateWithFeet)
         Emrys::writes(path<Attitude>, path<Position>),
         Emrys::continuousNoise(Emrys::on<Attitude>(0.01 * Eigen::Matrix3d::Identity()))
     );
-    auto const motion = Emrys::compose(
+    auto const motion = Emrys::blockwise(
         turning,
         Emrys::onEach<Emrys::TagPath<Body, Feet>>(Emrys::RandomWalk<Foot>{0.05}),
         Emrys::RandomWalk<Bias>{0.001}
@@ -219,10 +219,8 @@ TEST(GroupRunTime, PredictAndUpdateWithFeet)
     );
     Eigen::VectorXd z(6);
     z << 0.25, -0.1, -0.55, -0.2, 0.15, -0.62;
-    auto const updated = Emrys::update(
-        predicted,
-        Emrys::observe(methods::linearized(), kinematics, z, Emrys::carries::adjoint())
-    );
+    auto const updated =
+        Emrys::update(predicted, Emrys::observe(methods::linearized(), kinematics, z, Emrys::carries::adjoint()));
     ASSERT_TRUE(updated.has_value());
     Eigen::MatrixXd const posterior = updated->branches[0].posterior.covarianceLower().selfadjointView<Eigen::Lower>();
     EXPECT_LT(posterior.trace(), after.trace());

@@ -24,7 +24,7 @@
 
 using namespace EmrysTest::UnequalDimensions;
 
-using Emrys::compose;
+using Emrys::blockwise;
 using Emrys::KalmanFilter;
 
 namespace methods = Emrys::methods;
@@ -61,7 +61,7 @@ TEST(UnequalDimensions, KalmanFilterPredictsAndUpdatesAnAttitude)
     auto const initial = GaussianParams<Motion>{mean, cov};
 
     auto filter = KalmanFilter{
-        compose(attitudeWalk<Orientation>(0.01), Emrys::ConstantVelocity<Position, Velocity>{0.1}),
+        blockwise(attitudeWalk<Orientation>(0.01), Emrys::ConstantVelocity<Position, Velocity>{0.1}),
         initial
     };
     filter.predict(1.0);
@@ -121,7 +121,7 @@ TEST(UnequalDimensions, AFixedStepModelCachesNoTransitionOnAQuaternion)
     cov.topLeftCorner<5, 5>() = poseCov();
     cov.bottomRightCorner<2, 2>() = 0.25 * Eigen::Matrix2d::Identity();
     auto const initial = GaussianParams<Motion>{mean, cov};
-    auto const model = compose(attitudeWalk<Orientation>(0.01), Emrys::ConstantVelocity<Position, Velocity>{0.1});
+    auto const model = blockwise(attitudeWalk<Orientation>(0.01), Emrys::ConstantVelocity<Position, Velocity>{0.1});
 
     auto const fixedModel = Emrys::FixedStepModel{model, Motion{}, 1.0};
     static_assert(!decltype(fixedModel)::CachesTransition);
@@ -147,7 +147,7 @@ TEST(UnequalDimensions, KalmanSmootherStepsInTheTangentSpace)
     cov.topLeftCorner<5, 5>() = poseCov();
     cov.bottomRightCorner<2, 2>() = 0.25 * Eigen::Matrix2d::Identity();
     auto filter = KalmanFilter{
-        compose(attitudeWalk<Orientation>(0.001), Emrys::ConstantVelocity<Position, Velocity>{0.1}),
+        blockwise(attitudeWalk<Orientation>(0.001), Emrys::ConstantVelocity<Position, Velocity>{0.1}),
         GaussianParams<Motion>{mean, cov}
     };
 

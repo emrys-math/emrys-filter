@@ -155,7 +155,7 @@ inline constexpr bool isBatched<Batched<F, Mark>>{true};
 /// \endcond
 
 /** Whether the function \a F takes a batch of points in one call (decisions.md [batched-functions]):
- * a Batched, or the library's function of models placed or composed (Placement.h, Composition),
+ * a Batched, or the library's function of models placed or composed (Placement.h, Blockwise),
  * which says so with \c TakesBatches where a model it holds is batched, and takes the batch as a
  * Batched's function does, its output last.
  */

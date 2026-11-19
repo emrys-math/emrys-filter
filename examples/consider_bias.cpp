@@ -96,7 +96,7 @@ main()
 
     // The gyroscope's white noise has a spectral density of 1e-6 rad^2/s.
     double const gyroDensity = 1e-6;
-    auto const motion = Emrys::compose(gyroIntegration(gyroDensity), Emrys::Constant<Bias>{});
+    auto const motion = Emrys::blockwise(gyroIntegration(gyroDensity), Emrys::Constant<Bias>{});
     auto const unbiased = unbiasedIntegration(gyroDensity);
     auto const compass = compassModel();
 

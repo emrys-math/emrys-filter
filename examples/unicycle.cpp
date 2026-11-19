@@ -120,7 +120,7 @@ main()
     // The speed is a random walk of spectral density 0.1 m^2/s^3, and the turn rate decays toward
     // zero with a time constant of 10 s and a stationary variance of 0.01 rad^2/s^2.
     double const speedDensity = 0.1;
-    auto const motion = Emrys::compose(
+    auto const motion = Emrys::blockwise(
         unicycle(),
         Emrys::RandomWalk<Speed>{speedDensity},
         Emrys::OrnsteinUhlenbeck<TurnRate>{Emrys::TimeConstant{10.0}, Emrys::StationaryVariance{0.01}}

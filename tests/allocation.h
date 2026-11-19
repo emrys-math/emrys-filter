@@ -39,7 +39,7 @@ inline bool countingHeap = false;
 inline int heapAllocations = 0;
 
 using Emrys::additiveNoise;
-using Emrys::compose;
+using Emrys::blockwise;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
 using Emrys::DiscreteProduct;

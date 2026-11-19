@@ -829,8 +829,8 @@ spreadPrior(S const & space)
 TEST(Batched, ACompositionCallsItsBatchedPartOncePerTransform)
 {
     auto const prior = spreadPrior(Formation{});
-    auto const byPoint = Emrys::compose(Emrys::on<Lead>(velocityModel()), Emrys::on<Wing>(velocityModel()));
-    auto const byBatch = Emrys::compose(Emrys::on<Lead>(batchedVelocityModel()), Emrys::on<Wing>(velocityModel()));
+    auto const byPoint = Emrys::blockwise(Emrys::on<Lead>(velocityModel()), Emrys::on<Wing>(velocityModel()));
+    auto const byBatch = Emrys::blockwise(Emrys::on<Lead>(batchedVelocityModel()), Emrys::on<Wing>(velocityModel()));
     auto const expected = Emrys::predict(Emrys::methods::unscented(), prior, byPoint, 0.5);
     stepCalls = 0;
     stepColumns = 0;
@@ -848,9 +848,9 @@ TEST(Batched, OnEachCallsABatchedModelOncePerRepetition)
 {
     auto const flight = Flight{Lead{}, Escorts{Craft{}, 3}};
     auto const prior = spreadPrior(flight);
-    auto const byPoint = Emrys::compose(Emrys::on<Lead>(velocityModel()), Emrys::onEach<Escorts>(velocityModel()));
+    auto const byPoint = Emrys::blockwise(Emrys::on<Lead>(velocityModel()), Emrys::onEach<Escorts>(velocityModel()));
     auto const byBatch =
-        Emrys::compose(Emrys::on<Lead>(velocityModel()), Emrys::onEach<Escorts>(batchedVelocityModel()));
+        Emrys::blockwise(Emrys::on<Lead>(velocityModel()), Emrys::onEach<Escorts>(batchedVelocityModel()));
     auto const expected = Emrys::predict(Emrys::methods::unscented(), prior, byPoint, 0.5);
     stepCalls = 0;
     stepColumns = 0;

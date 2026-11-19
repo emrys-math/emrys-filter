@@ -1128,7 +1128,7 @@ A NaN log-likelihood at a single point is handled differently by the two states.
 `Composite<X, R>` of two `Linear<1>` blocks, with points of `X` at 4, 9, and −1, each with the
 Gaussian $\mathcal{N}(0, 1)$ over `R`, a linearized measurement $\sqrt{x} + r$ with noise variance
 0.25, observed at 2.5 (the grid with `RandomWalk<R>{0.01}`, the particles with
-`compose(RandomWalk<X>{0.01}, RandomWalk<R>{0.01})`):
+`blockwise(RandomWalk<X>{0.01}, RandomWalk<R>{0.01})`):
 
 ```
 RbPointMassFilter: accepted 0, logLikelihood -nan(ind), per cell -1.13051 -1.13051 -nan(ind), size 3

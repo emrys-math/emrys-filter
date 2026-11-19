@@ -435,7 +435,7 @@ says which blocks the method uses. Unmarked, a needed Jacobian comes by autodiff
 `Linearized` and the iterated updates, and of the whole batch, in duals seeded on the blocks used,
 where every point's is needed [affine-coordinates], [likelihood-measurements]. The library calls a
 batched function once per sigma-point set and per particle set or chunk [execution-policies].
-`on()` keeps its model's mark; `compose()` calls each batched part once over its rows, `onEach()` a
+`on()` keeps its model's mark; `blockwise()` calls each batched part once over its rows, `onEach()` a
 batched model once per repetition, and neither writes a Jacobian, so a method differentiates them.
 A user's space whose `normalize()`, `plus()`, or `minus()` can't take columns is not a `Space`.
 
@@ -452,7 +452,7 @@ A Jacobian argument, which an argument count can't tell from one more space. One
 **Evidence.** Tests that count calls or compare with the per-point form; negative compile tests.
 
 **Where.** `Models/Batched.h`, `Transform::evaluateEach()`, the resolvers' `ResolvedFunction`,
-`ProcessStep`, `ModelTransform`, and `PinnedMeasurement`, and `Composition` in `Models/Placement.h`.
+`ProcessStep`, `ModelTransform`, and `PinnedMeasurement`, and `Blockwise` in `Models/Placement.h`.
 
 ### params-and-density
 
@@ -1853,7 +1853,7 @@ untouched. Any other item is an input of the call and keeps its tag, so two plac
 unless a rename `on<Name>(path<Tag>)` gives it its own name. `onEach<Path>(model, renames...)`
 places one copy of a process model on every repetition of a repeated block, each with its own
 noise; an input renamed to a `Repeated` tag has a value per repetition, any other is shared.
-`compose(models...)` of measurement models measures the blocks they write side by side: the union
+`blockwise(models...)` of measurement models measures the blocks they write side by side: the union
 of their reads, their noise on their blocks, and the sum of their log-likelihoods where each has
 one. Parts of a composition of process models that state a scalar state the same one; a part that
 states none joins any.
@@ -1868,10 +1868,10 @@ precisions silently.
 **Rejected.** Prefixing the inputs too, which makes sharing the special case. Deciding which items
 are inputs from the state at the call, which would leave a composition's reads unknown until a
 state meets it. A separate spelling for an input every repetition shares. Parts of different
-scalars, with the composition in their common type. `Composition::part<I>()`: a part has no tag,
+scalars, with the composition in their common type. `Blockwise::part<I>()`: a part has no tag,
 and with no setters it could only assign a whole new part, which composing a new model does too.
 
-**Where.** `Models/Placement.h`, `Models/ProcessModel.h` (`compose()` of process models).
+**Where.** `Models/Placement.h`, `Models/ProcessModel.h` (`blockwise()` of process models).
 
 ### whole-state-models
 
@@ -1885,7 +1885,7 @@ state's too. A process model gives both policies or neither. Its noise is over t
 `continuousNoise(Qc)` of a matrix or `additiveNoise()` of a covariance or a Gaussian;
 `processModel(F, noise)` is the matrix model, whose function returns $F x$ with $F$ as its
 Jacobian, so that every method predicts it exactly, as `measurementModel(H, noise)` updates exactly [linear-sensors]. Such a model
-takes no inputs of the call and no `affineIn()`, and `on()`, `onEach()`, and `compose()` refuse it at
+takes no inputs of the call and no `affineIn()`, and `on()`, `onEach()`, and `blockwise()` refuse it at
 compile time. A batched function of one writes its Jacobian whole, `Y.jacobian(j)` or `Y.jacobian()`.
 
 **Why.** The Kalman filter as a textbook writes it, $F$, $H$, $Q$, and $R$ on `Linear<4>`, is the

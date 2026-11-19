@@ -194,7 +194,8 @@ TEST(LinearMeasurement, GivesTheFunctionsPosterior)
 // four filters end where the Kalman filter with the function does.
 TEST(LinearMeasurement, EveryFormGivesTheSamePosterior)
 {
-    auto const model = Emrys::compose(Emrys::ConstantVelocity<Position, Velocity>{0.1}, Emrys::RandomWalk<Bias>{0.01});
+    auto const model =
+        Emrys::blockwise(Emrys::ConstantVelocity<Position, Velocity>{0.1}, Emrys::RandomWalk<Bias>{0.01});
     auto reference = Emrys::KalmanFilter{model, makePrior()};
     auto kalman = Emrys::KalmanFilter{model, makePrior()};
     auto root = Emrys::SqrtKalmanFilter{model, Emrys::toSqrt(makePrior()).value()};

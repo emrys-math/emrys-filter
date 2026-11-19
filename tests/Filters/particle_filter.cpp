@@ -32,7 +32,7 @@
 #include <vector>
 
 using Emrys::additiveNoise;
-using Emrys::compose;
+using Emrys::blockwise;
 using Emrys::Composite;
 using Emrys::Constant;
 using Emrys::ConstantVelocity;
@@ -370,7 +370,7 @@ TEST(ParticleFilter, ANoiselessBlockMovesOnlyByItsDynamics)
 {
     // A Constant block contributes no process noise, so Q is singular; the bias must not move.
     using Biased = Composite<Position, Velocity, Bias>;
-    auto const model = compose(ConstantVelocity<Position, Velocity>{accelDensity}, Constant<Bias>{});
+    auto const model = blockwise(ConstantVelocity<Position, Velocity>{accelDensity}, Constant<Bias>{});
     auto const mean = Eigen::Matrix<double, 5, 1>{0.0, 0.0, 1.0, 0.5, 0.3};
     auto const initial = GaussianParams<Biased>{Biased{}, mean, Eigen::Matrix<double, 5, 5>::Identity()};
     auto rng = std::mt19937_64{5};

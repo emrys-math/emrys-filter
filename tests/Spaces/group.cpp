@@ -295,6 +295,7 @@ TEST(Group, RunTimeSizedGroup)
     // Each foot is turned as the position is: the pose of the attitude and one foot agrees with the whole.
     struct FootPose : ExtendedPose<Attitude, Foot>
     {};
+
     Eigen::Matrix<double, 7, 1> footA;
     footA << a.head<4>(), a.tail<3>();
     Eigen::Matrix<double, 6, 1> footD;

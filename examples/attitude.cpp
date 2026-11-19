@@ -88,7 +88,7 @@ main()
     // bias wanders as a random walk of 1e-8 rad^2/s^3.
     double const gyroDensity = 1e-6;
     double const biasDensity = 1e-8;
-    auto const motion = Emrys::compose(gyroIntegration(gyroDensity), Emrys::RandomWalk<Bias>{biasDensity});
+    auto const motion = Emrys::blockwise(gyroIntegration(gyroDensity), Emrys::RandomWalk<Bias>{biasDensity});
 
     // Gravity points along the world's vertical z axis; the magnetic field dips 60 degrees below the
     // horizontal. Gravity alone leaves the heading unobserved, which the magnetometer supplies.
@@ -98,8 +98,7 @@ main()
     // The prior: an attitude known to about 6 degrees on each axis, and a bias of zero known to
     // 0.01 rad/s (0.6 degrees per second).
     // The mean's attitude is a rotation by the vector (0.3, -0.2, 1.0) radians.
-    Eigen::Quaterniond const attitude =
-        Emrys::UnitQuaternion::exp(Emrys::DifferenceVector<Attitude>{0.3, -0.2, 1.0});
+    Eigen::Quaterniond const attitude = Emrys::UnitQuaternion::exp(Emrys::DifferenceVector<Attitude>{0.3, -0.2, 1.0});
     Emrys::ValueVector<State> const mean = (Emrys::ValueVector<State>{} << attitude.coeffs(), 0.0, 0.0, 0.0).finished();
     auto const variances = Emrys::DifferenceVector<State>{{0.01, 0.01, 0.01, 1e-4, 1e-4, 1e-4}};
     auto const prior = Emrys::GaussianParams<State>{mean, variances.asDiagonal()};

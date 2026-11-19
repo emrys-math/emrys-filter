@@ -12,7 +12,7 @@
 #include <numbers>
 #include <type_traits>
 
-using Emrys::compose;
+using Emrys::blockwise;
 using Emrys::Composite;
 using Emrys::ConstantAcceleration;
 using Emrys::ConstantVelocity;
@@ -74,7 +74,7 @@ makeState()
 auto
 makeModel()
 {
-    return compose(
+    return blockwise(
         ConstantAcceleration<Position, Velocity, Acceleration>{jerkDensity},
         OrnsteinUhlenbeck<Bias>{TimeConstant{tau}, StationaryVariance{biasVar}}
     );
@@ -227,7 +227,7 @@ TYPED_TEST(FixedStepMethodTest, PredictionTakesUncertainAndKnownInputs)
     auto const accelerometer =
         GaussianParams<SpecificForce>{Eigen::Vector2d{0.4, 9.6}, Eigen::Matrix2d{{0.02, 0.005}, {0.005, 0.03}}};
     auto const gravity = Emrys::sure<Gravity>(Eigen::Vector2d{0.0, -9.8});
-    auto const continuous = compose(
+    auto const continuous = blockwise(
         accelerometerDriven<Position, Velocity>(),
         OrnsteinUhlenbeck<Bias>{TimeConstant{tau}, StationaryVariance{biasVar}}
     );
@@ -262,7 +262,7 @@ TEST(FixedStepModel, AnUnboundStepBindsToThePrior)
     EXPECT_EQ(joint.predicted.mean(), expectedJoint.predicted.mean());
     EXPECT_EQ(joint.cross, expectedJoint.cross);
 
-    auto const single = compose(
+    auto const single = blockwise(
         ConstantAcceleration<Position, Velocity, Acceleration, float>{static_cast<float>(jerkDensity)},
         Emrys::Constant<Bias>{}
     );

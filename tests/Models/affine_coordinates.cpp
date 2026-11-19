@@ -18,7 +18,7 @@
 using Emrys::additiveNoise;
 using Emrys::affineIn;
 using Emrys::block;
-using Emrys::compose;
+using Emrys::blockwise;
 using Emrys::Composite;
 using Emrys::Constant;
 using Emrys::GaussianParams;
@@ -65,12 +65,12 @@ productModels()
         return y;
     };
     return std::tuple{
-        compose(
+        blockwise(
             processModel(f, reads(path<Scale>, path<Value>), writes(path<Product>), affineIn(path<Value>)),
             Constant<Scale>{},
             Constant<Value>{}
         ),
-        compose(
+        blockwise(
             processModel(f, reads(path<Scale>, path<Value>), writes(path<Product>)),
             Constant<Scale>{},
             Constant<Value>{}
@@ -135,7 +135,7 @@ using Scaled = Composite<Position, Scale>;
 [[nodiscard]] auto
 scaledNoiseModel()
 {
-    return compose(
+    return blockwise(
         processModel(
             []<typename T>(auto const & in, auto const & out, auto const & x, double) {
                 auto y = zeros<T>(out);
@@ -184,7 +184,7 @@ TEST(AffineCoordinates, ASureInputIsNotFactored)
         block<Position>(out, y) = block<Position>(in, x) + block<Scale>(in, x)(0) * block<Noise>(in, x);
         return y;
     };
-    auto const withName = compose(
+    auto const withName = blockwise(
         processModel(
             f,
             reads(path<Position>, path<Scale>, path<Noise>),
@@ -193,7 +193,7 @@ TEST(AffineCoordinates, ASureInputIsNotFactored)
         ),
         Constant<Scale>{}
     );
-    auto const withoutName = compose(
+    auto const withoutName = blockwise(
         processModel(
             f,
             reads(path<Position>, path<Scale>, path<Noise>),
@@ -305,7 +305,7 @@ TEST(AffineCoordinates, TheThreeRoutesToTheJacobianAgreeAtTheSameCalls)
         writes(path<Planar>, path<Velocity>, path<Heading>),
         affineIn(path<Planar>, path<Velocity>)
     );
-    auto const byParts = compose(
+    auto const byParts = blockwise(
         processModel(
             [&calls](auto const & in, auto const &, auto const & x, double dt) {
                 ++calls;

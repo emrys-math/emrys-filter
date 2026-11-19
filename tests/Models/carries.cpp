@@ -310,7 +310,8 @@ TEST(Carries, AdjointCarryUnderSigmaPointsIsTheWorldSideFilter)
     );
     ASSERT_TRUE(named.has_value());
     EXPECT_EQ(named->branches[0].posterior.mean(), posterior.mean());
-    auto const body = Emrys::update(prior, Emrys::observe(methods::cubature(), sightings(), observed(), carries::none()));
+    auto const body =
+        Emrys::update(prior, Emrys::observe(methods::cubature(), sightings(), observed(), carries::none()));
     ASSERT_TRUE(body.has_value());
     EXPECT_GT(Emrys::minus<Pose>(body->branches[0].posterior.mean(), mean).norm(), 1e-3);
 }

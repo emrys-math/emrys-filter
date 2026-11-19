@@ -23,7 +23,7 @@
 
 using Emrys::additiveNoise;
 using Emrys::block;
-using Emrys::compose;
+using Emrys::blockwise;
 using Emrys::Composite;
 using Emrys::Constant;
 using Emrys::ConstantVelocity;
@@ -160,7 +160,7 @@ TEST(Simulate, PeriodicStatesStayInTheirInterval)
 // A sure input reaches the model as it is: with no noise the position moves by dt times it.
 TEST(Simulate, InputsReachTheBlocks)
 {
-    auto const model = compose(pushed(), Constant<Velocity>{});
+    auto const model = blockwise(pushed(), Constant<Velocity>{});
     auto rng = std::mt19937_64{5};
     auto const push = Eigen::Vector2d{3, -1};
     auto const expected = Eigen::Vector4d{1 + 2 * 3, 2 - 2 * 1, 0.5, -0.25};

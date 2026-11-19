@@ -30,7 +30,7 @@
 #include "Spaces/unit_quaternion.h"
 
 using Emrys::block;
-using Emrys::compose;
+using Emrys::blockwise;
 using Emrys::Composite;
 using Emrys::DifferenceSpace;
 using Emrys::GaussianParams;
@@ -313,7 +313,7 @@ TEST(UnitQuaternion, KalmanFilterRunsModelsThroughMap)
     mean << 1.0, 2.0, 3.0, turned.coeffs(), 0.1, 0.2, 0.3;
     Eigen::Matrix<double, 9, 9> const cov = 0.05 * Eigen::Matrix<double, 9, 9>::Identity();
     auto const rate = Eigen::Vector3d{0.2, -0.1, 0.4};
-    auto const model = compose(bodyRate<Attitude>(rate, 0.01), Emrys::ConstantVelocity<Position, Velocity>{0.1});
+    auto const model = blockwise(bodyRate<Attitude>(rate, 0.01), Emrys::ConstantVelocity<Position, Velocity>{0.1});
 
     Eigen::Vector3d const body = Eigen::Vector3d::UnitX();
     Eigen::Quaterniond const truth = turned * Eigen::Quaterniond{Eigen::AngleAxisd{0.05, Eigen::Vector3d::UnitY()}};

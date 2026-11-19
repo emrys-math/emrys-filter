@@ -133,16 +133,34 @@ actionJacobianInto(R const & rotation, Eigen::MatrixBase<V> const & v, Eigen::Ma
 
 /** The nodes of the 12-point Gauss-Legendre rule on [0, 1], by which ExtendedPose integrates its right Jacobian. */
 inline constexpr std::array<double, 12> unitGaussLegendreNodes{
-    0.0092196828766404,  0.04794137181476255, 0.11504866290284765, 0.20634102285669125,
-    0.3160842505009099,  0.43738329574426555, 0.56261670425573445, 0.6839157494990901,
-    0.79365897714330875, 0.88495133709715235, 0.95205862818523745, 0.9907803171233596
+    0.0092196828766404,
+    0.04794137181476255,
+    0.11504866290284765,
+    0.20634102285669125,
+    0.3160842505009099,
+    0.43738329574426555,
+    0.56261670425573445,
+    0.6839157494990901,
+    0.79365897714330875,
+    0.88495133709715235,
+    0.95205862818523745,
+    0.9907803171233596
 };
 
 /** The weights of the nodes of unitGaussLegendreNodes. */
 inline constexpr std::array<double, 12> unitGaussLegendreWeights{
-    0.0235876681932559,  0.0534696629976592, 0.0800391642716731, 0.10158371336153295,
-    0.1167462682691774,  0.1245735229067014, 0.1245735229067014, 0.1167462682691774,
-    0.10158371336153295, 0.0800391642716731, 0.0534696629976592, 0.0235876681932559
+    0.0235876681932559,
+    0.0534696629976592,
+    0.0800391642716731,
+    0.10158371336153295,
+    0.1167462682691774,
+    0.1245735229067014,
+    0.1245735229067014,
+    0.1167462682691774,
+    0.10158371336153295,
+    0.0800391642716731,
+    0.0534696629976592,
+    0.0235876681932559
 };
 
 }  // namespace internal
@@ -163,8 +181,8 @@ inline constexpr std::array<double, 12> unitGaussLegendreWeights{
  * each const, in any scalar, writing through \a out as plus() does.
  */
 template <typename R>
-concept Rotation = LieGroup<R> && R::ValueDimensionStep == 0
-                && (internal::HasRotationMembers<R> || internal::IsPlanarHeading<R>);
+concept Rotation =
+    LieGroup<R> && R::ValueDimensionStep == 0 && (internal::HasRotationMembers<R> || internal::IsPlanarHeading<R>);
 
 /** \ingroup Spaces
  * \brief A rotation followed by vectors that turn with it, as one Lie group: \f$ SE(3) \f$ with one vector,
@@ -201,8 +219,8 @@ class ExtendedPose : public Composite<R, Vectors...>
     /** The Composite that holds the blocks. */
     using Base = Composite<R, Vectors...>;
 
-    static constexpr int N = internal::ActionDimensionOf<R>::value;                 ///< the vectors' size
-    static constexpr int Rv = R::FixedValueDimension;                               ///< the rotation's values
+    static constexpr int N = internal::ActionDimensionOf<R>::value;                       ///< the vectors' size
+    static constexpr int Rv = R::FixedValueDimension;                                     ///< the rotation's values
     static constexpr int Rd = internal::DifferenceSpaceOf<R>::type::FixedValueDimension;  ///< and differences
 
     static_assert((isLinear<Vectors> && ...), "the blocks after the rotation are vectors: linear blocks");
@@ -221,8 +239,8 @@ public:
 
     ExtendedPose() = default;
 
-    static constexpr int VectorDimension = N;             ///< the size of each vector
-    static constexpr int RotationValueDimension = Rv;     ///< the rotation's values, which come first
+    static constexpr int VectorDimension = N;               ///< the size of each vector
+    static constexpr int RotationValueDimension = Rv;       ///< the rotation's values, which come first
     static constexpr int RotationDifferenceDimension = Rd;  ///< the rotation's differences, which come first
 
     /** Writes through \a out, a square matrix of the vectors' size, the matrix by which the value \a x turns its
@@ -440,7 +458,8 @@ public:
     rightJacobian(Eigen::MatrixBase<D> const & d, Eigen::MatrixBase<Out> const & out) const
     {
         using T = typename Out::Scalar;
-        using Value = Eigen::Matrix<T, valueDimensionAtCompileTime<Base>, 1, 0, maxValueDimensionAtCompileTime<Base>, 1>;
+        using Value =
+            Eigen::Matrix<T, valueDimensionAtCompileTime<Base>, 1, 0, maxValueDimensionAtCompileTime<Base>, 1>;
         using Difference = Eigen::Matrix<
             T,
             valueDimensionAtCompileTime<DifferenceSpace<Base>>,
@@ -595,8 +614,8 @@ enum class PosePart
 template <typename Unit, PosePart Part>
 struct PoseLocation
 {
-    using UnitPath = Unit;                    ///< the pose's path, WholeSpace, or void
-    static constexpr PosePart part = Part;    ///< which part of the pose the block is
+    using UnitPath = Unit;                  ///< the pose's path, WholeSpace, or void
+    static constexpr PosePart part = Part;  ///< which part of the pose the block is
 };
 
 /** \returns the position among \a Blocks of the first block that holds \a Tag, or their count */
@@ -672,9 +691,7 @@ locatePose()
         }
         else if constexpr (IsExtendedPose<S>)
         {
-            return PoseLocation<
-                typename PathOfChain<Chain>::type,
-                i == 0 ? PosePart::rotation : PosePart::vectors>{};
+            return PoseLocation<typename PathOfChain<Chain>::type, i == 0 ? PosePart::rotation : PosePart::vectors>{};
         }
         else
         {
@@ -683,7 +700,8 @@ locatePose()
             {
                 static_assert(
                     !IsExtendedPose<Block>,
-                    "a model that reads or writes a part of an ExtendedPose finds the pose by its tag: derive one, such "
+                    "a model that reads or writes a part of an ExtendedPose finds the pose by its tag: derive one, "
+                    "such "
                     "as struct Body : ExtendedPose<Attitude, Position> {}"
                 );
                 return locatePose<Chain, Block, Tag, Rest...>();

@@ -204,7 +204,7 @@ TEST(Consider, AKalmanFilterUpdatesInPlaceAsUpdateDoes)
     auto const measurement =
         observe(methods::unscented(), makeRangeModel(rangeNoise), Vector1{5.6}, consider(path<Bias>));
     auto const model =
-        Emrys::compose(Emrys::RandomWalk<Position>{0.1}, Emrys::RandomWalk<Bias>{0.1}, Emrys::RandomWalk<Drift>{0.1});
+        Emrys::blockwise(Emrys::RandomWalk<Position>{0.1}, Emrys::RandomWalk<Bias>{0.1}, Emrys::RandomWalk<Drift>{0.1});
     auto filter = Emrys::KalmanFilter{model, prior};
     auto const updated = filter.update(measurement);
     auto const reference = Emrys::update(prior, measurement);
@@ -361,7 +361,7 @@ TEST(Consider, EachModeOfAnImmFilterKeepsTheConsideredBlock)
     {};
 
     auto const walk = [](double density) {
-        return Emrys::compose(
+        return Emrys::blockwise(
             Emrys::RandomWalk<Position>{density},
             Emrys::RandomWalk<Bias>{0.01},
             Emrys::RandomWalk<Drift>{0.01}

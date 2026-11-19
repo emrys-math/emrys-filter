@@ -33,8 +33,8 @@
  * vectors, and policies given as calls in any order. A model without reads() and writes() reads and
  * writes the whole state (decisions.md [whole-state-models]), so the textbook Kalman filter on
  * <tt>Linear<4></tt> is <tt>processModel(F, additiveNoise(q))</tt> and
- * <tt>measurementModel(H, additiveNoise(r))</tt>. A process model is processModel(), a built-in model, or compose() of
- * process models; a measurement model is measurementModel(). The built-in process models, RandomWalk, Constant,
+ * <tt>measurementModel(H, additiveNoise(r))</tt>. A process model is processModel(), a built-in model, or blockwise()
+ * of process models; a measurement model is measurementModel(). The built-in process models, RandomWalk, Constant,
  * ConstantVelocity and ConstantAcceleration (Kinematic), OrnsteinUhlenbeck, and Zero, take their tags
  * as template arguments and the scalar of their parameters last, \c double by default:
  *
@@ -45,7 +45,7 @@
  * struct Bias : Linear<1> {};
  * using State = Composite<Position, Velocity, Acceleration, Bias>;
  *
- * auto const model = compose(ConstantAcceleration<Position, Velocity, Acceleration>{0.1},
+ * auto const model = blockwise(ConstantAcceleration<Position, Velocity, Acceleration>{0.1},
  *                            OrnsteinUhlenbeck<Bias>{TimeConstant{60.0}, StationaryVariance{0.25}});
  * auto const predicted = predict(methods::linearized(), state, model, dt);
  * \endcode
@@ -69,7 +69,7 @@
  *     },
  *     reads(path<Position>, path<Velocity>, path<SpecificForce>, path<Gravity>),
  *     writes(path<Position>, path<Velocity>));
- * auto const predicted = predict(methods::unscented(), state, compose(driven, RandomWalk<Bias>{1e-8}), dt,
+ * auto const predicted = predict(methods::unscented(), state, blockwise(driven, RandomWalk<Bias>{1e-8}), dt,
  *                                accelerometer, sure<Gravity>(g));
  * \endcode
  *
@@ -92,7 +92,7 @@
  * A model reads its blocks by name wherever they sit in the state, so one model serves every place
  * that has them: on<Ownship>(vehicle) places a model on a block, prefixing every path into the state
  * it reads and writes, onEach<Fleet>(vehicle) places one copy on every repetition of a repeated
- * block, and compose() of measurement models measures their blocks side by side (Placement.h). A
+ * block, and blockwise() of measurement models measures their blocks side by side (Placement.h). A
  * model that names the inputs it is affine in with affineIn() has them carried exactly by every
  * sigma-point method, which spreads its points over the rest [affine-coordinates].
  *
@@ -116,7 +116,7 @@
  * <tt>f(in, out, X, dt, Y)</tt>, with \c Y.values() a column per point (Batched.h,
  * [batched-functions]). Column \f$ j \f$ of what it writes depends only on column \f$ j \f$ of \c X.
  * The library calls it once per particle set or chunk and once per sigma-point set, and through
- * on(), compose(), and onEach() as through the model itself. A method that needs its Jacobian takes
+ * on(), blockwise(), and onEach() as through the model itself. A method that needs its Jacobian takes
  * it from the function, marked batched(f, jacobians::perColumn()) or batched(f, jacobians::shared())
  * and writing <tt>Y.jacobian<Name>(j)</tt> for the blocks <tt>Y.wantsJacobian<Name>()</tt> names,
  * or differentiates it in dual numbers, for which the function takes \c X as <tt>auto const &</tt>:

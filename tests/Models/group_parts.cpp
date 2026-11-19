@@ -97,7 +97,9 @@ expectSame(A const & a, B const & b, double tolerance)
 }
 
 static_assert(Emrys::internal::posePartOf<State, Position> == Emrys::internal::PosePart::vectors);
-static_assert(Emrys::internal::posePartOf<State, Emrys::TagPath<Body, Attitude>> == Emrys::internal::PosePart::rotation);
+static_assert(
+    Emrys::internal::posePartOf<State, Emrys::TagPath<Body, Attitude>> == Emrys::internal::PosePart::rotation
+);
 static_assert(Emrys::internal::posePartOf<State, Body> == Emrys::internal::PosePart::none);
 static_assert(Emrys::internal::posePartOf<State, Bias> == Emrys::internal::PosePart::none);
 static_assert(Emrys::internal::posePartOf<Body, Foot> == Emrys::internal::PosePart::vectors);
@@ -192,7 +194,7 @@ wholeStateMotion()
 // the foot's random walk has the identity as its Jacobian, and in the pose's rows it is R'^T R.
 TEST(GroupParts, ModelsSideBySideWriteThePartsOfOnePose)
 {
-    auto const sideBySide = Emrys::compose(
+    auto const sideBySide = Emrys::blockwise(
         turning(),
         Emrys::ConstantVelocity<Position, Velocity>{0.2},
         Emrys::RandomWalk<Foot>{0.05},
@@ -229,9 +231,7 @@ TEST(GroupParts, MarginalOfAVectorIsThePoseOfTheRotationAndTheVector)
 {
     auto const prior = GaussianParams<State>{priorMean(), priorCovariance()};
     auto const marginal = prior.marginal<Emrys::TagPath<Body, Position>>();
-    static_assert(std::is_same_v<
-                  std::remove_cvref_t<decltype(marginal.space())>,
-                  ExtendedPose<Attitude, Position>>);
+    static_assert(std::is_same_v<std::remove_cvref_t<decltype(marginal.space())>, ExtendedPose<Attitude, Position>>);
     Eigen::Matrix<double, 7, 1> const mean = marginal.mean();
     EXPECT_EQ(mean.head<4>(), prior.mean().head<4>());
     EXPECT_EQ(mean.tail<3>(), prior.mean().segment<3>(7));

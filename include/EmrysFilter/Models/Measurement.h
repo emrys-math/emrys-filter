@@ -253,8 +253,7 @@ updateResolved(Prior const & prior, R const & resolved, Sink sink, Reference con
         // on the world side (docs/design/groups.md).
         using Carry = std::remove_cvref_t<decltype(resolved.covarianceCarry())>;
         auto const sided = [&] {
-            if constexpr (std::is_same_v<Carry, carries::Adjoint>
-                          && !hasIdentityAdjoint<typename Reads::JointSpace>)
+            if constexpr (std::is_same_v<Carry, carries::Adjoint> && !hasIdentityAdjoint<typename Reads::JointSpace>)
             {
                 return internal::onWorldSide(method);
             }

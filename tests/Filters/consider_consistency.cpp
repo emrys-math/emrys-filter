@@ -70,7 +70,7 @@ makePrior()
 auto
 makeStateModel()
 {
-    return Emrys::compose(Emrys::ConstantVelocity<Position, Velocity>{0.1}, Emrys::Constant<Bias>{});
+    return Emrys::blockwise(Emrys::ConstantVelocity<Position, Velocity>{0.1}, Emrys::Constant<Bias>{});
 }
 
 auto const readingNoise = GaussianParams<Linear<1>>{Vector1{0.0}, Vector1{noiseVariance}};

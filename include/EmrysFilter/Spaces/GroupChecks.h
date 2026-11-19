@@ -22,14 +22,16 @@ namespace Emrys
  */
 struct GroupCheck
 {
-    double identity = 0;       ///< \f$ a \cdot e \f$ and \f$ e \cdot a \f$ against \f$ a \f$
-    double inverse = 0;        ///< \f$ a \cdot a^{-1} \f$ against \f$ e \f$
-    double associative = 0;    ///< \f$ (a \cdot b) \cdot c \f$ against \f$ a \cdot (b \cdot c) \f$, with \f$ c = \mathrm{Exp}(d) \f$
-    double logOfExp = 0;       ///< \f$ \mathrm{Log}(\mathrm{Exp}(d)) \f$ against \f$ d \f$
-    double plus = 0;           ///< plus(a, d) against \f$ a \cdot \mathrm{Exp}(d) \f$
-    double minus = 0;          ///< minus(a, b) against \f$ \mathrm{Log}(b^{-1} \cdot a) \f$
-    double adjoint = 0;        ///< \f$ a \cdot \mathrm{Exp}(d) \f$ against \f$ \mathrm{Exp}(\mathrm{Ad}_a d) \cdot a \f$
-    double rightJacobian = 0;  ///< rightJacobian(d) against the derivative of \f$ \mathrm{Log}(\mathrm{Exp}(d)^{-1} \mathrm{Exp}(d + \epsilon)) \f$
+    double identity = 0;  ///< \f$ a \cdot e \f$ and \f$ e \cdot a \f$ against \f$ a \f$
+    double inverse = 0;   ///< \f$ a \cdot a^{-1} \f$ against \f$ e \f$
+    double associative =
+        0;  ///< \f$ (a \cdot b) \cdot c \f$ against \f$ a \cdot (b \cdot c) \f$, with \f$ c = \mathrm{Exp}(d) \f$
+    double logOfExp = 0;  ///< \f$ \mathrm{Log}(\mathrm{Exp}(d)) \f$ against \f$ d \f$
+    double plus = 0;      ///< plus(a, d) against \f$ a \cdot \mathrm{Exp}(d) \f$
+    double minus = 0;     ///< minus(a, b) against \f$ \mathrm{Log}(b^{-1} \cdot a) \f$
+    double adjoint = 0;   ///< \f$ a \cdot \mathrm{Exp}(d) \f$ against \f$ \mathrm{Exp}(\mathrm{Ad}_a d) \cdot a \f$
+    double rightJacobian = 0;  ///< rightJacobian(d) against the derivative of \f$ \mathrm{Log}(\mathrm{Exp}(d)^{-1}
+                               ///< \mathrm{Exp}(d + \epsilon)) \f$
 
     /** \returns the largest of the residuals */
     [[nodiscard]] double
@@ -71,8 +73,7 @@ checkGroup(
     Value const c = Emrys::exp(space, step);
 
     auto result = GroupCheck{};
-    result.identity =
-        std::max(distance(Emrys::compose(space, va, e), va), distance(Emrys::compose(space, e, va), va));
+    result.identity = std::max(distance(Emrys::compose(space, va, e), va), distance(Emrys::compose(space, e, va), va));
     result.inverse = distance(Emrys::compose(space, va, Emrys::inverse(space, va)), e);
     result.associative = distance(
         Emrys::compose(space, Value{Emrys::compose(space, va, vb)}, c),

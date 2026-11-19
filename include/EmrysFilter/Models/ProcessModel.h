@@ -4,7 +4,7 @@
  * Process models as functions with reads and writes (decisions.md [model-policies], [continuous-time-noise],
  * [prediction-inputs], [time-steps]): the ProcessFunction that processModel() builds from a function and its policies;
  * the built-in models RandomWalk, the Kinematic chains ConstantVelocity and ConstantAcceleration, OrnsteinUhlenbeck,
- * Constant, and Zero, each the same object; compose(), which puts process models side by side; the ProcessModel
+ * Constant, and Zero, each the same object; blockwise(), which puts process models side by side; the ProcessModel
  * concept; predict(), which moves a %Gaussian through one by any transform method with the discretized process noise
  * added, and predictJoint(), which also keeps the %Gaussian it started from and its cross-covariance with the
  * prediction, a PredictedJoint, which is what a smoother records [smoothing]; propagate(), the noise-free step; and
@@ -1811,19 +1811,19 @@ stepPartsBatch(
 }  // namespace internal
 
 template <typename... Models>
-class Composition;
+class Blockwise;
 
 namespace internal
 {
 
-/** Whether \a Model is a Composition. */
+/** Whether \a Model is a Blockwise. */
 template <typename Model>
-inline constexpr bool isComposition = false;
+inline constexpr bool isBlockwise = false;
 
 /// \cond INTERNAL_SPECIALIZATIONS
-/** A Composition is one. */
+/** A Blockwise is one. */
 template <typename... Models>
-inline constexpr bool isComposition<Composition<Models...>> = true;
+inline constexpr bool isBlockwise<Blockwise<Models...>> = true;
 
 /// \endcond
 
@@ -1839,7 +1839,7 @@ struct DeclaredScalars
 /// \cond INTERNAL_SPECIALIZATIONS
 /** A model with a \c Scalar, other than a composition, states that one. */
 template <typename Model>
-    requires(!isComposition<Model> && requires { typename Model::Scalar; })
+    requires(!isBlockwise<Model> && requires { typename Model::Scalar; })
 struct DeclaredScalars<Model>
 {
     using type = std::tuple<typename Model::Scalar>;  ///< the model's scalar
@@ -1847,7 +1847,7 @@ struct DeclaredScalars<Model>
 
 /** A composition states its parts' scalars, not the \c double it takes when they state none. */
 template <typename... Models>
-struct DeclaredScalars<Composition<Models...>>
+struct DeclaredScalars<Blockwise<Models...>>
 {
     using type = decltype(std::tuple_cat(std::declval<typename DeclaredScalars<Models>::type>()...));  ///< theirs
 };
@@ -1896,7 +1896,7 @@ struct FirstScalarOr<std::tuple<First, Rest...>>
 }  // namespace internal
 
 /** \ingroup Models
- * \brief Process models side by side, as compose() puts them (decisions.md [model-policies],
+ * \brief Process models side by side, as blockwise() puts them (decisions.md [model-policies],
  * [model-placement]): one model whose reads are the union of the parts', gathered once, whose writes
  * are the parts' together, which must write every block of the state once, whose noise is
  * block-diagonal, and whose affine set is the names every part reading them declares affine.
@@ -1909,10 +1909,10 @@ struct FirstScalarOr<std::tuple<First, Rest...>>
  *
  * \tparam Models  the parts, each a ProcessModel
  *
- * \sa compose(), processModel()
+ * \sa blockwise(), processModel()
  */
 template <typename... Models>
-class Composition
+class Blockwise
 {
     static_assert(sizeof...(Models) > 0, "a composition needs a process model");
     static_assert(
@@ -1939,7 +1939,7 @@ public:
     /// the scalar type: the one its parts state, or \c double where none states one
     using Scalar = typename internal::FirstScalarOr<internal::DeclaredScalarsOf<Models...>>::type;
 
-    using FunctionType = Composition;  ///< the function: the composition itself
+    using FunctionType = Blockwise;  ///< the function: the composition itself
 
     static constexpr bool IsModel = true;      ///< a model, for internal::isModel
     static constexpr bool HasFunction = true;  ///< a process model always has a function
@@ -1975,12 +1975,12 @@ public:
     using OutputSpace = typename WritesPolicy::OutputSpace;
 
     /** The composition of \a models. */
-    explicit Composition(Models... models)
+    explicit Blockwise(Models... models)
         : m_parts{std::move(models)...}
     {}
 
     /** \returns the function: the composition itself */
-    [[nodiscard]] Composition const &
+    [[nodiscard]] Blockwise const &
     function() const
     {
         return *this;
@@ -2102,10 +2102,10 @@ private:
 namespace internal
 {
 
-/** Declared, never defined: true for a pointer to a Composition. */
+/** Declared, never defined: true for a pointer to a Blockwise. */
 template <typename... Models>
 std::true_type
-compositionBase(Composition<Models...> const *);
+compositionBase(Blockwise<Models...> const *);
 
 /** The fallback for anything else. */
 std::false_type
@@ -2155,19 +2155,19 @@ struct NoProcessModel
 };
 
 /** \ingroup Models
- * \returns the process model of \a models side by side (see Composition): its reads are the union
+ * \returns the process model of \a models side by side (see Blockwise): its reads are the union
  * of theirs, its writes theirs together, and its noise block-diagonal.
  *
  * \code
- * auto const vehicle = compose(kinematics, RandomWalk<AccelBias>{qb}, RandomWalk<Heading>{qh});
+ * auto const vehicle = blockwise(kinematics, RandomWalk<AccelBias>{qb}, RandomWalk<Heading>{qh});
  * \endcode
  */
 template <ProcessModel... Models>
-[[nodiscard]] Composition<std::remove_cvref_t<Models>...>
-compose(Models &&... models)
+[[nodiscard]] Blockwise<std::remove_cvref_t<Models>...>
+blockwise(Models &&... models)
 {
     static_assert((internal::wholeStateRefused<std::remove_cvref_t<Models>> && ...));
-    return Composition<std::remove_cvref_t<Models>...>{std::forward<Models>(models)...};
+    return Blockwise<std::remove_cvref_t<Models>...>{std::forward<Models>(models)...};
 }
 
 namespace internal
@@ -2716,11 +2716,7 @@ private:
      */
     template <typename Returned, typename State, typename Next>
     [[nodiscard]] auto
-    expand(
-        Returned const & returned,
-        [[maybe_unused]] State const & state,
-        [[maybe_unused]] Next const & next
-    ) const
+    expand(Returned const & returned, [[maybe_unused]] State const & state, [[maybe_unused]] Next const & next) const
     {
         static_assert(
             MatrixExpression<Returned>,
@@ -2775,8 +2771,10 @@ private:
                                 turnColumns(
                                     pose,
                                     state.template middleRows<Pose::RotationValueDimension>(m_reads.unitRows(I).start),
-                                    jacobian
-                                        .middleCols(m_differenceRows[stateItems(I)].start, m_differenceRows[stateItems(I)].size)
+                                    jacobian.middleCols(
+                                        m_differenceRows[stateItems(I)].start,
+                                        m_differenceRows[stateItems(I)].size
+                                    )
                                 );
                             });
                         }

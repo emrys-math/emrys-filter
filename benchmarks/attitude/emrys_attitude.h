@@ -67,7 +67,7 @@ gyroIntegration(double noiseDensity)
 [[nodiscard]] inline auto
 makeModel(Scenario const & scenario)
 {
-    return Emrys::compose(gyroIntegration(scenario.gyroNoiseDensity), Emrys::RandomWalk<Bias>{scenario.biasDensity});
+    return Emrys::blockwise(gyroIntegration(scenario.gyroNoiseDensity), Emrys::RandomWalk<Bias>{scenario.biasDensity});
 }
 
 /// The attitude EKF with EmrysFilter, linearizing the reference vectors as \a Kind says.

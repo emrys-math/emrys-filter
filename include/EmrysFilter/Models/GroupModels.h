@@ -55,8 +55,7 @@ struct BodyVelocityStep
             maxValueDimensionAtCompileTime<DifferenceSpace<Out>>,
             maxValueDimensionAtCompileTime<DifferenceSpace<In>>>;
         JacobianMatrix jacobian = JacobianMatrix::Zero(differenceDimension(out), differenceDimension(in));
-        diffBlock<Group, Group>(out, in, jacobian) =
-            Emrys::adjoint(group, ValueVector<G, T>{Emrys::exp(group, back)});
+        diffBlock<Group, Group>(out, in, jacobian) = Emrys::adjoint(group, ValueVector<G, T>{Emrys::exp(group, back)});
         diffBlock<Group, Velocity>(out, in, jacobian) = T(dt) * Emrys::rightJacobian(group, step);
         auto y = zeros<T>(out);
         block<Group>(out, y) = Emrys::plus(group, value, step);

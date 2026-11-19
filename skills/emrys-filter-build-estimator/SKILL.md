@@ -67,7 +67,7 @@ Follow "The pieces of an estimator" in usage.md, in this order:
    them. Angles are periodic coordinate types, never `Linear`.
 2. The process model: a built-in model for each block of the state where one fits, and a
    `processModel(f, reads(...), writes(...), ...)` of your own where none does ("Writing a process
-   model" in usage.md), composed with `compose(models...)`. Every coordinate must be written by
+   model" in usage.md), composed with `blockwise(models...)`. Every coordinate must be written by
    exactly one model. An input of the call, such as a gyroscope's reading, is a tag the model
    reads and the state lacks, given to `predict()` as `sure<Tag>(value)` or as a Gaussian over the
    tag. Wrap the model in `fixedStep(model, dt)` when the step never changes; the filter binds it

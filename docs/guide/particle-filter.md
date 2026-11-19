@@ -17,7 +17,7 @@ numbers from the same seed [random-draws], so its sampled digits differ by about
 error; the resampler table in §7 draws only uniforms and is identical under both. Compiler errors
 are quoted from Clang, trimmed to the lines that matter. What roadmap 17z changed here: a process
 model is a function with `reads()` and `writes()`, so the built-in `ConstantVelocity<Position,
-Velocity>{0.1}` is itself the model and `compose()` puts models side by side; a measurement model
+Velocity>{0.1}` is itself the model and `blockwise()` puts models side by side; a measurement model
 comes from `measurementModel()`, and a filter that weights points takes it observed with no method,
 `observe(model, z)`; a measurement known only by its likelihood is `measurementModel(reads(...),
 logLikelihood(g))` [likelihood-measurements]; an uncertain input is a Gaussian over a tagged space
@@ -204,7 +204,7 @@ dynamics move them:
 ```cpp
 struct Bias : Linear<1> {};
 using Biased = Composite<Position, Velocity, Bias>;
-auto const withBias = compose(ConstantVelocity<Position, Velocity>{0.1}, Constant<Bias>{});
+auto const withBias = blockwise(ConstantVelocity<Position, Velocity>{0.1}, Constant<Bias>{});
 auto const start =
     GaussianParams<Biased>{Eigen::Matrix<double, 5, 1>{0, 0, 1, 0.5, 0}, Eigen::Matrix<double, 5, 5>::Identity()};
 auto biased = ParticleFilter{withBias, ParticleSet<Biased>{drawSamples(start.toDensity().value(), 4, rng)}};

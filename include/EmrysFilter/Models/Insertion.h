@@ -46,7 +46,13 @@ namespace Emrys
  * insert<path<Body, Feet>>(filter.state(), 0, methods::linearized(), placed, GaussianParams<Leg>{leg, noise});
  * \endcode
  */
-template <typename Path, typename Space_, typename Scalar, TransformMethod Method, MeasurementModel Model, typename... Inputs>
+template <
+    typename Path,
+    typename Space_,
+    typename Scalar,
+    TransformMethod Method,
+    MeasurementModel Model,
+    typename... Inputs>
 void
 insert(
     GaussianParams<Space_, Scalar> & state,
@@ -65,11 +71,12 @@ insert(
     constexpr int N = valueDimensionAtCompileTime<DifferenceSpace<Space_>>;
     constexpr int NMax = maxValueDimensionAtCompileTime<DifferenceSpace<Space_>>;
     auto const & reads = resolved.reads();
-    auto const read = GaussianMarginal<GaussianParams<Space_, Scalar>, typename Reads::Selection, typename Reads::JointSpace>{
-        state,
-        reads.selection(),
-        reads.space()
-    };
+    auto const read =
+        GaussianMarginal<GaussianParams<Space_, Scalar>, typename Reads::Selection, typename Reads::JointSpace>{
+            state,
+            reads.selection(),
+            reads.space()
+        };
     auto const f = internal::ResolvedFunction{resolved};
     auto const predicted = internal::transformMeasurement(resolved, method, f, read);
 

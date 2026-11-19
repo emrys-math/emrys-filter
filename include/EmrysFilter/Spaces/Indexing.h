@@ -319,7 +319,8 @@ tagConditional(Space const & space, Condition condition)
     Eigen::Index const d = differenceDimension(space);
     static_assert(
         posePartOf<Space, GivenPath> == PosePart::none,
-        "a conditional given a part of an ExtendedPose is not defined yet (docs/design/groups.md, open question 2): the "
+        "a conditional given a part of an ExtendedPose is not defined yet (docs/design/groups.md, open question 2): "
+        "the "
         "part's rows are steps in the pose's body frame, so its value alone gives no residual in them. Condition on "
         "the pose whole, or update by a measurement of the part"
     );

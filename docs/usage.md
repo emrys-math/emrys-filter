@@ -135,6 +135,7 @@ Answer each question below on its own. The first answer is the default; where an
 | Linear dynamics and measurements, Gaussian noise | `KalmanFilter`, with each measurement a `measurementModel()` given its matrix; on a plain vector, the process model too | [constant_velocity.cpp](../examples/constant_velocity.cpp), [linear_kalman.cpp](../examples/linear_kalman.cpp) |
 | Mildly nonlinear models, a posterior near one Gaussian | `KalmanFilter`: `methods::linearized()` is the EKF, `methods::unscented()` the unscented filter, chosen per model | [unicycle.cpp](../examples/unicycle.cpp) |
 | A state on a manifold, such as an attitude | `KalmanFilter` over a `UnitQuaternion` block | [attitude.cpp](../examples/attitude.cpp) |
+| An attitude with a position or a velocity, started far from the truth | `KalmanFilter` over an `ExtendedPose` block, the invariant extended Kalman filter, with `observedInBody()` and `observedInWorld()` measurements | [invariant_ekf.cpp](../examples/invariant_ekf.cpp) |
 | A sensor's bias or a parameter known only from its calibration, to account for without estimating it | `KalmanFilter`, with `Emrys::consider(Emrys::path<Bias>)` in the measurement's `observe()` | [consider_bias.cpp](../examples/consider_bias.cpp) |
 | A precise, strongly nonlinear measurement | `methods::iterated(methods::linearized())` (the iterated EKF) or `methods::iterated(methods::unscented())` (the iterated posterior linearization filter) as the measurement's method | — |
 | `float`, ill-conditioning, or an uninformative prior | `SqrtKalmanFilter`, `InfoFilter`, or `SqrtInfoFilter`: the same filter over another form of the Gaussian | — |
@@ -197,8 +198,28 @@ passed: `GaussianParams<State>{mean, cov}`, `Emrys::minus<State>(a, b)`, and
 `Emrys::simulate<State>(...)`. A space that holds a count, one with a `Repeated` block, is passed
 as an instance, `Emrys::minus(space, a, b)`, wherever its size can't be read from the vectors.
 
+**A pose as one group.** An attitude and the vectors that turn with it, such as a velocity and a
+position, may be one block, a Lie group, in place of blocks side by side:
+
+```cpp
+struct Body : Emrys::ExtendedPose<Attitude, Velocity, Position> {};
+using State = Emrys::Composite<Body, Bias>;
+```
+
+It holds the same values as `Composite<Attitude, Velocity, Position>` and names them by the same
+tags, so a model that reads or writes `Position` is written the same for both. What differs is the
+covariance: a vector's rows are steps in the body frame at the mean, not in the world frame, so
+`Emrys::plus<Body>(x, delta)` moves the position by the attitude's rotation of `delta`'s position
+rows. The Kalman filter on this space is the invariant extended Kalman filter, which converges from
+a large initial attitude error where the filter on the `Composite` grows overconfident. A
+measurement of a point fixed in the world and seen from the body, such as a landmark or a magnetic
+field, is `Emrys::observedInBody<Body>(point, std::tuple{Emrys::on<Position>(1.0)}, noise)`, and one
+of a point fixed in the body and seen in the world, such as a position fix, is
+`Emrys::observedInWorld<Body>(...)`; each is observed with no method, `observe(model, z)`. This part
+of the library is a prototype (docs/design/groups.md), and its names may change.
+
 **A process model.** A process model writes some blocks of the state from the blocks it reads, and
-`Emrys::compose(models...)` puts models side by side: `ConstantVelocity<Position, Velocity>{q}`,
+`Emrys::blockwise(models...)` puts models side by side: `ConstantVelocity<Position, Velocity>{q}`,
 `ConstantAcceleration`, `RandomWalk<B>{q}`, `OrnsteinUhlenbeck<B>{TimeConstant{tau},
 StationaryVariance{s}}`, `Constant<B>{}`, and `Zero<B>{variance}` are built in. Their parameters
 are continuous-time spectral densities, discretized exactly over each step; `Zero` resets its
@@ -263,7 +284,7 @@ rule other axes), is chosen per measurement, so one filter can take a range by l
 range-bearing measurement by sigma points. The prediction uses the filter's own method, the third
 argument of `KalmanFilter{model, prior, method}`. A measurement in a periodic space, such as a
 bearing, names that space with `writes()` or `outputSpace()`, and its residuals then wrap.
-`Emrys::compose(range, bearing)` measures both side by side, the output `Composite<Range,
+`Emrys::blockwise(range, bearing)` measures both side by side, the output `Composite<Range,
 Bearing>`. Noise that passes through the function, such as a range's scale error, is an input the
 model reads and the call gives, `observe(method, model, z, GaussianParams<ScaleNoise>{...})`; a
 model that names it in `affineIn()` has it carried exactly by every sigma-point method.
@@ -468,10 +489,10 @@ which every sigma-point method then carries exactly rather than spreading points
 one, and `processModel()` in `Models/ProcessModel.h` documents the policies.
 
 A model reads its blocks by name wherever they sit in the state, so one model serves every place
-that has them. `Emrys::compose(models...)` puts models side by side, each writing its own blocks:
-`compose(unicycle, Emrys::RandomWalk<Speed>{0.1}, Emrys::RandomWalk<TurnRate>{0.01})`.
+that has them. `Emrys::blockwise(models...)` puts models side by side, each writing its own blocks:
+`blockwise(unicycle, Emrys::RandomWalk<Speed>{0.1}, Emrys::RandomWalk<TurnRate>{0.01})`.
 `Emrys::on<Ownship>(vehicle)` places a model on the block `Ownship`, prefixing every path into the
-state it reads and writes, so two vehicles are `compose(on<Ownship>(vehicle), on<Target>(vehicle))`.
+state it reads and writes, so two vehicles are `blockwise(on<Ownship>(vehicle), on<Target>(vehicle))`.
 An input keeps its tag, shared by both, unless renamed: `on<Target>(vehicle,
 on<TargetForce>(path<SpecificForce>))` reads the target's force from the argument tagged
 `TargetForce`. `Emrys::onEach<Fleet>(vehicle)` places one copy on every repetition of a `Repeated`

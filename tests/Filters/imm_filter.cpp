@@ -37,9 +37,9 @@
 #include <vector>
 
 using Emrys::additiveNoise;
+using Emrys::blockwise;
 using Emrys::byMode;
 using Emrys::CategoricalParams;
-using Emrys::compose;
 using Emrys::Composite;
 using Emrys::Constant;
 using Emrys::ConstantAcceleration;
@@ -1371,7 +1371,7 @@ runAccelerationImm(AccelerationModel const & cruiseAcceleration)
     auto imm = ImmFilter{
         ContinuousTimeMarkovChain<Maneuver>::persistent(0.05),
         byMode<Maneuver>(
-            when<Cruise>(compose(makeModel(quiet), cruiseAcceleration)),
+            when<Cruise>(blockwise(makeModel(quiet), cruiseAcceleration)),
             when<Maneuvering>(ConstantAcceleration<Position, Velocity, Acceleration>{0.5})
         ),
         HybridParams{CategoricalParams<Maneuver>{}, initial}

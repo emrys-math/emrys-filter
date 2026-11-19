@@ -94,7 +94,7 @@ TEST(GroupModels, BodyVelocityHasTheSameJacobianAtEveryEstimate)
     Eigen::Matrix<double, 9, 1> twist;
     twist << 0.3, -0.2, 0.5, 1.0, 0.5, -0.4, 0.2, 0.1, -0.3;
     Eigen::Matrix<double, 9, 9> const twistNoise = 0.01 * Eigen::Matrix<double, 9, 9>::Identity();
-    auto const motion = Emrys::compose(Emrys::bodyVelocity<Body, Twist>(), Emrys::RandomWalk<Bias>{0.001});
+    auto const motion = Emrys::blockwise(Emrys::bodyVelocity<Body, Twist>(), Emrys::RandomWalk<Bias>{0.001});
     double const dt = 0.5;
     Eigen::Matrix<double, 9, 9> const f = Emrys::adjoint<Body>(Emrys::exp<Body>((-dt * twist).eval()));
     Eigen::Matrix<double, 9, 9> const g = dt * Emrys::rightJacobian<Body>((dt * twist).eval());
@@ -184,8 +184,11 @@ TEST(GroupModels, ObservedInWorldMatchesTheFunctionAndCarriesNothing)
         Emrys::outputSpace(Fix{}),
         Emrys::additiveNoise(noise())
     );
-    auto const velocityByMatrix =
-        Emrys::measurementModel(Eigen::Matrix3d::Identity(), Emrys::reads(path<Velocity>), Emrys::additiveNoise(noise()));
+    auto const velocityByMatrix = Emrys::measurementModel(
+        Eigen::Matrix3d::Identity(),
+        Emrys::reads(path<Velocity>),
+        Emrys::additiveNoise(noise())
+    );
     auto const bySpeed = Emrys::update(prior, Emrys::observe(speed, z));
     auto const byMatrix = Emrys::update(prior, Emrys::observe(velocityByMatrix, z, carries::none()));
     ASSERT_TRUE(bySpeed.has_value() && byMatrix.has_value());

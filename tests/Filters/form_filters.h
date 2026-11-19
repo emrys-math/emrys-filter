@@ -29,7 +29,7 @@ namespace EmrysTest::FormFilters
 
 using Emrys::additiveNoise;
 using Emrys::block;
-using Emrys::compose;
+using Emrys::blockwise;
 using Emrys::Composite;
 using Emrys::ConstantVelocity;
 using Emrys::GaussianParams;
@@ -183,7 +183,7 @@ attitudeWalk(double spectralDensity)
 inline auto
 makeAttitudeModel()
 {
-    return compose(
+    return blockwise(
         attitudeWalk<Orientation>(0.01),
         ConstantVelocity<EmrysTest::UnequalDimensions::Position, EmrysTest::UnequalDimensions::Velocity>{0.1}
     );
@@ -272,7 +272,7 @@ template <typename Turn>
 auto
 makeGyroModel()
 {
-    return compose(Turn::make(), Emrys::RandomWalk<GyroBias>{1e-6});
+    return blockwise(Turn::make(), Emrys::RandomWalk<GyroBias>{1e-6});
 }
 
 inline GaussianParams<GyroState>
