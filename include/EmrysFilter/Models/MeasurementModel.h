@@ -1221,8 +1221,8 @@ argumentOfKind(std::tuple<Args...> const & args, Default const & fallback)
     }
 }
 
-/** The carry of a measurement by the model \a Model that names none: the model's own, where it declares a
- * \c DefaultCarry as the models of a known form do (GroupModels.h), and otherwise carries::Reset.
+/** The carry of a measurement by the model \a Model that names none: the one its function declares as
+ * \c DefaultCarry, as the models of a known form do (GroupModels.h), and otherwise carries::Reset.
  */
 template <typename Model>
 struct DefaultCarryOf
@@ -1232,10 +1232,10 @@ struct DefaultCarryOf
 
 /// \cond INTERNAL_SPECIALIZATIONS
 template <typename Model>
-    requires requires { typename Model::DefaultCarry; }
+    requires requires { typename Model::FunctionType::DefaultCarry; }
 struct DefaultCarryOf<Model>
 {
-    using type = typename Model::DefaultCarry;
+    using type = typename Model::FunctionType::DefaultCarry;
 };
 
 /// \endcond
@@ -1424,12 +1424,21 @@ template <typename... Placed>
 inline constexpr bool isLinearFunction<ColumnsFunction<Placed...>>{true};
 /// \endcond
 
+/** Whether the function \a F names the method of a measurement that names none, as \c DefaultMethod: the models
+ * of a known form do, whose Jacobian is exact and formed in closed form (GroupModels.h).
+ */
+template <typename F>
+concept NamesDefaultMethod = requires { typename F::DefaultMethod; };
+
 /** The method observe() gives a measurement it is given none for: Linearized for a model given its
- * matrix, whose update it makes exactly, and otherwise NoMethod (decisions.md [linear-sensors]).
+ * matrix, whose update it makes exactly, and for a model of a known form whose function names it, and
+ * otherwise NoMethod (decisions.md [linear-sensors]).
  */
 template <typename Model>
-using MethodWithoutOne =
-    std::conditional_t<isLinearFunction<typename Model::FunctionType>, methods::Linearized, NoMethod>;
+using MethodWithoutOne = std::conditional_t<
+    isLinearFunction<typename Model::FunctionType> || NamesDefaultMethod<typename Model::FunctionType>,
+    methods::Linearized,
+    NoMethod>;
 
 }  // namespace internal
 

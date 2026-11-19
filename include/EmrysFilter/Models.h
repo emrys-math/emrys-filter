@@ -144,6 +144,8 @@
 #include <EmrysFilter/Models/CramerRao.h>
 #include <EmrysFilter/Models/Emission.h>
 #include <EmrysFilter/Models/FormSteps.h>
+#include <EmrysFilter/Models/GroupModels.h>
+#include <EmrysFilter/Models/Insertion.h>
 #include <EmrysFilter/Models/IteratedUpdate.h>
 #include <EmrysFilter/Models/Likelihood.h>
 #include <EmrysFilter/Models/Linearization.h>
