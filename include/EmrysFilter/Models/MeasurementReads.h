@@ -350,7 +350,7 @@ public:
     {
         static_assert(sizeof...(Inputs) == InputCount, "the function takes one vector per uncertain input");
         using T = typename Joint::Scalar;
-        return split<false>(call(this->template gather<T>(joint, std::tuple<Inputs const &...>{inputs...})));
+        return split<false>(call(this->template gather<T>(joint, std::tuple<Inputs const &...>{inputs...})), joint);
     }
 
     /** \returns the function at the whole state \a state, a vector in the state space, and at the
@@ -368,7 +368,8 @@ public:
         );
         using T = typename State::Scalar;
         return split<true>(
-            call(this->template gatherFromRows<T>(state, Eigen::Index{0}, std::tuple<Inputs const &...>{inputs...}))
+            call(this->template gatherFromRows<T>(state, Eigen::Index{0}, std::tuple<Inputs const &...>{inputs...})),
+            state
         );
     }
 
@@ -659,11 +660,14 @@ private:
     /** \returns what the function returned, \a returned, with a Jacobian it returned over the whole
      * input split into a block for the blocks read and a block per uncertain input, as the transform
      * takes them: the blocks read in their joint difference coordinates, or when \a Whole over the
-     * whole state's differences, zero outside them
+     * whole state's differences, zero outside them. The columns of a block that is among the vectors of an
+     * ExtendedPose, which the function returned over the block's own differences, are turned to the block's rows
+     * in the pose by the pose's rotation at \a point, the joint vector the function was called at, or when
+     * \a Whole the state (docs/design/groups.md).
      */
-    template <bool Whole, typename R>
+    template <bool Whole, typename R, typename Point>
     [[nodiscard]] auto
-    split(R && returned) const
+    split(R && returned, [[maybe_unused]] Point const & point) const
     {
         using Plain = std::remove_cvref_t<R>;
         if constexpr (!isWithJacobian<Plain>)
@@ -705,6 +709,27 @@ private:
                           m_differenceRows[stateItems(K)].size
                       )),
                  ...);
+                (
+                    [&] {
+                        if constexpr (Reads::template Part<K> == PosePart::vectors)
+                        {
+                            m_reads.template withPoseOf<K>([&](auto const & pose) {
+                                using Pose = std::remove_cvref_t<decltype(pose)>;
+                                turnColumns(
+                                    pose,
+                                    point.template middleRows<Pose::RotationValueDimension>(
+                                        Whole ? m_reads.unitRows(K).start : m_reads.unitJointStart(K)
+                                    ),
+                                    stateBlock.middleCols(
+                                        Whole ? m_reads.differenceRows(K).start : m_reads.jointDifferenceStart(K),
+                                        m_differenceRows[stateItems(K)].size
+                                    )
+                                );
+                            });
+                        }
+                    }(),
+                    ...
+                );
             }(std::make_index_sequence<StateCount>{});
             if constexpr (InputCount == 0)
             {

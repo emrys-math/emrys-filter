@@ -20,6 +20,7 @@
 #include <EmrysFilter/Models/MeasurementModel.h>
 #include <EmrysFilter/Models/Policies.h>
 #include <EmrysFilter/Spaces/Composite.h>
+#include <EmrysFilter/Spaces/ExtendedPose.h>
 #include <EmrysFilter/Spaces/Indexing.h>
 #include <EmrysFilter/Spaces/Space.h>
 #include <EmrysFilter/Spaces/Subspace.h>
@@ -35,23 +36,151 @@ namespace internal
 template <typename Space, typename Reads>
 class ReadBlocks;
 
+/** What a model's read of a block takes from the state: the block at \a Path itself, or when \a Pose the
+ * ExtendedPose at \a Path (WholeSpace for the state itself) that the block is a part of. A part of a pose has no
+ * difference of its own, since its rows are steps in the pose's body frame, so the read takes the whole pose
+ * (docs/design/groups.md).
+ */
+template <typename Path, bool Pose>
+struct ReadUnit
+{
+    using PathType = Path;                 ///< the path of what is taken
+    static constexpr bool IsPose = Pose;   ///< whether it is a pose that a block read is a part of
+};
+
+/** The ReadUnit of the block that the path \a P names in \a Space. */
+template <typename Space, typename P>
+using ReadUnitOf = std::conditional_t<
+    std::is_void_v<typename PoseLocationOf<Space, P>::type::UnitPath>,
+    ReadUnit<P, false>,
+    ReadUnit<typename PoseLocationOf<Space, P>::type::UnitPath, true>>;
+
+/** The units \a Kept so far and those of \a Rest after them, a pose taken once however many of its parts are read. */
+template <typename Kept, typename... Rest>
+struct ReadUnitsOf;
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename... Kept>
+struct ReadUnitsOf<std::tuple<Kept...>>
+{
+    using type = std::tuple<Kept...>;
+};
+
+template <typename... Kept, typename First, typename... Rest>
+struct ReadUnitsOf<std::tuple<Kept...>, First, Rest...>
+    : ReadUnitsOf<
+          std::conditional_t<
+              First::IsPose && (std::is_same_v<Kept, First> || ... || false),
+              std::tuple<Kept...>,
+              std::tuple<Kept..., First>>,
+          Rest...>
+{};
+
+/// \endcond
+
+/** The block of \a Space that the ReadUnit \a Unit takes. */
+template <typename Space, typename Unit>
+using ReadUnitBlock =
+    std::conditional_t<std::is_same_v<typename Unit::PathType, WholeSpace>, Space, PathTag<typename Unit::PathType>>;
+
+/** The joint space of the units in the tuple type \a Units: the one unit's block, or the Composite of them. */
+template <typename Space, typename Units>
+struct JointSpaceOfUnits;
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename Space, typename Unit>
+struct JointSpaceOfUnits<Space, std::tuple<Unit>>
+{
+    using type = ReadUnitBlock<Space, Unit>;
+};
+
+template <typename Space, typename First, typename Second, typename... Rest>
+struct JointSpaceOfUnits<Space, std::tuple<First, Second, Rest...>>
+{
+    using type = Composite<
+        ReadUnitBlock<Space, First>,
+        ReadUnitBlock<Space, Second>,
+        ReadUnitBlock<Space, Rest>...>;
+};
+
+/// \endcond
+
 /** The blocks named by \a Paths, resolved in \a Space: their rows in the state, in values and in
- * differences, and the joint space they form, in the order given.
+ * differences, and the joint space they form, in the order given. A block that is a part of an ExtendedPose
+ * brings the whole pose into the joint space, once, and is found within it (ReadUnit).
  */
 template <typename Space, typename... Paths>
 class ReadBlocks<Space, TagPaths<Paths...>>
 {
     static_assert(sizeof...(Paths) > 0, "a model reads at least one block of the state");
 
-    /** The first path. */
-    using First = std::tuple_element_t<0, std::tuple<Paths...>>;
+    /** The units the paths take, in the order they first appear. */
+    using Units = typename ReadUnitsOf<std::tuple<>, ReadUnitOf<Space, Paths>...>::type;
+
+    /** \returns the position among the units of the unit of path \a k */
+    [[nodiscard]] static consteval std::size_t
+    unitIndex(std::size_t k)
+    {
+        constexpr std::size_t count = sizeof...(Paths);
+        constexpr auto pose = std::array<bool, count>{ReadUnitOf<Space, Paths>::IsPose...};
+        constexpr auto same = std::array<std::array<bool, count>, count>{sameUnit<ReadUnitOf<Space, Paths>>()...};
+        std::array<std::size_t, count> index{};
+        std::size_t next = 0;
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            bool found = false;
+            if (pose[i])
+            {
+                for (std::size_t j = 0; j < i && !found; ++j)
+                {
+                    if (same[i][j])
+                    {
+                        index[i] = index[j];
+                        found = true;
+                    }
+                }
+            }
+            if (!found)
+            {
+                index[i] = next++;
+            }
+        }
+        return index[k];
+    }
+
+    /** \returns for each path, whether its unit is \a Unit */
+    template <typename Unit>
+    [[nodiscard]] static consteval std::array<bool, sizeof...(Paths)>
+    sameUnit()
+    {
+        return {std::is_same_v<Unit, ReadUnitOf<Space, Paths>>...};
+    }
+
+    /** Path \a K. */
+    template <std::size_t K>
+    using Path = std::tuple_element_t<K, std::tuple<Paths...>>;
 
 public:
 
-    static constexpr std::size_t Count = sizeof...(Paths);  ///< the number of blocks read
+    static constexpr std::size_t Count = sizeof...(Paths);              ///< the number of blocks read
+    static constexpr std::size_t UnitCount = std::tuple_size_v<Units>;  ///< the number of units they take
 
-    /** The space of the blocks read: the one block's, or the Composite of them. */
-    using JointSpace = std::conditional_t<Count == 1, PathTag<First>, Composite<PathTag<Paths>...>>;
+    /** The space of what is read: the one unit's block, or the Composite of them. Without a pose, the one block
+     * read or the Composite of the blocks read.
+     */
+    using JointSpace = typename JointSpaceOfUnits<Space, Units>::type;
+
+    /** Which part of an ExtendedPose block \a K is, if any. */
+    template <std::size_t K>
+    static constexpr PosePart Part = posePartOf<Space, Path<K>>;
+
+    /** \returns which part of an ExtendedPose block \a k is, if any */
+    [[nodiscard]] static consteval PosePart
+    part(std::size_t k)
+    {
+        constexpr auto parts = std::array<PosePart, sizeof...(Paths)>{posePartOf<Space, Paths>...};
+        return parts[k];
+    }
 
     static constexpr int Size = valueDimensionAtCompileTime<JointSpace>;        ///< the joint value dimension
     static constexpr int MaxSize = maxValueDimensionAtCompileTime<JointSpace>;  ///< a bound on it
@@ -67,20 +196,65 @@ public:
     explicit ReadBlocks(Space const & space)
         : m_rows{blockRows<Paths>(space)...}
         , m_differenceRows{differenceBlockRows<Paths>(space)...}
-        , m_space{makeSpace(space)}
+        , m_space{makeSpace(space, static_cast<Units *>(nullptr))}
     {
+        auto const unitRows = unitRowsIn<false>(space, static_cast<Units *>(nullptr));
+        auto const unitDifferenceRows = unitRowsIn<true>(space, static_cast<Units *>(nullptr));
+        std::array<Eigen::Index, UnitCount> unitStarts{};
+        std::array<Eigen::Index, UnitCount> unitDifferenceStarts{};
         Eigen::Index offset = 0;
         Eigen::Index differenceOffset = 0;
-        for (std::size_t i = 0; i < Count; ++i)
+        for (std::size_t u = 0; u < UnitCount; ++u)
         {
-            m_jointStarts[i] = offset;
-            m_jointDifferenceStarts[i] = differenceOffset;
-            offset += m_rows[i].size;
-            differenceOffset += m_differenceRows[i].size;
+            unitStarts[u] = offset;
+            unitDifferenceStarts[u] = differenceOffset;
+            offset += unitRows[u].size;
+            differenceOffset += unitDifferenceRows[u].size;
         }
-        m_indices = concatenate<Indices>(m_rows);
-        m_differenceIndices = concatenate<DifferenceIndices>(m_differenceRows);
+        // A block starts in the joint vector where its unit does, and as far into it as in the state.
+        [&]<std::size_t... K>(std::index_sequence<K...>) {
+            ((m_unitRows[K] = unitRows[unitIndex(K)],
+              m_unitJointStarts[K] = unitStarts[unitIndex(K)],
+              m_jointStarts[K] = unitStarts[unitIndex(K)] + (m_rows[K].start - unitRows[unitIndex(K)].start),
+              m_jointDifferenceStarts[K] = unitDifferenceStarts[unitIndex(K)]
+                                         + (m_differenceRows[K].start - unitDifferenceRows[unitIndex(K)].start)),
+             ...);
+        }(std::make_index_sequence<Count>{});
+        m_indices = concatenate<Indices>(unitRows);
+        m_differenceIndices = concatenate<DifferenceIndices>(unitDifferenceRows);
         EMRYS_FILTER_ASSERT(distinctIndices(m_indices) && "a model must not read a coordinate twice");
+    }
+
+    /** \returns the rows in a state's values of the unit that holds block \a k: the block's own, or those of the
+     * pose it is a part of
+     */
+    [[nodiscard]] BlockRows const &
+    unitRows(std::size_t k) const
+    {
+        return m_unitRows[k];
+    }
+
+    /** \returns the first row in the joint vector of values of the unit that holds block \a k */
+    [[nodiscard]] Eigen::Index
+    unitJointStart(std::size_t k) const
+    {
+        return m_unitJointStarts[k];
+    }
+
+    /** \returns \a f(pose), with \a pose the ExtendedPose that block \a K is a part of */
+    template <std::size_t K, typename F>
+    decltype(auto)
+    withPoseOf(F && f) const
+    {
+        static_assert(Part<K> != PosePart::none, "the block is a part of no pose");
+        if constexpr (UnitCount == 1)
+        {
+            return f(m_space);
+        }
+        else
+        {
+            return f(m_space.template block<unitIndex(K)>());
+        }
     }
 
     /** \returns the joint space of the blocks read, with their parameters */
@@ -141,24 +315,62 @@ public:
 
 private:
 
-    /** \returns the blocks' spaces from \a space, as one block or their Composite */
-    [[nodiscard]] static JointSpace
-    makeSpace(Space const & space)
+    /** \returns the block of \a space that the unit \a Unit takes, with its parameters and size */
+    template <typename Unit>
+    [[nodiscard]] static ReadUnitBlock<Space, Unit> const &
+    unitBlock(Space const & space)
     {
-        if constexpr (Count == 1)
+        if constexpr (std::is_same_v<typename Unit::PathType, WholeSpace>)
         {
-            return pathBlock<First>(space);
+            return space;
         }
         else
         {
-            return JointSpace{pathBlock<Paths>(space)...};
+            return pathBlock<typename Unit::PathType>(space);
         }
     }
 
+    /** \returns the units' spaces from \a space, as one block or their Composite */
+    template <typename... Unit>
+    [[nodiscard]] static JointSpace
+    makeSpace(Space const & space, std::tuple<Unit...> *)
+    {
+        if constexpr (sizeof...(Unit) == 1)
+        {
+            return (unitBlock<Unit>(space), ...);
+        }
+        else
+        {
+            return JointSpace{unitBlock<Unit>(space)...};
+        }
+    }
+
+    /** \returns each unit's rows in a state in \a space, in values, or in differences if \a Difference */
+    template <bool Difference, typename... Unit>
+    [[nodiscard]] static std::array<BlockRows, sizeof...(Unit)>
+    unitRowsIn(Space const & space, std::tuple<Unit...> *)
+    {
+        auto const rowsOfUnit = [&]<typename U>(U *) {
+            if constexpr (std::is_same_v<typename U::PathType, WholeSpace>)
+            {
+                return BlockRows{0, rowsOf<Difference>(space)};
+            }
+            else if constexpr (Difference)
+            {
+                return differenceBlockRows<typename U::PathType>(space);
+            }
+            else
+            {
+                return blockRows<typename U::PathType>(space);
+            }
+        };
+        return {rowsOfUnit(static_cast<Unit *>(nullptr))...};
+    }
+
     /** \returns the rows of \a blocks, block after block, as one index vector */
-    template <typename Result>
+    template <typename Result, std::size_t BlockCount>
     [[nodiscard]] static Result
-    concatenate(std::array<BlockRows, Count> const & blocks)
+    concatenate(std::array<BlockRows, BlockCount> const & blocks)
     {
         Eigen::Index size = 0;
         for (BlockRows const & rows : blocks)
@@ -180,6 +392,8 @@ private:
 
     std::array<BlockRows, Count> m_rows;                        ///< each block's rows in a state's values
     std::array<BlockRows, Count> m_differenceRows;              ///< each block's rows in a state's differences
+    std::array<BlockRows, Count> m_unitRows{};                  ///< each block's unit's rows in a state's values
+    std::array<Eigen::Index, Count> m_unitJointStarts{};        ///< each block's unit's first row in the joint values
     std::array<Eigen::Index, Count> m_jointStarts{};            ///< each block's first row in the joint values
     std::array<Eigen::Index, Count> m_jointDifferenceStarts{};  ///< each block's first row in the joint differences
     Indices m_indices;                                          ///< the value coordinates read
@@ -199,6 +413,17 @@ public:
 
     /** The space of the block read: the state's. */
     using JointSpace = Space;
+
+    /** The whole state is a part of no pose. */
+    template <std::size_t K>
+    static constexpr PosePart Part = PosePart::none;
+
+    /** \returns PosePart::none: the whole state is a part of no pose */
+    [[nodiscard]] static consteval PosePart
+    part(std::size_t)
+    {
+        return PosePart::none;
+    }
 
     static constexpr int Size = valueDimensionAtCompileTime<Space>;        ///< the value dimension
     static constexpr int MaxSize = maxValueDimensionAtCompileTime<Space>;  ///< a bound on it
@@ -712,6 +937,7 @@ public:
      */
     ResolvedReads(Arguments const & arguments, Space const & space)
         : m_arguments{arguments}
+        , m_stateSpace{&space}
         , m_reads{space}
         , m_in{makeIn(arguments, space)}
         , m_stateDifferenceSize{differenceDimension(space)}
@@ -796,7 +1022,9 @@ public:
     }
 
     /** \returns whether item \a I is one the method factors out: named in the model's affineIn(), in a
-     * linear space, and a block of the state or an uncertain input, since a sure input has no spread
+     * linear space, and a block of the state or an uncertain input, since a sure input has no spread. A part of
+     * an ExtendedPose is not factored out: its rows are steps in the pose's body frame, in which a function
+     * affine in the part is affine only given the rotation (docs/design/groups.md).
      */
     template <std::size_t I>
     [[nodiscard]] static consteval bool
@@ -804,7 +1032,15 @@ public:
     {
         using Affine = typename Model::template Policy<PolicyKind::affineIn>;
         using Name = typename Item<I>::NameType;
-        return affineNames<Affine, Name> && isLinear<Name> && (inState(I) || argumentIsUncertain(I));
+        if constexpr (inState(I))
+        {
+            return affineNames<Affine, Name> && isLinear<Name>
+                && ReadBlocks<Space, StatePaths>::part(stateIndexOf(I)) == PosePart::none;
+        }
+        else
+        {
+            return affineNames<Affine, Name> && isLinear<Name> && argumentIsUncertain(I);
+        }
     }
 
     /** \returns the difference dimension of the items factored out, or Eigen::Dynamic: a function rather
@@ -1057,6 +1293,7 @@ protected:
     }
 
     Arguments const & m_arguments;                        ///< the call's arguments
+    Space const * m_stateSpace;                           ///< the state's space
     Reads m_reads;                                        ///< the blocks of the state read
     In m_in;                                              ///< the input space instance
     Eigen::Index m_stateDifferenceSize;                   ///< the state's difference dimension

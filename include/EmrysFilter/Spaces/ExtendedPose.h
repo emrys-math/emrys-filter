@@ -221,6 +221,22 @@ public:
 
     ExtendedPose() = default;
 
+    static constexpr int VectorDimension = N;             ///< the size of each vector
+    static constexpr int RotationValueDimension = Rv;     ///< the rotation's values, which come first
+    static constexpr int RotationDifferenceDimension = Rd;  ///< the rotation's differences, which come first
+
+    /** Writes through \a out, a square matrix of the vectors' size, the matrix by which the value \a x turns its
+     * vectors' body-frame steps into the world frame: the rotation matrix of its rotation.
+     */
+    template <typename X, typename Out>
+    void
+    turn(Eigen::MatrixBase<X> const & x, Eigen::MatrixBase<Out> const & out) const
+    {
+        using T = typename Out::Scalar;
+        Eigen::Matrix<T, Rv, 1> const q = x.template head<Rv>().template cast<T>();
+        internal::rotationMatrixInto(rotation(), q, out);
+    }
+
     /** \returns the rotation's block */
     [[nodiscard]] R const &
     rotation() const
@@ -491,6 +507,268 @@ extendedPoseBlocks(ExtendedPose<R, Vectors...> const *);
 /** An ExtendedPose, or a tag derived from one. */
 template <typename T>
 concept IsExtendedPose = requires(T const * t) { extendedPoseBlocks(t); };
+
+template <typename S>
+consteval bool
+containsPose();
+
+/** Whether any of the blocks in the tuple type \a Blocks contains an ExtendedPose. */
+template <typename Blocks>
+struct AnyContainsPose;
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename... Blocks>
+struct AnyContainsPose<std::tuple<Blocks...>> : std::bool_constant<(containsPose<Blocks>() || ...)>
+{};
+
+/// \endcond
+
+/** \returns whether the space \a S is an ExtendedPose or has one among its blocks, at any depth */
+template <typename S>
+consteval bool
+containsPose()
+{
+    if constexpr (IsExtendedPose<S>)
+    {
+        return true;
+    }
+    else if constexpr (IsComposite<S>)
+    {
+        return AnyContainsPose<CompositeBlocks<S>>::value;
+    }
+    else if constexpr (IsRepeated<S>)
+    {
+        return containsPose<RepeatedBlock<S>>();
+    }
+    else
+    {
+        return false;
+    }
+}
+
+/** Calls \a f(pose, valueOffset, differenceOffset) for each ExtendedPose of \a space, in order, with the offsets
+ * of its first value and difference coordinates: \a space itself, each one among the blocks of a Composite, and
+ * each repetition's of a Repeated block.
+ */
+template <typename S, typename F>
+void
+forEachPose(S const & space, F && f, Eigen::Index valueOffset = 0, Eigen::Index differenceOffset = 0)
+{
+    if constexpr (IsExtendedPose<S>)
+    {
+        f(space, valueOffset, differenceOffset);
+    }
+    else if constexpr (!containsPose<S>())
+    {}
+    else if constexpr (IsComposite<S>)
+    {
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+            ((forEachPose(space.template block<I>(), f, valueOffset, differenceOffset),
+              valueOffset += valueDimension(space.template block<I>()),
+              differenceOffset += differenceDimension(space.template block<I>())),
+             ...);
+        }(std::make_index_sequence<std::tuple_size_v<CompositeBlocks<S>>>{});
+    }
+    else
+    {
+        auto const & block = space.block();
+        Eigen::Index const values = valueDimension(block);
+        Eigen::Index const differences = differenceDimension(block);
+        for (Eigen::Index k = 0; k < space.count(); ++k)
+        {
+            forEachPose(block, f, valueOffset + k * values, differenceOffset + k * differences);
+        }
+    }
+}
+
+/** Where the block that a path names sits in a pose. */
+enum class PosePart
+{
+    none,      ///< in no pose, or a pose whole
+    rotation,  ///< the rotation of a pose, whose difference rows are its own
+    vectors    ///< among the vectors of a pose, whose difference rows are steps in the pose's body frame
+};
+
+/** The pose that the block a path names is a part of: \a Unit is the path of the pose from the space the path was
+ * looked up in, WholeSpace if the pose is that space, and void if the block is a part of no pose.
+ */
+template <typename Unit, PosePart Part>
+struct PoseLocation
+{
+    using UnitPath = Unit;                    ///< the pose's path, WholeSpace, or void
+    static constexpr PosePart part = Part;    ///< which part of the pose the block is
+};
+
+/** \returns the position among \a Blocks of the first block that holds \a Tag, or their count */
+template <typename Tag, typename... Blocks>
+consteval std::size_t
+blockHolding(std::tuple<Blocks...> *)
+{
+    constexpr auto counts = std::array<int, sizeof...(Blocks)>{countTag<Tag, Blocks>()...};
+    for (std::size_t i = 0; i < counts.size(); ++i)
+    {
+        if (counts[i] > 0)
+        {
+            return i;
+        }
+    }
+    return sizeof...(Blocks);
+}
+
+/** The path of the tags in the tuple type \a Chain, or WholeSpace if it has none. */
+template <typename Chain>
+struct PathOfChain;
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <>
+struct PathOfChain<std::tuple<>>
+{
+    using type = WholeSpace;
+};
+
+template <typename First, typename... Rest>
+struct PathOfChain<std::tuple<First, Rest...>>
+{
+    using type = TagPath<First, Rest...>;
+};
+
+template <typename Chain, typename Added>
+struct ChainWith;
+
+template <typename... Chain, typename Added>
+struct ChainWith<std::tuple<Chain...>, Added>
+{
+    using type = std::tuple<Chain..., Added>;
+};
+
+/// \endcond
+
+/** \returns a PoseLocation saying which pose of the space \a S, if any, the block named by the tags \a Tag,
+ * \a Rest is a part of, with \a Chain the tagged blocks entered on the way down to \a S. A pose named whole is a part
+ * of none, and so is a path that runs on through a Repeated block.
+ */
+template <typename Chain, typename S, typename Tag, typename... Rest>
+consteval auto
+locatePose()
+{
+    if constexpr (std::is_same_v<S, Tag>)
+    {
+        if constexpr (sizeof...(Rest) == 0 || IsRepeated<Tag>)
+        {
+            return PoseLocation<void, PosePart::none>{};
+        }
+        else
+        {
+            return locatePose<Chain, S, Rest...>();
+        }
+    }
+    else if constexpr (IsComposite<S>)
+    {
+        using Blocks = CompositeBlocks<S>;
+        constexpr std::size_t i = blockHolding<Tag>(static_cast<Blocks *>(nullptr));
+        if constexpr (i == std::tuple_size_v<Blocks>)
+        {
+            return PoseLocation<void, PosePart::none>{};
+        }
+        else if constexpr (IsExtendedPose<S>)
+        {
+            return PoseLocation<
+                typename PathOfChain<Chain>::type,
+                i == 0 ? PosePart::rotation : PosePart::vectors>{};
+        }
+        else
+        {
+            using Block = std::tuple_element_t<i, Blocks>;
+            if constexpr (IsUntagged<Block>)
+            {
+                static_assert(
+                    !IsExtendedPose<Block>,
+                    "a model that reads or writes a part of an ExtendedPose finds the pose by its tag: derive one, such "
+                    "as struct Body : ExtendedPose<Attitude, Position> {}"
+                );
+                return locatePose<Chain, Block, Tag, Rest...>();
+            }
+            else
+            {
+                return locatePose<typename ChainWith<Chain, Block>::type, Block, Tag, Rest...>();
+            }
+        }
+    }
+    else
+    {
+        return PoseLocation<void, PosePart::none>{};
+    }
+}
+
+/** The PoseLocation of the block that the path \a P, a tag or a TagPath, names in the space \a S. */
+template <typename S, typename P>
+struct PoseLocationOf
+{
+    using type = PoseLocation<void, PosePart::none>;  ///< a space without a pose has no part of one
+};
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename S, typename P>
+    requires(containsPose<S>() && !std::is_same_v<P, WholeSpace> && !isTagPath<P>)
+struct PoseLocationOf<S, P>
+{
+    using type = decltype(locatePose<std::tuple<>, S, P>());
+};
+
+template <typename S, typename... Tags>
+    requires(containsPose<S>())
+struct PoseLocationOf<S, TagPath<Tags...>>
+{
+    using type = decltype(locatePose<std::tuple<>, S, Tags...>());
+};
+
+/// \endcond
+
+/** Which part of a pose the block that the path \a P names in the space \a S is. */
+template <typename S, typename P>
+inline constexpr PosePart posePartOf = PoseLocationOf<S, P>::type::part;
+
+/** Multiplies the columns of \a m, three by three (or by the size of the vectors of \a pose), on the right by the
+ * turn of \a pose at its value \a x, or by its transpose when \a Back: from columns over the vectors' own
+ * differences, in the world frame, to columns over their rows in the pose, steps in its body frame, or back.
+ */
+template <bool Back = false, typename Pose, typename X, typename M>
+void
+turnColumns(Pose const & pose, Eigen::MatrixBase<X> const & x, M && m)
+{
+    using T = typename std::remove_cvref_t<M>::Scalar;
+    constexpr int N = Pose::VectorDimension;
+    Eigen::Matrix<T, N, N> turn;
+    pose.turn(x, turn);
+    if constexpr (Back)
+    {
+        turn.transposeInPlace();
+    }
+    EMRYS_FILTER_ASSERT(m.cols() % N == 0 && "the columns are whole vectors of the pose");
+    for (Eigen::Index c = 0; c < m.cols(); c += N)
+    {
+        m.template middleCols<N>(c) = (m.template middleCols<N>(c) * turn).eval();
+    }
+}
+
+/** Multiplies the rows of \a m, by the size of the vectors of \a pose, on the left by the transpose of the turn of
+ * \a pose at its value \a x: from rows over the vectors' own differences, in the world frame, to their rows in the
+ * pose, steps in its body frame.
+ */
+template <typename Pose, typename X, typename M>
+void
+turnRowsBack(Pose const & pose, Eigen::MatrixBase<X> const & x, M && m)
+{
+    using T = typename std::remove_cvref_t<M>::Scalar;
+    constexpr int N = Pose::VectorDimension;
+    Eigen::Matrix<T, N, N> turn;
+    pose.turn(x, turn);
+    EMRYS_FILTER_ASSERT(m.rows() % N == 0 && "the rows are whole vectors of the pose");
+    for (Eigen::Index r = 0; r < m.rows(); r += N)
+    {
+        m.template middleRows<N>(r) = (turn.transpose() * m.template middleRows<N>(r)).eval();
+    }
+}
 
 }  // namespace internal
 

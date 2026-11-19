@@ -2197,6 +2197,31 @@ readsOnlyState()
     }
 }
 
+/** \returns whether \a Model reads from the state space \a Space, or writes, a block that is a part of an
+ * ExtendedPose and not the pose whole. Such a block's rows are steps in the pose's body frame, so the Jacobian of
+ * the model's step over the state's differences depends on the pose's rotation even where the function is affine
+ * (docs/design/groups.md).
+ */
+template <typename Model, typename Space>
+[[nodiscard]] consteval bool
+touchesPoseParts()
+{
+    if constexpr (!containsPose<Space>() || readsWholeState<Model>)
+    {
+        return false;
+    }
+    else
+    {
+        constexpr bool reads = []<typename... Items>(std::tuple<Items...> *) {
+            return ((posePartOf<Space, typename Items::PathType> != PosePart::none) || ... || false);
+        }(static_cast<typename ItemsOf<typename Model::template Policy<PolicyKind::reads>>::type *>(nullptr));
+        constexpr bool writes = []<typename... Paths>(std::tuple<Paths...> *) {
+            return ((posePartOf<Space, Paths> != PosePart::none) || ... || false);
+        }(static_cast<typename PathsOf<typename Model::WritePaths>::type *>(nullptr));
+        return reads || writes;
+    }
+}
+
 /** processNoise() of a model that writes blocks: its noise over its output, placed on them. */
 template <typename Scalar, ProcessModel Model, Space S>
 [[nodiscard]] typename Moments<S, Scalar>::MatrixType
@@ -2288,8 +2313,9 @@ public:
      */
     using Out = OutputSpaceIn<Model, Space>;
 
-    /// whether the function is affine in its whole input, so its Jacobian is the same at every point
-    static constexpr bool Affine = affineInEverything<Model>();
+    /// whether the function is affine in its whole input and touches no part of a pose, so its Jacobian over
+    /// the state's differences is the same at every point
+    static constexpr bool Affine = affineInEverything<Model>() && !touchesPoseParts<Model, Space>();
 
     /// whether the function returns its Jacobian with its value
     static constexpr bool ReturnsJacobian = returnsStepJacobianIn<Model, Space, double>;
@@ -2390,7 +2416,7 @@ public:
         auto y = scattered(state, valueOf(result));
         if constexpr (isWithJacobian<Result>)
         {
-            return withJacobian(std::move(y), expand(result.jacobian));
+            return withJacobian(std::move(y), expand(result.jacobian, state, y));
         }
         else
         {
@@ -2682,24 +2708,122 @@ private:
     /** \returns the Jacobian \a jacobian of the function, rows in the output's differences and
      * columns in the input's, expanded to the whole state: the identity on the blocks not written,
      * the function's rows on the blocks written, in the columns of the blocks read; and with
-     * uncertain inputs a tuple of that and one block per input
+     * uncertain inputs a tuple of that and one block per input. Where the state has an ExtendedPose, a block
+     * among its vectors that the function reads or writes has its columns or rows turned from the block's own
+     * differences to its rows in the pose, by the pose's rotation at \a state for a block read and at \a next,
+     * the next state, for a block written; and a vector the step does not write, which stays where it was in the
+     * world, gets the turn from the old body frame to the new in place of the identity (docs/design/groups.md).
      */
-    template <typename J>
+    template <typename Returned, typename State, typename Next>
     [[nodiscard]] auto
-    expand(J const & jacobian) const
+    expand(
+        Returned const & returned,
+        [[maybe_unused]] State const & state,
+        [[maybe_unused]] Next const & next
+    ) const
     {
         static_assert(
-            MatrixExpression<J>,
+            MatrixExpression<Returned>,
             "a process model's function returns its Jacobian as one matrix over its input's differences, "
             "withJacobian(y, J)"
         );
         EMRYS_FILTER_ASSERT(
-            jacobian.rows() == differenceDimension(m_out) && jacobian.cols() == differenceDimension(m_in)
+            returned.rows() == differenceDimension(m_out) && returned.cols() == differenceDimension(m_in)
             && "a returned Jacobian has a row per difference coordinate of the output and a column per one of the input"
         );
-        using Scalar = typename J::Scalar;
+        using Scalar = typename Returned::Scalar;
         using StateMatrix = typename Moments<Space, Scalar>::MatrixType;
+        using J = std::conditional_t<
+            containsPose<Space>(),
+            MatrixOf<
+                Scalar,
+                Returned::RowsAtCompileTime,
+                Returned::ColsAtCompileTime,
+                Returned::MaxRowsAtCompileTime,
+                Returned::MaxColsAtCompileTime>,
+            Returned const &>;
+        J jacobian = returned;
         StateMatrix f = StateMatrix::Identity(m_stateDifferenceSize, m_stateDifferenceSize);
+        if constexpr (containsPose<Space>())
+        {
+            Space const & space = *this->m_stateSpace;
+            // A vector the step leaves where it was in the world: its step in the new body frame is the old one
+            // turned by R'^T R. Rows the function writes are overwritten below.
+            forEachPose(space, [&](auto const & pose, Eigen::Index values, Eigen::Index differences) {
+                using Pose = std::remove_cvref_t<decltype(pose)>;
+                constexpr int N = Pose::VectorDimension;
+                constexpr int Rv = Pose::RotationValueDimension;
+                Eigen::Matrix<Scalar, N, N> before;
+                Eigen::Matrix<Scalar, N, N> after;
+                pose.turn(state.template middleRows<Rv>(values), before);
+                pose.turn(next.template middleRows<Rv>(values), after);
+                Eigen::Matrix<Scalar, N, N> const turned = after.transpose() * before;
+                Eigen::Index const first = differences + Pose::RotationDifferenceDimension;
+                for (Eigen::Index i = 0; i < pose.vectorCount(); ++i)
+                {
+                    f.template block<N, N>(first + i * N, first + i * N) = turned;
+                }
+            });
+            // The function's own columns and rows, for the blocks among a pose's vectors.
+            [&]<std::size_t... I>(std::index_sequence<I...>) {
+                (
+                    [&] {
+                        if constexpr (Reads::template Part<I> == PosePart::vectors)
+                        {
+                            m_reads.template withPoseOf<I>([&](auto const & pose) {
+                                using Pose = std::remove_cvref_t<decltype(pose)>;
+                                turnColumns(
+                                    pose,
+                                    state.template middleRows<Pose::RotationValueDimension>(m_reads.unitRows(I).start),
+                                    jacobian
+                                        .middleCols(m_differenceRows[stateItems(I)].start, m_differenceRows[stateItems(I)].size)
+                                );
+                            });
+                        }
+                    }(),
+                    ...
+                );
+            }(std::make_index_sequence<StateCount>{});
+            [&]<std::size_t... K>(std::index_sequence<K...>) {
+                (
+                    [&] {
+                        using Location = typename PoseLocationOf<
+                            Space,
+                            std::tuple_element_t<K, typename PathsOf<WritePaths>::type>>::type;
+                        if constexpr (Location::part == PosePart::vectors)
+                        {
+                            BlockRows const unit = [&] {
+                                if constexpr (std::is_same_v<typename Location::UnitPath, WholeSpace>)
+                                {
+                                    return BlockRows{0, m_stateSize};
+                                }
+                                else
+                                {
+                                    return blockRows<typename Location::UnitPath>(space);
+                                }
+                            }();
+                            auto const & pose = [&]() -> auto const & {
+                                if constexpr (std::is_same_v<typename Location::UnitPath, WholeSpace>)
+                                {
+                                    return space;
+                                }
+                                else
+                                {
+                                    return pathBlock<typename Location::UnitPath>(space);
+                                }
+                            }();
+                            using Pose = std::remove_cvref_t<decltype(pose)>;
+                            turnRowsBack(
+                                pose,
+                                next.template middleRows<Pose::RotationValueDimension>(unit.start),
+                                jacobian.middleRows(m_outDifferenceRows[K].start, m_outDifferenceRows[K].size)
+                            );
+                        }
+                    }(),
+                    ...
+                );
+            }(std::make_index_sequence<WriteCount>{});
+        }
         [&]<std::size_t... K>(std::index_sequence<K...>) {
             (expandRows<K>(f, jacobian), ...);
         }(std::make_index_sequence<WriteCount>{});
@@ -3733,7 +3857,8 @@ public:
      */
     static constexpr bool CachesTransition = std::is_same_v<Method_, methods::Linearized> && ReadsOnlyState
                                           && internal::returnsStepJacobianIn<Model_, Space_, Scalar_>
-                                          && internal::affineInEverything<Model_>();
+                                          && internal::affineInEverything<Model_>()
+                                          && !internal::touchesPoseParts<Model_, Space_>();
 
     /** \a model taken over the step \a dt in \a space, predicting by \a method. The step is any
      * TimeStep, converted once to \a Scalar_ (see \ref Time).
