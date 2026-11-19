@@ -342,7 +342,7 @@ struct ConditionedInPlace
  * \f$ K \Sigma_{xy}^T \f$ where it is; the other forms read the symmetric prior while forming
  * theirs. The covariance, formed in the tangent space at the prior mean, is then carried to the
  * one at the posterior mean by resetCovariance() [covariance-reset], which does nothing on a space with an
- * identity reset, or by the carry \a Carry where the measurement names another (\ref carries).
+ * identity reset, or by the carry \a Carry where the measurement names another (Emrys::carries).
  * \a residual, \a outputCov, and \a cross must not refer to \a state.
  *
  * An \a outputCov that is not positive definite is repaired as \a Repair says and replaced by the

@@ -496,6 +496,30 @@ public:
         return 0;
     }
 
+    /** \returns the rows of the state's values: the whole state is its own unit */
+    [[nodiscard]] BlockRows const &
+    unitRows(std::size_t) const
+    {
+        return m_rows;
+    }
+
+    /** \returns 0, the unit's first row in the joint vector of values */
+    [[nodiscard]] Eigen::Index
+    unitJointStart(std::size_t) const
+    {
+        return 0;
+    }
+
+    /** Never called, since the whole state is a part of no pose; here so that the code that turns a part's
+     * columns compiles for every ReadBlocks.
+     */
+    template <std::size_t K, typename F>
+    decltype(auto)
+    withPoseOf(F && f) const
+    {
+        return f(m_space);
+    }
+
 private:
 
     BlockRows m_rows;                       ///< every row of a state's values

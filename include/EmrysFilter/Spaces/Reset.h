@@ -634,7 +634,7 @@ inline constexpr bool carriesNothing =
 
 /** \ingroup Spaces
  * Carries the covariance \a cov by \a carry after its mean moved from \a x by the step \a d, in place:
- * \f$ P \leftarrow G P G^T \f$ with \f$ G \f$ the carry's (see \ref carries). With carries::reset() it is
+ * \f$ P \leftarrow G P G^T \f$ with \f$ G \f$ the carry's (see Emrys::carries). With carries::reset() it is
  * resetCovariance().
  */
 template <CovarianceCarry Carry, Space S, typename XDerived, typename DDerived, typename CovDerived>
