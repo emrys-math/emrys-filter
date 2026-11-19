@@ -182,6 +182,10 @@ it is spaces, an example, and tests, not a filter. The groups go in `Spaces/` [l
 largest user base is legged robots, by contact-aided estimation (Hartley et al. 2020); the
 mechanization and contact models stay EmrysNavigation's.
 
+[groups.md](groups.md) is the plan for this step, and it replaces the items below where they
+differ: no space has a side, one group family of run-time size stands in place of $SE(3)$ and
+$SE_2(3)$, and the side becomes a policy of the update. Start from its steps and open questions.
+
 - [ ] The side of the increment on `UnitQuaternion`: right (the body frame, today's) by default,
       left as the alternative, each with its reset Jacobian [covariance-reset].
 - [ ] $SE(2)$, $SE(3)$, and $SE_2(3)$ as spaces with both sides, their exponential and logarithm
