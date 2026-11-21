@@ -123,7 +123,10 @@ policy adaptor such as `chunked(std::execution::par, 4096)`, never a build flag.
 
 Done when: the scaling curve is published.
 
-## 18b. Counter-based random numbers — not started
+## 18b. Counter-based random numbers — deferred
+
+Deferred past the advertised launch (decided 2026-11-21). The step need not bring a generator of
+its own: C++26 standardizes `std::philox4x32`, so the work waits for a standard library that has it.
 
 Parallel draws need a generator with no shared state: Philox (Salmon et al. 2011), standardized in
 C++26 as `std::philox4x32` (parallelism.md, "Random numbers in parallel"). The engine stays the
@@ -1066,6 +1069,8 @@ General-purpose pieces Eigen lacks, to offer once ours have settled [eigen-partn
 ## Deferred past the advertised launch
 
 - Step 19, the GPU backend, with its API made ready by step 19b.
+- Step 18b, counter-based random numbers (decided 2026-11-21): `std::philox4x32` is standardized in
+  C++26, so the step waits for a standard library that has it and brings no generator of its own.
 - Particle flow as a proposal (Daum and Huang 2007; Li and Coates 2017).
 - Teaching aids (decided 2026-11-16): a course syllabus, an ordered path through the examples and
   the module pages that a graduate course can follow, from the constant-velocity Kalman filter to
