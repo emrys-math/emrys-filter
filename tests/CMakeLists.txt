@@ -100,6 +100,7 @@ add_executable(emrys_filter_tests
   Filters/imm_filter.cpp
   Filters/amm_filter.cpp
   Filters/particle_filter.cpp
+  Filters/particle_proposals.cpp
   Filters/rb_point_mass_filter.cpp
   Filters/rb_particle_filter.cpp
   Filters/hidden_markov_filter.cpp

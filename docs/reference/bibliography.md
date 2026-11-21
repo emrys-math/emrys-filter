@@ -138,6 +138,13 @@ A. Doucet, N. de Freitas, K. Murphy, and S. Russell. Rao-Blackwellised particle 
 dynamic Bayesian networks. In *Proceedings of the Sixteenth Conference on Uncertainty in
 Artificial Intelligence (UAI)*, pages 176–183, 2000. Free: [PDF](https://www.cs.ubc.ca/~murphyk/Papers/rbpf_uai00.pdf).
 
+\anchor DoucetGodsill2000
+A. Doucet, S. Godsill, and C. Andrieu. On sequential Monte Carlo sampling methods for Bayesian
+filtering. *Statistics and Computing*, 10(3):197–208, 2000. The optimal importance function,
+which minimizes the variance of the weights given the state moved from, and its approximation by
+local linearization. **Not read.** \ref Arulampalam2002 "Arulampalam et al. (2002)" describes
+both.
+
 \anchor Dunik2019
 J. Duník, M. Soták, M. Veselý, O. Straka, and W. Hawkinson. Design of Rao–Blackwellized
 point-mass filter with application in terrain aided navigation. *IEEE Transactions on Aerospace
@@ -163,6 +170,14 @@ A. Gelb, editor. *Applied Optimal Estimation*. MIT Press, 1974.
 **Not read.** The Gauss-Markov process is described in
 [Ornstein-Uhlenbeck process](https://en.wikipedia.org/wiki/Ornstein%E2%80%93Uhlenbeck_process); no
 free source read describes the linearized Kalman filter.
+
+\anchor Gilks2001
+W. R. Gilks and C. Berzuini. Following a moving target: Monte Carlo inference for dynamic Bayesian
+models. *Journal of the Royal Statistical Society: Series B*, 63(1):127–146, 2001. The
+resample-move algorithm: after a resampling, each particle is moved by a Markov chain kernel that
+leaves the posterior invariant. **Not read.** No source read describes it; the entry and what
+`ParticleFilter::move()` takes from it were written from the method as it is commonly stated, and
+are to be checked against the paper.
 
 \anchor Godsill2004
 S. J. Godsill, A. Doucet, and M. West. Monte Carlo smoothing for nonlinear time series.
@@ -359,6 +374,12 @@ X. Pennec. Intrinsic statistics on Riemannian manifolds: basic tools for geometr
 **Not read.** The iteration is as given in \ref Hertzberg2013 "Hertzberg et al. (2013)", §3.4. Free
 copy: [CORE](https://core.ac.uk/download/49969478.pdf), not yet read.
 
+\anchor Pitt1999
+M. K. Pitt and N. Shephard. Filtering via simulation: auxiliary particle filters. *Journal of the
+American Statistical Association*, 94(446):590–599, 1999. The auxiliary particle filter: the
+particles are resampled by weights that look ahead to the next observation, before they are
+moved. **Not read.** \ref Arulampalam2002 "Arulampalam et al. (2002)" describes it.
+
 \anchor Pocoma2023
 E. Pocoma, L. Storrer, F. Quitin, L. Vandendorpe, P. De Doncker, and F. Horlin. Direct tracking of
 a wireless transmitter based on Rao-Blackwellized point mass filter. *IEEE Transactions on
@@ -433,6 +454,13 @@ J. Solà, J. Deray, and D. Atchuthan. A micro Lie theory for state estimation in
 Technical report IRI-TR-18-01, arXiv:1812.01537, 2018 (version 9, 2021). Appendix B, the right
 Jacobian of SO(3), eq. (143). Free: [arXiv](https://arxiv.org/abs/1812.01537).
 
+\anchor VanDerMerwe2000
+R. van der Merwe, A. Doucet, N. de Freitas, and E. Wan. The unscented particle filter. Technical
+report CUED/F-INFENG/TR 380, Cambridge University Engineering Department, 2000. A particle
+filter whose proposal for each particle is the posterior of an unscented Kalman filter.
+**Not read.** \ref Arulampalam2002 "Arulampalam et al. (2002)" describes proposals by local
+linearization; the entry is to be checked against the report.
+
 \anchor VanDerMerwe2001
 R. van der Merwe and E. A. Wan. The square-root unscented Kalman filter for state and
 parameter-estimation. In *Proceedings of the IEEE International Conference on Acoustics, Speech,
@@ -469,3 +497,10 @@ nonlinear filtering. *IEEE Transactions on Signal Processing*, 46(5):1386–1396
 Proposition 1, eq. (21), is the recursion on the information matrix, and eqs. (34) to (36) its
 matrices for additive %Gaussian noise; Section IV treats a singular process noise. Free:
 [PDF, SEDICI](https://sedici.unlp.edu.ar/handle/10915/122993).
+
+\anchor Tierney1994
+L. Tierney. Markov chains for exploring posterior distributions. *The Annals of Statistics*,
+22(4):1701–1728, 1994. The independence sampler: a Metropolis-Hastings chain whose proposal does
+not depend on the present state, accepted by the ratio of the importance weights. **Not read.**
+The [Metropolis-Hastings algorithm](https://en.wikipedia.org/wiki/Metropolis%E2%80%93Hastings_algorithm)
+is the source read; the entry is to be checked against the paper.

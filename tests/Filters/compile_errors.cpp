@@ -251,6 +251,38 @@ pointMassPredictInput()
 }
 #endif
 
+// A step that uses the measurement draws its proposal from the model's own noise, so it takes sure
+// inputs alone (roadmap step 17zi).
+
+#if defined(PARTICLE_STEP_UNCERTAIN_INPUT)  // static_assert: ParticleFilter.h: a step that uses the measurement takes
+[[maybe_unused]] void
+particleStepUncertainInput()
+{
+    struct Force : Emrys::Linear<2>
+    {};
+
+    auto const pushed = Emrys::processModel(
+        []<typename T>(auto const & in, auto const & out, auto const & x, double dt) {
+            auto y = Emrys::zeros<T>(out);
+            Emrys::block<Position>(out, y) = Emrys::block<Position>(in, x) + dt * Emrys::block<Force>(in, x);
+            Emrys::block<Velocity>(out, y) = Emrys::block<Velocity>(in, x);
+            return y;
+        },
+        Emrys::reads(Emrys::path<Position>, Emrys::path<Velocity>, Emrys::path<Force>),
+        Emrys::writes(Emrys::path<Position>, Emrys::path<Velocity>)
+    );
+    auto const initial = makeInitial();
+    auto filter = Emrys::ParticleFilter{pushed, Emrys::drawSamples(initial.toDensity().value(), 10, rng)};
+    auto const fix = Emrys::measurementModel(
+        Eigen::Matrix2d::Identity(),
+        Emrys::reads(Emrys::path<Position>),
+        Emrys::additiveNoise(makeNoise())
+    );
+    auto const force = Emrys::GaussianParams<Force>{Eigen::Vector2d::Zero(), Eigen::Matrix2d::Identity()};
+    [[maybe_unused]] auto const stepped = filter.step(1.0, Emrys::observe(fix, Eigen::Vector2d::Zero()), rng, force);
+}
+#endif
+
 #if defined(HIDDEN_MARKOV_OTHER_CHAIN)  // static_assert: HiddenMarkovFilter.h: the chain must be on the filter's
 [[maybe_unused]] constexpr auto size = sizeof(Emrys::HiddenMarkovFilter<Maneuver, Emrys::MarkovChain<Sensor>>);
 #endif

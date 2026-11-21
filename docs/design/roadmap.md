@@ -353,30 +353,32 @@ are in [particles.md](particles.md). It is a prototype: none of its answers is d
 
 Done when: the questions are decided and the density passes its tests on all three compilers.
 
-## 17zi. Particle proposals and moves — not started
+## 17zi. Particle proposals and moves — in progress
 
 Proposals that use the measurement, and moves that rejuvenate a resampled set. Particle flow is
-deferred past the advertised launch.
+deferred past the advertised launch. The plan, its evidence, and its open questions are in
+[particles.md](particles.md), and a prototype is built: `ParticleFilter::step()`, which draws each
+particle from the proposal the measurement's method builds (Doucet, Godsill, and Andrieu 2000; van
+der Merwe et al. 2000), `auxiliaryStep()` (Pitt and Shephard 1999), and `move()`, the
+Metropolis-Hastings move of resample-move (Gilks and Berzuini 2001).
+`tests/Filters/particle_proposals.cpp` and the `PARTICLE_STEP_UNCERTAIN_INPUT` case are the
+evidence. None of the prototype's answers is decided.
 
-- [ ] The shape of a step that proposes from the measurement, decided first, since it changes the
-      filter's API. Today `predict(dt, rng)` and `update(z)` are separate calls, and every proposal
-      below needs $z$ while it predicts: a fused step, a proposal given to `predict()`, or another
-      shape, and what several measurements at one time do. Decide it with particle-filter.md Q11
-      (a recursion for the particle filter).
-- [ ] The locally optimal proposal (Doucet, Godsill, and Andrieu 2000): exact for a measurement
-      linear in the state with additive Gaussian noise, by the per-point Kalman update the
-      Rao-Blackwellized filters already have; linearized (the EKF proposal) or unscented (van der
-      Merwe et al. 2000) otherwise.
-- [ ] The auxiliary particle filter (Pitt and Shephard 1999).
-- [ ] Resample-move with a Metropolis-Hastings move (Gilks and Berzuini 2001), on 17zh's density.
+- [ ] Decide particles.md's questions 3 to 9: the step's name and arguments, the method as the
+      choice of proposal, the auxiliary step's resampling by the held upkeep, which changes
+      [upkeep], who keeps what a move needs, several measurements at one time, and
+      particle-filter.md Q11.
+- [ ] What particles.md lists as missing: the steps with a fixed-step model, an uncertain or a
+      sampled input, a batched function, mixture measurement noise, and in `RbParticleFilter`;
+      failures returned in place of assertions; scratch reserved, with the cases in
+      `tests/allocation_particles.cpp` and `tests/parallel.cpp`.
 - [ ] An adaptive particle count by KLD-sampling (Fox 2003), within the set's reserve [allocation].
-- [ ] Tests: on a linear Gaussian model each proposal's estimate approaches `KalmanFilter`'s as the
-      count grows, and the optimal proposal's weights vary less than the bootstrap's; with a
-      precise measurement the optimal and auxiliary filters keep an effective sample size where
-      the bootstrap filter collapses; resample-move leaves the posterior invariant; KLD-sampling's
-      count follows the spread; cases in `tests/parallel.cpp` and `tests/allocation_particles.cpp`.
+- [ ] The five bibliography entries the prototype added, and what each call says it takes from its
+      source, checked against the sources.
+- [ ] The `land` checks, with MSVC and GCC: the prototype was compiled and run with Clang alone, one
+      test file at a time.
 
-Done when: the step's shape is decided, and the proposals and moves pass their tests on all three
+Done when: the questions are decided, and the proposals and moves pass their tests on all three
 compilers.
 
 ## 17d. Ensemble Kalman filter — not started

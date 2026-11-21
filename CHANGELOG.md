@@ -107,6 +107,15 @@ instead.
   the axes cannot take the root of the blocks the measurement reads; it was a compile error. A
   transform or prediction still refuses such axes, and so does an update whose model's `affineIn()`
   names some of the blocks read.
+- A particle filter steps with the measurement in hand: `filter.step(dt, measurement, rng)` moves
+  each particle by a proposal that the measurement's method builds, by its Jacobian or by sigma
+  points, and weights it, in one call. A measurement given its matrix gets the optimal proposal;
+  one observed without a method steps as `predict()` then `update()`.
+  `filter.auxiliaryStep(dt, measurement, rng)` is the auxiliary particle filter's step, which
+  first weights each particle by its look-ahead likelihood and runs the filter's upkeep, where
+  the caller's resampling takes place. `filter.move(dt, measurement, rng)` moves each particle by
+  a Metropolis-Hastings step that leaves the posterior as it is, which separates the copies a
+  resampling made without inflating the covariance. All three take sure inputs alone.
 - `transitionDensity(space, model, dt, inputs...)` gives the density of a process model's next
   state given its present one, the density of the state that `simulate()` draws:
   `transition.logDensity(from, to)`, and `transition.mean(from)` with

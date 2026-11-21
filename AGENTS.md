@@ -21,6 +21,8 @@ header's. The library was eigen-filter until roadmap step 13, and its repository
   [docs/design/roadmap.md](docs/design/roadmap.md) for the ordered steps and their status.
   [docs/design/parallelism.md](docs/design/parallelism.md) is the plan behind steps 18 and 19
   (execution policies and GPU execution), not yet decided.
+  [docs/design/particles.md](docs/design/particles.md) is the plan behind steps 17zh and 17zi
+  (transition densities, and particle proposals and moves), a prototype with nothing decided.
   [docs/design/benchmarks.md](docs/design/benchmarks.md) is the plan for the benchmarks and the
   rule that separates them from the tests: a test checks the implementation, a benchmark backs
   a claim.
