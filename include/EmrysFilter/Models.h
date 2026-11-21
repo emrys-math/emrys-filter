@@ -21,7 +21,8 @@
  * Emission.h measures a discrete state [emissions]; Reduction.h and Consistency.h reduce an update's branches and test
  * them [weighted-branches], [reduction-policies], [composed-features], and Simulation.h draws the true states that
  * Consistency.h's nees() tests a filter against, and CramerRao.h's posterior Cramér-Rao bound bounds its error along
- * them [cramer-rao-bound]; FormSteps.h holds the steps of the square-root and information forms of the %Gaussian
+ * them [cramer-rao-bound], and TransitionDensity.h evaluates the density of the next state that Simulation.h draws;
+ * FormSteps.h holds the steps of the square-root and information forms of the %Gaussian
  * [gaussian-forms]; and Batched.h marks a function that takes every point at once [batched-functions].
  *
  * A process model moves the whole state forward in time; a measurement model relates part
@@ -181,3 +182,4 @@
 #include <EmrysFilter/Models/SwitchingModel.h>
 #include <EmrysFilter/Models/Transform.h>
 #include <EmrysFilter/Models/TransformArgs.h>
+#include <EmrysFilter/Models/TransitionDensity.h>

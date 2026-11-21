@@ -1839,6 +1839,18 @@ observesASampledInput()
 }
 #endif
 
+// A transition density is that of the model's own noise about its step, so it takes sure inputs
+// alone (roadmap step 17zh).
+
+#if defined(TRANSITION_DENSITY_UNCERTAIN_INPUT)  // static_assert: TransitionDensity.h: a transition density takes a
+[[maybe_unused]] void
+takesTheDensityOfAnUncertainInput()
+{
+    auto const force = Emrys::GaussianParams<Force>{Eigen::Vector2d::Zero(), Eigen::Matrix2d::Identity()};
+    [[maybe_unused]] auto const transition = Emrys::transitionDensity(State{}, pushed(), 1.0, force);
+}
+#endif
+
 #if defined(EACH_PARTIAL_WRITES)  // static_assert: Placement.h: onEach<Path>(model) places a model that writes every
 [[maybe_unused]] auto const model = Emrys::onEach<Fleet>(Emrys::RandomWalk<Position>{0.1});
 #endif

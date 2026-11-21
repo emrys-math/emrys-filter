@@ -107,6 +107,13 @@ instead.
   the axes cannot take the root of the blocks the measurement reads; it was a compile error. A
   transform or prediction still refuses such axes, and so does an update whose model's `affineIn()`
   names some of the blocks read.
+- `transitionDensity(space, model, dt, inputs...)` gives the density of a process model's next
+  state given its present one, the density of the state that `simulate()` draws:
+  `transition.logDensity(from, to)`, and `transition.mean(from)` with
+  `transition.logDensityAbout(mean, to)` for many next states from one present state. Where the
+  process noise is singular, as beside a `Constant` block, the density is on the directions the
+  noise reaches, `rank()` of them, and the log-density is minus infinity at a state the noise
+  cannot reach. It takes sure inputs alone.
 - A particle filter's prediction draws an input that is not Gaussian, such as a mixture's density,
   a kernel density, or a Student-t over a tagged space, once per particle:
   `filter.predict(dt, rng, mixture.toDensity().value())`. The concept `SampledInput` names such an

@@ -89,6 +89,7 @@ add_executable(emrys_filter_tests
   Models/consistency.cpp
   Models/cramer_rao.cpp
   Models/simulation.cpp
+  Models/transition_density.cpp
   Models/emission.cpp
   Filters/kalman_filter.cpp
   Filters/consider_consistency.cpp

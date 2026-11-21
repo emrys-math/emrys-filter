@@ -331,21 +331,27 @@ analysis project's [analysis-project], and Sage-Husa in an INS/GNSS example Emry
 Done when: the decision on $Q$ is recorded, and the estimators and robust updates pass their tests
 on all three compilers.
 
-## 17zh. Transition densities — not started
+## 17zh. Transition densities — in progress
 
-A process model's $\log p(x_{k+1} \mid x_k)$, the prerequisite of the particle proposals and moves
-of 17zi and of the particle smoother of 14b. For additive noise it is the Gaussian density of
-$x_{k+1} \boxminus f(x_k)$ under $Q$ [tangent-gaussians].
+A process model's $\log p(x_{k+1} \mid x_k)$, which the particle smoother of 14b weighs states by,
+and a move of 17zi made in the state rather than in a particle's draws. `transitionDensity(space,
+model, dt, inputs...)` in `Models/TransitionDensity.h` is the Gaussian density of
+$x_{k+1} \boxminus f(x_k)$ under $Q$ [tangent-gaussians], and `tests/Models/transition_density.cpp`
+and the `TRANSITION_DENSITY_UNCERTAIN_INPUT` case are the evidence. The plan and its open questions
+are in [particles.md](particles.md). It is a prototype: none of its answers is decided.
 
-- [ ] A singular $Q$, the usual case (noise that drives the velocity and not the position), makes
-      the density degenerate: define it on the subspace the noise reaches, with the rest a
-      constraint, decided together with 17g's singular $Q$.
+- [ ] A singular $Q$: the prototype defines the density on the directions the noise reaches, by the
+      factorization a prediction draws with, and returns $-\infty$ off them, with a tolerance for
+      rounding (particles.md, question 1). Decide it, and 17g's singular $Q$ with it.
 - [ ] A model with an uncertain input through its function [prediction-inputs] has no closed-form
-      density: refuse it with a message, or let the model give its own, decided when written.
-- [ ] Tests: on a linear Gaussian model it equals the closed form; with a singular $Q$ it is finite
-      exactly on the reachable set; on a unit quaternion block it uses the tangent density.
+      density: the prototype refuses it at compile time (particles.md, question 2).
+- [ ] The density of many pairs of states at once, under an execution policy, which backward
+      simulation needs, with a case in `tests/parallel.cpp`, and a case in
+      `tests/allocation_particles.cpp`.
+- [ ] The `land` checks, with MSVC and GCC: the prototype was compiled and run with Clang alone, one
+      test file at a time.
 
-Done when: the density passes its tests on all three compilers.
+Done when: the questions are decided and the density passes its tests on all three compilers.
 
 ## 17zi. Particle proposals and moves — not started
 
