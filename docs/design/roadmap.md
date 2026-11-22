@@ -867,9 +867,15 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       them out of the repository, which is public. Done when no entry says **Not read.** and a
       reader who checks a citation finds what the comment says there.
 - [ ] Benchmarks against the other libraries in the README's comparison table that run the same
-      problem (mherb/kalman's EKF and UKF on the ranging problem), by the method of benchmarks.md,
-      since a reader's first question is "how fast against X", and the README's numbers are only
-      against hand-written Eigen.
+      problem, by the method of benchmarks.md (claim 9), since a reader's first question is "how
+      fast against X", and the README's numbers are only against hand-written Eigen. That is
+      mherb/kalman alone, all four of its filters (EKF, UKF, square-root EKF, square-root UKF) on
+      the ranging problem, with the results in `docs/benchmarks.md`. Started on branch
+      `mherb-benchmark` (2026-11-22): the plan and the results page are written, and its four
+      filters, at its last commit (`9f40c2f`, 2018-08-22), build and run unchanged against Eigen
+      5.0.1 with Clang 21, warning once (`-Wdeprecated-enum-enum-conversion` in
+      `SquareRootExtendedKalmanFilter.hpp`), so its headers come in as system includes. GCC and
+      MSVC are not tried. Next: the EKF pair on the ranging problem.
 - [ ] GitHub Discussions turned on, so questions have somewhere to go besides issues. The
       repository's 20 topics, GitHub's limit, were chosen on 2026-11-12 by how many public
       repositories use each, so that each has an audience browsing it; a filter named in the

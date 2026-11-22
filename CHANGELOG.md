@@ -8,6 +8,9 @@ instead.
 
 ### Added
 
+- [docs/benchmarks.md](docs/benchmarks.md), the benchmark results: each problem's instructions and
+  time per step against the same filter written by hand in Eigen, the compile times, the method,
+  and how to run the benchmarks yourself.
 - `KalmanFilter<...>::UpdateType<M>` and `ResultType<M>`, what `update()` with a measurement of
   type `M` returns and fills, as the other filters name them; it was
   `decltype(filter)::RecursionType::UpdateType<M>`.

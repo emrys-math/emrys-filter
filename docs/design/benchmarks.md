@@ -93,6 +93,7 @@ might doubt, published with its method and machine, and never one per feature."
 | 6 | It fits and runs on a microcontroller | Footprint and cycles on Cortex-M4F and M7 | `.text`, `.data`, stack per function, DWT cycles per step | hand-rolled EKF on the same target | after [embedded-builds]'s Cortex-M job |
 | 7 | A template library's compile cost is tolerable | Compile cost of each benchmark translation unit | seconds and peak memory per compiler | the hand-rolled translation unit | built and measured on three compilers (section 7), not in CI, not published |
 | 8 | A GPU pays above some particle count | Device path against host `par` | crossover particle count | the library's own host path | step 19, not planned here |
+| 9 | It is no slower than the C++ Kalman library a user would otherwise pick | mherb/kalman's EKF, UKF, square-root EKF, and square-root UKF on the ranging problem | instructions and ns per step, at the ranging sizes and scalars | mherb/kalman, as its users write it | started on branch `mherb-benchmark` |
 
 **1. Ranging.** What exists, plus the two axes [benchmarks] names and the ranging benchmark lacks: a
 constant-acceleration case (state dimension 6 and 9 beside 4 and 6), and the scaling curves over
@@ -405,6 +406,25 @@ compiled alone on an otherwise idle machine: wall seconds, and the ratio to the 
   CPU ratios (up to 2.9) exceed its wall ratios. The table gives wall time, which is what a user
   waits through, and `compile_cost.json` holds both.
 
+**9. mherb/kalman.** The other libraries in the README's comparison table either run no filter
+(manif), solve a graph (GTSAM), or run in Python (FilterPy), so mherb/kalman is the one that runs
+the same problem. It has vector states only, so the problem is ranging; attitude would need a
+multiplicative reset written by hand around it, and that hand code is what would be timed. Every
+filter it offers has a counterpart here, so all four are compared: `ExtendedKalmanFilter` against
+`KalmanFilter` with `Linearized`, `UnscentedKalmanFilter` against `KalmanFilter` with `Unscented`
+at the same α, β, κ, and weights, and the two square-root filters against `SqrtKalmanFilter` with
+each method. A filter is dropped only if it does not build against Eigen 5.0 unchanged or its pair
+cannot pass agreement, and the results page then says which and why. Unlike the hand code,
+mherb/kalman's arithmetic is kept as its users get it, update form and factorization included, so
+the pair compares what a user of each library runs, not the same operations, and agreement is to
+the rounding of two different update forms: its EKF forms the gain with `S.inverse()` and updates
+by $P - K H P$, and its UKF with `P_yy.inverse()` and $P - K P_{yy} K^T$, neither mirroring a
+triangle afterward, where the library solves by Cholesky and updates by $P - K P_{xy}^T$; the square-root pairs agree on the covariance rebuilt
+from each factor, since the factors may differ by an orthogonal transformation. It has no automatic
+differentiation, so its side has analytic Jacobians only and the library's autodiff rows stand
+without a counterpart. It is fetched at a pinned commit (MIT license) for the benchmarks alone and
+never becomes a dependency of the library.
+
 ## How the numbers are measured
 
 Three tiers, by what carries across machines:
@@ -542,12 +562,15 @@ allocation tests count the heap through `benchmarks/heap_counter.cpp`, since a p
 
 ## Publication
 
-The numbers go where a visitor finds them: `docs/benchmarks.md`, a Markdown page directly under
-`docs/`, which no CI job reads. It has one section
-per claim in the table above, each with the sentence the benchmark supports, the method in a
-paragraph (what the hand-rolled side does, what agreement was required, how the timing was taken),
-the table pasted from `--markdown`, and the machine line. Its opening says how to run the
-benchmarks on the reader's own machine, since a ratio on ours is an invitation to check.
+The numbers go where a visitor finds them: [docs/benchmarks.md](../benchmarks.md), a Markdown page
+directly under `docs/`, which no CI job reads and Doxygen does not take. It opens with a summary
+table of every pair's ratios, then the method as a short list (what the hand-rolled side shares
+with the library, what agreement is required, how each number is taken) and how to run the
+benchmarks on the reader's own machine, since a ratio on ours is an invitation to check. Then one
+section per measured claim with its table, a list of what is not measured yet, and the machine
+lines. Its text stops at the method; everything here behind it (why the reference is hand code,
+the ceiling, the history of each ratio) stays here, and the page links this plan for it. A table
+comes from `--markdown` once the runners have it, so a published table is never retyped.
 
 The README gets a "Performance" paragraph of two or three numbers (the instruction ratio, the
 particle-filter thread scaling, the Cortex-M footprint) and a link to the page, and
@@ -597,7 +620,8 @@ In the order each supports the next. Each is a pull request or two.
 2. **Publish ranging.** `docs/benchmarks.md` with the method and the ranging tables from all
    three compilers, the README paragraph, the mainpage link, and the Compiler Explorer links or
    the disassembly artifact. The constant-acceleration case joins first so the published table
-   has the state-dimension axis.
+   has the state-dimension axis. *Started:* the page holds the tables measured in October and
+   November 2026, whose commits were not recorded, and the README links it.
    *Done when:* a visitor reaches the method and the numbers from the README in two clicks, and
    the page says how to reproduce them.
 3. **Attitude (step 13e).** `benchmarks/attitude/` in the ranging layout, the multiplicative EKF

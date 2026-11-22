@@ -2720,7 +2720,9 @@ cost of differentiation. The hand code uses fixed sizes, `noalias()`, and the li
 and factorization. Each pair must agree in state and covariance, and pass an NEES check, before any
 timing counts. Reproducible measures (Callgrind instruction counts, heap allocations per step,
 `.text` size, and stack use on Cortex-M) can gate a change; wall-clock time is reported as a ratio
-to the hand code, for users to run on their own hardware.
+to the hand code, for users to run on their own hardware. Where another library runs the same
+problem, it is one more implementation, written as its users write it, under the same agreement and
+NEES checks, and a reference beside the hand code rather than in its place.
 
 **Why.** A library's claim to efficiency is credible only against the code its users would
 otherwise write; a one-sided benchmark is a strawman. Instruction and allocation counts are

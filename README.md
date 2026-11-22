@@ -163,7 +163,7 @@ and for Cortex-M4F and M7. On the ranging benchmark the `KalmanFilter` takes 0.8
 the instructions per step of a hand-written Eigen EKF, after both pass the same agreement and
 consistency tests; the ratio is highest on the smallest problems, where the library's fixed cost
 of about 320 instructions per update is a quarter of the total
-([benchmarks.md](docs/design/benchmarks.md)).
+([the benchmark results](docs/benchmarks.md)).
 
 **Parallel by policy.** Every loop over a run-time count (particles, mixture components, grid
 cells) takes an `ExecutionPolicy` as its first argument, `execution::sequential` by default. Pass a
@@ -266,6 +266,8 @@ and the ones before it, and CI checks that.
   [docs/choosing.md](docs/choosing.md) for the choice of filter, and
   [the reference](https://emrys-math.github.io/emrys-filter/), the public API of every header.
   The `docs` target builds it, or with the internals for the maintainer.
+- **How fast it is:** [docs/benchmarks.md](docs/benchmarks.md), each benchmark's results against
+  the same filter written by hand in Eigen, and how to run them on your own machine.
 - **Understanding it:** [docs/guide/](docs/guide/), the four design reviews still open, in reading order from
   [hidden-markov-filter.md](docs/guide/hidden-markov-filter.md) to
   [smoothing.md](docs/guide/smoothing.md), each
