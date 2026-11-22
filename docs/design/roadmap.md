@@ -828,7 +828,6 @@ The front door:
       time per preset before and after.
 - [ ] A C++23 module beside the headers [layered-headers], after the profiling above, built if
       the three compiler families import it reliably; if not, a decision records why.
-- [ ] A ThreadSanitizer run of `tests/parallel.cpp` by hand.
 - [ ] What a precondition failure does, on the user's page: `EMRYS_FILTER_ASSERT` is `eigen_assert`,
       which aborts, and `NDEBUG` or `EIGEN_NO_DEBUG` silences it. A user's own definition may be an
       expression or a statement (`tests/assert_override.cpp`); a throwing one terminates inside a

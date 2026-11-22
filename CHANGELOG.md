@@ -143,6 +143,9 @@ instead.
 
 ### Fixed
 
+- `ParticleFilter::predict()` under a parallel policy no longer races: each particle's move
+  recorded the change in the set's stamp, a write from every thread. It moves them through the
+  set's `forEach()`, which records it once. Found by a ThreadSanitizer run of the parallel tests.
 - `predict()` and `predictJoint()` by a fixed-step model that caches its transition, and an
   `RbParticleFilter`'s prediction of each particle's Gaussian by one, read only the lower triangle
   of the covariance, as every other step does; they multiplied the whole stored matrix, whose

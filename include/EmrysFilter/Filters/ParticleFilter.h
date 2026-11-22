@@ -586,15 +586,16 @@ private:
                 drawn
             );
         };
-        auto const move = [&](Eigen::Index i, auto const & column) {
+        // Particle i moved by its column of draws.
+        auto const moved = [&](Eigen::Index i, auto const & column) {
             Difference const z = internal::middleRowsOf<NoiseRows>(column, 0, noiseRows);
-            Vector const moved = std::apply(
+            Vector const propagated = std::apply(
                 [&](auto const &... inputDraws) {
                     return Vector{propagate(m_state.state(i), inputDraws.at(column)...)};
                 },
                 drawn
             );
-            m_state.setState(i, Emrys::plus(space, moved, Difference{internal::multiply(noiseFactor, z)}));
+            return Vector{Emrys::plus(space, propagated, Difference{internal::multiply(noiseFactor, z)})};
         };
         if constexpr (internal::isSequential<P>)
         {
@@ -603,7 +604,7 @@ private:
             for (Eigen::Index i = 0; i < count; ++i)
             {
                 draw(column);
-                move(i, column);
+                m_state.setState(i, moved(i, column));
             }
         }
         else
@@ -615,8 +616,10 @@ private:
             {
                 draw(draws.col(i));
             }
-            internal::forEachIndex(std::forward<P>(policy), count, [&](Eigen::Index i) {
-                move(i, draws.col(i));
+            // Through the set's forEach(), which records the change once, before the loop: its
+            // setState(i, x) records it at every call, a write each thread would make.
+            m_state.forEach(std::forward<P>(policy), [&](auto & particle) {
+                particle.setState(moved(particle.index(), draws.col(particle.index())));
             });
         }
     }
