@@ -355,13 +355,30 @@ Done when: both pass their tests on all three compilers.
 
 ## 17zn. Generalized pseudo-Bayesian estimators — not started
 
-GPB1 and GPB2 beside the IMM and the AMM, on `SwitchingModel` [switching-models] (Bar-Shalom, Li,
-and Kirubarajan 2001).
+GPBn beside the IMM and the AMM, on `SwitchingModel` [switching-models] (Bar-Shalom, Li, and
+Kirubarajan 2001), with n a template parameter, since the state's type changes with it. GPBn keeps
+a Gaussian per history of the last n−1 modes; a step predicts each through each mode's model,
+$M^{n-1} \cdot M$ predictions, updates and reweights the $M^n$ results, and merges by moments
+those that differ only in their oldest mode. The IMM, which mixes before predicting, is not in the
+family and stays its own filter.
 
-- [ ] Both estimators. Test: with one mode each equals the Kalman filter; on the IMM's maneuvering
-      target, GPB1's error is at or above the IMM's and GPB2's at or below, as the source reports.
+- [ ] The state: weights over the last $\max(n-1, 1)$ modes and Gaussians over the newest $n-1$
+      of them, a weight's Gaussian found by dropping its older coordinates. For $n \ge 2$ the two
+      agree and the state is a `Hybrid` over a product of $n-1$ copies of the mode space, one per
+      lag, with distinct axis tags (a `History<ModeSpace, N>` space, say); for $n = 1$ a partial
+      specialization of the state type alone, one Gaussian with weights over the current mode. The
+      filter's predict, update, and merge are written once over the mapping: the prior weight of a
+      new mode sums the old weights over what the mapping drops, which is empty for $n \ge 2$ and
+      $\sum_i w_i \Pi_{ij}$ for $n = 1$, and the merge marginalizes the oldest axis of the
+      Gaussians' index and then of the weights'. The merge builds on `Hybrid`'s marginal, and
+      GPB2's cross predictions on `HybridPredictedJoint::predictedThrough()`.
+- [ ] The estimator. Test: with one mode it equals the Kalman filter; from one Gaussian it equals
+      the exact posterior, the mixture over all $M^k$ mode histories by enumeration, for the first
+      $n-1$ steps, for $n = 2, 3$; on the IMM's maneuvering target, GPB1's error is at or above
+      the IMM's and GPB2's at or below, as the source reports. No test claims the error falls with
+      n on a given run, which nothing guarantees.
 
-Done when: both pass their tests on all three compilers.
+Done when: GPB1, GPB2, and GPB3 pass their tests on all three compilers.
 
 ## 16b. Hooks for splitting by nonlinearity — not started
 
