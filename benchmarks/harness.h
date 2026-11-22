@@ -1,10 +1,11 @@
 #pragma once
 
 // Support shared by the benchmark runners, so that a new problem writes only its scenario and its
-// two implementations: the command line, the compiler line, a way to keep a measured function out
+// implementations: the command line, the compiler line, a way to keep a measured function out
 // of line so that Callgrind can attribute instructions to it by name, the summary statistics of a
 // set of timed samples, the replay of a filter over a simulated run, the pair driver that times
-// two implementations of one problem against each other, interleaved, and the table's columns.
+// two implementations of one problem against each other, interleaved, and the table's columns. The
+// second of a pair, the reference, is the plain-Eigen implementation or another library's.
 //
 // A runner checks that its two implementations agree before it times them, in its own terms, since
 // what agreement means differs by problem: to rounding for a pair of Kalman filters, particle by
@@ -105,12 +106,12 @@ compilerName()
 #undef EMRYS_BENCHMARK_STRING
 }
 
-/// Prints the line a table opens with: what \a title times, and the compiler. Warns when the build
-/// has assertions, whose cost would be in the times.
+/// Prints the line a table opens with: what \a title times, against which \a reference, and the
+/// compiler. Warns when the build has assertions, whose cost would be in the times.
 inline void
-printPreamble(char const * title)
+printPreamble(char const * title, char const * reference = "plain Eigen")
 {
-    std::printf("%s, EmrysFilter against plain Eigen, built with %s.\n", title, compilerName());
+    std::printf("%s, EmrysFilter against %s, built with %s.\n", title, reference, compilerName());
 #ifndef NDEBUG
     std::printf("Warning: built without NDEBUG, so the times include assertions; use a release build.\n");
 #endif
@@ -226,17 +227,17 @@ private:
 /// The timings of the two implementations of one case, in nanoseconds per step.
 struct PairTiming
 {
-    Summary emrys;  ///< the EmrysFilter implementation's
-    Summary eigen;  ///< the plain-Eigen implementation's
+    Summary emrys;      ///< the EmrysFilter implementation's
+    Summary reference;  ///< the reference implementation's: plain Eigen, or another library
 };
 
-/// Times \a emrys against \a eigen, two replays of the same run: batches of steps, alternating
+/// Times \a emrys against \a reference, two replays of the same run: batches of steps, alternating
 /// between the two filters so that drift in the machine's clock speed falls on both alike, with
 /// `options.samples` batches of each. A batch is long enough that the clock's resolution and the
 /// cost of reading it are under 1% of it.
-template <typename EmrysReplay, typename EigenReplay>
+template <typename EmrysReplay, typename ReferenceReplay>
 [[nodiscard]] PairTiming
-timePair(Options const & options, EmrysReplay & emrys, EigenReplay & eigen)
+timePair(Options const & options, EmrysReplay & emrys, ReferenceReplay & reference)
 {
     /// The shortest batch worth timing, in nanoseconds.
     constexpr double TargetBatchNanoseconds = 20'000.0;
@@ -249,7 +250,7 @@ timePair(Options const & options, EmrysReplay & emrys, EigenReplay & eigen)
         double quickest = std::numeric_limits<double>::infinity();
         for (int i = 0; i < 5; ++i)
         {
-            quickest = std::min({quickest, emrys.timeSteps(batch), eigen.timeSteps(batch)});
+            quickest = std::min({quickest, emrys.timeSteps(batch), reference.timeSteps(batch)});
         }
         if (quickest * static_cast<double>(batch) >= TargetBatchNanoseconds)
         {
@@ -259,37 +260,37 @@ timePair(Options const & options, EmrysReplay & emrys, EigenReplay & eigen)
     }
     for (int i = 0; i < options.samples / 10; ++i)
     {
-        consume(emrys.timeSteps(batch) + eigen.timeSteps(batch));
+        consume(emrys.timeSteps(batch) + reference.timeSteps(batch));
     }
 
     auto emrysSamples = std::vector<double>{};
-    auto eigenSamples = std::vector<double>{};
+    auto referenceSamples = std::vector<double>{};
     emrysSamples.reserve(static_cast<std::size_t>(options.samples));
-    eigenSamples.reserve(static_cast<std::size_t>(options.samples));
+    referenceSamples.reserve(static_cast<std::size_t>(options.samples));
     for (int s = 0; s < options.samples; ++s)
     {
         // Alternate which goes first, so that neither always follows the other's cache footprint.
         if (s % 2 == 0)
         {
             emrysSamples.push_back(emrys.timeSteps(batch));
-            eigenSamples.push_back(eigen.timeSteps(batch));
+            referenceSamples.push_back(reference.timeSteps(batch));
         }
         else
         {
-            eigenSamples.push_back(eigen.timeSteps(batch));
+            referenceSamples.push_back(reference.timeSteps(batch));
             emrysSamples.push_back(emrys.timeSteps(batch));
         }
     }
-    return PairTiming{summarize(emrysSamples), summarize(eigenSamples)};
+    return PairTiming{summarize(emrysSamples), summarize(referenceSamples)};
 }
 
 /// Prints the column headings of a table whose first column, \a labelWidth wide, is headed
-/// \a labelHeading: the three statistics of each implementation and the ratio of the medians and
-/// of the 99th percentiles.
+/// \a labelHeading: the three statistics of each implementation, the second headed \a reference,
+/// and the ratio of the medians and of the 99th percentiles.
 inline void
-printColumns(char const * labelHeading, int labelWidth)
+printColumns(char const * labelHeading, int labelWidth, char const * reference = "Eigen")
 {
-    std::printf("%*s%-26s    %-26s    %s\n", labelWidth + 2, "", "EmrysFilter", "Eigen", "ratio");
+    std::printf("%*s%-26s    %-26s    %s\n", labelWidth + 2, "", "EmrysFilter", reference, "ratio");
     std::printf(
         "%-*s  %8s %8s %8s    %8s %8s %8s    %6s %6s\n",
         labelWidth,
@@ -312,7 +313,7 @@ inline void
 printRow(char const * label, int labelWidth, PairTiming const & timing, int decimals = 0)
 {
     Summary const & e = timing.emrys;
-    Summary const & g = timing.eigen;
+    Summary const & g = timing.reference;
     std::printf(
         "%-*s  %8.*f %8.*f %8.*f    %8.*f %8.*f %8.*f    %6.2f %6.2f\n",
         labelWidth,

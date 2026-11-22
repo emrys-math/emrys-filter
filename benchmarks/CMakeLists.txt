@@ -7,6 +7,24 @@
 # The runners build with EMRYS_FILTER_BUILD_BENCHMARKS, and the benchmark target runs them; the
 # *-bench presets configure a release build that does both.
 
+# mherb/kalman, the other C++ library that runs the ranging problem, a third implementation of it
+# (docs/design/benchmarks.md, claim 9). It is fetched at its last commit, for the benchmarks alone,
+# and never becomes a dependency of the library. Its own CMakeLists.txt builds its tests and
+# examples, so only its headers are used: SOURCE_SUBDIR names a directory without one, and the
+# headers come in as system includes, since one of them warns under Clang.
+option(EMRYS_FILTER_BENCHMARK_MHERB "Build the ranging benchmark against mherb/kalman, which is fetched" ON)
+if(EMRYS_FILTER_BENCHMARK_MHERB)
+  FetchContent_Declare(mherb_kalman
+    URL https://github.com/mherb/kalman/archive/9f40c2f7bedb08e964297a00a2b9360036590896.tar.gz
+    URL_HASH SHA256=6fe66ac2128ce73ffd98457827b63af33efbd6690a90ff23ba51035d4c2d6603
+    SOURCE_SUBDIR headers-only
+  )
+  FetchContent_MakeAvailable(mherb_kalman)
+  add_library(emrys_filter_mherb_kalman INTERFACE)
+  target_include_directories(emrys_filter_mherb_kalman SYSTEM INTERFACE "${mherb_kalman_SOURCE_DIR}/include")
+  target_link_libraries(emrys_filter_mherb_kalman INTERFACE Eigen3::Eigen)
+endif()
+
 if(EMRYS_FILTER_BUILD_TESTS)
   add_executable(emrys_filter_benchmark_tests
     heap_counter.cpp
@@ -21,6 +39,13 @@ if(EMRYS_FILTER_BUILD_TESTS)
     EmrysFilter::EmrysFilter
     GTest::gtest_main
   )
+  if(EMRYS_FILTER_BENCHMARK_MHERB)
+    target_sources(emrys_filter_benchmark_tests PRIVATE
+      ranging/mherb_agreement.cpp
+      ranging/mherb_allocation.cpp
+    )
+    target_link_libraries(emrys_filter_benchmark_tests PRIVATE emrys_filter_mherb_kalman)
+  endif()
   target_compile_options(emrys_filter_benchmark_tests PRIVATE ${EMRYS_FILTER_WARNINGS})
   target_compile_definitions(emrys_filter_benchmark_tests PRIVATE EIGEN_RUNTIME_NO_MALLOC)
   gtest_discover_tests(emrys_filter_benchmark_tests)
@@ -36,12 +61,23 @@ if(EMRYS_FILTER_BUILD_BENCHMARKS)
     target_compile_options(emrys_filter_${problem}_benchmark PRIVATE ${EMRYS_FILTER_WARNINGS})
   endforeach()
 
-  add_custom_target(benchmark
+  set(benchmark_commands
     COMMAND emrys_filter_ranging_benchmark
     COMMAND emrys_filter_attitude_benchmark
     COMMAND emrys_filter_particles_benchmark
+  )
+  # The ranging EKF against mherb/kalman's.
+  if(EMRYS_FILTER_BENCHMARK_MHERB)
+    add_executable(emrys_filter_mherb_benchmark ranging/mherb_benchmark.cpp)
+    target_link_libraries(emrys_filter_mherb_benchmark PRIVATE EmrysFilter::EmrysFilter emrys_filter_mherb_kalman)
+    target_compile_options(emrys_filter_mherb_benchmark PRIVATE ${EMRYS_FILTER_WARNINGS})
+    list(APPEND benchmark_commands COMMAND emrys_filter_mherb_benchmark)
+  endif()
+
+  add_custom_target(benchmark
+    ${benchmark_commands}
     USES_TERMINAL
-    COMMENT "Timing each problem, EmrysFilter against plain Eigen"
+    COMMENT "Timing each problem, EmrysFilter against plain Eigen and against mherb/kalman"
   )
 endif()
 

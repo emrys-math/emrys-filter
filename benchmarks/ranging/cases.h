@@ -32,4 +32,17 @@ using Cases = ::testing::Types<
     Case<3, 6, Jacobian::Analytic, float>,
     Case<3, 6, Jacobian::AutoDiff, float>>;
 
+/// The cases against mherb/kalman, which has no automatic differentiation: the planar and spatial
+/// cases with the analytic Jacobian, in double and in float.
+using MherbCases = ::testing::Types<
+    Case<2, 4, Jacobian::Analytic>,
+    Case<3, 6, Jacobian::Analytic>,
+    Case<2, 4, Jacobian::Analytic, float>,
+    Case<3, 6, Jacobian::Analytic, float>>;
+
+/// The cases in which mherb/kalman agrees with EmrysFilter: double only. In float its explicit
+/// inverse of S loses up to a third of a meter of the mean in 2D with 4 anchors, where EmrysFilter's
+/// float filter stays within 1e-4 of its double one (mherb_benchmark.cpp prints both).
+using MherbAgreementCases = ::testing::Types<Case<2, 4, Jacobian::Analytic>, Case<3, 6, Jacobian::Analytic>>;
+
 }  // namespace Ranging

@@ -425,6 +425,18 @@ differentiation, so its side has analytic Jacobians only and the library's autod
 without a counterpart. It is fetched at a pinned commit (MIT license) for the benchmarks alone and
 never becomes a dependency of the library.
 
+The EKF pair is `benchmarks/ranging/mherb_ranging.h`, `mherb_agreement.cpp`,
+`mherb_allocation.cpp`, and the runner `mherb_benchmark.cpp`. In double the two agree to 9e-10 m
+over 500 steps and neither allocates. In float they cannot agree: mherb/kalman's float EKF strays up
+to 0.30 m from the double EmrysFilter EKF in 2D with 4 anchors (0.007 to 0.10 m in the other
+cases), where EmrysFilter's float EKF stays within 9e-5 m. In that case $S$ has eigenvalues near 50
+and 0.09, so the explicit inverse loses about 3e-5 of its accuracy in float, and $K = P H^T S^{-1}$
+multiplies that loss by the prior variance of 25. So the timing is in double only, as the rule
+requires, and the runner prints instead each float filter's largest distance from the double
+EmrysFilter EKF over the run, which backs a claim of its own: in float, EmrysFilter stays accurate
+where mherb/kalman does not. The UKF and the two square-root pairs are still to write; the
+library's side of each needs a variant of `emrys_ranging.h` with `Unscented` or `SqrtKalmanFilter`.
+
 ## How the numbers are measured
 
 Three tiers, by what carries across machines:

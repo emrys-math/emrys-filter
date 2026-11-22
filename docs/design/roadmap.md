@@ -874,8 +874,12 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       `mherb-benchmark` (2026-11-22): the plan and the results page are written, and its four
       filters, at its last commit (`9f40c2f`, 2018-08-22), build and run unchanged against Eigen
       5.0.1 with Clang 21, warning once (`-Wdeprecated-enum-enum-conversion` in
-      `SquareRootExtendedKalmanFilter.hpp`), so its headers come in as system includes. GCC and
-      MSVC are not tried. Next: the EKF pair on the ranging problem.
+      `SquareRootExtendedKalmanFilter.hpp`), so its headers come in as system includes. The EKF
+      pair is built (benchmarks.md, claim 9): agreement in double, no allocation, and a runner
+      that times double and prints each library's float accuracy, since mherb/kalman's float
+      EKF does not agree. Built and tested with Clang on Windows only, not yet measured (the
+      machine was busy). Next: the UKF and the two square-root pairs, then GCC and MSVC, then
+      measure and publish.
 - [ ] GitHub Discussions turned on, so questions have somewhere to go besides issues. The
       repository's 20 topics, GitHub's limit, were chosen on 2026-11-12 by how many public
       repositories use each, so that each has an audience browsing it; a filter named in the

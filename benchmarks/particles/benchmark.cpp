@@ -106,8 +106,10 @@ benchmarkCase(Options const & options, Eigen::Index count)
     Benchmark::PairTiming const perStep = Benchmark::timePair(options, emrys, eigen);
     Benchmark::consume(emrys.filter().state().states().sum() + eigen.filter().states().sum());
 
-    auto const perParticle =
-        Benchmark::PairTiming{perStep.emrys / static_cast<double>(count), perStep.eigen / static_cast<double>(count)};
+    auto const perParticle = Benchmark::PairTiming{
+        perStep.emrys / static_cast<double>(count),
+        perStep.reference / static_cast<double>(count)
+    };
     char label[LabelWidth + 1];
     std::snprintf(label, sizeof label, "%dD %3d  %7lld  %-5s", D, A, static_cast<long long>(count), nameOf(K));
     Benchmark::printRow(label, LabelWidth, perParticle, 1);
