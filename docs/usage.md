@@ -125,7 +125,8 @@ Answer each question below on its own. The first answer is the default; where an
   `AmmFilter` with `upkeep::floorModes()` if one of several models holds throughout;
   `HiddenMarkovFilter` for a discrete state alone.
 - **The arithmetic.** `KalmanFilter`. `SqrtKalmanFilter` for `float`, ill-conditioning, or long
-  runs; `InfoFilter` for an uninformative prior or many sensors; `SqrtInfoFilter` for both.
+  runs; `SqrtInfoFilter` for a prior with no information, which it predicts from;
+  `InfoFilter` for many sensors between predictions.
 - **After the run.** The smoothers in `Smoothers/` for estimates of past states from
   later data; `PosteriorCramerRaoBound` for the best accuracy any filter could reach.
 

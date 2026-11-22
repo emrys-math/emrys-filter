@@ -36,6 +36,11 @@ instead.
 
 ### Changed
 
+- [docs/choosing.md](docs/choosing.md), "Starting without a prior", recommends starting a
+  `SqrtInfoFilter` from no information, the diffuse initialization of the literature, over a
+  least-squares fit to the first measurements, and says when to convert once the state is
+  determined. It and [docs/usage.md](docs/usage.md) now say that `InfoFilter` can't predict
+  until the measurements determine every direction, where `SqrtInfoFilter` can.
 - **Breaking:** a filter over a hybrid takes the mode chain and the motion as its first two
   arguments, `ImmFilter{chain, motion, prior}`, and so do `MixtureFilter`, `RbParticleFilter`,
   and `RbPointMassFilter` (`RbPointMassFilter{chain, motion, grid, conditional}`). The motion is

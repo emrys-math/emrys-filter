@@ -141,13 +141,44 @@ serves where it doesn't:
   precise than the prior, and for long runs.
 - `InfoFilter` carries the precision and information vector, so a prior with no information in
   some direction is a zero, not an enormous variance, and updates add, so many measurements
-  between predictions cost little and their order doesn't matter.
-- `SqrtInfoFilter` is both at once.
+  between predictions cost little and their order doesn't matter. Its prediction goes through
+  the covariance, so it can't predict until the measurements determine every direction, and each
+  prediction inverts the precision, whose condition number is the square of its root's.
+- `SqrtInfoFilter` carries a root of the precision, so it has the square-root form's arithmetic
+  and the information form's zero prior. Under `methods::linearized()` it predicts from no
+  information at all, through the inverse of the step's Jacobian, and fails instead on a
+  singular Jacobian. Its update triangularizes rather than adds.
 
 A `MixtureFilter` or an `ImmFilter` over square-root components runs the same way. The
 information forms can't be components: a mixture adds densities, the information forms multiply
 them, and their collapse fails on a component with no information in some direction, so a mixture
 of them is refused at compile time with a message naming `toGaussian()` and `toSqrt()`.
+
+### Starting without a prior
+
+When nothing is known of the initial state, start a `SqrtInfoFilter` from no information,
+$R = 0$, and filter forward through the process model until the measurements determine the
+state. This is the diffuse initialization of the state-space literature: Ansley and Kohn (1985),
+de Jong (1991), Koopman (1997), and the chapter on initialisation in Durbin and Koopman, *Time
+Series Analysis by State Space Methods*. The square-root information filter of Bierman (1977) holds
+the zero prior exactly. The filter returns `GaussianError::Singular` from a sigma-point step, and its
+`covariance()` fails, while some direction is still undetermined, so take Linearized steps until
+then.
+
+The common alternative, a least-squares fit to the first measurements used as the prior, is
+equivalent only when those measurements are all of one time. A fit to measurements spread over
+time either treats the state as constant, which is wrong, or fits deterministic dynamics, which
+leaves out the process noise between them and so starts the filter with a covariance smaller than
+its error. A large covariance, $P_0 = \kappa I$, is the other shortcut, and it loses
+precision in the first update as $\kappa$ grows. `InfoFilter` starts from no information too,
+but can't predict until the state is determined, so it serves only when the measurements of one
+time determine it.
+
+Once the state is determined, staying in `SqrtInfoFilter` is the default. Convert with
+`toGaussian()` or `toSqrt()` when the run needs what the information forms don't have: a smoother,
+which none of the forms but the covariance form has; a `MixtureFilter` or `ImmFilter`, whose
+components can't be information forms; sigma-point steps, which go through the moments; or a
+process model whose Jacobian can be singular.
 
 ## Estimate a parameter, consider it, or leave it out?
 
