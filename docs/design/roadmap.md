@@ -889,11 +889,14 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       under `~/opt/opencv-4.14.0`: the pair is written and timed over runs of 300 steps, since
       its unmirrored covariance drifts from step 400 on and diverges by step 2000 (benchmarks.md,
       claim 9); with 8 anchors or more it allocates once per step. No CI job installs OpenCV.
-      The mherb/kalman EKF pair is built and tested with Clang on Windows; its other three pairs,
-      TinyEKF's, and OpenCV's are not yet built in CMake, and their numbers come from
-      single-file probes.
-      Nothing is measured. Next: build and test every pair with Clang, then GCC and MSVC, then
-      measure and publish; the Cortex-M half of TinyEKF joins claim 6's footprint benchmark.
+      Every pair is built and tested with Clang 21 in WSL (2026-11-22, the mherb/kalman EKF also
+      with Clang on Windows), and measured there: instructions and time are in
+      `docs/benchmarks.md`. Claim 9 holds against OpenCV and fails at the small sizes against
+      TinyEKF and mherb/kalman's EKF, from the library's fixed cost of about 1,500 instructions per
+      step, which also makes the ranging counts the page gave before (1.36 at 2D with 4 anchors,
+      now 2.66) not reproduce (benchmarks.md, claim 1). Next: find that fixed cost and cut it;
+      GCC and MSVC builds of the pairs; time on Windows too; the Cortex-M half of TinyEKF joins
+      claim 6's footprint benchmark.
 - [ ] GitHub Discussions turned on, so questions have somewhere to go besides issues. The
       repository's 20 topics, GitHub's limit, were chosen on 2026-11-12 by how many public
       repositories use each, so that each has an audience browsing it; a filter named in the

@@ -2,8 +2,8 @@
 // (emrys_ranging_kinds.h) makes none, and cv::KalmanFilter run as an EKF (opencv_ranging.h) is
 // counted and recorded, not required to be zero, since the pair times what its users run and the
 // OpenCV it is built against is whichever is installed. With OpenCV 4.14.0 its steps make no
-// allocation with 4 or 6 anchors and one per step with 8 or more, in double and in float, so the
-// timings of those cases include its allocator. The target is built with EIGEN_RUNTIME_NO_MALLOC,
+// allocation with 4 or 6 anchors and one per step with 8 or more in double, and with 12 or more in
+// float, so the timings of those cases include its allocator. The target is built with EIGEN_RUNTIME_NO_MALLOC,
 // so Eigen asserts on any heap allocation while it is forbidden, and heap_counter.cpp's operator new
 // counts what anything else asks of the heap; cv::Mat buffers come from OpenCV's own allocator,
 // and none is made in a step. Roadmap: the benchmarks against other libraries.

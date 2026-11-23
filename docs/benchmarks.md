@@ -10,12 +10,12 @@ reference is hand-written code, and what is still to be measured.
 
 | Problem | Instructions per step | Time per step, Windows | Time per step, Linux |
 |---|---|---|---|
-| Ranging EKF, 2D, 4 anchors | 1.30–1.44 | 1.15–1.68 | 1.22–1.53 |
-| Ranging EKF, 2D, 8 anchors | 1.06–1.11 | 1.02–1.44 | 1.06–1.15 |
-| Ranging EKF, 3D, 6 anchors | 1.16–1.33 | 1.11–1.21 | 1.14–1.18 |
-| Ranging EKF, 12 or more anchors | 0.89–1.01 | 0.91–0.97 | 0.91–1.09 |
-| Attitude EKF, analytic Jacobians | 1.18 | 1.15 | 1.21 |
-| Attitude EKF, autodiff | 1.27 | 1.32 | 1.29 |
+| Ranging EKF, 2D, 4 anchors | 2.48–2.66 | 1.15–1.68 | 1.22–1.53 |
+| Ranging EKF, 2D, 8 anchors | 1.35–1.42 | 1.02–1.44 | 1.06–1.15 |
+| Ranging EKF, 3D, 6 anchors | 1.67–1.84 | 1.11–1.21 | 1.14–1.18 |
+| Ranging EKF, 12 or more anchors | 0.98–1.06 | 0.91–0.97 | 0.91–1.09 |
+| Attitude EKF, analytic Jacobians | 1.78 | 1.15 | 1.21 |
+| Attitude EKF, autodiff | 1.67 | 1.32 | 1.29 |
 | Particle filter, 2D | 1.03–1.06 | 1.10–1.18 | 1.00–1.04 |
 | Particle filter, 3D | 1.04–1.07 | 1.25–1.40 | 1.02–1.12 |
 
@@ -68,14 +68,18 @@ by every range.
 
 | Instructions per step | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
 |---|---|---|---|---|---|---|
-| `double`, analytic | 1.36 | 1.09 | 0.91 | 1.32 | 0.94 | 1.01 |
-| `double`, autodiff | 1.44 | 1.11 | 0.92 | 1.33 | 0.95 | 1.01 |
-| `float`, analytic | 1.30 | 1.06 | 0.93 | 1.16 | 0.89 | 0.96 |
-| `float`, autodiff | 1.35 | 1.06 | 0.93 | 1.18 | 0.89 | 0.96 |
+| `double`, analytic | 2.66 | 1.41 | 0.98 | 1.84 | 1.04 | 1.06 |
+| `double`, autodiff | 2.63 | 1.42 | 0.99 | 1.77 | 1.04 | 1.06 |
+| `float`, analytic | 2.66 | 1.37 | 0.99 | 1.72 | 0.99 | 1.00 |
+| `float`, autodiff | 2.48 | 1.35 | 0.98 | 1.67 | 0.98 | 1.00 |
 
-At 2D with 4 anchors in `double` with analytic Jacobians, the hand code takes 909 instructions per
-step and the library 1,233. On Windows a step takes from 104 ns (2D, 4 anchors, `float`, analytic)
-to 2,150 ns (3D, 24 anchors, `double`, autodiff).
+At 2D with 4 anchors in `double` with analytic Jacobians, the hand code takes 906 instructions per
+step and the library 2,410. These counts are of commit `e0b74e0` (2026-11-22). The counts this page
+gave before, 1.36 at 2D with 4 anchors and 1.32 at 3D with 6 (909 against 1,233 instructions), do
+not reproduce: the public launch commit, counted the same way, takes 906 against 2,399. The time
+columns of the summary are from the earlier measurement and have not been taken again. On Windows
+a step took from 104 ns (2D, 4 anchors, `float`, analytic) to 2,150 ns (3D, 24 anchors, `double`,
+autodiff).
 
 ## Attitude EKF
 
@@ -85,8 +89,12 @@ gravity and a magnetic field. The hand code is the multiplicative EKF of Markley
 
 | Per step | Hand code, instructions | EmrysFilter, instructions | Ratio | Hand code, Windows | EmrysFilter, Windows |
 |---|---|---|---|---|---|
-| Analytic measurement Jacobians | 4,092 | 4,830 | 1.18 | 314 ns | 362 ns |
-| Autodiff measurement Jacobians | 5,672 | 7,186 | 1.27 | 375 ns | 495 ns |
+| Analytic measurement Jacobians | 4,089 | 7,281 | 1.78 | 314 ns | 362 ns |
+| Autodiff measurement Jacobians | 5,669 | 9,439 | 1.67 | 375 ns | 495 ns |
+
+The instruction counts are of commit `e0b74e0` (2026-11-22); this page gave 4,830 and 7,186 for the
+library before (1.18 and 1.27), which do not reproduce, while the hand code's count is unchanged.
+The times are from the earlier measurement and have not been taken again.
 
 ## Particle filter
 
@@ -121,22 +129,55 @@ the hand-written program, each translation unit compiled alone on an idle machin
 Peak memory is 1.5 to 2 times the hand-written program's, at most 2 GB (the attitude EKF, Clang
 Debug).
 
+## Against other libraries
+
+The same ranging problem run by the Kalman filters of three other libraries, each written as its
+users write it, with the analytic Jacobian, the only one they have. Each pair must agree to 1e-9 in
+`double` over the run that is timed, so only the pairs that agree are timed; the runners print the
+rest. Here a ratio is EmrysFilter's cost divided by the other library's: below 1, EmrysFilter costs
+less. Commit `e0b74e0` (2026-11-22), Ubuntu 26.04 under WSL2 on an Intel Core i9-13900F, Clang
+21.1.8 with `-march=x86-64-v3`, each runner pinned to one CPU by `taskset` at normal priority, the
+median of 2000 batches; instructions by Callgrind as above.
+
+| EKF, `double` | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
+|---|---|---|---|---|---|---|
+| mherb/kalman, instructions | 1.98 | 0.32 | 0.34 | 0.54 | 0.51 | 0.30 |
+| mherb/kalman, time | 2.95 | 0.78 | 0.35 | 0.98 | 0.48 | 0.35 |
+| TinyEKF, instructions | 1.53 | 1.97 | 0.87 | 0.96 | 1.33 | 0.77 |
+| TinyEKF, time | 2.26 | 3.56 | 0.90 | 1.53 | 1.28 | 0.70 |
+| OpenCV, instructions | 0.06 | 0.09 | 0.11 | 0.10 | 0.13 | 0.08 |
+| OpenCV, time | 0.09 | 0.16 | 0.10 | 0.13 | 0.09 | 0.07 |
+
+| Square-root EKF, against mherb/kalman | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
+|---|---|---|---|---|---|---|
+| `double`, instructions | 0.26 | 0.40 | 0.76 | 0.39 | 0.65 | 1.00 |
+| `double`, time | 0.73 | 0.84 | 1.06 | 0.77 | 0.94 | 1.16 |
+| `float`, instructions | 0.16 | 0.26 | 0.48 | 0.26 | 0.43 | 0.77 |
+| `float`, time | 0.60 | 0.76 | 0.99 | 0.72 | 0.83 | 1.09 |
+
+At 2D with 4 anchors a step of EmrysFilter's EKF takes 224 ns, mherb/kalman's 76 ns, and
+TinyEKF's 99 ns. EmrysFilter is slower than TinyEKF at four of the six sizes, and than
+mherb/kalman's EKF at the smallest, where its fixed cost per step, the 1,500 instructions it takes
+beyond the hand code at that size, is most of the step; its square-root EKF is up to 16% slower
+than mherb/kalman's at the largest sizes. It is faster than OpenCV at every size, by 6 to 14 times.
+
+- **mherb/kalman** (`9f40c2f`, 2018-08-22): its EKF and square-root EKF are timed. Its `float` EKF
+  strays up to 4e-2 relative in the mean and 9e-2 in the covariance from the `double` estimate,
+  where EmrysFilter's stays within 3e-5, and its two UKFs update with the sigma points of the
+  prediction, which leave the process noise out, so they differ from EmrysFilter's by 5e-4 to 3e-3
+  relative in the mean and 2e-3 to 4e-3 in the covariance; neither is timed.
+- **TinyEKF** (`ba0d2a9`, 2026-04-09): timed in `double`. In `float` it strays up to 5e-3 relative
+  in the mean and 3e-2 in the covariance, while the prior is wide, so `float` is not timed.
+- **OpenCV** 4.14.0, its core, imgproc, and video modules built from source in Release with its
+  default CPU flags: `cv::KalmanFilter` is linear and run as an EKF by the pseudo-measurement
+  $z - h(x) + H x$. It never makes its covariance symmetric again, and the asymmetry rounding leaves
+  grows until the filter diverges: the two agree to 1e-9 until somewhere between steps 400 and 504,
+  and by step 2000 OpenCV's 3D estimates are lost, their covariances 1e7 to 3e11 times the size of
+  EmrysFilter's away from it. So it is timed over runs of 300 steps that start over, untimed, at
+  their end. With 8 anchors or more it allocates once per step in `double`.
+
 ## Not measured yet
 
-- Against mherb/kalman: its EKF, UKF, square-root EKF, and square-root UKF on the ranging problem.
-  The runner is built (`emrys_filter_mherb_benchmark`). It times the EKF in `double` and the
-  square-root EKF in both scalars. In `float`, mherb/kalman's EKF loses accuracy, and its two UKFs
-  compute a different update from the standard one, so those are compared for accuracy but not
-  timed.
-- Against TinyEKF: its EKF on the ranging problem. The runner is built
-  (`emrys_filter_tinyekf_benchmark`) and times it in `double`. In `float`, TinyEKF loses
-  accuracy while the prior is wide, so it is compared for accuracy but not timed.
-- Against OpenCV: `cv::KalmanFilter`, run as an EKF on the ranging problem. The runner is built
-  with `-DEMRYS_FILTER_BENCHMARK_OPENCV=ON` against an installed OpenCV
-  (`emrys_filter_opencv_benchmark`). OpenCV's covariance is never made symmetric again, and its
-  asymmetry grows until the filter diverges, by step 2000 in 3D. So it is timed over runs of 300
-  steps, over which the two filters agree, and the runner also prints how far apart they are over
-  3000 steps.
 - The particle filter's scaling with threads under `std::execution::par`.
 - Code size, stack, and cycles per step on Cortex-M4F and Cortex-M7.
 - The price of each option (update form, Gaussian form, sigma points) relative to the plain EKF.

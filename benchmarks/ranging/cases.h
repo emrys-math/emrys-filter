@@ -93,8 +93,8 @@ using TinyEkfCases = ::testing::Types<
 using TinyEkfAgreementCases = ::testing::Types<KindCase<2, 4, FilterKind::Ekf>, KindCase<3, 6, FilterKind::Ekf>>;
 
 /// The cases of the benchmark against OpenCV, which has only the linear filter, run as an EKF: the
-/// planar and spatial cases, and the planar case with 8 anchors, from which OpenCV's steps allocate,
-/// each in double and in float.
+/// planar and spatial cases, and the planar case with 8 anchors, from which OpenCV's steps allocate
+/// in double, each in double and in float.
 using OpenCvCases = ::testing::Types<
     KindCase<2, 4, FilterKind::Ekf>,
     KindCase<2, 8, FilterKind::Ekf>,

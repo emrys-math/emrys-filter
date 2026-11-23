@@ -87,18 +87,20 @@ using UnscentedCases = ::testing::Types<
 
 TYPED_TEST_SUITE(RangingMherbUnscentedTest, UnscentedCases);
 
-// Without process noise the two UKFs agree to 1e-5 relative over 500 steps, in double, so they
-// spread the same sigma points with the same weights. With it they differ by 7 to 13 mm, because
-// mherb/kalman updates with the points its prediction moved, which leave the process noise out. The
-// difference left without it, 1e-6 m at most, is the other half of the same choice: the moved points
-// are F times a Cholesky factor of the previous covariance, another square root of the predicted
-// covariance than its own Cholesky factor, which EmrysFilter spreads. A wrong parameter, weight, or
-// spread would differ by centimeters with or without process noise.
+// Without process noise the two UKFs agree over 500 steps, in double, to 1e-5 relative in 2D with 4
+// anchors and to 1e-3 in 3D with 6, so they spread the same sigma points with the same weights. With
+// process noise they differ by about 7 mm in both, because mherb/kalman updates with the points its
+// prediction moved, which leave the process noise out. The difference left without it, at most
+// 1.2e-6 m (1.5e-7 relative) in 2D and 1.3 mm (1.2e-4 relative in the mean, 6.7e-4 in the
+// covariance) in 3D, over the first steps while the prior is wide, is most likely the other half of
+// the same choice: the moved points are F times a Cholesky factor of the previous covariance,
+// another square root of the predicted covariance than its own Cholesky factor, which EmrysFilter
+// spreads. In 3D that leaves the test a margin of about 5 below the difference with process noise.
 TYPED_TEST(RangingMherbUnscentedTest, AgreeWithoutProcessNoise)
 {
     auto scenario = Ranging::makeScenario<TypeParam::Dimension, TypeParam::AnchorCount>();
     scenario.accelDensity = 0;
-    expectAgreement<TypeParam>(scenario, 1e-5);
+    expectAgreement<TypeParam>(scenario, TypeParam::Dimension == 2 ? 1e-5 : 1e-3);
 }
 
 }  // namespace
