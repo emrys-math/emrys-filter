@@ -219,11 +219,13 @@ TEST(Allocation, ParticleFilterUnderAUsersPolicyStaysOffTheHeap)
 {
     constexpr Eigen::Index count = 3 * Emrys::internal::chunkSize + 5;
     auto resource = CountingResource{arenaBytes};
-    auto scratch = CountingResource{arenaBytes};
-    // Pools well past the biggest scratch, a few Eigen::Index per particle, so that the pool
-    // reuses every block whatever the standard library's default largest block. libc++ pools
-    // blocks below the largest only loosely: at 64 KiB it sent a 24 KiB scratch upstream every
-    // step.
+    // The pool takes a chunk of several blocks from upstream at once, however max_blocks_per_chunk
+    // is set: for moments()'s deviations, four doubles per particle, libstdc++ and libc++ each take
+    // about 2 MiB, past arenaBytes.
+    auto scratch = CountingResource{16 * arenaBytes};
+    // Pools well past the biggest scratch, a few doubles per particle, so that the pool reuses
+    // every block whatever the standard library's default largest block. libc++ pools blocks below
+    // the largest only loosely: at 64 KiB it sent a 24 KiB scratch upstream every step.
     auto const options = std::pmr::pool_options{.max_blocks_per_chunk = 0, .largest_required_pool_block = 1 << 20};
     auto pool = std::pmr::unsynchronized_pool_resource{options, &scratch};
     auto const policy = PolicyWithMemory{{}, &pool};
