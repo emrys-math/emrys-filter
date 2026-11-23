@@ -3893,7 +3893,8 @@ predictByTransition(Prior const & prior, FixedStepModel<Space_, Model_, Method_,
     auto const & f = model.transition();
     typename Moments<Space_, Scalar_>::VectorType mean{model.propagate(space, prior.mean())};
     normalizeValues(space, mean);
-    MatrixType cross = multiply(covarianceLowerOf(prior), f.transpose());
+    // Only the stored lower triangle is guaranteed, so it is mirrored before the product.
+    MatrixType cross = multiply(symmetricFromLower<MatrixType>(covarianceLowerOf(prior)), f.transpose());
     MatrixType explained = multiply(f, cross);
     explained = (Scalar_(0.5) * (explained + explained.transpose())).eval();
     Eigen::Index const n = explained.rows();

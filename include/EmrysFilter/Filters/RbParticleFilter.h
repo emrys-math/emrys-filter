@@ -1240,7 +1240,11 @@ private:
             {
                 typename WholeMoments::VectorType mean = propagate(split.assemble(conditional.mean(), pinned));
                 normalizeValues(space, mean);
-                RestCross const cross = internal::multiply(conditional.covarianceLower(), restColumns.transpose());
+                // Only the stored lower triangle is guaranteed, so it is mirrored before the product.
+                RestCross const cross = internal::multiply(
+                    internal::symmetricFromLower<typename RestMoments::MatrixType>(conditional.covarianceLower()),
+                    restColumns.transpose()
+                );
                 typename WholeMoments::MatrixType cov = internal::multiply(restColumns, cross);
                 cov = (Scalar_(0.5) * (cov + cov.transpose()) + noise).eval();
                 return {space, std::move(mean), std::move(cov)};

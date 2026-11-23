@@ -129,6 +129,10 @@ instead.
 
 ### Fixed
 
+- `predict()` and `predictJoint()` by a fixed-step model that caches its transition, and an
+  `RbParticleFilter`'s prediction of each particle's Gaussian by one, read only the lower triangle
+  of the covariance, as every other step does; they multiplied the whole stored matrix, whose
+  upper triangle need not hold the covariance.
 - `UpdateBranch::component` and `FilterBranch::component` are 0 in a default-constructed branch,
   not indeterminate.
 

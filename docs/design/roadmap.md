@@ -947,9 +947,6 @@ Decisions and comments that disagree with the code:
 
 Performance with no change to results:
 
-- [ ] `predictByTransition()` and the Rao-Blackwellized cached prediction multiply the whole stored
-      covariance, where only the lower triangle is guaranteed; mirror first, as
-      `predictInPlaceByJacobian()` does.
 - [ ] The Gauss-Hermite rule runs an eigensolver on every transform; compute it at compile time
       without a stored table (a `consteval` bisection on the Sturm count found the roots exactly). The spherical simplex's steps are computed on every transform too. Decide what a
       multiprecision or autodiff scalar takes.
