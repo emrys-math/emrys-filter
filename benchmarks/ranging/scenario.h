@@ -9,6 +9,7 @@
 #include <Eigen/Core>
 
 #include <cmath>
+#include <cstddef>
 #include <numbers>
 #include <random>
 #include <vector>
@@ -167,8 +168,8 @@ simulate(Scenario<Dimension, AnchorCount> const & scenario, int steps, unsigned 
 {
     auto simulator = Simulator<Dimension, AnchorCount>{scenario, seed};
     auto result = Trajectory<Dimension, AnchorCount>{};
-    result.truth.reserve(steps);
-    result.ranges.reserve(steps);
+    result.truth.reserve(std::size_t(steps));
+    result.ranges.reserve(std::size_t(steps));
     for (int k = 0; k < steps; ++k)
     {
         result.ranges.push_back(simulator.step());

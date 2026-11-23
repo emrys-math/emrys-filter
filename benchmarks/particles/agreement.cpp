@@ -97,7 +97,7 @@ TYPED_TEST(ParticlesTest, Consistent)
         auto const run = Ranging::simulate(scenario, steps, 100 + seed);
         auto const initial = Particles::drawInitialParticles(scenario, TypeParam::ParticleCount, 200 + seed);
         auto filter = EmrysParticles<D, A, TypeParam::Kind>{scenario, initial, 300 + seed};
-        for (int k = 0; k < steps; ++k)
+        for (std::size_t k = 0; k < std::size_t(steps); ++k)
         {
             filter.predict();
             filter.update(run.ranges[k]);

@@ -805,13 +805,13 @@ factorial(int n)
 /** \returns \f$ \Delta t^k \f$ for each \f$ k < N \f$, by multiplication, which is cheaper than
  * \c std::pow for the small powers of a chain
  */
-template <int N, typename TimeScalar>
+template <std::size_t N, typename TimeScalar>
 [[nodiscard]] std::array<TimeScalar, N>
 powersOf(TimeScalar dt)
 {
     auto result = std::array<TimeScalar, N>{};
     result[0] = TimeScalar(1);
-    for (int k = 1; k < N; ++k)
+    for (std::size_t k = 1; k < N; ++k)
     {
         result[k] = result[k - 1] * dt;
     }
@@ -835,9 +835,10 @@ struct KinematicStep
         using T = ScalarOf<X>;
         using Vector = typename Moments<Out, T>::VectorType;
         using JacobianMatrix = typename Moments<Out, TimeScalar>::MatrixType;
-        auto const starts = std::array<Eigen::Index, Order>{blockRows<Tags>(in).start...};
-        auto const differenceStarts = std::array<Eigen::Index, Order>{differenceBlockRows<Tags>(out).start...};
-        auto const dtPowers = powersOf<Order>(dt);
+        auto const starts = std::array<Eigen::Index, sizeof...(Tags)>{blockRows<Tags>(in).start...};
+        auto const differenceStarts =
+            std::array<Eigen::Index, sizeof...(Tags)>{differenceBlockRows<Tags>(out).start...};
+        auto const dtPowers = powersOf<sizeof...(Tags)>(dt);
         Eigen::Index const n = differenceDimension(out);
         Vector y{x};
         JacobianMatrix jacobian = JacobianMatrix::Identity(n, n);
@@ -845,9 +846,14 @@ struct KinematicStep
         {
             for (int j = i + 1; j < Order; ++j)
             {
-                TimeScalar const scale = dtPowers[j - i] / TimeScalar(factorial(j - i));
-                y.template segment<Dimension>(starts[i]) += T(scale) * x.template segment<Dimension>(starts[j]);
-                jacobian.template block<Dimension, Dimension>(differenceStarts[i], differenceStarts[j])
+                TimeScalar const scale = dtPowers[std::size_t(j - i)] / TimeScalar(factorial(j - i));
+                y.template segment<Dimension>(starts[std::size_t(i)]) +=
+                    T(scale) * x.template segment<Dimension>(starts[std::size_t(j)]);
+                jacobian
+                    .template block<Dimension, Dimension>(
+                        differenceStarts[std::size_t(i)],
+                        differenceStarts[std::size_t(j)]
+                    )
                     .diagonal()
                     .setConstant(scale);
             }
@@ -882,16 +888,16 @@ struct KinematicNoise
     operator()(Out const & out, TimeScalar dt) const
     {
         using Matrix = typename Moments<Out, TimeScalar>::MatrixType;
-        auto const starts = std::array<Eigen::Index, Order>{differenceBlockRows<Tags>(out).start...};
-        auto const dtPowers = powersOf<2 * Order>(dt);
+        auto const starts = std::array<Eigen::Index, sizeof...(Tags)>{differenceBlockRows<Tags>(out).start...};
+        auto const dtPowers = powersOf<2 * sizeof...(Tags)>(dt);
         Eigen::Index const n = differenceDimension(out);
         Matrix q = Matrix::Zero(n, n);
         for (int i = 0; i < Order; ++i)
         {
             for (int j = 0; j < Order; ++j)
             {
-                TimeScalar const scale = dtPowers[2 * Order - 1 - i - j] / TimeScalar(denominator(i, j));
-                q.template block<Dimension, Dimension>(starts[i], starts[j]) =
+                TimeScalar const scale = dtPowers[std::size_t(2 * Order - 1 - i - j)] / TimeScalar(denominator(i, j));
+                q.template block<Dimension, Dimension>(starts[std::size_t(i)], starts[std::size_t(j)]) =
                     scale * spectralDensity.template cast<TimeScalar>();
             }
         }

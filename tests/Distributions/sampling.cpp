@@ -54,7 +54,7 @@ protected:
     makeSpd()
     {
         MatrixType const a = MatrixType::NullaryExpr(n, n, [](Eigen::Index i, Eigen::Index j) {
-            return Scalar(std::sin(7.0 * i + 3.0 * j + 1.0));
+            return Scalar(std::sin(7.0 * double(i) + 3.0 * double(j) + 1.0));
         });
         MatrixType p = a * a.transpose();
         p.diagonal().array() += Scalar(1);

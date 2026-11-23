@@ -76,7 +76,7 @@ protected:
     makeVector(double phase)
     {
         return VectorType::NullaryExpr(n, [phase](Eigen::Index i) {
-            return Scalar(std::sin(1.3 * i + phase));
+            return Scalar(std::sin(1.3 * double(i) + phase));
         });
     }
 
@@ -85,7 +85,7 @@ protected:
     makeSpd()
     {
         MatrixType const a = MatrixType::NullaryExpr(n, n, [](Eigen::Index i, Eigen::Index j) {
-            return Scalar(std::sin(7.0 * i + 3.0 * j + 1.0));
+            return Scalar(std::sin(7.0 * double(i) + 3.0 * double(j) + 1.0));
         });
         MatrixType p = a * a.transpose();
         p.diagonal().array() += Scalar(n);

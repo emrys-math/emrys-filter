@@ -139,10 +139,10 @@ TYPED_TEST(RangingTest, Consistent)
     auto nees = std::array<double, steps / checkEvery>{};
     for (int r = 0; r < runs; ++r)
     {
-        auto const run = Ranging::simulate(scenario, steps, 100 + r);
+        auto const run = Ranging::simulate(scenario, steps, 100 + unsigned(r));
         auto const ranges = Ranging::rangesIn<Scalar>(run);
         auto filter = EmrysRanging<D, A, TypeParam::Kind, Scalar>{scenario};
-        for (int k = 0; k < steps; ++k)
+        for (std::size_t k = 0; k < std::size_t(steps); ++k)
         {
             filter.predict();
             filter.update(ranges[k]);

@@ -332,7 +332,7 @@ public:
         auto const sums = averageOver(
             std::forward<P>(policy),
             truths.cols(),
-            [&](Eigen::Index i, internal::InfoSums<MatrixType> & sums) {
+            [&](Eigen::Index i, internal::InfoSums<MatrixType> & partial) {
                 auto const linearization = internal::linearizeMeasurementAtPoint<Scalar_>(
                     m_space,
                     VectorType{truths.col(i)},
@@ -343,13 +343,13 @@ public:
                 auto const llt = Eigen::LLT<NoiseMatrix>{linearization.noise};
                 if (llt.info() != Eigen::Success)
                 {
-                    sums.valid = false;
+                    partial.valid = false;
                     return;
                 }
                 using JacobianMatrix = typename std::remove_cvref_t<decltype(linearization)>::JacobianMatrix;
                 JacobianMatrix whitened = linearization.jacobian;
                 internal::solveInPlace(llt.matrixL(), whitened);
-                sums.second.noalias() += internal::multiply(whitened.transpose(), whitened);
+                partial.second.noalias() += internal::multiply(whitened.transpose(), whitened);
             }
         );
         if (!sums.valid)

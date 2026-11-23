@@ -190,8 +190,8 @@ TEST(UnequalDimensions, AUserWrittenSphere)
     // The heading is measured in its own space, so the residual is a tangent vector of two
     // coordinates and the noise has two.
     auto const sighting = Emrys::measurementModel(
-        [](auto const & in, auto const &, auto const & x) {
-            return Emrys::block<Heading>(in, x);
+        [](auto const & in, auto const &, auto const & state) {
+            return Emrys::block<Heading>(in, state);
         },
         Emrys::reads(Emrys::path<Heading>),
         Emrys::outputSpace(Heading{}),

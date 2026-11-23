@@ -127,10 +127,11 @@ endif()
 # (decisions.md [embedded-builds]). Eigen and GoogleTest are system includes, so only the library's
 # warnings and the programs' own count, except where GCC inlines Eigen into them: its
 # -Wmaybe-uninitialized then flags the copy of a Map's empty Stride in Quaternion::isApprox(), so
-# GCC builds without that warning.
+# GCC builds without that warning. GCC and Clang add the shadowing, conversion, and old-style cast
+# warnings, so that a header that narrows or shadows fails the build of a program that uses it.
 option(EMRYS_FILTER_WARNINGS_AS_ERRORS "Build the tests, examples, and benchmarks with -Werror or /WX" ON)
 set(EMRYS_FILTER_WARNINGS
-  $<IF:$<CXX_COMPILER_ID:MSVC>,/W4 /permissive- /Zc:__cplusplus /bigobj,-Wall -Wextra -Wpedantic>
+  $<IF:$<CXX_COMPILER_ID:MSVC>,/W4 /permissive- /Zc:__cplusplus /bigobj,-Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wsign-conversion -Wold-style-cast>
   $<$<CXX_COMPILER_ID:GNU>:-Wno-maybe-uninitialized>
   $<$<BOOL:${EMRYS_FILTER_WARNINGS_AS_ERRORS}>:$<IF:$<CXX_COMPILER_ID:MSVC>,/WX,-Werror>>
 )

@@ -716,9 +716,8 @@ Evidence that the library is efficient and builds where embedded users need it [
 
 - [ ] Warnings: the tests, examples, and benchmarks build with `-Werror` and `/WX`
       (`EMRYS_FILTER_WARNINGS`, GCC without `-Wmaybe-uninitialized`, which Eigen's inlined code
-      trips). Left: `-Wshadow -Wconversion -Wsign-conversion -Wold-style-cast` in the test flags
-      (the only header warnings are the kinematic tables in `ProcessModel.h` and three sites in
-      `Reduction.h`, which index `std::array` with `int`), and a release build of the suite in CI:
+      trips), and with `-Wshadow -Wconversion -Wsign-conversion -Wold-style-cast` under GCC and
+      Clang since 2026-11-22. Left: a release build of the suite in CI:
       every preset is Debug, so a variable read only by `EMRYS_FILTER_ASSERT` goes unused under
       `NDEBUG` unseen, as `ProcessModel.h`'s `predict()` did until the Cortex-M build found it.
 - [ ] Coverage [coverage]: `tools/coverage.py` and the `coverage` job report the headers by
@@ -933,11 +932,15 @@ Decisions and comments that disagree with the code:
 
 - [ ] The page numbers of Särkkä, Bunch, and Godsill (2012) in the bibliography, from the SYSID
       2012 proceedings.
-- [ ] GCC 14 at `-O1 -Wall` warns `-Wmaybe-uninitialized` where Clang is silent: the autodiff reset
-      in `Reset.h`, the arrival step, `smoothStep`, the hybrid smoother, `FloorModes` (silent on
-      2026-11-04, since it builds the modes from log-weights), the hybrid collapse, and the noise
-      built in `additiveNoise()`.
-      Check CI's `-Og` build, and silence them at the source if they show.
+- [ ] GCC 14 at CI's `-Og` with `-Wmaybe-uninitialized` (checked over every test, example, and
+      benchmark on 2026-11-22) is silent on the sites `-O1` flagged before: the autodiff reset in
+      `Reset.h`, the arrival step, `smoothStep`, the hybrid smoother, `FloorModes`, the hybrid
+      collapse, and `additiveNoise()`. It flags Eigen's copy of a `Map`'s empty `Stride` in
+      `isApprox()`, which the build's `-Wno-maybe-uninitialized` is for, and one false positive:
+      `GivenComponent`'s `pinned{space, measurement}` (`ImmFilter.h`), whose members are declared
+      in order, seen in the Rao-Blackwellized filters' tests through the temporary built in
+      `ImmRecursion`'s update given a block. The flag stays off while Eigen's warning shows; a
+      `GivenComponent` named before the call may silence the other.
 
 Performance with no change to results:
 

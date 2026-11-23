@@ -543,10 +543,10 @@ TEST(Measurement, InputNoiseMatchesAdditiveNoiseWhenItAdds)
     auto const x = makeState();
     auto const z = Eigen::Vector2d{11.2, -3.7};
     auto const throughModel = measurementModel(
-        []<typename T>(auto const & in, auto const &, auto const & x) {
+        []<typename T>(auto const & in, auto const &, auto const & state) {
             return Eigen::Matrix<T, 2, 1>{
-                block<Position>(in, x) + Eigen::Matrix<T, 2, 1>::Constant(block<Bias>(in, x)(0))
-                + block<FixNoise>(in, x)
+                block<Position>(in, state) + Eigen::Matrix<T, 2, 1>::Constant(block<Bias>(in, state)(0))
+                + block<FixNoise>(in, state)
             };
         },
         reads(path<Position>, path<Bias>, path<FixNoise>)
@@ -573,22 +573,22 @@ TEST(Measurement, AReturnedJacobianMatchesAutoDiff)
     auto const x = makeState();
     auto const z = Eigen::Vector2d{11.2, -3.7};
     // The function that returns its Jacobian calls this one, so it deduces its scalar.
-    auto const measure = [](auto const & in, auto const &, auto const & x) {
-        using T = ScalarOf<decltype(x)>;
-        auto const p = block<Position>(in, x);
+    auto const measure = [](auto const & in, auto const &, auto const & state) {
+        using T = ScalarOf<decltype(state)>;
+        auto const p = block<Position>(in, state);
         return Eigen::Matrix<T, 2, 1>{
-            p + Eigen::Matrix<T, 2, 1>::Constant(block<Bias>(in, x)(0)) + T(0.1) * p(0) * block<FixNoise>(in, x)
+            p + Eigen::Matrix<T, 2, 1>::Constant(block<Bias>(in, state)(0)) + T(0.1) * p(0) * block<FixNoise>(in, state)
         };
     };
-    auto const returning = [&](auto const & in, auto const & out, Eigen::Matrix<double, 5, 1> const & x) {
-        Eigen::Vector2d const p = block<Position>(in, x);
-        Eigen::Vector2d const v = block<FixNoise>(in, x);
+    auto const returning = [&](auto const & in, auto const & out, Eigen::Matrix<double, 5, 1> const & state) {
+        Eigen::Vector2d const p = block<Position>(in, state);
+        Eigen::Vector2d const v = block<FixNoise>(in, state);
         Eigen::Matrix<double, 2, 5> jacobian = Eigen::Matrix<double, 2, 5>::Zero();
         jacobian.leftCols<2>() = Eigen::Matrix2d::Identity();
         jacobian.col(0) += 0.1 * v;
         jacobian.col(2) = Eigen::Vector2d::Ones();
         jacobian.rightCols<2>() = 0.1 * p(0) * Eigen::Matrix2d::Identity();
-        return Emrys::withJacobian(measure(in, out, x), jacobian);
+        return Emrys::withJacobian(measure(in, out, state), jacobian);
     };
     auto const read = reads(path<Position>, path<Bias>, path<FixNoise>);
     auto const noise = GaussianParams<FixNoise>{Eigen::Vector2d::Zero(), R};
@@ -628,8 +628,8 @@ TEST(Measurement, RangeBearingOnATaggedSubspace)
     auto const z = Eigen::Vector2d{3.1, pi - 0.02};  // just across the seam from the predicted bearing
     auto const r = Eigen::Matrix2d{{0.01, 0.0}, {0.0, 0.0004}};
     auto const rangeBearing = measurementModel(
-        []<typename T>(auto const & in, auto const &, auto const & x) {
-            auto const p = block<Position>(in, x);
+        []<typename T>(auto const & in, auto const &, auto const & state) {
+            auto const p = block<Position>(in, state);
             return Eigen::Matrix<T, 2, 1>{
                 Eigen::numext::sqrt(T(p.squaredNorm())),
                 Eigen::numext::atan2(T(p(1)), T(p(0)))
@@ -676,9 +676,9 @@ TEST(Measurement, MixtureNoiseGivesOneBranchPerComponent)
     noise.add(std::log(0.1), offset, 25 * R);
 
     int calls = 0;
-    auto const counted = [&calls](auto const & in, auto const & out, auto const & x) {
+    auto const counted = [&calls](auto const & in, auto const & out, auto const & state) {
         ++calls;
-        return biasedPosition(in, out, x);
+        return biasedPosition(in, out, state);
     };
     auto const updated = Emrys::update(
         x,
@@ -721,11 +721,11 @@ TEST(Measurement, AnOutlierFavorsTheOutlierComponent)
     noise.add(std::log(0.05), Eigen::Vector2d::Zero(), 400 * R);
     Eigen::Vector2d const expected = H * x.mean();
     auto const fix = measurementModel(
-        [](auto const & in, auto const &, Eigen::Vector3d const & x) {
+        [](auto const & in, auto const &, Eigen::Vector3d const & state) {
             Eigen::Matrix<double, 2, 3> jacobian;
             jacobian << Eigen::Matrix2d::Identity(), Eigen::Vector2d::Ones();
             return Emrys::withJacobian(
-                Eigen::Vector2d{block<Position>(in, x) + Eigen::Vector2d::Constant(block<Bias>(in, x)(0))},
+                Eigen::Vector2d{block<Position>(in, state) + Eigen::Vector2d::Constant(block<Bias>(in, state)(0))},
                 jacobian
             );
         },

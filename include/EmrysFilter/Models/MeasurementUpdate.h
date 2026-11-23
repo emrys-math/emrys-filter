@@ -126,11 +126,11 @@ struct MeasurementUpdate
 
     MeasurementUpdate() = default;  ///< no branches
 
-    /** The branches \a branches of an observation whose log-likelihood, where they are more than
+    /** The branches \a given of an observation whose log-likelihood, where they are more than
      * the one a single noise component gives, is \a mixtureLogLikelihood
      */
-    MeasurementUpdate(Container branches, Scalar mixtureLogLikelihood = 0)
-        : branches{std::move(branches)}
+    MeasurementUpdate(Container given, Scalar mixtureLogLikelihood = 0)
+        : branches{std::move(given)}
         , m_mixtureLogLikelihood{mixtureLogLikelihood}
     {}
 
@@ -270,12 +270,12 @@ struct FilterUpdate
 
     FilterUpdate() = default;  ///< no branches, not accepted
 
-    /** The branches \a branches, as MeasurementUpdate(branches, mixtureLogLikelihood), and whether
-     * the policy accepted the measurement, \a accepted
+    /** The branches \a given, as MeasurementUpdate(given, mixtureLogLikelihood), and whether
+     * the policy accepted the measurement, \a wasAccepted
      */
-    FilterUpdate(Container branches, Scalar mixtureLogLikelihood = 0, bool accepted = false)
-        : branches{std::move(branches)}
-        , accepted{accepted}
+    FilterUpdate(Container given, Scalar mixtureLogLikelihood = 0, bool wasAccepted = false)
+        : branches{std::move(given)}
+        , accepted{wasAccepted}
         , m_mixtureLogLikelihood{mixtureLogLikelihood}
     {}
 

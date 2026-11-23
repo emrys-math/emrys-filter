@@ -502,8 +502,8 @@ TEST(Transform, MeasurementModelPredictsAsATransform)
     auto const z = Eigen::Vector2d{1.4, -1.5};
     auto const whole = Emrys::measurementModel(fix, additiveNoise(makeFixNoise()));
     auto const tagged = Emrys::measurementModel(
-        [](auto const & in, auto const & x) {
-            return Emrys::block<Position>(in, x).eval();
+        [](auto const & in, auto const & state) {
+            return Emrys::block<Position>(in, state).eval();
         },
         reads(path<Position>),
         additiveNoise(makeFixNoise())
@@ -533,8 +533,8 @@ TEST(Transform, AffineInAndAdditiveNoiseMatchObserve)
     auto const rangeNoise =
         GaussianParams<Range>{Range{}, Eigen::Matrix<double, 1, 1>{0.0}, Eigen::Matrix<double, 1, 1>{0.09}};
     auto const range = Emrys::measurementModel(
-        []<typename T>(auto const & in, auto const & x) {
-            return T{(1 + Emrys::block<ScaleNoise>(in, x)(0)) * Emrys::block<Position>(in, x).norm()};
+        []<typename T>(auto const & in, auto const & state) {
+            return T{(1 + Emrys::block<ScaleNoise>(in, state)(0)) * Emrys::block<Position>(in, state).norm()};
         },
         reads(path<Position>, path<ScaleNoise>),
         affineIn(path<ScaleNoise>),

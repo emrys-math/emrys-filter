@@ -353,21 +353,21 @@ TEST(FunctionForms, BatchedFormsPredictAndUpdateAlike)
             Emrys::continuousNoise(Emrys::on<Velocity>(density))
         );
     };
-    auto const step = [](auto const & in, auto const & x, double dt, auto & y) {
-        using T = typename std::remove_cvref_t<decltype(x)>::Scalar;
-        y.values() = x;
-        Emrys::block<Position>(in, y.values()) += T(dt) * Emrys::block<Velocity>(in, x);
+    auto const step = [](auto const & in, auto const & state, double dt, auto & y) {
+        using T = typename std::remove_cvref_t<decltype(state)>::Scalar;
+        y.values() = state;
+        Emrys::block<Position>(in, y.values()) += T(dt) * Emrys::block<Velocity>(in, state);
     };
-    auto const full = process([step](auto const & in, auto const &, auto const & x, double dt, auto & y) {
-        step(in, x, dt, y);
+    auto const full = process([step](auto const & in, auto const &, auto const & state, double dt, auto & y) {
+        step(in, state, dt, y);
     });
-    auto const oneSpace = process([step](auto const & in, auto const & x, double dt, auto & y) {
-        step(in, x, dt, y);
+    auto const oneSpace = process([step](auto const & in, auto const & state, double dt, auto & y) {
+        step(in, state, dt, y);
     });
-    auto const withoutSpaces = process([](auto const & x, double dt, auto & y) {
-        using T = typename std::remove_cvref_t<decltype(x)>::Scalar;
-        y.values() = x;
-        y.values().template topRows<2>() += T(dt) * x.template bottomRows<2>();
+    auto const withoutSpaces = process([](auto const & state, double dt, auto & y) {
+        using T = typename std::remove_cvref_t<decltype(state)>::Scalar;
+        y.values() = state;
+        y.values().template topRows<2>() += T(dt) * state.template bottomRows<2>();
     });
     auto const measurement = [](auto h) {
         return Emrys::measurementModel(
@@ -377,14 +377,14 @@ TEST(FunctionForms, BatchedFormsPredictAndUpdateAlike)
             fixNoise()
         );
     };
-    auto const fullFix = measurement([](auto const & in, auto const &, auto const & x, auto & y) {
-        y.values() = Emrys::block<Position>(in, x);
+    auto const fullFix = measurement([](auto const & in, auto const &, auto const & state, auto & y) {
+        y.values() = Emrys::block<Position>(in, state);
     });
-    auto const oneSpaceFix = measurement([](auto const & in, auto const & x, auto & y) {
-        y.values() = Emrys::block<Position>(in, x);
+    auto const oneSpaceFix = measurement([](auto const & in, auto const & state, auto & y) {
+        y.values() = Emrys::block<Position>(in, state);
     });
-    auto const fixWithoutSpace = measurement([](auto const & x, auto & y) {
-        y.values() = x.template topRows<2>();
+    auto const fixWithoutSpace = measurement([](auto const & state, auto & y) {
+        y.values() = state.template topRows<2>();
     });
     auto const z = Eigen::Vector2d{3.4, 1.7};
     auto const check = [&](auto const & method) {

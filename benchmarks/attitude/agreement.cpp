@@ -89,7 +89,7 @@ TYPED_TEST(AttitudeTest, Consistent)
     {
         auto const run = Orientation::simulate(scenario, steps, 100 + static_cast<unsigned>(r));
         auto filter = EmrysAttitude<TypeParam::Kind>{scenario};
-        for (int k = 0; k < steps; ++k)
+        for (std::size_t k = 0; k < std::size_t(steps); ++k)
         {
             filter.predict(run.gyro[k]);
             filter.update(run.gravity[k], run.magneticField[k]);

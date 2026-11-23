@@ -1077,7 +1077,7 @@ struct Subdivide
 
     /** Subdivides \a state. \returns whether the factor was above one, so the cells changed */
     template <typename State>
-        requires requires(State & state, Eigen::Index factor) { state.subdivide(factor); }
+        requires requires(State & state, Eigen::Index cells) { state.subdivide(cells); }
     [[nodiscard]] std::expected<bool, WeightError>
     operator()(State & state) const
     {
@@ -1328,9 +1328,9 @@ struct RepairCovariance
      * \returns whether it repaired one, or the NumericError that stopped it
      */
     template <typename State>
-        requires requires(State & state, Repair_ const & repair) {
+        requires requires(State & state, Repair_ const & given) {
             std::as_const(state).factorize();
-            state.factorize(repair);
+            state.factorize(given);
         }
     [[nodiscard]] std::expected<bool, NumericError>
     operator()(State & state) const

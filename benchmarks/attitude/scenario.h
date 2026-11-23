@@ -12,6 +12,7 @@
 #include <Eigen/Geometry>
 
 #include <cmath>
+#include <cstddef>
 #include <random>
 #include <vector>
 
@@ -121,10 +122,10 @@ simulate(Scenario const & scenario, int steps, unsigned seed)
         initialFactor * (Eigen::Matrix<double, 6, 1>{} << draw(), draw()).finished();
 
     auto result = Trajectory{};
-    result.gyro.reserve(steps);
-    result.truth.reserve(steps);
-    result.gravity.reserve(steps);
-    result.magneticField.reserve(steps);
+    result.gyro.reserve(std::size_t(steps));
+    result.truth.reserve(std::size_t(steps));
+    result.gravity.reserve(std::size_t(steps));
+    result.magneticField.reserve(std::size_t(steps));
     Eigen::Quaterniond attitude =
         Eigen::Quaterniond{Eigen::Vector4d{scenario.initialMean.head<4>()}} * exponential(initialError.head<3>());
     Eigen::Vector3d bias = scenario.initialMean.tail<3>() + initialError.tail<3>();

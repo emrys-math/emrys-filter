@@ -311,7 +311,7 @@ TEST(HiddenMarkovFilter, CountedArrivalsConvergeToTheExactFilter)
     ASSERT_TRUE(exact.predict(mmppClosingGap / 100.0, ArrivalInterval<Weather>{mmppRates, false}));
 
     auto errors = std::array<double, 2>{};
-    for (std::size_t const refinement : {0, 1})
+    for (std::size_t const refinement : {std::size_t{0}, std::size_t{1}})
     {
         int const stepsPerHundredth = refinement == 0 ? 1 : 10;
         double const h = 0.01 / stepsPerHundredth;

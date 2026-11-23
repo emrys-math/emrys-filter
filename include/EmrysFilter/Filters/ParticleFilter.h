@@ -72,9 +72,9 @@ namespace internal
 template <typename Input>
 struct DrawnInput
 {
-    /** Refers to \a input; the draws' rows from \a row on are left to the next input. */
-    DrawnInput(Input const & input, Eigen::Index & /*row*/)
-        : input{input}
+    /** Refers to \a known; the draws' rows from \a row on are left to the next input. */
+    DrawnInput(Input const & known, Eigen::Index & /*row*/)
+        : input{known}
     {}
 
     static constexpr int RowsAtCompileTime = 0;     ///< the rows of a particle's draws it takes: none
@@ -106,12 +106,12 @@ struct DrawnInput<Input>
     using Space = typename Input::SpaceType;  ///< the input's space
     using Scalar = typename Input::Scalar;    ///< the input's scalar type
 
-    /** Factorizes \a input's covariance once, and takes the draws' rows from \a row on, one per
+    /** Factorizes \a uncertain's covariance once, and takes the draws' rows from \a row on, one per
      * difference coordinate, advancing \a row past them.
      */
-    DrawnInput(Input const & input, Eigen::Index & row)
-        : input{input}
-        , factor{defaultRoot(covarianceLowerOf(input))}
+    DrawnInput(Input const & uncertain, Eigen::Index & row)
+        : input{uncertain}
+        , factor{defaultRoot(covarianceLowerOf(uncertain))}
         , firstRow{row}
     {
         row += input.differenceDimension();

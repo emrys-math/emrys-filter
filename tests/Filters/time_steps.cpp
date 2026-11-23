@@ -12,6 +12,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <random>
 #include <ratio>
@@ -287,7 +288,7 @@ TEST(TimeSteps, GaussianMixtureFilterTakesDurationsAndAdvancesByACount)
     for (Index k = 0; k < seconds.state().size(); ++k)
     {
         expectSameGaussian(milliseconds.state()[k].component, seconds.state()[k].component);
-        expectSame(jointInMilliseconds.joints[k].cross, joint.joints[k].cross);
+        expectSame(jointInMilliseconds.joints[std::size_t(k)].cross, joint.joints[std::size_t(k)].cross);
     }
 
     auto stepped = Emrys::GaussianMixtureFilter{FixedStepModel{makeModel(), State{}, timeStep}, prior};

@@ -16,6 +16,7 @@
 
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <functional>
 #include <print>
 #include <random>
@@ -65,7 +66,7 @@ main()
             auto result = Emrys::ValueVector<Ranges, T>{};
             for (int b = 0; b < 3; ++b)
             {
-                result(b) = Emrys::minus<Position>(position, beacons[b].template cast<T>()).norm();
+                result(b) = Emrys::minus<Position>(position, beacons[std::size_t(b)].template cast<T>()).norm();
             }
             return result;
         },

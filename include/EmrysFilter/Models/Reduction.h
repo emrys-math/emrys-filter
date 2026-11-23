@@ -502,7 +502,7 @@ public:
         std::size_t passed = 0;
         for (auto const & branch : branches)
         {
-            passed += branch.nis() <= limit ? 1 : 0;
+            passed += branch.nis() <= limit ? 1u : 0u;
         }
         if (passed == 0)
         {

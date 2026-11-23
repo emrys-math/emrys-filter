@@ -1026,7 +1026,7 @@ struct WithFallbacks
         else
         {
             EMRYS_FILTER_ASSERT(false && "the last fallback cannot fail");
-            return Matrix{};
+            return Matrix{Matrix::Zero(cov.rows(), cov.cols())};
         }
     }
 
@@ -1095,7 +1095,7 @@ struct WithFallbacks
         else
         {
             EMRYS_FILTER_ASSERT(false && "the last fallback cannot fail");
-            return Matrix{};
+            return Matrix{Matrix::Zero(factor.rows(), factor.cols())};
         }
     }
 

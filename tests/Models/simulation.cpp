@@ -298,9 +298,9 @@ TEST(SimulateMeasurement, AModelKnownByItsLikelihoodDrawsBySample)
         Emrys::logLikelihood([](auto const & in, auto const & x, auto const & z) {
             return -std::abs(z(0) - block<Position>(in, x).norm());
         }),
-        Emrys::sample([](auto const & in, auto const & x, auto & rng) {
+        Emrys::sample([](auto const & in, auto const & x, auto & generator) {
             return Eigen::Matrix<double, 1, 1>{
-                block<Position>(in, x).norm() + std::exponential_distribution<double>{2.0}(rng)
+                block<Position>(in, x).norm() + std::exponential_distribution<double>{2.0}(generator)
             };
         })
     );

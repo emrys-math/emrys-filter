@@ -82,7 +82,7 @@ class PartStorage : private StoredParts<decltype(std::tuple_cat(std::declval<Sto
         std::size_t result = 0;
         for (std::size_t j = 0; j < i; ++j)
         {
-            result += empty[j] ? 0 : 1;
+            result += empty[j] ? 0u : 1u;
         }
         return result;
     }

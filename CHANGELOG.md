@@ -53,6 +53,8 @@ instead.
 - `ParticleSet::moments(policy)` under a policy other than `Sequential` takes its chunks' weights
   and deviations from scratch for the policy, from a user's policy's allocator where it has one,
   in place of a heap allocation per chunk.
+- The headers compile without warnings under GCC's and Clang's `-Wshadow -Wconversion
+  -Wsign-conversion -Wold-style-cast`, which the tests, examples, and benchmarks now build with.
 - [docs/choosing.md](docs/choosing.md), "Starting without a prior", recommends starting a
   `SqrtInfoFilter` from no information, the diffuse initialization of the literature, over a
   least-squares fit to the first measurements, and says when to convert once the state is
