@@ -61,6 +61,12 @@ inline constexpr bool isConsecutive<Eigen::ArithmeticSequence<First, Size, Incre
 template <typename T>
 concept RepetitionSelection = isArithmeticSequence<std::remove_cvref_t<T>> || RepetitionList<std::remove_cvref_t<T>>;
 
+/** One repetition of a repeated block, an integer, or several of them, a RepetitionSelection: what
+ * an accessor of repetitions takes, such as marginal<Path>(repetitions).
+ */
+template <typename T>
+concept RepetitionChoice = RepetitionIndex<T> || RepetitionSelection<T>;
+
 /** The column of indices that the selection \a Selection resolves to in a repeated block of at most
  * \a MaxCount repetitions: of fixed size where the selection's type fixes its size, and otherwise
  * bounded by the list's own bound or by \a MaxCount, since a selection lists each repetition once.
@@ -396,5 +402,45 @@ diffBlock(Space auto const & space, D && d, Selection const & selection)
 {
     return internal::selectionRowsByPath<true, Path>(space, std::forward<D>(d), selection);
 }
+
+namespace internal
+{
+
+/** \returns the space of the repetitions that \a choice names of the repeated block that \a Path
+ * runs through in \a space, or of the block the rest of the path names within them: for one
+ * repetition that block itself, and for several a repeated block of their count
+ */
+template <typename Path, typename S, typename Choice>
+[[nodiscard]] auto
+pathChoiceSubspace(S const & space, [[maybe_unused]] Choice const & choice)
+{
+    if constexpr (RepetitionIndex<Choice>)
+    {
+        return pathElementSubspace<Path>(space);
+    }
+    else
+    {
+        return pathRepetitionsSubspace<Path>(space, selectedCount<Path>(space, choice));
+    }
+}
+
+/** Shared implementation of marginal<Path>(repetitions) for distributions that own their
+ * parameters, where \a Path runs through a repeated block and \a repetitions is one repetition's
+ * index, or a sequence or a list of them.
+ *
+ * \returns \a make(target, targetSpace): the Coordinates of the repetitions (or of the rest of the
+ * path within each), and their space (pathChoiceSubspace())
+ */
+template <typename Path, typename Space, typename Choice, typename Make>
+[[nodiscard]] auto
+marginalOverElement(Space const & space, Choice const & repetitions, Make make)
+{
+    return make(
+        resolveCoordinates(space, idx<Path>(space, repetitions), diffIdx<Path>(space, repetitions)),
+        pathChoiceSubspace<Path>(space, repetitions)
+    );
+}
+
+}  // namespace internal
 
 }  // namespace Emrys

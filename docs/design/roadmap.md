@@ -252,8 +252,12 @@ takes an integer repetition today, that argument takes a sequence or a list too.
 - [ ] **`consider()` and `given()`.** `consider(path<Landmarks>[k])` considers one landmark, and
       `given<Path>(space, value, selection)` gives one. Test: each equals its form on the state with
       one tag per repetition.
-- [ ] **Distributions.** `marginal<Path>(k)`, `mean<Path>(k)`, and `covariance<Path>(k)` take a
-      sequence or a list on every distribution that takes an integer. `covariance<RowPath,
+- [ ] **Distributions, the rest.** `marginal<Path>(k)`, `mean<Path>(k)`, and `covariance<Path>(k)`
+      take a sequence or a list on every distribution that took an integer, through
+      `internal::marginalOverElement()` (`Spaces/Selection.h`) and `internal::elementMarginal()`,
+      tested on `GaussianParams` and its view (`tests/Distributions/gaussian_space.cpp`). Left: a
+      test of each on the other distributions (the Gaussian forms, `StudentT`, `Uniform`, `Gamma`,
+      mixtures, hybrids, and `ParticleSet`), and the changes that follow. `covariance<RowPath,
       ColPath>()` takes a selection for each of its paths that runs through a repeated block, in
       order: `covariance<Position, Landmarks>(k)`, `covariance<Landmarks, Landmarks>(i, j)`.
       `nees<Path>()` takes the selection last. `erase<Path>(element, count)` becomes

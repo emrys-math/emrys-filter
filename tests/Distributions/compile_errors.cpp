@@ -219,7 +219,7 @@ roughen()
 [[maybe_unused]] auto const view = makeConvoy().marginal<Position>();
 #endif
 
-#if defined(GAUSSIAN_ELEMENT_MARGINAL_OF_TEMPORARY)  // deleted: Gaussian.h: marginal(Index element) const &&
+#if defined(GAUSSIAN_ELEMENT_MARGINAL_OF_TEMPORARY)  // deleted: Gaussian.h: marginal(Choice const & element) const &&
 [[maybe_unused]] auto const view = makeConvoy().marginal<Fleet>(0);
 #endif
 
@@ -244,7 +244,7 @@ gaussianDensityGivenAxes()
 [[maybe_unused]] auto const view = Emrys::GaussianMixtureParams<Convoy>{}.marginal<Position>();
 #endif
 
-#if defined(MIXTURE_ELEMENT_MARGINAL_OF_TEMPORARY)  // deleted: Mixture.h: marginal(Index element) const &&
+#if defined(MIXTURE_ELEMENT_MARGINAL_OF_TEMPORARY)  // deleted: Mixture.h: marginal(Choice const & element) const &&
 [[maybe_unused]] auto const view = Emrys::GaussianMixtureParams<Convoy>{}.marginal<Fleet>(0);
 #endif
 
@@ -260,7 +260,7 @@ gaussianDensityGivenAxes()
 [[maybe_unused]] auto const view = Emrys::ParticleSet<Convoy>{}.marginal<Position>();
 #endif
 
-#if defined(PARTICLE_ELEMENT_MARGINAL_OF_TEMPORARY)  // deleted: ParticleSet.h: marginal(Index element) const &&
+#if defined(PARTICLE_ELEMENT_OF_TEMPORARY)  // deleted: ParticleSet.h: marginal(Choice const & element) const &&
 [[maybe_unused]] auto const view = Emrys::ParticleSet<Convoy>{}.marginal<Fleet>(0);
 #endif
 
@@ -284,7 +284,7 @@ gaussianDensityGivenAxes()
 [[maybe_unused]] auto const view = makeHybrid().marginal<Position>();
 #endif
 
-#if defined(HYBRID_ELEMENT_MARGINAL_OF_TEMPORARY)  // deleted: Hybrid.h: marginal(Eigen::Index element) const &&
+#if defined(HYBRID_ELEMENT_MARGINAL_OF_TEMPORARY)  // deleted: Hybrid.h: marginal(Choice const & element) const &&
 [[maybe_unused]] auto const view = makeHybrid().marginal<Fleet>(0);
 #endif
 

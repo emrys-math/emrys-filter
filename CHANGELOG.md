@@ -48,6 +48,10 @@ instead.
   repetitions where they take one repetition's index: `block<Fleet>(space, x, Eigen::seqN(1, 2))`
   is vehicles 1 and 2, and `idx<TagPath<Fleet, Heading>>(space, std::array{3, 0})` the headings of
   vehicles 3 and 0. They are in `Spaces/Selection.h`.
+- `marginal<Path>(k)`, on every distribution that has it, and a Gaussian's `mean<Path>(k)` and
+  `covariance<Path>(k)` take an Eigen sequence or a list of repetitions where they take one:
+  `g.marginal<Fleet>(std::array{2, 0})` is the marginal of vehicles 2 and 0, in that order, over a
+  `Fleet` of two.
 - The forms of `idx()`, `diffIdx()`, `block()`, `diffBlock()`, and `marginal()` that take a
   repetition take a path that reaches its repeated block through other tags:
   `block<TagPath<Theater, Fleet>>(space, x, k)`. The path had to start at the repeated block.

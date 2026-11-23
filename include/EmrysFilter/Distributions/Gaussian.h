@@ -29,6 +29,7 @@
 #include <EmrysFilter/Distributions/Roots.h>
 #include <EmrysFilter/Spaces/Composite.h>
 #include <EmrysFilter/Spaces/Indexing.h>
+#include <EmrysFilter/Spaces/Selection.h>
 #include <EmrysFilter/Spaces/Space.h>
 #include <EmrysFilter/Spaces/Subspace.h>
 #include <EmrysFilter/Spaces/TagPath.h>
@@ -142,9 +143,9 @@ template <template <typename, typename, typename> typename Marginal, typename Pa
 [[nodiscard]] auto
 tagMarginal(Source const & source);
 
-template <template <typename, typename, typename> typename Marginal, typename Path, typename Source>
+template <template <typename, typename, typename> typename Marginal, typename Path, typename Source, typename Choice>
 [[nodiscard]] auto
-elementMarginal(Source const & source, Eigen::Index element);
+elementMarginal(Source const & source, Choice const & element);
 
 /** Shared implementation of GaussianParams::conditional() and Gaussian::conditional(), with
  * resolved indices and the spaces of the target and the given entries, and of their
@@ -563,9 +564,9 @@ public:
     /** mean<Path>() of repetition \a element of the repeated block \a Path starts at (see
      * marginal<Path>(element)).
      */
-    template <typename Path>
+    template <typename Path, internal::RepetitionChoice Choice>
     [[nodiscard]] auto
-    mean(Index element) const
+    mean(Choice const & element) const
     {
         return mean()(idx<Path>(m_space, element));
     }
@@ -585,9 +586,9 @@ public:
     }
 
     /** covariance<Path>() of repetition \a element of the repeated block \a Path starts at. */
-    template <typename Path>
+    template <typename Path, internal::RepetitionChoice Choice>
     [[nodiscard]] auto
-    covariance(Index element) const
+    covariance(Choice const & element) const
     {
         return internal::lowerSymmetricSelection<DifferenceDimensionAtCompileTime, MaxDifferenceDimensionAtCompileTime>(
             covarianceLower(),
@@ -744,21 +745,24 @@ public:
     marginal() const && = delete;
 
     /** \returns a read-only view of repetition \a element of a repeated block (see idx()), such
-     * as one vehicle of a fleet. \a Path starts at the repeated block, and may go on inside it:
+     * as one vehicle of a fleet. \a Path runs through the repeated block, and may go on inside it:
      * <tt>marginal<TagPath<Fleet, Heading>>(k)</tt> is vehicle \a k's heading. Its space is that of
-     * one repetition, or of the block the path ends at.
+     * one repetition, or of the block the path ends at. \a element may also be an Eigen sequence or
+     * a list of repetitions, <tt>marginal<Fleet>(Eigen::seqN(1, 2))</tt> (decisions.md
+     * [repetition-selections]): the view is then of those repetitions, in the order named, in a
+     * repeated block of their count.
      */
-    template <typename Path>
+    template <typename Path, internal::RepetitionChoice Choice>
     [[nodiscard]] auto
-    marginal(Index element) const &
+    marginal(Choice const & element) const &
     {
         return internal::elementMarginal<GaussianMarginal, Path>(*this, element);
     }
 
     /** A marginal of a temporary would outlive it. */
-    template <typename Path>
+    template <typename Path, internal::RepetitionChoice Choice>
     void
-    marginal(Index element) const && = delete;
+    marginal(Choice const & element) const && = delete;
 
     /** \returns a copy of the distribution of the other coordinates given that the subspace
      * named by the path \a GivenPath (a tag or a TagPath) equals \a values, which are in that
@@ -1097,9 +1101,9 @@ public:
     }
 
     /** mean<Path>() of one repetition; see GaussianParams::mean<Path>(element). */
-    template <typename Path>
+    template <typename Path, internal::RepetitionChoice Choice>
     [[nodiscard]] auto
-    mean(Index element) const
+    mean(Choice const & element) const
     {
         return source().template mean<Path>(element);
     }
@@ -1113,9 +1117,9 @@ public:
     }
 
     /** covariance<Path>() of one repetition; see GaussianParams::covariance<Path>(element). */
-    template <typename Path>
+    template <typename Path, internal::RepetitionChoice Choice>
     [[nodiscard]] auto
-    covariance(Index element) const
+    covariance(Choice const & element) const
     {
         return source().template covariance<Path>(element);
     }
@@ -1272,9 +1276,9 @@ public:
     }
 
     /** marginal() of one repetition of a repeated block; see GaussianParams::marginal(element). */
-    template <typename Path>
+    template <typename Path, internal::RepetitionChoice Choice>
     [[nodiscard]] auto
-    marginal(Index element) const
+    marginal(Choice const & element) const
     {
         return internal::elementMarginal<GaussianMarginal, Path>(*this, element);
     }
@@ -1576,16 +1580,17 @@ tagMarginal(Source const & source)
 }
 
 /** Shared implementation of marginal<Path>(element): the marginal over idx() and
- * diffIdx() of \a element, whose space is that of one repetition, or of the rest of the
- * path within it.
+ * diffIdx() of \a element, one repetition's index or a sequence or a list of them, whose space is
+ * that of one repetition, or of the rest of the path within it, or for several a repeated block of
+ * their count (pathChoiceSubspace()).
  */
-template <template <typename, typename, typename> typename Marginal, typename Path, typename Source>
+template <template <typename, typename, typename> typename Marginal, typename Path, typename Source, typename Choice>
 [[nodiscard]] auto
-elementMarginal(Source const & source, Eigen::Index element)
+elementMarginal(Source const & source, Choice const & element)
 {
     auto const selection =
         Coordinates{asIndexSet(idx<Path>(source.space(), element)), asIndexSet(diffIdx<Path>(source.space(), element))};
-    auto space = pathElementSubspace<Path>(source.space());
+    auto space = pathChoiceSubspace<Path>(source.space(), element);
     return Marginal<Source, std::remove_cvref_t<decltype(selection)>, decltype(space)>{
         source,
         selection,

@@ -46,6 +46,7 @@
 #include <EmrysFilter/Distributions/Statistics.h>
 #include <EmrysFilter/Spaces/Composite.h>
 #include <EmrysFilter/Spaces/Indexing.h>
+#include <EmrysFilter/Spaces/Selection.h>
 #include <EmrysFilter/Spaces/Space.h>
 #include <EmrysFilter/Spaces/Subspace.h>
 
@@ -1611,17 +1612,17 @@ public:
     marginal() const && = delete;
 
     /** marginal() of one repetition of a repeated block; see GaussianParams::marginal(element). */
-    template <typename Path>
+    template <typename Path, internal::RepetitionChoice Choice>
     [[nodiscard]] auto
-    marginal(Index element) const &
+    marginal(Choice const & element) const &
     {
         return internal::elementMarginal<MixtureMarginal, Path>(*this, element);
     }
 
     /** A marginal of a temporary would outlive it. */
-    template <typename Path>
+    template <typename Path, internal::RepetitionChoice Choice>
     void
-    marginal(Index element) const && = delete;
+    marginal(Choice const & element) const && = delete;
 
     /** \returns a copy of the distribution of the other coordinates given that the subspace named
      * by the path \a GivenPath equals \a values, in the space of the remaining blocks (see
@@ -2281,9 +2282,9 @@ public:
     }
 
     /** marginal() of one repetition of a repeated block; see GaussianParams::marginal(element). */
-    template <typename Path>
+    template <typename Path, internal::RepetitionChoice Choice>
     [[nodiscard]] auto
-    marginal(Index element) const
+    marginal(Choice const & element) const
     {
         return internal::elementMarginal<MixtureMarginal, Path>(*this, element);
     }

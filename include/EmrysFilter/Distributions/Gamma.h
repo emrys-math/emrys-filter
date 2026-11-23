@@ -28,6 +28,7 @@
 #include <EmrysFilter/Distributions/Sampling.h>
 #include <EmrysFilter/Spaces/Composite.h>
 #include <EmrysFilter/Spaces/Indexing.h>
+#include <EmrysFilter/Spaces/Selection.h>
 #include <EmrysFilter/Spaces/Space.h>
 
 namespace Emrys
@@ -338,9 +339,9 @@ public:
     }
 
     /** marginal() of one repetition of a repeated block; see GaussianParams::marginal(element). */
-    template <typename Path>
+    template <typename Path, internal::RepetitionChoice Choice>
     [[nodiscard]] auto
-    marginal(Index element) const
+    marginal(Choice const & element) const
     {
         return internal::marginalOverElement<Path>(m_space, element, [&](auto const & target, auto space) {
             return restricted(target.values, std::move(space));

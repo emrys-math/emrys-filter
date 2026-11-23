@@ -330,22 +330,6 @@ marginalOverPath(Space const & space, Make make)
     return make(pathCoordinates<Path>(space), pathSubspace<Path>(space));
 }
 
-/** Shared implementation of marginal<Path>(element) for distributions that own their
- * parameters, where \a Path starts at a repeated block.
- *
- * \returns \a make(target, targetSpace): the Coordinates of repetition \a element (or of the rest
- * of the path within it), and the space of one repetition (or of the rest of the path)
- */
-template <typename Path, typename Space, typename Make>
-[[nodiscard]] auto
-marginalOverElement(Space const & space, Eigen::Index element, Make make)
-{
-    return make(
-        resolveCoordinates(space, idx<Path>(space, element), diffIdx<Path>(space, element)),
-        pathElementSubspace<Path>(space)
-    );
-}
-
 /** Inserts \a rows into the rows of \a matrix before row \a at. */
 template <typename Matrix, typename Derived>
 void

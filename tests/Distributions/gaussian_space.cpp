@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
 #include <numbers>
 #include <random>
@@ -204,6 +205,68 @@ TEST(GaussianSpace, MarginalOfOneRepetitionIsInTheBlockSpace)
     EXPECT_EQ(Eigen::VectorXd{density->mean<Fleet>()}, Eigen::VectorXd{g.mean().tail<8>()});
     EXPECT_EQ(Eigen::MatrixXd{density->covariance<Fleet>()}, Eigen::MatrixXd::Identity(8, 8));
     EXPECT_EQ(Eigen::MatrixXd{(density->covariance<Fleet, Fleet>())}, Eigen::MatrixXd::Identity(8, 8));
+}
+
+// marginal<Fleet>(repetitions), mean<Fleet>(repetitions), and covariance<Fleet>(repetitions) take a
+// sequence or a list of repetitions as they take one (roadmap step 17zu, [repetition-selections]):
+// the marginal is over a Fleet of their count, in the order named, a block inside each is that
+// block repeated, and the view reads the same. In World the first coordinate is at 0 and vehicle k
+// at 1 + 3 k, its heading last; the expected rows are counted by hand from that.
+TEST(GaussianSpace, MarginalOfSeveralRepetitionsIsARepeatedBlock)
+{
+    struct Vehicle : Composite<Linear<2>, Heading>
+    {};
+
+    struct Fleet : Repeated<Vehicle, 4>
+    {
+        using Repeated::Repeated;
+    };
+
+    using World = Composite<Linear<1>, Fleet>;
+    Eigen::MatrixXd a(10, 10);
+    for (Eigen::Index i = 0; i < 10; ++i)
+    {
+        for (Eigen::Index j = 0; j < 10; ++j)
+        {
+            a(i, j) = 0.2 * std::sin(1.0 + 3.0 * double(i) + 5.0 * double(j));
+        }
+    }
+    Eigen::MatrixXd const cov = a * a.transpose() + Eigen::MatrixXd::Identity(10, 10);
+    Eigen::VectorXd const mean = Eigen::VectorXd::LinSpaced(10, 0.0, 0.9);
+    auto const g = GaussianParams<World>{World{Linear<1>{}, Fleet{Vehicle{}, 3}}, mean, cov};
+
+    // A list, in its order: vehicle 2, then vehicle 0.
+    auto const lastAndFirst = std::array{2, 0};
+    auto const rows = std::array<Eigen::Index, 6>{7, 8, 9, 1, 2, 3};
+    Eigen::VectorXd const expectedMean = mean(rows);
+    Eigen::MatrixXd const expectedCov = cov(rows, rows);
+    auto const listed = g.marginal<Fleet>(lastAndFirst).copy();
+    static_assert(std::is_same_v<decltype(listed), GaussianParams<Fleet> const>);
+    EXPECT_EQ(listed.space().count(), 2);
+    EXPECT_EQ(listed.mean(), expectedMean);
+    Eigen::MatrixXd const listedCov = listed.covarianceLower().selfadjointView<Eigen::Lower>();
+    EXPECT_LT((listedCov - expectedCov).norm(), 1e-14);
+
+    // A sequence: vehicles 1 and 2, one run of rows.
+    auto const run = g.marginal<Fleet>(Eigen::seqN(1, 2)).copy();
+    static_assert(std::is_same_v<decltype(run), GaussianParams<Fleet> const>);
+    EXPECT_EQ(run.mean(), Eigen::VectorXd{mean.segment(4, 6)});
+
+    // A block inside each: the headings of the list, as that block repeated.
+    auto const headings = g.marginal<TagPath<Fleet, Heading>>(lastAndFirst).copy();
+    static_assert(std::is_same_v<decltype(headings), GaussianParams<Repeated<Heading, 4>> const>);
+    EXPECT_EQ(headings.mean(), Eigen::Vector2d(mean(9), mean(3)));
+
+    Eigen::VectorXd const listedMean = g.mean<Fleet>(lastAndFirst);
+    EXPECT_EQ(listedMean, expectedMean);
+    Eigen::MatrixXd const listedBlock = g.covariance<Fleet>(lastAndFirst);
+    EXPECT_LT((listedBlock - expectedCov).norm(), 1e-14);
+
+    auto const density = g.toDensity();
+    ASSERT_TRUE(density.has_value());
+    EXPECT_EQ(density->marginal<Fleet>(lastAndFirst).copy().mean(), expectedMean);
+    Eigen::VectorXd const viewedMean = density->mean<Fleet>(lastAndFirst);
+    EXPECT_EQ(viewedMean, expectedMean);
 }
 
 // mean<Path>() and covariance<Path>() select blocks with compile-time sizes, covariance<A, B>() reads the lower

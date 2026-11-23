@@ -23,6 +23,7 @@
 #include <EmrysFilter/Core/Stamp.h>
 #include <EmrysFilter/Spaces/Indexing.h>
 #include <EmrysFilter/Spaces/Reset.h>
+#include <EmrysFilter/Spaces/Selection.h>
 #include <EmrysFilter/Spaces/Space.h>
 
 namespace Emrys
@@ -219,9 +220,9 @@ public:
     /** marginal<Path>() of repetition \a element of the repeated block \a Path starts at (see
      * GaussianParams::marginal(element)).
      */
-    template <typename Path>
+    template <typename Path, internal::RepetitionChoice Choice>
     [[nodiscard]] auto
-    marginal(Index element) const
+    marginal(Choice const & element) const
     {
         return internal::marginalOverElement<Path>(space(), element, [&](auto const & kept, auto const & keptSpace) {
             return params().densityMarginalAt(kept, keptSpace);

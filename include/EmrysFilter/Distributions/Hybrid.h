@@ -29,6 +29,7 @@
 #include <EmrysFilter/Distributions/Mixture.h>
 #include <EmrysFilter/Distributions/Statistics.h>
 #include <EmrysFilter/Spaces/Discrete.h>
+#include <EmrysFilter/Spaces/Selection.h>
 #include <EmrysFilter/Spaces/Space.h>
 
 namespace Emrys
@@ -319,17 +320,17 @@ public:
     marginal() const && = delete;
 
     /** marginal() of one repetition of a repeated block; see GaussianParams::marginal(element). */
-    template <typename Path>
+    template <typename Path, internal::RepetitionChoice Choice>
     [[nodiscard]] auto
-    marginal(Eigen::Index element) const &
+    marginal(Choice const & element) const &
     {
         return internal::elementMarginal<MixtureMarginal, Path>(*this, element);
     }
 
     /** A marginal of a temporary would outlive it. */
-    template <typename Path>
+    template <typename Path, internal::RepetitionChoice Choice>
     void
-    marginal(Eigen::Index element) const && = delete;
+    marginal(Choice const & element) const && = delete;
 
     /** \returns the state as an unlabeled Mixture, one component per mode, weighted by the mode
      * weights, for its toDensity(), marginals, and sampling. It has this state's allocator.
