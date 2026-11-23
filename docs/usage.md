@@ -285,6 +285,37 @@ auto const updated = filter.update(
     Emrys::observe(Emrys::methods::unscented(), tdoa(a1, a2), z));
 ```
 
+A model reads part of a repeated block by selecting its repetitions in `reads()`.
+`path<Landmarks>[k]` is landmark `k`, read as one `Landmark`, so a sigma-point method spreads its
+points over the vehicle and that landmark alone, however many landmarks the state holds. A
+sequence, `path<Landmarks>[Eigen::seqN(first, n)]`, or a list, `path<Landmarks>[seen]`, is read as
+a `Landmarks` with that count, in the order given, so `block<Landmarks>(in, x, i)` is the `i`th
+landmark read, and a function written for every landmark works on some of them. The model holds
+the selection, so it is made for each sighting, as `tdoa()` is:
+
+```cpp
+auto sighting(Eigen::Index k) {
+  auto const rangeBearing = []<typename T>(auto const & in,
+                                           auto const & x) {
+    /* ... reads block<Landmark>(in, x) */
+  };
+  return Emrys::measurementModel(
+      rangeBearing,
+      Emrys::reads(Emrys::path<Position>, Emrys::path<Heading>,
+                   Emrys::path<Landmarks>[k]),
+      Emrys::outputSpace(RangeBearing{}),
+      Emrys::additiveNoise(noise));
+}
+auto const updated = filter.update(
+    Emrys::observe(Emrys::methods::unscented(), sighting(k), z));
+```
+
+A function that is affine in the landmark given the vehicle names it, `affineIn(path<Landmark>)`,
+and the points then spread over the vehicle alone. A selection whose blocks have no tag of their
+own, or two selections of one block, are read under names: `on<From>(path<Fleet>[i])` and
+`on<To>(path<Fleet>[j])`. A model that reads a selection is not yet placed by `on()` or `onEach()`
+or composed by `compose()`, and `writes()` does not yet take one.
+
 A model built once covers a measurement that follows the state's counts:
 `outputSpace(CountFrom<Landmarks, RangeBearings>{})` sizes it, a matrix's `Columns` repeat with a
 block, and noise placed with `onEach<>()` is placed for each count. What it can't say, it says when
