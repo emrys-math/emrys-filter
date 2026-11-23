@@ -34,6 +34,7 @@
 #include <limits>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 using Emrys::CategoricalParams;
@@ -182,6 +183,22 @@ TEST(Printing, DifferenceDimensionIsNamedWhereItDiffers)
     auto const attitude = GaussianParams<UnitQuaternion>{Eigen::Vector4d{0, 0, 0, 1}, Eigen::Matrix3d::Identity()};
     std::string const text = printed(attitude);
     EXPECT_EQ(text.substr(0, text.find('\n')), "Gaussian of dimension 4 (3 in differences)");
+}
+
+// A count names its noun in the singular for one, adds "s" otherwise, and takes the plural it is
+// given for a noun that pluralizes otherwise.
+TEST(Printing, CountsTakeTheirPlural)
+{
+    auto const counted = [](Eigen::Index count, std::string_view noun, std::string_view plural = {}) {
+        auto stream = std::ostringstream{};
+        Emrys::internal::printCount(stream, count, noun, plural);
+        return stream.str();
+    };
+    EXPECT_EQ(counted(1, "particle"), "1 particle");
+    EXPECT_EQ(counted(0, "particle"), "0 particles");
+    EXPECT_EQ(counted(3, "particle"), "3 particles");
+    EXPECT_EQ(counted(1, "vertex", "vertices"), "1 vertex");
+    EXPECT_EQ(counted(2, "vertex", "vertices"), "2 vertices");
 }
 
 // Every form of the Gaussian prints its mean and covariance under its own name; an information

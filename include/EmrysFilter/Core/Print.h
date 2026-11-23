@@ -117,11 +117,26 @@ printDimension(std::ostream & stream, Eigen::Index valueDimension, Eigen::Index 
     }
 }
 
-/** Writes \a count and \a noun, adding "s" unless \a count is one. */
+/** Writes \a count and \a noun where \a count is one, and otherwise \a count and \a plural, or
+ * \a noun with "s" added where \a plural is empty, for a noun such as "vertex" that pluralizes
+ * otherwise.
+ */
 inline void
-printCount(std::ostream & stream, Eigen::Index count, std::string_view noun)
+printCount(std::ostream & stream, Eigen::Index count, std::string_view noun, std::string_view plural = {})
 {
-    stream << count << ' ' << noun << (count == 1 ? "" : "s");
+    stream << count << ' ';
+    if (count == 1)
+    {
+        stream << noun;
+    }
+    else if (plural.empty())
+    {
+        stream << noun << 's';
+    }
+    else
+    {
+        stream << plural;
+    }
 }
 
 /** Writes the mean and covariance of \a moments, a Moments, under the line before them at

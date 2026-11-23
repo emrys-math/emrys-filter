@@ -950,8 +950,6 @@ Performance with no change to results:
 - [ ] The Gauss-Hermite rule runs an eigensolver on every transform; compute it at compile time
       without a stored table (a `consteval` bisection on the Sturm count found the roots exactly). The spherical simplex's steps are computed on every transform too. Decide what a
       multiprecision or autodiff scalar takes.
-- [ ] `internal::printCount()` pluralizes by adding "s"; the first noun that doesn't, such as
-      "vertex", adds a defaulted plural argument.
 
 **Breaking**: guide questions whose likely answer breaks code or changes results, to answer first
 of the questions the advertised launch waits for (an answer that keeps today's behavior settles
