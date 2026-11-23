@@ -719,7 +719,10 @@ namespace methods
  *
  * A transform returns no \c std::expected, so axes that can fail are refused there at compile time,
  * with a message naming roots::pivoted() to append and roots::squareRoot() for a caller who wants the
- * \c std::expected.
+ * \c std::expected. An update returns one, so it takes them, and reports their failure to take the
+ * root of the blocks it reads as their error, GaussianError::NotPositiveDefinite for the library's
+ * (decisions.md [sigma-point-axes]). A measurement whose affineIn() spreads the points over part of
+ * the blocks read refuses them at compile time.
  *
  * \tparam Rule  the sigma-point rule
  * \tparam A     the axes
@@ -841,6 +844,36 @@ refuseFailingAxes()
         "the root with roots::squareRoot(), which returns one"
     );
 }
+
+/** Axes that give a root taken already, as an update gives a transform the root it took of the
+ * blocks it reads by axes that can fail, having reported their failure itself (decisions.md
+ * [sigma-point-axes]). They hold the root by pointer, valid while the root is, and never fail.
+ */
+template <typename Matrix>
+struct GivenRoot
+{
+    static constexpr bool canFail = false;  ///< the root is taken already
+
+    Matrix const * given = nullptr;  ///< the root
+
+    /** \returns the root, which must have \a cov's size */
+    template <typename Derived>
+    [[nodiscard]] SquareMatrixOf<Derived>
+    root(Eigen::MatrixBase<Derived> const & cov) const
+    {
+        EMRYS_FILTER_ASSERT(given->rows() == cov.rows() && "a given root must have the covariance's size");
+        return SquareMatrixOf<Derived>{*given};
+    }
+
+    /** \returns the root, which must have \a factor's rows */
+    template <typename Derived>
+    [[nodiscard]] SquareMatrixOf<Derived>
+    rootFromFactor(Eigen::MatrixBase<Derived> const & factor) const
+    {
+        EMRYS_FILTER_ASSERT(given->rows() == factor.rows() && "a given root must have the factor's rows");
+        return SquareMatrixOf<Derived>{*given};
+    }
+};
 
 /** \returns the root in \a result, which axes returned: the root itself, or the value of a
  * \c std::expected, which a transform's axes, refused when they can fail, always hold.

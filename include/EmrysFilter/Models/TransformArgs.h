@@ -132,6 +132,25 @@ inline constexpr int sizeSum = (false || ... || (Sizes == Eigen::Dynamic)) ? Eig
 template <int A, int B>
 inline constexpr int sizeProduct = A == Eigen::Dynamic || B == Eigen::Dynamic ? Eigen::Dynamic : A * B;
 
+/** \returns the root \a axes take of the uncertain input \a input, as the axes return it, a root or,
+ * when they can fail, a \c std::expected of one (decisions.md [sigma-point-axes]): from the input's
+ * own root as a factor where it holds one (a \c root() member, as the square-root forms' read blocks
+ * do), and otherwise of its covariance, of which the axes read the lower triangle alone.
+ */
+template <typename A, typename Input>
+[[nodiscard]] auto
+inputRoot(A const & axes, Input const & input)
+{
+    if constexpr (requires { input.root(); })
+    {
+        return rootFromFactor(axes, input.root());
+    }
+    else
+    {
+        return axes.root(covarianceLowerOf(input));
+    }
+}
+
 }  // namespace internal
 
 /** \ingroup Transforms
@@ -561,14 +580,7 @@ public:
         forEachUncertain([&]<std::size_t I>(auto const & input) {
             Index const d = input.differenceDimension();
             auto const take = [&](auto const & entry) {
-                if constexpr (requires { input.root(); })
-                {
-                    return internal::rootValue(internal::rootFromFactor(entry, input.root()));
-                }
-                else
-                {
-                    return internal::rootValue(entry.root(covarianceLowerOf(input)));
-                }
+                return internal::rootValue(internal::inputRoot(entry, input));
             };
             constexpr bool spread =
                 ArgInfo::crossPosition < ArgInfo::count ? I == ArgInfo::crossPosition : ArgInfo::ordinal[I] == 0;

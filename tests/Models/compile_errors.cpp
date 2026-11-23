@@ -1459,6 +1459,23 @@ auto const reference = makeNoise();
 );
 #endif
 
+#if defined(UPDATE_AXES_CAN_FAIL_AFFINE)  // static_assert: MeasurementReads.h: an update spreads by axes that can fail
+                                          // only
+[[maybe_unused]] auto const failingAxes = Emrys::update(
+    makeInitial(),
+    Emrys::observe(
+        methods::spread(methods::cubature(), Emrys::roots::cholesky()),
+        Emrys::measurementModel(
+            positionOf,
+            Emrys::reads(Emrys::path<Position>, Emrys::path<Velocity>),
+            Emrys::affineIn(Emrys::path<Velocity>),
+            Emrys::additiveNoise(makeNoise())
+        ),
+        Eigen::Vector2d::Zero()
+    )
+);
+#endif
+
 // The policies of a model (Policies.h) and the marks on a step's arguments.
 
 struct Ownship : Emrys::Composite<Position, Velocity>

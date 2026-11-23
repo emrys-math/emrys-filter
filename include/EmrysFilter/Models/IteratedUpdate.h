@@ -346,34 +346,38 @@ linearizeReadsAt(
         // The root form's H_S = Psi^T S^-1, a solve with the root that spread the points, and N + Omega,
         // its parts, so that spreadCov is neither factorized again nor subtracted from (decisions.md
         // [linearization-forms]).
-        auto const predicted = transformMeasurement(resolved, method, f, input);
-        using InnovationGaussian = std::remove_cvref_t<decltype(predicted.output())>;
-        using InnovationMatrix = typename InnovationGaussian::MatrixType;
-        using Predicted = OutputWithCross<Space, typename InnovationGaussian::SpaceType, JacobianForm, Scalar>;
-        using ReadJacobianMatrix = MatrixOf<
-            Scalar,
-            InnovationGaussian::DifferenceDimensionAtCompileTime,
-            Reads::DifferenceSize,
-            InnovationGaussian::MaxDifferenceDimensionAtCompileTime,
-            Reads::DifferenceMaxSize>;
-        ReadJacobianMatrix jacobian = predicted.jacobian();
-        InnovationMatrix cov = predicted.inputsCovariance() + predicted.unexplainedCovariance();
-        InnovationMatrix const error = cov;
-        typename InnovationGaussian::VectorType mean = predicted.output().mean();
-        if (moved)
-        {
-            toPriorChart(reads, jacobian, readMean, readStep);
-            auto back = typename InnovationGaussian::DifferenceVectorType{};
-            back.noalias() = -multiply(jacobian, readStep);
-            mean = Emrys::plus(predicted.output().space(), predicted.output().mean(), back);
-        }
-        auto cross = typename Predicted::CrossMatrix{};
-        cross.noalias() = multiply(stateRead, jacobian.transpose());
-        cov.noalias() += multiply(jacobian, std::as_const(cross)(reads.differenceIndices(), Eigen::placeholders::all));
-        auto const y = InnovationGaussian{predicted.output().space(), std::move(mean), std::move(cov)};
-        return use(y, cross, ReadLinearization{jacobian, reads.differenceIndices(), [&] {
-                                                   return error;
-                                               }});
+        // A spread by axes that can fail gives the step its error when their root does (decisions.md
+        // [sigma-point-axes]).
+        return withValue(transformMeasurement(resolved, method, f, input), [&](auto const & predicted) {
+            using InnovationGaussian = std::remove_cvref_t<decltype(predicted.output())>;
+            using InnovationMatrix = typename InnovationGaussian::MatrixType;
+            using Predicted = OutputWithCross<Space, typename InnovationGaussian::SpaceType, JacobianForm, Scalar>;
+            using ReadJacobianMatrix = MatrixOf<
+                Scalar,
+                InnovationGaussian::DifferenceDimensionAtCompileTime,
+                Reads::DifferenceSize,
+                InnovationGaussian::MaxDifferenceDimensionAtCompileTime,
+                Reads::DifferenceMaxSize>;
+            ReadJacobianMatrix jacobian = predicted.jacobian();
+            InnovationMatrix cov = predicted.inputsCovariance() + predicted.unexplainedCovariance();
+            InnovationMatrix const error = cov;
+            typename InnovationGaussian::VectorType mean = predicted.output().mean();
+            if (moved)
+            {
+                toPriorChart(reads, jacobian, readMean, readStep);
+                auto back = typename InnovationGaussian::DifferenceVectorType{};
+                back.noalias() = -multiply(jacobian, readStep);
+                mean = Emrys::plus(predicted.output().space(), predicted.output().mean(), back);
+            }
+            auto cross = typename Predicted::CrossMatrix{};
+            cross.noalias() = multiply(stateRead, jacobian.transpose());
+            cov.noalias() +=
+                multiply(jacobian, std::as_const(cross)(reads.differenceIndices(), Eigen::placeholders::all));
+            auto const y = InnovationGaussian{predicted.output().space(), std::move(mean), std::move(cov)};
+            return use(y, cross, ReadLinearization{jacobian, reads.differenceIndices(), [&] {
+                                                       return error;
+                                                   }});
+        });
     }
     else
     {

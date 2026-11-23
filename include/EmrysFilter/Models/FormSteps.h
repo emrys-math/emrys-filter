@@ -488,7 +488,7 @@ linearizeMeasurementAbout(
     EMRYS_FILTER_ASSERT(
         point.size() == valueDimension(space) && "a point to linearize about must have the prior's value dimension"
     );
-    auto linearization = [&] {
+    auto attempt = [&] {
         if constexpr (isLinearMethod<Method>)
         {
             return linearizeMeasurementAtPoint<Scalar>(space, point, resolved);
@@ -508,8 +508,10 @@ linearizeMeasurementAbout(
     using ReadVector = typename Moments<typename Reads::JointSpace, Scalar>::VectorType;
     Difference const step = Emrys::minus(space, point, base);
     ReadVector const readBase = base(reads.indices());
-    toBaseChart<Scalar>(reads, resolved, readBase, step, linearization);
-    return linearization;
+    return withValue(std::move(attempt), [&](auto linearization) {
+        toBaseChart<Scalar>(reads, resolved, readBase, step, linearization);
+        return linearization;
+    });
 }
 
 /** \returns the MeasurementLinearization of \a resolved, a measurement resolved against \a space
@@ -592,21 +594,29 @@ iterateMeasurementLinearization(
         }
     };
 
-    // That linearization about delta = 0 in the prior's chart.
+    // That linearization about delta = 0 in the prior's chart, or, by axes that can fail, a
+    // std::expected of it (decisions.md [sigma-point-axes]).
     auto const atIterate = [&] {
-        auto result = linearizeAtIterate();
-        if (iteration > 0)
-        {
-            toBaseChart<Scalar>(reads, resolved, readMean, delta, result);
-        }
-        return result;
+        return withValue(linearizeAtIterate(), [&](auto result) {
+            if (iteration > 0)
+            {
+                toBaseChart<Scalar>(reads, resolved, readMean, delta, result);
+            }
+            return result;
+        });
     };
 
-    using Linearization = decltype(atIterate());
+    using Linearization = typename ValueOfOutcome<decltype(atIterate())>::type;
     using Result = std::expected<IteratedLinearization<Linearization>, GaussianError>;
+    // The iteration's result at the last linearization.
+    auto const last = [&](std::size_t iterations, bool done) {
+        return withValue(atIterate(), [&](Linearization linearization) {
+            return Result{IteratedLinearization<Linearization>{std::move(linearization), iterations, done}};
+        });
+    };
     if (!spread)
     {
-        return Result{IteratedLinearization<Linearization>{atIterate(), 1, false}};
+        return last(1, false);
     }
     using Gain = MatrixOf<
         Scalar,
@@ -619,7 +629,24 @@ iterateMeasurementLinearization(
     // A step that moved too little to count stops the iteration at the linearization after it.
     for (; iteration + 1 < method.maxIterations && !converged; ++iteration)
     {
-        Linearization const linearization = atIterate();
+        auto attempt = atIterate();
+        if constexpr (isExpected<decltype(attempt)>)
+        {
+            if (!attempt)
+            {
+                return Result{std::unexpected{attempt.error()}};
+            }
+        }
+        Linearization const & linearization = [&]() -> Linearization const & {
+            if constexpr (isExpected<decltype(attempt)>)
+            {
+                return *attempt;
+            }
+            else
+            {
+                return attempt;
+            }
+        }();
         Gain crossed(delta.size(), linearization.residual.size());
         NoiseMatrix innovationCov = linearization.noise;
         addSpread(*spread, linearization.jacobian, crossed, innovationCov);
@@ -656,7 +683,7 @@ iterateMeasurementLinearization(
         converged = withinScale(next, delta, scale);
         delta = next;
     }
-    return Result{IteratedLinearization<Linearization>{atIterate(), iteration + 1, converged}};
+    return last(iteration + 1, converged);
 }
 
 /** \returns \a update, a FilterUpdate or one in a \c std::expected, with each branch reporting the
@@ -694,7 +721,9 @@ withIterations(Update update, Iterated const & iterated)
  * [covariance-update-forms], \f$ H_S = \Psi^T S^{-1} \f$ for the root \f$ S \f$ that spread the
  * points, or the Jacobian, and \f$ N + \Omega \f$ from the prediction's parts (decisions.md
  * [linearization-forms]). The method is \a byMethod, the measurement's own or, at an iterate of an
- * Iterated method, its inner method (decisions.md [sigma-point-sets]).
+ * Iterated method, its inner method (decisions.md [sigma-point-sets]). By a method spread by axes
+ * that can fail, a \c std::expected of it, with their error when their root of the blocks read fails
+ * (decisions.md [sigma-point-axes]).
  */
 template <typename Scalar, typename Space, typename Reads, typename Read, typename R, typename Method>
 [[nodiscard]] auto
@@ -707,19 +736,20 @@ linearizeMeasurementAtRoot(
 )
 {
     auto const f = ResolvedFunction{resolved};
-    auto const predicted = transformMeasurement(resolved, method, f, read);
-    // H_S and N + Omega from the prediction's parts: a solve with the root that spread the points, the
-    // read blocks' own factor where they hold one, and no subtraction (decisions.md [linearization-forms]).
-    auto const [jacobian, omega] = statisticalLinearization(predicted);
-    return assembleLinearization<Scalar>(
-        space,
-        reads,
-        resolved,
-        predicted.output().space(),
-        predicted.output().mean(),
-        jacobian,
-        omega
-    );
+    return withValue(transformMeasurement(resolved, method, f, read), [&](auto const & predicted) {
+        // H_S and N + Omega from the prediction's parts: a solve with the root that spread the points, the
+        // read blocks' own factor where they hold one, and no subtraction (decisions.md [linearization-forms]).
+        auto const [jacobian, omega] = statisticalLinearization(predicted);
+        return assembleLinearization<Scalar>(
+            space,
+            reads,
+            resolved,
+            predicted.output().space(),
+            predicted.output().mean(),
+            jacobian,
+            omega
+        );
+    });
 }
 
 /** linearizeMeasurementAtRoot() by the measurement's own method. */
@@ -936,7 +966,12 @@ updateInPlace(
     auto const resolved = resolveMeasurement(measurement, space);
     if constexpr (isLinearizedAbout<Reference>)
     {
-        return foldIntoSqrt(state, linearizeMeasurementAbout<Scalar>(space, state.mean(), reference, resolved), accept);
+        return withValue(
+            linearizeMeasurementAbout<Scalar>(space, state.mean(), reference, resolved),
+            [&](auto const & linearization) {
+                return foldIntoSqrt(state, linearization, accept);
+            }
+        );
     }
     else if constexpr (isIterated<Method>)
     {
@@ -958,10 +993,11 @@ updateInPlace(
     else
     {
         auto const & reads = resolved.reads();
-        return foldIntoSqrt(
-            state,
+        return withValue(
             linearizeMeasurementAtRoot<Scalar>(space, reads, readRoot(reads, state), resolved),
-            accept
+            [&](auto const & linearization) {
+                return foldIntoSqrt(state, linearization, accept);
+            }
         );
     }
 }
@@ -1100,11 +1136,11 @@ updateInPlace(
     }
     if constexpr (isLinearizedAbout<Reference>)
     {
-        return foldIntoInfo(
-            state,
+        return withValue(
             linearizeMeasurementAbout<Scalar>(space, state.reference(), reference, resolved),
-            covariance,
-            accept
+            [&](auto const & linearization) {
+                return foldIntoInfo(state, linearization, covariance, accept);
+            }
         );
     }
     else if constexpr (isIterated<Method>)
@@ -1139,11 +1175,11 @@ updateInPlace(
             return Result{std::unexpected{GaussianError::Singular}};
         }
         auto const & reads = resolved.reads();
-        return foldIntoInfo(
-            state,
+        return withValue(
             linearizeMeasurementAtRoot<Scalar>(space, reads, readRootOf(reads, state.reference(), *root), resolved),
-            covariance,
-            accept
+            [&](auto const & linearization) {
+                return foldIntoInfo(state, linearization, covariance, accept);
+            }
         );
     }
 }
@@ -1292,11 +1328,11 @@ updateInPlace(
     }
     if constexpr (isLinearizedAbout<Reference>)
     {
-        return foldIntoSqrtInfo(
-            state,
+        return withValue(
             linearizeMeasurementAbout<Scalar>(space, state.reference(), reference, resolved),
-            root,
-            accept
+            [&](auto const & linearization) {
+                return foldIntoSqrtInfo(state, linearization, root, accept);
+            }
         );
     }
     else if constexpr (isIterated<Method>)
@@ -1333,11 +1369,11 @@ updateInPlace(
             return Result{std::unexpected{GaussianError::Singular}};
         }
         auto const & reads = resolved.reads();
-        return foldIntoSqrtInfo(
-            state,
+        return withValue(
             linearizeMeasurementAtRoot<Scalar>(space, reads, readRootOf(reads, state.reference(), *root), resolved),
-            root,
-            accept
+            [&](auto const & linearization) {
+                return foldIntoSqrtInfo(state, linearization, root, accept);
+            }
         );
     }
 }

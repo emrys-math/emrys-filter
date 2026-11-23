@@ -8,6 +8,11 @@ instead.
 
 ### Added
 
+- An update takes a sigma-point method spread by axes that can fail, such as
+  `spread(cubature(), roots::cholesky())`, and returns `GaussianError::NotPositiveDefinite` when
+  the axes cannot take the root of the blocks the measurement reads; it was a compile error. A
+  transform or prediction still refuses such axes, and so does an update whose model's `affineIn()`
+  names some of the blocks read.
 - `SECURITY.md`: how to report a vulnerability privately, and what counts as one. Among them is
   undefined behavior, or a call that never returns, caused by a floating-point value passed to the
   library, NaN and infinities included, in a build with `NDEBUG`.

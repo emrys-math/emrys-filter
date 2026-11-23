@@ -1337,8 +1337,9 @@ $S S^T = P$, that carries them into the input: the library's in `roots` or a use
 other axes: `roots::cholesky(roots::ridge(), roots::pivoted())`. A rule meets its axes once, in
 `methods::spread(rule, axes)`. Every other root the library takes uses the default,
 `cholesky(pivoted())`. In `transform()` and `predict()` a list whose last entry can fail is a
-compile error; an update, which returns a `std::expected` already, takes one and reports
-`GaussianError::NotPositiveDefinite`.
+compile error; an update, which returns a `std::expected`, takes one, roots the blocks it reads
+first, and reports the axes' error, unless its `affineIn()` [affine-coordinates] spreads over part
+of them.
 
 **Why.** Every root of $P$ is $L Q$ with $Q$ orthogonal, and a rule's moments depend on $Q$ once
 $f$ is not integrated exactly, so differing roots made a `KalmanFilter` and a `SqrtKalmanFilter`
@@ -1353,8 +1354,9 @@ filter's moments for no reason in the data. `symmetric`, the one basis-independe
 eigensolve per root. Nested fallbacks. Reports on transforms and filters: a caller diagnosing one
 calls `squareRootWithReport()` on the same covariance with the same axes.
 
-**Where.** `Distributions/Roots.h`, `Models/Methods.h` (`spread()`), `Models/Transform.h`; tests in
-`tests/Distributions/roots.cpp`, `tests/Models/spread.cpp`, and `tests/user_axes.h`.
+**Where.** `Distributions/Roots.h`, `Models/Methods.h` (`spread()`), `Models/Transform.h`,
+`Models/MeasurementReads.h`; tests in `tests/Distributions/roots.cpp`, `tests/Models/spread.cpp`,
+and `tests/user_axes.h`.
 
 ### conditional-evidence
 

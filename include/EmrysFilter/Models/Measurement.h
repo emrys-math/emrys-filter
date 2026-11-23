@@ -247,28 +247,35 @@ updateResolved(Prior const & prior, R const & resolved, Sink sink, Reference con
         // Lift the cross-covariance from the blocks read to the full state: P_xS P_SS^-1 Sigma_Sy, which
         // is P_xS S^-T Psi with S the root that spread the points, so P_SS is not factorized again
         // (decisions.md [linearization-forms]).
-        auto const predicted = internal::transformMeasurement(resolved, method, f, read);
-        using Predicted = std::remove_cvref_t<decltype(predicted)>;
-        using Solved = typename Predicted::CrossMatrix;
-        Solved const solved = internal::solveWithRoot<Solved>(predicted.root(), predicted.whitenedCross());
-        using MeasurementSpace = std::remove_cvref_t<decltype(predicted.output().space())>;
-        typename OutputWithCross<Space, MeasurementSpace, JacobianForm, Scalar>::CrossMatrix const cross =
-            internal::multiply(stateRead, solved);
-        // The measurement's Jacobian in the blocks read, Sigma_Sy^T P_SS^-1, and N + Omega, for updates::Joseph.
-        auto const readJacobian =
-            internal::ReadLinearization{solved.transpose(), reads.differenceIndices(), [&] {
-                                            using Error = typename Predicted::OutputMatrix;
-                                            return Error{
-                                                predicted.inputsCovariance() + predicted.unexplainedCovariance()
-                                            };
-                                        }};
-        return internal::conditionOnPrediction<Statistics>(
-            prior,
-            resolved,
-            predicted.output(),
-            cross,
-            readJacobian,
-            sink
+        // A spread by axes that can fail gives the update its error when their root does (decisions.md
+        // [sigma-point-axes]).
+        return internal::withValue(
+            internal::transformMeasurement(resolved, method, f, read),
+            [&](auto const & predicted) -> decltype(auto) {
+                using Predicted = std::remove_cvref_t<decltype(predicted)>;
+                using Solved = typename Predicted::CrossMatrix;
+                Solved const solved = internal::solveWithRoot<Solved>(predicted.root(), predicted.whitenedCross());
+                using MeasurementSpace = std::remove_cvref_t<decltype(predicted.output().space())>;
+                typename OutputWithCross<Space, MeasurementSpace, JacobianForm, Scalar>::CrossMatrix const cross =
+                    internal::multiply(stateRead, solved);
+                // The measurement's Jacobian in the blocks read, Sigma_Sy^T P_SS^-1, and N + Omega, for
+                // updates::Joseph.
+                auto const readJacobian =
+                    internal::ReadLinearization{solved.transpose(), reads.differenceIndices(), [&] {
+                                                    using Error = typename Predicted::OutputMatrix;
+                                                    return Error{
+                                                        predicted.inputsCovariance() + predicted.unexplainedCovariance()
+                                                    };
+                                                }};
+                return internal::conditionOnPrediction<Statistics>(
+                    prior,
+                    resolved,
+                    predicted.output(),
+                    cross,
+                    readJacobian,
+                    sink
+                );
+            }
         );
     }
 }

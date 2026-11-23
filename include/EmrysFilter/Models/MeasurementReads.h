@@ -831,17 +831,16 @@ transformPrediction(R const & resolved, Method const & method, F const & f, Args
     return transformBy(method, f, resolved.space(), args...);
 }
 
-/** transformPrediction() of the blocks read, \a read, marked for the cross-covariance, and of the
- * call's uncertain inputs after it, with the coordinates the model's affineIn() names factored out
- * of a sigma-point method (decisions.md [affine-coordinates]).
+/** transformMeasurement() by \a method, whose axes, if it has its own, cannot fail, with the
+ * coordinates affineIn() names factored out where \a Factors.
  */
-template <typename R, typename Method, typename F, typename Read>
+template <bool Factors, typename R, typename Method, typename F, typename Read>
 [[nodiscard]] auto
-transformMeasurement(R const & resolved, Method const & method, F const & f, Read const & read)
+transformMeasurementBy(R const & resolved, Method const & method, F const & f, Read const & read)
 {
     return std::apply(
         [&](auto const &... inputs) {
-            if constexpr (isSigmaPointMethod<Method> && R::factorsAffine())
+            if constexpr (Factors && isSigmaPointMethod<Method> && R::factorsAffine())
             {
                 auto const factored = FactoredAt<R::affineSize(), R::affineMaxSize(), Method>{
                     method,
@@ -857,6 +856,88 @@ transformMeasurement(R const & resolved, Method const & method, F const & f, Rea
         resolved.inputs()
     );
 }
+
+/** transformPrediction() of the blocks read, \a read, marked for the cross-covariance, and of the
+ * call's uncertain inputs after it, with the coordinates the model's affineIn() names factored out
+ * of a sigma-point method (decisions.md [affine-coordinates]). A method spread by axes that can fail
+ * takes their root of the blocks read first, and the result is then a \c std::expected, with the
+ * axes' error, GaussianError::NotPositiveDefinite for the library's, when that root fails
+ * (decisions.md [sigma-point-axes]).
+ */
+template <typename R, typename Method, typename F, typename Read>
+[[nodiscard]] auto
+transformMeasurement(R const & resolved, Method const & method, F const & f, Read const & read)
+{
+    if constexpr (isSpread<Method> && AxesOf<Method>::canFail)
+    {
+        // The root of the blocks read by axes that can fail, taken here so that a failure is the
+        // update's error, and given to the transform, whose axes cannot fail (decisions.md [sigma-point-axes]).
+        static_assert(
+            !R::factorsAffine(),
+            "an update spreads by axes that can fail only over the whole of the blocks it reads, and affineIn() "
+            "spreads over part of them: append roots::pivoted() to the list"
+        );
+        auto const root = inputRoot(method.axes, read);
+        using Matrix = typename std::remove_cvref_t<decltype(root)>::value_type;
+        using Given = decltype(methods::spread(method.rule, GivenRoot<Matrix>{}));
+        using Result = std::
+            expected<decltype(transformMeasurementBy<false>(resolved, std::declval<Given>(), f, read)), GaussianError>;
+        if (!root)
+        {
+            return Result{std::unexpected{root.error()}};
+        }
+        return Result{
+            transformMeasurementBy<false>(resolved, methods::spread(method.rule, GivenRoot<Matrix>{&*root}), f, read)
+        };
+    }
+    else
+    {
+        return transformMeasurementBy<true>(resolved, method, f, read);
+    }
+}
+
+/** \returns \a use called with the value \a outcome holds: \a outcome itself, or the value of a
+ * \c std::expected, whose error it returns in place of calling \a use, as a \c std::expected of what
+ * \a use returns, or what it returns when that is one already. So a step that may fail, such as
+ * transformMeasurement() by axes that can fail, passes its error out of the update that made it.
+ */
+template <typename Outcome, typename Use>
+[[nodiscard]] decltype(auto)
+withValue(Outcome && outcome, Use && use)
+{
+    if constexpr (isExpected<std::remove_cvref_t<Outcome>>)
+    {
+        using Used = std::remove_cvref_t<decltype(use(*std::forward<Outcome>(outcome)))>;
+        using Result = std::conditional_t<isExpected<Used>, Used, std::expected<Used, GaussianError>>;
+        if (!outcome)
+        {
+            return Result{std::unexpected{outcome.error()}};
+        }
+        return Result{use(*std::forward<Outcome>(outcome))};
+    }
+    else
+    {
+        return use(std::forward<Outcome>(outcome));
+    }
+}
+
+/** The value of \a T, what withValue() gives its function: \a T itself, or a \c std::expected's
+ * value type.
+ */
+template <typename T>
+struct ValueOfOutcome
+{
+    using type = T;  ///< not a std::expected
+};
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename T, typename E>
+struct ValueOfOutcome<std::expected<T, E>>
+{
+    using type = T;  ///< the value
+};
+
+/// \endcond
 
 /** Calls \a g with the Transform of the model's function \a f over \a args, into the measurement
  * space of \a resolved, and that Transform's linearizeAt() by the linear \a method.

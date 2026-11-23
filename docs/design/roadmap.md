@@ -35,14 +35,11 @@ the factored transform's rest [affine-coordinates], and `Iterated`; and every ot
 `internal::defaultRoot()`. Under the default the forms
 equal the Kalman filter to rounding (`sqrt_filters.cpp`, `info_filter.cpp`, `iterated_forms.cpp`).
 
-- [ ] An update takes a spread whose axes can fail and reports a failing root as
-      `NumericError::NotPositiveDefinite`. Today `Transform::root()` refuses such axes everywhere
-      (`refuseFailingAxes()`, whose message names `pivoted()` and `squareRoot()`), since the root is
-      taken inside the transform, which returns no `std::expected`; the update would take the root
-      of the marked input first. Test: `spread(cubature(), cholesky())` on a singular prior fails
-      the update, and on a positive definite one equals `cubature()`.
-- [ ] [sigma-point-sets] gives as a reason for sibling methods that "every existing
-      `Unscented{0.5}` would have changed", which the new default changed anyway: reword it.
+An update takes axes that can fail: `transformMeasurement()` takes their root of the blocks read
+first and gives the transform that root, and `tests/Models/spread.cpp` checks that
+`spread(cubature(), cholesky())` fails the Kalman update on a singular prior, plain, iterated, and
+linearized about it, and equals `cubature()` on a positive definite one in every form. Left: the
+`pr` checks.
 
 Done when: every root the library takes goes through `squareRoot()`, the forms agree under every
 rule, and the `pr` checks pass.

@@ -146,3 +146,59 @@ TEST(Spread, ASpreadRuleIsAnUpdatesMethodAndIteratedRelinearizesIt)
     ASSERT_TRUE(converged);
     EXPECT_TRUE(converged->branches.front().converged);
 }
+
+TEST(Spread, AnUpdateReportsAxesThatFailAsNotPositiveDefinite)
+{
+    using namespace EmrysTest::IteratedProblem;
+    auto const spread = methods::spread(methods::cubature(), roots::cholesky());
+    // The position, the block the range and bearing read, known exactly across (1, 1): its Cholesky factorization meets
+    // a pivot of exactly zero.
+    Matrix4 cov = makePoorPrior().covarianceLower();
+    cov.topLeftCorner<2, 2>().setConstant(1.0);
+    cov(2, 0) = cov(3, 1) = 0.0;
+    auto const singular = GaussianParams<State>{State{}, makePoorPrior().mean(), cov};
+    auto const expectFails = [](auto const & outcome) {
+        ASSERT_FALSE(outcome);
+        EXPECT_EQ(outcome.error(), Emrys::GaussianError::NotPositiveDefinite);
+    };
+    expectFails(Emrys::update(singular, makeRangeBearing(rangeAndBearing, spread)));
+    expectFails(Emrys::update(singular, makeRangeBearing(rangeAndBearing, methods::iterated(spread))));
+    expectFails(Emrys::update(singular, makeRangeBearing(rangeAndBearing, spread), Emrys::linearizedAbout(singular)));
+    // The default axes fall back to a pivoted root, and the update goes through.
+    EXPECT_TRUE(Emrys::update(singular, makeRangeBearing(rangeAndBearing, methods::cubature())));
+}
+
+TEST(Spread, AnUpdateByCholeskyAxesOnAPositiveDefinitePriorIsTheRules)
+{
+    using namespace EmrysTest::IteratedProblem;
+    auto const spread = methods::spread(methods::cubature(), roots::cholesky());
+    auto const prior = makePoorPrior();
+    auto const expectSame = [](auto const & fromSpread, auto const & fromRule) {
+        ASSERT_TRUE(fromSpread && fromRule);
+        auto const & a = fromSpread->branches.front();
+        auto const & b = fromRule->branches.front();
+        EXPECT_EQ(a.posterior.mean(), b.posterior.mean());
+        EXPECT_EQ(a.posterior.covarianceLower(), b.posterior.covarianceLower());
+        EXPECT_EQ(a.logLikelihood(), b.logLikelihood());
+        EXPECT_EQ(a.iterations, b.iterations);
+    };
+    expectSame(
+        Emrys::update(prior, makeRangeBearing(rangeAndBearing, spread)),
+        Emrys::update(prior, makeRangeBearing(rangeAndBearing, methods::cubature()))
+    );
+    expectSame(
+        Emrys::update(prior, makeRangeBearing(rangeAndBearing, methods::iterated(spread))),
+        Emrys::update(prior, makeRangeBearing(rangeAndBearing, methods::iterated(methods::cubature())))
+    );
+    expectSame(
+        Emrys::update(prior, makeRangeBearing(rangeAndBearing, spread), Emrys::linearizedAbout(prior)),
+        Emrys::update(prior, makeRangeBearing(rangeAndBearing, methods::cubature()), Emrys::linearizedAbout(prior))
+    );
+    // The square-root and information forms take the spread too, and equal the Kalman filter under it.
+    expectFormsEqualKalman(makeModel(), makeInitial(), [&](int k) {
+        return makeRangeBearing(rangeBearingAt(k), spread);
+    });
+    expectFormsEqualKalman(makeModel(), makeInitial(), [&](int k) {
+        return makeRangeBearing(rangeBearingAt(k), methods::iterated(spread));
+    });
+}
