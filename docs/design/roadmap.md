@@ -891,6 +891,28 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       accompany a graduate course are what JOSS reviews for, and a paper is what puts a library
       on a syllabus; and `docs/research.md`'s open problems sent to advisors in the ISIF and
       FUSION community directly, since each is scoped for a graduate student.
+- [ ] After the advertised launch, an email to each author whose algorithm the library implements,
+      inviting a review of the implementation (proposed 2026-11-22). One email per person, not
+      per paper, to the corresponding author at a current address; for a source whose authors
+      have died, such as Kalman's, a current group in the area instead. Each email names the
+      entries it covers, links the code that implements each at a tagged release (not `dev`,
+      whose lines move), lists the departures the entry's note records with a question on each,
+      and links a program that runs the method: where the paper has an example, that example
+      reproduced, built and run as a test (`examples/papers/<anchor>.cpp` or a test file) so it
+      keeps compiling, printing the paper's numbers beside the library's, with any that differ
+      named as a question rather than left out. It says that coding agents wrote much of the
+      code, offers a public place for the answer (a GitHub Discussion, or an "algorithm review"
+      issue template), and asks whether the author would like to be named in an
+      acknowledgments list. Waits for the review of every algorithm against its source above:
+      no email goes out for an entry that says **Not read.** Before the emails, a prioritized list
+      of the algorithms for the maintainer's own full review, reading the paper and checking the
+      code against it, first those the most users run and those whose notes record departures;
+      since the emails go out over time, the maintainer reads as many of each email's papers as
+      possible before that email goes out, and each email says which of its papers the
+      maintainer read in person. Sent a few at a time, so that what
+      the first replies find is fixed before the next. The list of recipients, their addresses,
+      and their replies are kept outside this public repository; what an answer changes goes in
+      the code and the entry's note.
 - [ ] Two README badges beside the DOI and the OpenSSF Best Practices badge, each added only once
       it is true: JOSS's, when the paper above is accepted, since it is the one badge that stands
       for peer review; and Repology's "Packaging status" (`repology.org/badge/vertical-allrepos/
