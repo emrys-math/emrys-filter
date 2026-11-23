@@ -2385,19 +2385,9 @@ public:
     [[nodiscard]] auto
     propagate(State const & state, TimeScalar dt, Inputs const &... inputs) const
     {
-        static_assert(
-            sizeof...(Inputs) == InputCount || sizeof...(Inputs) == 0,
-            "the step takes one vector per uncertain input, or none to read each at its mean"
-        );
-        using T = ScalarOf<State>;
-        using Vector = typename Moments<Space, T>::VectorType;
-        EMRYS_FILTER_ASSERT(state.size() == m_stateSize && "the state does not fit the space");
-        auto const x =
-            this->template gatherFromRows<T>(state, Eigen::Index{0}, std::tuple<Inputs const &...>{inputs...});
-        auto result = vectorReturned(callForm(model().function(), m_in, m_out, x, dt));
+        auto result = returnedAt(state, dt, inputs...);
         using Result = std::remove_cvref_t<decltype(result)>;
-        Vector y{state};
-        scatter(y, valueOf(result));
+        auto y = scattered(state, valueOf(result));
         if constexpr (isWithJacobian<Result>)
         {
             return withJacobian(std::move(y), expand(result.jacobian));
@@ -2406,6 +2396,19 @@ public:
         {
             return y;
         }
+    }
+
+    /** \returns the value of propagate() alone: the state \a state moved forward by \a dt at the
+     * uncertain inputs \a inputs, not normalized. A Jacobian that the function returns is not
+     * expanded to the whole state, which costs more than the step of a small state: what a caller
+     * that would discard it calls, such as a particle's step, a sigma point's, and the mean's under a
+     * cached transition.
+     */
+    template <typename State, typename TimeScalar, typename... Inputs>
+    [[nodiscard]] typename Moments<Space, ScalarOf<State>>::VectorType
+    propagateValue(State const & state, TimeScalar dt, Inputs const &... inputs) const
+    {
+        return scattered(state, valueOf(returnedAt(state, dt, inputs...)));
     }
 
     /// whether the function is batched, batched(f) (decisions.md [batched-functions])
@@ -2613,6 +2616,27 @@ public:
 
 private:
 
+    /** \returns what the function returns over \a dt at the blocks of \a state read and at the
+     * uncertain inputs \a inputs, one vector each in the order of inputs(), or at their means when
+     * none is given: a vector in the output space, or a WithJacobian of one.
+     */
+    template <typename State, typename TimeScalar, typename... Inputs>
+    [[nodiscard]] auto
+    returnedAt(State const & state, TimeScalar dt, Inputs const &... inputs) const
+    {
+        static_assert(
+            sizeof...(Inputs) == InputCount || sizeof...(Inputs) == 0,
+            "the step takes one vector per uncertain input, or none to read each at its mean"
+        );
+        EMRYS_FILTER_ASSERT(state.size() == m_stateSize && "the state does not fit the space");
+        auto const x = this->template gatherFromRows<ScalarOf<State>>(
+            state,
+            Eigen::Index{0},
+            std::tuple<Inputs const &...>{inputs...}
+        );
+        return vectorReturned(callForm(model().function(), m_in, m_out, x, dt));
+    }
+
     /** Writes the function's result \a value, a vector in the output space, into the written blocks
      * of the state \a y.
      */
@@ -2676,25 +2700,9 @@ private:
         using Scalar = typename J::Scalar;
         using StateMatrix = typename Moments<Space, Scalar>::MatrixType;
         StateMatrix f = StateMatrix::Identity(m_stateDifferenceSize, m_stateDifferenceSize);
-        for (std::size_t k = 0; k < WriteCount; ++k)
-        {
-            f.middleRows(m_writeDifferenceRows[k].start, m_writeDifferenceRows[k].size).setZero();
-            [&]<std::size_t... I>(std::index_sequence<I...>) {
-                ((f.block(
-                      m_writeDifferenceRows[k].start,
-                      m_reads.differenceRows(I).start,
-                      m_writeDifferenceRows[k].size,
-                      m_reads.differenceRows(I).size
-                  ) =
-                      jacobian.block(
-                          m_outDifferenceRows[k].start,
-                          m_differenceRows[stateItems(I)].start,
-                          m_outDifferenceRows[k].size,
-                          m_differenceRows[stateItems(I)].size
-                      )),
-                 ...);
-            }(std::make_index_sequence<StateCount>{});
-        }
+        [&]<std::size_t... K>(std::index_sequence<K...>) {
+            (expandRows<K>(f, jacobian), ...);
+        }(std::make_index_sequence<WriteCount>{});
         if constexpr (InputCount == 0)
         {
             return f;
@@ -2705,6 +2713,52 @@ private:
                 return std::tuple{std::move(f), inputBlock<P>(jacobian)...};
             }(std::make_index_sequence<InputCount>{});
         }
+    }
+
+    /** \returns the difference dimension of written block \a K at compile time, or `Eigen::Dynamic` */
+    template <std::size_t K>
+    [[nodiscard]] static consteval int
+    writtenDifferenceRows()
+    {
+        if constexpr (Whole)
+        {
+            return rowsAtCompileTime<true, Space>;
+        }
+        else
+        {
+            return rowsAtCompileTime<true, PathTag<std::tuple_element_t<K, typename PathsOf<WritePaths>::type>>>;
+        }
+    }
+
+    /** Writes into \a f, the expanded Jacobian, the rows of written block \a K: zero, and then the
+     * function's Jacobian \a jacobian in the columns of each block read. Each block has its space's
+     * fixed size where it has one, so that Eigen unrolls the copies of a small state.
+     */
+    template <std::size_t K, typename F, typename J>
+    void
+    expandRows(F & f, J const & jacobian) const
+    {
+        constexpr int Rows = writtenDifferenceRows<K>();
+        BlockRows const & written = m_writeDifferenceRows[K];
+        BlockRows const & returned = m_outDifferenceRows[K];
+        middleRowsOf<Rows>(f, written.start, written.size).setZero();
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+            ((blockOf<Rows, rowsAtCompileTime<true, typename Base::template Item<stateItems(I)>::NameType>>(
+                  f,
+                  written.start,
+                  m_reads.differenceRows(I).start,
+                  written.size,
+                  m_reads.differenceRows(I).size
+              ) =
+                  blockOf<Rows, rowsAtCompileTime<true, typename Base::template Item<stateItems(I)>::NameType>>(
+                      jacobian,
+                      returned.start,
+                      m_differenceRows[stateItems(I)].start,
+                      returned.size,
+                      m_differenceRows[stateItems(I)].size
+                  )),
+             ...);
+        }(std::make_index_sequence<StateCount>{});
     }
 
     /** \returns the Jacobian's columns for uncertain input \a P, expanded to the whole state's rows */
@@ -2738,6 +2792,9 @@ private:
     std::array<BlockRows, WriteCount> m_outRows{};              ///< each written block's rows in the output's values
     std::array<BlockRows, WriteCount> m_outDifferenceRows{};    ///< and in its differences
 };
+
+template <typename R, typename TimeScalar>
+class ProcessStepValues;
 
 /** The step of the resolved process model \a R over a fixed time step as the transforms call it:
  * at a state and a vector per uncertain input (ResolvedProcess::propagate()), and for a batched
@@ -2790,15 +2847,29 @@ public:
         m_resolved.propagateColumnsWithAffineJacobians(y, jacobians, states, m_dt, inputs...);
     }
 
-private:
+    /// whether values() gives the step for the value alone, which a transform reads
+    static constexpr bool EvaluatesValues = true;
+
+    /** \returns the step whose call gives the next state's value alone, which a transform evaluates
+     * at each of its points (Transform::evaluate()), so that a Jacobian the function returns is not
+     * expanded at every one (see ResolvedProcess::propagateValue())
+     */
+    [[nodiscard]] ProcessStepValues<R, TimeScalar>
+    values() const
+    {
+        return {m_resolved, m_dt};
+    }
+
+protected:
 
     R const & m_resolved;  ///< the resolved model
     TimeScalar m_dt;       ///< the time step
 };
 
 /** A ProcessStep whose call at one state gives the next state's value alone, without a Jacobian the
- * function returns: the step a filter applies to a whole state assembled from parts, whose Jacobian
- * is not over the transform's input.
+ * function returns (ResolvedProcess::propagateValue()): the step a filter applies to a whole state
+ * assembled from parts, whose Jacobian is not over the transform's input, and the step a transform
+ * evaluates at its points.
  */
 template <typename R, typename TimeScalar>
 class ProcessStepValues : public ProcessStep<R, TimeScalar>
@@ -2812,7 +2883,7 @@ public:
     [[nodiscard]] auto
     operator()(X const & x, Inputs const &... inputs) const
     {
-        return valueOf(ProcessStep<R, TimeScalar>::operator()(x, inputs...));
+        return this->m_resolved.propagateValue(x, this->m_dt, inputs...);
     }
 };
 
@@ -2875,7 +2946,7 @@ propagate(
     EMRYS_FILTER_ASSERT(x.size() == valueDimension(space) && "the state does not fit the space");
     auto const call = internal::modelWith(std::cref(model), args...);
     auto const resolved = internal::resolveProcess(call, space);
-    return internal::valueOf(resolved.propagate(x.derived(), internal::toScalarTime<Scalar>(dt)));
+    return resolved.propagateValue(x.derived(), internal::toScalarTime<Scalar>(dt));
 }
 
 template <Space Space_, typename Model_, typename Method_, RealScalar Scalar_>
@@ -3886,8 +3957,9 @@ namespace internal
 {
 
 /** \returns \a prior moved forward by \a model's cached transition \f$ F \f$, with its noise
- * \f$ Q \f$ added, and the cross-covariance \f$ P F^T \f$: the body of predict() and
- * predictJoint() for a FixedStepModel that caches its transition, given no inputs.
+ * \f$ Q \f$ added, and the cross-covariance \f$ P F^T \f$: the body of predictJoint() for a
+ * FixedStepModel that caches its transition, given no inputs. predict(), which keeps no
+ * cross-covariance, is predictInPlaceByTransition().
  */
 template <UncertainInput Prior, typename Space_, typename Model_, typename Method_, typename Scalar_>
     requires FixedStepModel<Space_, Model_, Method_, Scalar_>::CachesTransition
@@ -3916,6 +3988,36 @@ predictByTransition(Prior const & prior, FixedStepModel<Space_, Model_, Method_,
     };
 }
 
+/** Moves \a state forward by \a model's cached transition \f$ F \f$ where it is: the propagated
+ * mean, and \f$ P' = F P F^T + Q \f$ formed as predictInPlaceByJacobianWithNoise() forms it, with
+ * the covariance's lower triangle mirrored first (decisions.md [borrowed-intermediates]). It keeps
+ * no cross-covariance and copies neither the transition nor the noise, so it differs from
+ * predictByTransition()'s output by rounding. The body of predict() for a FixedStepModel that
+ * caches its transition, given no inputs.
+ */
+template <typename Space_, typename Model_, typename Method_, typename Scalar_>
+    requires FixedStepModel<Space_, Model_, Method_, Scalar_>::CachesTransition
+void
+predictInPlaceByTransition(
+    GaussianParams<Space_, Scalar_> & state,
+    FixedStepModel<Space_, Model_, Method_, Scalar_> const & model
+)
+{
+    using MatrixType = typename FixedStepModel<Space_, Model_, Method_, Scalar_>::MatrixType;
+    auto const & space = state.space();
+    auto const & f = model.transition();
+    auto & moments = GaussianAccess::moments(state);
+    moments.mean() = model.propagate(space, moments.mean());
+    normalizeValues(space, moments.mean());
+    // Only the stored lower triangle is guaranteed, so it is mirrored before the product.
+    MatrixType & cov = moments.covarianceLower();
+    cov.template triangularView<Eigen::StrictlyUpper>() = cov.transpose();
+    auto propagated = MatrixType{};
+    propagated.noalias() = multiply(f, cov);
+    cov.noalias() = multiply(propagated, f.transpose());
+    cov += model.noise();
+}
+
 }  // namespace internal
 
 /** \ingroup Models
@@ -3923,7 +4025,8 @@ predictByTransition(Prior const & prior, FixedStepModel<Space_, Model_, Method_,
  * added, as predict(method, prior, model, dt, args...) would.
  *
  * Under a cached transition (FixedStepModel::CachesTransition) and with no arguments, the mean is
- * the propagated mean and the covariance \f$ F P F^T + Q \f$, with no transform. Otherwise it goes
+ * the propagated mean and the covariance \f$ F P F^T + Q \f$, with no transform, returned
+ * symmetric (internal::predictInPlaceByTransition(), then its lower triangle mirrored). Otherwise it goes
  * as predict() goes, with the cached \f$ Q \f$: by the function's Jacobian at the mean where it
  * returns one and no input is uncertain, and through the transform where an uncertain input needs
  * its own Jacobian.
@@ -3941,7 +4044,13 @@ predict(Prior const & prior, FixedStepModel<Space_, Model_, Method_, Scalar_> co
     internal::assertPartitions(model, space);
     if constexpr (Model::CachesTransition && sizeof...(Args) == 0)
     {
-        return internal::predictByTransition(prior, model).output();
+        auto result = internal::gaussianOf(prior);
+        internal::predictInPlaceByTransition(result, model);
+        // What is returned is symmetric: the upper triangle is the lower's, which a filter that
+        // predicts in place leaves for its next step to mirror.
+        auto & cov = internal::GaussianAccess::moments(result).covarianceLower();
+        cov.template triangularView<Eigen::StrictlyUpper>() = cov.transpose();
+        return result;
     }
     else
     {
@@ -4085,9 +4194,9 @@ predictInPlace(
     );
 }
 
-/** predict() of \a state into itself over \a model's fixed step: where it is when the model's
- * function gives the Jacobian of its step and the transition is not cached, and otherwise through
- * the copy predict() returns
+/** predict() of \a state into itself over \a model's fixed step: where it is when the transition is
+ * cached (predictInPlaceByTransition()) or the model's function gives the Jacobian of its step, and
+ * otherwise through the copy predict() returns
  */
 template <
     typename Space,
@@ -4109,7 +4218,8 @@ predictInPlace(
     static_assert(std::is_same_v<Scalar, Scalar_>);
     if constexpr (Model::CachesTransition && sizeof...(Args) == 0)
     {
-        state = Emrys::predict(state, model);
+        assertPartitions(model, state.space());
+        predictInPlaceByTransition(state, model);
     }
     else
     {

@@ -385,7 +385,7 @@ public:
                         rng,
                         internal::defaultRoot(resolved.template noise<Scalar_>(step)),
                         [&](auto const & x, auto const &... in) {
-                            return internal::valueOf(resolved.propagate(x, step, in...));
+                            return resolved.propagateValue(x, step, in...);
                         },
                         internal::inputOf(uncertain)...
                     );
@@ -439,7 +439,7 @@ public:
                         rng,
                         m_model.noiseRoot(),
                         [&](auto const & x, auto const &... in) {
-                            return internal::valueOf(resolved.propagate(x, m_model.timeStep(), in...));
+                            return resolved.propagateValue(x, m_model.timeStep(), in...);
                         },
                         internal::inputOf(uncertain)...
                     );

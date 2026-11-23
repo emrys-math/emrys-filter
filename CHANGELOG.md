@@ -61,6 +61,16 @@ instead.
 
 ### Changed
 
+- A step no longer builds a Jacobian that nothing reads. A process model whose function returns
+  its Jacobian, as `ConstantVelocity` and the other kinematic models do, had that Jacobian
+  expanded to the whole state at every call, also where only the next state was read:
+  `KalmanFilter::predict()` over a `fixedStep()` whose transition is cached, `propagate()`,
+  `simulate()`, each particle's step, and each sigma point of a prediction. Those now compute the
+  value alone. Where the Jacobian is read, it is copied in blocks of fixed size, and so is a
+  measurement's. `KalmanFilter::predict()` over a cached transition forms $F P F^T + Q$ in place,
+  so its covariance differs from the earlier one, and from `predictJoint()`'s, by rounding. The
+  ranging EKF's step in 2D with 4 anchors takes 1,315 instructions where it took 2,410
+  ([docs/benchmarks.md](docs/benchmarks.md)).
 - **Breaking:** `Roughen` moves the particles of a Rao-Blackwellized state in place, so it no
   longer allocates a copy of the particle set at each call. A state of the user's own that it
   roughens needs `forEachParticle(policy, f)`, as `ParticleGaussianParams` has, in place of

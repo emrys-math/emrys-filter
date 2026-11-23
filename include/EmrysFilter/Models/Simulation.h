@@ -83,7 +83,7 @@ drawStep(R const & resolved, Eigen::MatrixBase<Derived> const & x, Scalar step, 
     );
     return std::apply(
         [&](auto const &... drawn) {
-            return Vector{valueOf(resolved.propagate(x.derived(), step, drawn...))};
+            return Vector{resolved.propagateValue(x.derived(), step, drawn...)};
         },
         draws
     );

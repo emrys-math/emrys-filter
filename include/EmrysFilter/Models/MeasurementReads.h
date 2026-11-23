@@ -685,11 +685,18 @@ private:
             using StateBlock = MatrixOf<Scalar, Rows, Cols, MaxRows, MaxCols>;
             StateBlock stateBlock =
                 StateBlock::Zero(jacobian.rows(), Whole ? m_stateDifferenceSize : m_reads.differenceIndices().size());
+            // Each block's columns have its space's fixed size where it has one, so that Eigen unrolls the copy.
             [&]<std::size_t... K>(std::index_sequence<K...>) {
-                ((stateBlock.middleCols(
+                ((middleColsOf<rowsAtCompileTime<true, typename Item<stateItems(K)>::NameType>>(
+                      stateBlock,
                       Whole ? m_reads.differenceRows(K).start : m_reads.jointDifferenceStart(K),
                       m_differenceRows[stateItems(K)].size
-                  ) = jacobian.middleCols(m_differenceRows[stateItems(K)].start, m_differenceRows[stateItems(K)].size)),
+                  ) =
+                      middleColsOf<rowsAtCompileTime<true, typename Item<stateItems(K)>::NameType>>(
+                          jacobian,
+                          m_differenceRows[stateItems(K)].start,
+                          m_differenceRows[stateItems(K)].size
+                      )),
                  ...);
             }(std::make_index_sequence<StateCount>{});
             if constexpr (InputCount == 0)

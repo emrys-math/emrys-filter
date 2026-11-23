@@ -917,7 +917,7 @@ private:
                     rng,
                     resolved.template noise<Scalar_>(step),
                     [&](auto const & x, auto const &... in) {
-                        return internal::valueOf(resolved.propagate(x, step, in...));
+                        return resolved.propagateValue(x, step, in...);
                     },
                     internal::inputOf(uncertain)...
                 );
@@ -943,7 +943,7 @@ private:
                     rng,
                     model.noise(),
                     [&](auto const & x, auto const &... in) {
-                        return internal::valueOf(resolved.propagate(x, model.timeStep(), in...));
+                        return resolved.propagateValue(x, model.timeStep(), in...);
                     },
                     internal::inputOf(uncertain)...
                 );

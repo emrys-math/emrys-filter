@@ -891,12 +891,21 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       claim 9); with 8 anchors or more it allocates once per step. No CI job installs OpenCV.
       Every pair is built and tested with Clang 21 in WSL (2026-11-22, the mherb/kalman EKF also
       with Clang on Windows), and measured there: instructions and time are in
-      `docs/benchmarks.md`. Claim 9 holds against OpenCV and fails at the small sizes against
-      TinyEKF and mherb/kalman's EKF, from the library's fixed cost of about 1,500 instructions per
-      step, which also makes the ranging counts the page gave before (1.36 at 2D with 4 anchors,
-      now 2.66) not reproduce (benchmarks.md, claim 1). Next: find that fixed cost and cut it;
-      GCC and MSVC builds of the pairs; time on Windows too; the Cortex-M half of TinyEKF joins
-      claim 6's footprint benchmark.
+      `docs/benchmarks.md`. The first measurement found the library taking about 1,500
+      instructions per step beyond the hand code at the small sizes, most of them for a Jacobian
+      that every prediction built and discarded; that is cut (2026-11-23, benchmarks.md, claim 1),
+      and every count on the page, with the ranging and library times on Linux, is taken again
+      after it. Claim 9 holds against OpenCV and still fails in time at the small sizes against
+      TinyEKF (1.68 and 3.24 times its time in 2D with 4 and 8 anchors) and mherb/kalman's EKF
+      (2.19 times in 2D with 4), though the library's instructions there are now within 8% of
+      mherb/kalman's and under TinyEKF's. Next: find where the time goes at those sizes, in the
+      library and in the hand code alike, starting with the divisions of the gain's triangular
+      solves, which the two libraries that invert S do not have; take the Windows times, and the
+      attitude and particle times, again; GCC and MSVC builds of the pairs; the Cortex-M half of
+      TinyEKF joins claim 6's footprint benchmark. The whole test suite passes with Clang 21 in
+      WSL but `Allocation.ParticleFilterUnderAUsersPolicyStaysOffTheHeap`, which throws
+      `std::bad_alloc` there (libstdc++ 15) before this branch's changes too, and is not looked
+      into.
 - [ ] GitHub Discussions turned on, so questions have somewhere to go besides issues. The
       repository's 20 topics, GitHub's limit, were chosen on 2026-11-12 by how many public
       repositories use each, so that each has an audience browsing it; a filter named in the

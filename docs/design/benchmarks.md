@@ -93,7 +93,7 @@ might doubt, published with its method and machine, and never one per feature."
 | 6 | It fits and runs on a microcontroller | Footprint and cycles on Cortex-M4F and M7 | `.text`, `.data`, stack per function, DWT cycles per step | hand-rolled EKF and TinyEKF on the same target | after [embedded-builds]'s Cortex-M job |
 | 7 | A template library's compile cost is tolerable | Compile cost of each benchmark translation unit | seconds and peak memory per compiler | the hand-rolled translation unit | built and measured on three compilers (section 7), not in CI, not published |
 | 8 | A GPU pays above some particle count | Device path against host `par` | crossover particle count | the library's own host path | step 19, not planned here |
-| 9 | It is no slower than the C++ Kalman library a user would otherwise pick | mherb/kalman's EKF, UKF, square-root EKF, and square-root UKF, TinyEKF's EKF, and OpenCV's `cv::KalmanFilter` run as an EKF, on the ranging problem | instructions and ns per step, at the ranging sizes and scalars | each library, as its users write it | measured 2026-11-22 on branch `mherb-benchmark`; holds against OpenCV, and fails at the small sizes against TinyEKF and mherb/kalman's EKF |
+| 9 | It is no slower than the C++ Kalman library a user would otherwise pick | mherb/kalman's EKF, UKF, square-root EKF, and square-root UKF, TinyEKF's EKF, and OpenCV's `cv::KalmanFilter` run as an EKF, on the ranging problem | instructions and ns per step, at the ranging sizes and scalars | each library, as its users write it | measured 2026-11-23 on branch `mherb-benchmark`; holds against OpenCV, and fails in time at the small sizes against TinyEKF and mherb/kalman's EKF |
 
 **1. Ranging.** What exists, plus the two axes [benchmarks] names and the ranging benchmark lacks: a
 constant-acceleration case (state dimension 6 and 9 beside 4 and 6), and the scaling curves over
@@ -180,6 +180,24 @@ known; the history before the launch is in the original repository. `docs/benchm
 the counts of 2026-11-22. That fixed cost is what loses claim 9 at the small sizes. The attitude
 counts below do not reproduce either: the hand code takes 4,089 and 5,669 instructions per step, as
 recorded, and the library 7,281 and 9,439, ratios of 1.78 and 1.67 rather than 1.17 and 1.28.
+
+*Found and cut (2026-11-23).* Most of that cost was one thing. `ResolvedProcess::propagate()`
+expanded the Jacobian that a kinematic model's function returns to the whole state at every call,
+by block assignments whose sizes are run-time values, and the prediction over a cached transition,
+each particle's step, and each sigma point of a transform kept only the value. At 2D with 4 anchors
+the prediction took 1,155 instructions, 891 of them for that Jacobian, where the hand code's takes
+64. The commit *Stop building a step's Jacobian where nothing reads it* gives those callers the
+value alone (`propagateValue()`), predicts in place over a cached transition, and copies the
+Jacobians that are read in blocks of fixed size. The prediction now takes 83 instructions and the
+step 1,315, against the hand code's 906: ratios of 1.45 at 2D with 4 anchors, 1.21 at 3D with 6
+(4,096 against 3,396), and 0.89 to 1.00 from 12 anchors, in instructions, and in time on Linux 1.13,
+1.10, and 0.89 to 1.07. The attitude EKF takes 6,030 and 8,288 instructions (1.47 and 1.46), and the
+particle filter 1.07 to 1.13 times the hand code's per particle and step, where it took 2.1 times.
+The 1.25 ceiling of claim 1 is still missed at 2D with 4 anchors. What is left there is in the
+update, about 410 instructions over the hand code's: 60 in the gain's solve, the same code compiled
+otherwise, 40 gathering the covariance columns of the blocks read, and the rest in the calls of
+five functions that are not inlined and in building the update that is returned. Cutting the
+last means restructuring the update; whether to is open.
 
 **2. Attitude.** A unit quaternion attitude with a gyroscope bias, `Composite<Attitude, Bias>` over
 `UnitQuaternion` and `Linear<3>`, driven by gyroscope inputs and corrected by two reference-vector
@@ -501,18 +519,21 @@ for accuracy, and the runner prints both libraries' float error as it does for m
 claim 6 this is a finding before any cycle is counted: on the scalar of the target TinyEKF is
 written for, its estimate is the less accurate.
 
-*Measured* (2026-11-22, commit `e0b74e0`; `docs/benchmarks.md` gives the tables and the machine).
-Against OpenCV, EmrysFilter's EKF takes 6 to 16% of the time and 6 to 13% of the instructions at
-every size. Against mherb/kalman's EKF it takes 0.35 to 0.78 of the time from 8 anchors in 2D and
-from 12 in 3D, about the same at 3D with 6, and 2.95 times at 2D with 4; its square-root EKF takes
-0.60 to 0.94 of mherb/kalman's time but at 2D with 16 anchors and 3D with 24, where it takes 0.99 to
-1.16. Against TinyEKF it takes 2.26 and 3.56 times the time in 2D with 4 and 8 anchors, 1.53 and
-1.28 in 3D with 6 and 12, and 0.90 and 0.70 with 16 and 24. So claim 9 holds against OpenCV and
-fails at the small sizes against TinyEKF and mherb/kalman's EKF, whose steps there take 1,575 and
-1,218 instructions at 2D with 4 anchors, against the library's 2,410 and the hand code's 906: the
-library's fixed cost of the ranging counts above. Instructions
-and time disagree for mherb/kalman's EKF in 2D with 8 anchors (0.32 of its instructions, 0.78 of
-its time), which is not yet explained.
+*Measured* (2026-11-23, at the commit *Stop building a step's Jacobian where nothing reads it*;
+`docs/benchmarks.md` gives the tables and the machine; the measurement of 2026-11-22, a commit
+earlier, is in that commit's message). Against OpenCV, EmrysFilter's EKF takes 6 to 14% of the time
+and 3 to 12% of the instructions at every size. Against mherb/kalman's EKF it takes 0.31 to 0.80 of
+the time at every size but 2D with 4 anchors, where it takes 2.19 times; its square-root EKF takes
+0.55 to 0.92 of mherb/kalman's time but at 2D with 16 anchors and 3D with 24, where it takes 0.98 to
+1.15. Against TinyEKF it takes 1.68 and 3.24 times the time in 2D with 4 and 8 anchors, 1.23 and
+1.00 in 3D with 6 and 12, and 0.79 and 0.60 with 16 and 24. So claim 9 holds against OpenCV and
+fails at the small sizes against TinyEKF and mherb/kalman's EKF. Instructions no longer explain
+that: at 2D with 4 anchors the library takes 1,315, mherb/kalman 1,218, and TinyEKF 1,575, and
+their times are 166 ns, 76 ns, and 101 ns, while the hand code takes 906 instructions and 147 ns.
+The library and the hand code factorize the innovation covariance and solve for the gain a row at
+a time, and the other two invert it; the triangular solves divide by the factor's diagonal at every
+row, which is the first thing to measure. At 2D with 8 anchors the library takes 535 ns, the hand
+code 500 ns, and TinyEKF 165 ns.
 
 **OpenCV.** The Kalman filter of OpenCV, the computer-vision library (Apache 2.0 license), is
 `cv::KalmanFilter` in its video module, a linear filter whose matrices are `cv::Mat`s sized at run

@@ -10,18 +10,22 @@ reference is hand-written code, and what is still to be measured.
 
 | Problem | Instructions per step | Time per step, Windows | Time per step, Linux |
 |---|---|---|---|
-| Ranging EKF, 2D, 4 anchors | 2.48–2.66 | 1.15–1.68 | 1.22–1.53 |
-| Ranging EKF, 2D, 8 anchors | 1.35–1.42 | 1.02–1.44 | 1.06–1.15 |
-| Ranging EKF, 3D, 6 anchors | 1.67–1.84 | 1.11–1.21 | 1.14–1.18 |
-| Ranging EKF, 12 or more anchors | 0.98–1.06 | 0.91–0.97 | 0.91–1.09 |
-| Attitude EKF, analytic Jacobians | 1.78 | 1.15 | 1.21 |
-| Attitude EKF, autodiff | 1.67 | 1.32 | 1.29 |
-| Particle filter, 2D | 1.03–1.06 | 1.10–1.18 | 1.00–1.04 |
-| Particle filter, 3D | 1.04–1.07 | 1.25–1.40 | 1.02–1.12 |
+| Ranging EKF, 2D, 4 anchors | 1.39–1.50 | 1.15–1.68 | 1.13–1.42 |
+| Ranging EKF, 2D, 8 anchors | 1.09–1.15 | 1.02–1.44 | 1.07–1.15 |
+| Ranging EKF, 3D, 6 anchors | 1.16–1.21 | 1.11–1.21 | 1.10–1.13 |
+| Ranging EKF, 12 or more anchors | 0.89–1.00 | 0.91–0.97 | 0.89–1.07 |
+| Attitude EKF, analytic Jacobians | 1.47 | 1.15 | 1.21 |
+| Attitude EKF, autodiff | 1.46 | 1.32 | 1.29 |
+| Particle filter, 2D | 1.08–1.12 | 1.10–1.18 | 1.00–1.04 |
+| Particle filter, 3D | 1.07–1.13 | 1.25–1.40 | 1.02–1.12 |
 
 A range covers every case of its row: `double` and `float`, analytic and automatic Jacobians, and
-for the particle filter both likelihoods and every particle count. Neither side allocates on the
-heap during a step, in any case.
+for the particle filter its likelihoods, and in its times every particle count. Neither side
+allocates on the heap during a step, in any case.
+
+The instruction column, and the Linux times of the ranging rows, were measured on 2026-11-23 at the
+commit *Stop building a step's Jacobian where nothing reads it*. The other times are of 2026-11-08
+and have not been taken again since that commit, which makes the library's steps shorter.
 
 ## Method
 
@@ -68,18 +72,29 @@ by every range.
 
 | Instructions per step | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
 |---|---|---|---|---|---|---|
-| `double`, analytic | 2.66 | 1.41 | 0.98 | 1.84 | 1.04 | 1.06 |
-| `double`, autodiff | 2.63 | 1.42 | 0.99 | 1.77 | 1.04 | 1.06 |
-| `float`, analytic | 2.66 | 1.37 | 0.99 | 1.72 | 0.99 | 1.00 |
-| `float`, autodiff | 2.48 | 1.35 | 0.98 | 1.67 | 0.98 | 1.00 |
+| `double`, analytic | 1.45 | 1.12 | 0.92 | 1.21 | 0.93 | 1.00 |
+| `double`, autodiff | 1.50 | 1.15 | 0.93 | 1.21 | 0.93 | 1.00 |
+| `float`, analytic | 1.39 | 1.09 | 0.93 | 1.16 | 0.89 | 0.96 |
+| `float`, autodiff | 1.43 | 1.10 | 0.93 | 1.16 | 0.89 | 0.97 |
 
-At 2D with 4 anchors in `double` with analytic Jacobians, the hand code takes 906 instructions per
-step and the library 2,410. These counts are of commit `e0b74e0` (2026-11-22). The counts this page
-gave before, 1.36 at 2D with 4 anchors and 1.32 at 3D with 6 (909 against 1,233 instructions), do
-not reproduce: the public launch commit, counted the same way, takes 906 against 2,399. The time
-columns of the summary are from the earlier measurement and have not been taken again. On Windows
-a step took from 104 ns (2D, 4 anchors, `float`, analytic) to 2,150 ns (3D, 24 anchors, `double`,
-autodiff).
+| Time per step, Linux | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
+|---|---|---|---|---|---|---|
+| `double`, analytic | 1.13 | 1.10 | 0.95 | 1.10 | 0.93 | 1.07 |
+| `double`, autodiff | 1.17 | 1.07 | 0.97 | 1.13 | 0.93 | 1.06 |
+| `float`, analytic | 1.17 | 1.10 | 0.95 | 1.10 | 0.89 | 0.98 |
+| `float`, autodiff | 1.42 | 1.15 | 0.96 | 1.11 | 0.90 | 1.00 |
+
+At 2D with 4 anchors in `double` with analytic Jacobians, the hand code takes 906 instructions and
+147 ns per step, and the library 1,315 instructions and 167 ns; at 3D with 24 anchors they take
+1,756 ns and 1,880 ns. Both tables were measured on 2026-11-23.
+
+Until the commit of that day named under the summary, every prediction built the process model's
+Jacobian, expanded it to the whole state, and discarded it, and the library took 2,410 instructions
+at 2D with 4 anchors, as it did at the public launch (2,399). The ratios this page gave at first,
+1.36 at 2D with 4 anchors and 1.32 at 3D with 6 (909 against 1,233 instructions), were of an
+earlier state of the library that no commit since the launch reproduces. The Windows times of the
+summary are from 2026-11-08: a step took from 104 ns (2D, 4 anchors, `float`, analytic) to 2,150 ns
+(3D, 24 anchors, `double`, autodiff).
 
 ## Attitude EKF
 
@@ -89,12 +104,13 @@ gravity and a magnetic field. The hand code is the multiplicative EKF of Markley
 
 | Per step | Hand code, instructions | EmrysFilter, instructions | Ratio | Hand code, Windows | EmrysFilter, Windows |
 |---|---|---|---|---|---|
-| Analytic measurement Jacobians | 4,089 | 7,281 | 1.78 | 314 ns | 362 ns |
-| Autodiff measurement Jacobians | 5,669 | 9,439 | 1.67 | 375 ns | 495 ns |
+| Analytic measurement Jacobians | 4,089 | 6,030 | 1.47 | 314 ns | 362 ns |
+| Autodiff measurement Jacobians | 5,669 | 8,288 | 1.46 | 375 ns | 495 ns |
 
-The instruction counts are of commit `e0b74e0` (2026-11-22); this page gave 4,830 and 7,186 for the
-library before (1.18 and 1.27), which do not reproduce, while the hand code's count is unchanged.
-The times are from the earlier measurement and have not been taken again.
+The instruction counts are of 2026-11-23. Before the commit of that day named under the summary the
+library took 7,281 and 9,439; this page gave 4,830 and 7,186 at first (1.18 and 1.27), which no
+commit since the launch reproduces, while the hand code's count is unchanged. The times are of
+2026-11-08 and have not been taken again.
 
 ## Particle filter
 
@@ -107,8 +123,15 @@ weights to 1e-9 over 300 steps. Instructions are counted at 1000 particles.
 | 2D | 47–48 ns | 52–57 ns |
 | 3D | 65–67 ns | 81–93 ns |
 
-In 3D, with the measurement's own likelihood, the library takes 1,397 instructions per particle and
-step and the hand code 1,347.
+| Instructions per particle and step | Hand code | The noise's likelihood | Its own likelihood | Batched |
+|---|---|---|---|---|
+| 2D | 833 | 924 | 899 | 932 |
+| 3D | 1,345 | 1,517 | 1,468 | 1,433 |
+
+The instructions are of 2026-11-23. Before the commit of that day named under the summary, each
+particle's step also built and discarded the process model's Jacobian, and the library took 2,800
+to 2,880 instructions in 3D; this page gave 1,397 at first for its own likelihood in 3D, against
+the hand code's 1,347. The times are of 2026-11-08 and have not been taken again.
 
 ## Compile time
 
@@ -135,31 +158,37 @@ The same ranging problem run by the Kalman filters of three other libraries, eac
 users write it, with the analytic Jacobian, the only one they have. Each pair must agree to 1e-9 in
 `double` over the run that is timed, so only the pairs that agree are timed; the runners print the
 rest. Here a ratio is EmrysFilter's cost divided by the other library's: below 1, EmrysFilter costs
-less. Commit `e0b74e0` (2026-11-22), Ubuntu 26.04 under WSL2 on an Intel Core i9-13900F, Clang
-21.1.8 with `-march=x86-64-v3`, each runner pinned to one CPU by `taskset` at normal priority, the
-median of 2000 batches; instructions by Callgrind as above.
+less. Measured on 2026-11-23 at the commit named under the summary, with Ubuntu 26.04 under WSL2 on
+an Intel Core i9-13900F, Clang 21.1.8 with `-march=x86-64-v3`, each runner pinned to one CPU by
+`taskset` at normal priority, the median of 2000 batches; instructions by Callgrind as above.
 
 | EKF, `double` | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
 |---|---|---|---|---|---|---|
-| mherb/kalman, instructions | 1.98 | 0.32 | 0.34 | 0.54 | 0.51 | 0.30 |
-| mherb/kalman, time | 2.95 | 0.78 | 0.35 | 0.98 | 0.48 | 0.35 |
-| TinyEKF, instructions | 1.53 | 1.97 | 0.87 | 0.96 | 1.33 | 0.77 |
-| TinyEKF, time | 2.26 | 3.56 | 0.90 | 1.53 | 1.28 | 0.70 |
-| OpenCV, instructions | 0.06 | 0.09 | 0.11 | 0.10 | 0.13 | 0.08 |
-| OpenCV, time | 0.09 | 0.16 | 0.10 | 0.13 | 0.09 | 0.07 |
+| mherb/kalman, instructions | 1.08 | 0.25 | 0.31 | 0.36 | 0.45 | 0.28 |
+| mherb/kalman, time | 2.19 | 0.71 | 0.32 | 0.80 | 0.42 | 0.31 |
+| TinyEKF, instructions | 0.83 | 1.56 | 0.81 | 0.63 | 1.19 | 0.73 |
+| TinyEKF, time | 1.68 | 3.24 | 0.79 | 1.23 | 1.00 | 0.60 |
+| OpenCV, instructions | 0.03 | 0.07 | 0.11 | 0.06 | 0.12 | 0.08 |
+| OpenCV, time | 0.07 | 0.14 | 0.09 | 0.10 | 0.08 | 0.06 |
 
 | Square-root EKF, against mherb/kalman | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
 |---|---|---|---|---|---|---|
-| `double`, instructions | 0.26 | 0.40 | 0.76 | 0.39 | 0.65 | 1.00 |
-| `double`, time | 0.73 | 0.84 | 1.06 | 0.77 | 0.94 | 1.16 |
-| `float`, instructions | 0.16 | 0.26 | 0.48 | 0.26 | 0.43 | 0.77 |
-| `float`, time | 0.60 | 0.76 | 0.99 | 0.72 | 0.83 | 1.09 |
+| `double`, instructions | 0.24 | 0.39 | 0.75 | 0.36 | 0.63 | 0.99 |
+| `double`, time | 0.68 | 0.78 | 1.04 | 0.74 | 0.92 | 1.15 |
+| `float`, instructions | 0.15 | 0.25 | 0.48 | 0.25 | 0.41 | 0.76 |
+| `float`, time | 0.55 | 0.73 | 0.98 | 0.68 | 0.84 | 1.07 |
 
-At 2D with 4 anchors a step of EmrysFilter's EKF takes 224 ns, mherb/kalman's 76 ns, and
-TinyEKF's 99 ns. EmrysFilter is slower than TinyEKF at four of the six sizes, and than
-mherb/kalman's EKF at the smallest, where its fixed cost per step, the 1,500 instructions it takes
-beyond the hand code at that size, is most of the step; its square-root EKF is up to 16% slower
-than mherb/kalman's at the largest sizes. It is faster than OpenCV at every size, by 6 to 14 times.
+At 2D with 4 anchors a step of EmrysFilter's EKF takes 166 ns and 1,315 instructions,
+mherb/kalman's 76 ns and 1,218, and TinyEKF's 101 ns and 1,575. EmrysFilter is slower than TinyEKF
+at three of the six sizes, 3.24 times at 2D with 8 anchors (535 ns against 165 ns), and than
+mherb/kalman's EKF at the smallest; its square-root EKF is up to 15% slower than mherb/kalman's at
+the largest sizes. It is faster than OpenCV at every size, by 7 to 16 times.
+
+At the small sizes the time does not follow the instructions: the hand-written Eigen filter of the
+ranging table takes 906 instructions and 147 ns at 2D with 4 anchors, fewer instructions than
+either library and more time. EmrysFilter and the hand code factorize the innovation covariance by
+Cholesky and solve for the gain, where mherb/kalman and TinyEKF invert it. Which part of that
+takes the time has not been measured.
 
 - **mherb/kalman** (`9f40c2f`, 2018-08-22): its EKF and square-root EKF are timed. Its `float` EKF
   strays up to 4e-2 relative in the mean and 9e-2 in the covariance from the `double` estimate,
@@ -184,13 +213,16 @@ than mherb/kalman's at the largest sizes. It is faster than OpenCV at every size
 
 ## Machines
 
-The commits of these measurements were not recorded; from the next release on, each table names
-its commit.
+The commits of the measurements of 2026-11-08 and 2026-11-01 were not recorded; from the next
+release on, each table names its commit.
 
-- **Instructions:** November 2026, Clang 21 with `-march=x86-64-v3`, Callgrind under Ubuntu 26.04
+- **Instructions:** 2026-11-23, Clang 21.1.8 with `-march=x86-64-v3`, Callgrind under Ubuntu 26.04
   in WSL2.
-- **Time:** 2026-11-08, Intel Core i9-13900F. Windows 11 with Clang 21.1.0 and no `-march`, at
-  high priority; Ubuntu 26.04 under WSL2 with Clang 21.1.8 and `-march=x86-64-v3`, at normal
+- **Time, the ranging EKF on Linux and the other libraries:** 2026-11-23, Intel Core i9-13900F,
+  Ubuntu 26.04 under WSL2 with Clang 21.1.8 and `-march=x86-64-v3`, pinned to one CPU at normal
   priority.
+- **Time, the rest:** 2026-11-08, Intel Core i9-13900F. Windows 11 with Clang 21.1.0 and no
+  `-march`, at high priority; Ubuntu 26.04 under WSL2 with Clang 21.1.8 and `-march=x86-64-v3`, at
+  normal priority.
 - **Compile time:** 2026-11-01, an Intel Raptor Lake processor under Windows 11, with Clang 21.1.0,
   GCC 14.2.0 (w64devkit), and MSVC 19.50.

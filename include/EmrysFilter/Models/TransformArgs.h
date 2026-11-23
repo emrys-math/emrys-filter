@@ -650,13 +650,15 @@ public:
     }
 
     /** \returns \a f at the joint uncertain input \a x, with scalar type \a T: its value, without
-     * any Jacobian it returns
+     * any Jacobian it returns. Where \a f says it gives a function object for its values alone
+     * (EvaluatesValues), as a process model's step does (internal::ProcessStep::values()), that
+     * object is called instead, which leaves out the work that only the Jacobian needs.
      */
     template <typename T>
     [[nodiscard]] OutputVector<T>
     evaluate(InputVector<T> const & x) const
     {
-        OutputVector<T> y = valueOf(call<T>(m_f, x));
+        OutputVector<T> y = valueAt<T>(x);
         EMRYS_FILTER_ASSERT(y.size() == valueDimension(m_outputSpace) && "the output does not fit the output space");
         return y;
     }
@@ -738,6 +740,28 @@ public:
     returned(InputVector<T> const & x) const
     {
         return call<T>(m_f, x);
+    }
+
+    /// whether \a f gives a function object for its values alone, \c values(), as a process model's
+    /// step does (internal::ProcessStep)
+    static constexpr bool EvaluatesValues = requires { requires std::remove_cvref_t<F>::EvaluatesValues; };
+
+    /** \returns the value of \a f at the joint uncertain input \a x, with scalar type \a T, by the
+     * function object that \a f's \c values() gives where it has one: the body of evaluate()
+     */
+    template <typename T>
+    [[nodiscard]] OutputVector<T>
+    valueAt(InputVector<T> const & x) const
+    {
+        if constexpr (EvaluatesValues)
+        {
+            auto const values = m_f.values();
+            return valueOf(call<T>(values, x));
+        }
+        else
+        {
+            return valueOf(call<T>(m_f, x));
+        }
     }
 
     /** \returns \a g called with the same arguments as \a f, at the joint uncertain input \a x */

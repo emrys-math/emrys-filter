@@ -444,13 +444,23 @@ template <typename R, typename Matrix>
 [[nodiscard]] std::expected<Eigen::LLT<std::remove_const_t<Matrix>>, GaussianError>
 innovationCholesky(Matrix & cov)
 {
-    auto llt = Eigen::LLT<std::remove_const_t<Matrix>>{cov};
-    if (llt.info() == Eigen::Success)
+    if constexpr (std::is_same_v<R, NoRepair>)
     {
-        return llt;
+        // Factorized where it is returned, with one return, so that the factor is not copied.
+        auto result = std::expected<Eigen::LLT<std::remove_const_t<Matrix>>, GaussianError>{std::in_place, cov};
+        if (result->info() != Eigen::Success)
+        {
+            result = std::unexpected{GaussianError::NotPositiveDefinite};
+        }
+        return result;
     }
-    if constexpr (!std::is_same_v<R, NoRepair>)
+    else
     {
+        auto llt = Eigen::LLT<std::remove_const_t<Matrix>>{cov};
+        if (llt.info() == Eigen::Success)
+        {
+            return llt;
+        }
         static_assert(!std::is_const_v<Matrix>, "a repaired innovation covariance replaces the one given");
         auto repaired = R{}.repaired(cov);
         if (!repaired)
@@ -464,10 +474,6 @@ innovationCholesky(Matrix & cov)
         }
         cov = std::move(*repaired);
         return llt;
-    }
-    else
-    {
-        return std::unexpected{GaussianError::NotPositiveDefinite};
     }
 }
 
