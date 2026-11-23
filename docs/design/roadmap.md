@@ -144,6 +144,143 @@ thread counts but not across standard libraries.
 Done when: parallel draws are bitwise reproducible across thread counts within one standard
 library, and the six resamplers pass their tests.
 
+## 17zu. Selections of a repeated block — not started
+
+A model, a placement, and an accessor name part of a repeated block: one repetition, a run of
+repetitions, or a list of them. Today an item of `reads()` is a path, a path is a type, and a model's
+reads are resolved from those types and the space alone, so a model that uses one landmark of
+`Landmarks` reads the whole block. A sigma-point method then spreads its points over every landmark.
+`affineIn()` does not replace the selection: it names whole items, so it is right only where the
+function is affine in the repetition it uses, and it still forms the Jacobian and $P_{a|n}$ over
+every repetition. Designed on 2026-11-23 and not built; the two spellings marked "Decide" are open.
+Every place that names a block takes a selection in this one step, so that no spelling is left to
+be found incompatible later.
+
+**The selection** is the subscript of a path value that runs through a repeated block. A repeated
+block cannot hold another, so a path takes one subscript and it is never ambiguous. The path may
+reach the repeated block through other tags (`path<Map, Landmarks>[k]`) and may go on inside it
+(`path<Fleet, Heading>[k]`, vehicle `k`'s heading).
+
+| Path value | Names | Its space |
+|---|---|---|
+| `path<Landmarks>[k]` | repetition `k` | the repetition's, `Landmark`, of fixed size |
+| `path<Landmarks>[Eigen::seqN(first, n)]` | `n` repetitions from `first` | `Landmarks` with count `n` |
+| `path<Landmarks>[seen]`, `path<Landmarks>[{2, 5, 9}]` | the repetitions listed, in that order | `Landmarks` with the list's count |
+
+An integer names the block that is repeated. A sequence or a list names a smaller repeated block,
+even of one repetition, so a function written for the whole block runs unchanged on part of it. The
+selection is held by value in the model, and a model over a selection that changes is built per
+measurement, as one whose geometry changes already is (usage.md's `tdoa(a1, a2)`).
+
+```cpp
+// range and bearing to landmark k: 2 * 5 + 1 sigma points, whatever the count of landmarks
+Emrys::measurementModel(
+    sighting,  // reads block<Landmark>(in, x)
+    Emrys::reads(Emrys::path<Position>, Emrys::path<Heading>, Emrys::path<Landmarks>[k]),
+    Emrys::outputSpace(RangeBearing{}),
+    Emrys::additiveNoise(noise));
+
+// every landmark sighted in one scan; scan loops over block<Landmarks>(in, x, i)
+Emrys::measurementModel(
+    scan,
+    Emrys::reads(Emrys::path<Pose>, Emrys::path<Landmarks>[seen]),
+    Emrys::outputSpace(RangeBearings{RangeBearing{}, std::ssize(seen)}),
+    Emrys::additiveNoise(Emrys::onEach<RangeBearings>(r)));
+```
+
+The rules, each for [tag-addressing] or [model-policies] when built:
+
+- **Name.** A selected path is read or written under its last tag, and under the repetition's tag
+  where the path ends at the repeated block and the subscript is an integer. A space without a tag
+  (a repetition declared as `Linear<2>`, or the `Repeated<Heading>` of `path<Fleet, Heading>[seen]`)
+  needs `on<Name>(...)`. Two selections of one block take two names, as two paths that end in one
+  tag do today.
+- **Bound.** A sequence's or a list's space has the bound of the state's block, which sizes fixed
+  storage for every landmark where three are read. `on<Sighted>(path<Landmarks>[seen])` with
+  `struct Sighted : Repeated<Landmark, 8> {}` reads it under a smaller bound, and the count is
+  asserted to fit: the name check accepts a repeated tag of the same repetition and another bound.
+- **Index in the function.** `block<Landmarks>(in, x, i)` is the `i`th repetition read, not the
+  state's `i`th.
+- **Sequences.** Eigen's `seq` and `seqN` with integer bounds. An increment of 1 is one run of rows;
+  any other increment is treated as a list. `Eigen::last` and `Eigen::all` are refused, since
+  resolving them needs Eigen's internals. **Decide:** Eigen's types (recommended: users know them,
+  and `idx()` returns them) or a `range(first, n)` of the library's own.
+- **Lists.** Any range of integers, copied into the path value. A braced list or a `std::array` is
+  stored at fixed size, so a model that holds one allocates nothing.
+- **Checks.** At compile time: a subscript on a path through no repeated block, and a selection
+  with no name. Asserted when the model meets a state: every index within the block's count, no
+  coordinate named twice among a model's reads or among its writes, and equal selections wherever
+  parts of a composition share a name.
+- **Counts.** `CountFrom<Landmarks, ...>` keeps counting the state's block. A model over a sequence
+  or a list gives its output space sized, since a count is never inferred from what a model reads
+  [several-resizable-blocks].
+
+Where a path is a value it takes the subscript. Where a path is a template argument and the call
+takes an integer repetition today, that argument takes a sequence or a list too.
+
+- [ ] **Spaces.** `TagPath::operator[]` and the selected path, a `PathValue`. `idx()`, `diffIdx()`,
+      `block()`, and `diffBlock()`, with a space and as `<S, Path>`, take a sequence or a list where
+      they take an integer, and a path that reaches its repeated block through other tags, which
+      they refuse today. Test: `tests/Spaces/blocks.cpp` against indices written out by hand, values
+      and differences, with a unit quaternion as the repetition.
+- [ ] **`reads()`.** `Reads` holds each item's selection and stays empty with none, so a model
+      without one keeps its type and size; `ReadBlocks` and `ResolvedReads` take the policy's value
+      beside the space. An integer or a run is one run of the state's rows, as a block is. A list is
+      not, and these take a list of runs where they take a `BlockRows`: `gatherItemFromRows()` and
+      `affineCoordinates()` in `ResolvedReads.h`, the state columns of a returned Jacobian in
+      `MeasurementReads.h`, and the transition matrix and the affine seeds in `ProcessModel.h`.
+      Search for others; these five were found by the row accessors' names. Test: a state written
+      with one tag per repetition, `Composite<Pose, A, B, C>`, has the coordinates of
+      `Composite<Pose, Landmarks>` with three landmarks, so an update that reads
+      `path<Landmarks>[1]` equals the update that reads `path<B>`, and `[{2, 0}]` equals
+      `path<C>, path<A>`: under `linearized()`, `unscented()` with and without `affineIn()`, a
+      returned Jacobian, and a matrix; in each Gaussian form; and through `ParticleFilter`, the
+      Rao-Blackwellized filters, and `GaussianMixtureFilter`. The function is called `2n + 1` times
+      for `n` difference coordinates read, and an update that reads an integer selection of a
+      resizable state allocates nothing where the same model on a fixed-size state allocates
+      nothing.
+- [ ] **`writes()` of a process model.** The same path values, and `on<Name>(...)`, which
+      `writes()` does not take today. A repetition not written is carried as a block not written
+      is. Noise is placed by the output space's names, as now. The written rows become a list of
+      runs. Test: a prediction that writes `path<Fleet>[1]`, a sequence, and a list equals the
+      prediction on the state with one tag per repetition, under each method; two parts of a
+      composition write two repetitions of one block.
+- [ ] **Placing a model.** `on(path<Fleet>[k], model, renames...)` places it on one repetition, and
+      `onEach(path<Fleet>[moving], model, renames...)` on each repetition of a sequence or a list;
+      an input renamed to a `Repeated` tag has a value per repetition placed. **Decide:** this
+      value form beside `on<Path>(model)` (recommended: the path value is the one that `reads()`
+      takes) or the selection as an argument, `on<Fleet>(k, model)`. Test: equal to
+      `compose(on<A>(model), on<C>(model))` on the state with one tag per repetition.
+- [ ] **Placing a matrix, a factor, and noise.** `Columns{onEach(path<Landmarks>[seen], h),
+      on<Position>(-h)}` measures the landmarks listed, and its inferred space has the list's
+      count. In `Factors` and in a model's noise, the selections placed on one block cover each of
+      its repetitions once, asserted when they are placed in a space. Tests:
+      `tests/Models/linear_measurement.cpp`, `tests/Distributions/product.cpp`.
+- [ ] **`consider()` and `given()`.** `consider(path<Landmarks>[k])` considers one landmark, and
+      `given<Path>(space, value, selection)` gives one. Test: each equals its form on the state with
+      one tag per repetition.
+- [ ] **Distributions.** `marginal<Path>(k)`, `mean<Path>(k)`, and `covariance<Path>(k)` take a
+      sequence or a list on every distribution that takes an integer. `covariance<RowPath,
+      ColPath>()` takes a selection for each of its paths that runs through a repeated block, in
+      order: `covariance<Position, Landmarks>(k)`, `covariance<Landmarks, Landmarks>(i, j)`.
+      `nees<Path>()` takes the selection last. `erase<Path>(element, count)` becomes
+      `erase<Path>(selection)`, which erases a list too; it breaks callers, who write
+      `erase<Path>(Eigen::seqN(element, count))`. `insert<Path>()` is unchanged: it takes a
+      position, not a selection.
+- [ ] **Audit.** List every public function that takes a path, among them `pointGrid()`,
+      `regularGrid()`, the Rao-Blackwellized filters' blocks, `CountFrom`, and `byMode()`, and a
+      path through a repeated block with no subscript (`path<Fleet, Heading>`), and give each a
+      test with a selection or a `static_assert` that refuses one, with its negative compile case.
+      The list goes in the commit message.
+- [ ] **Records.** The rules in [tag-addressing], [model-policies], [model-placement],
+      [linear-sensors], [product-factors], and [consider-states]; a section of usage.md and the user
+      skills that describe `reads()`; CHANGELOG, with the `erase()` change; and
+      `examples/landmarks.cpp`, a vehicle sighting landmarks one at a time, which fails when its
+      consistency check does.
+
+Done when: both decisions are made, every item's test and every negative compile case passes on all
+three compilers, and the audit's list has no function without a test or a refusal.
+
 ## 19b. A public API ready for the GPU backend — not started
 
 Step 19 is deferred past the advertised launch (decided 2026-11-16), and must then arrive as an
