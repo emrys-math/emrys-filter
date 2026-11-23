@@ -80,6 +80,7 @@ add_executable(emrys_filter_tests
   Models/computed_space.cpp
   Models/linear_measurement.cpp
   Models/per_measurement.cpp
+  Models/selected_reads.cpp
   Models/fixed_step_model.cpp
   Models/consistency.cpp
   Models/cramer_rao.cpp

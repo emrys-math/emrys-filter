@@ -144,6 +144,31 @@ makeWholeFix()
     );
 }
 
+// Models whose reads() selects one repetition of a repeated block, which are not yet placed or composed.
+[[maybe_unused]] auto
+makeFixOfOne()
+{
+    return Emrys::measurementModel(
+        []<typename T>(auto const & in, auto const &, auto const & x) {
+            return Eigen::Matrix<T, 2, 1>{Emrys::block<Fix>(in, x)};
+        },
+        Emrys::reads(Emrys::path<Fixes>[1]),
+        Emrys::additiveNoise(makeNoise())
+    );
+}
+
+[[maybe_unused]] auto
+makeStepOfOne()
+{
+    return Emrys::processModel(
+        []<typename T>(auto const & in, auto const &, auto const & x, auto) {
+            return Eigen::Matrix<T, 2, 1>{Emrys::block<Fix>(in, x)};
+        },
+        Emrys::reads(Emrys::path<Fixes>[1]),
+        Emrys::writes(Emrys::path<Offset>)
+    );
+}
+
 // A measurement model's function: the position of its input, and the position plus the offset it reads from the call.
 auto const positionOf = []<typename T>(auto const & in, auto const &, auto const & x) {
     return Eigen::Matrix<T, 2, 1>{Emrys::block<Position>(in, x)};
@@ -518,6 +543,18 @@ struct Landmarks : Emrys::Linear<Eigen::Dynamic, 8>
 
 #if defined(COMPOSE_WHOLE_STATE_MODELS)  // static_assert: ResolvedReads.h: a model without reads() and writes() reads
 [[maybe_unused]] auto const composed = Emrys::compose(makeWholeFix(), makeFixModel());
+#endif
+
+#if defined(ON_MODEL_THAT_READS_A_SELECTION)  // static_assert: ResolvedReads.h: a model whose reads() selects
+[[maybe_unused]] auto const placed = Emrys::on<Position>(makeFixOfOne());
+#endif
+
+#if defined(COMPOSE_MODELS_THAT_READ_A_SELECTION)  // static_assert: ResolvedReads.h: a model whose reads() selects
+[[maybe_unused]] auto const composed = Emrys::compose(makeFixOfOne(), makeFixModel());
+#endif
+
+#if defined(COMPOSE_PROCESS_MODELS_THAT_READ_A_SELECTION)  // static_assert: ResolvedReads.h: a model whose reads()
+[[maybe_unused]] auto const composed = Emrys::compose(makeStepOfOne(), makeModel());
 #endif
 
 #if defined(FUNCTION_IN_NO_FORM)  // static_assert: Methods.h: a model's function takes h(x), h(in, x), or h(in, out, x)
@@ -1493,6 +1530,14 @@ struct Target : Emrys::Composite<Position, Velocity>
 
 #if defined(READS_NOT_A_PATH)  // static_assert: Policies.h: reads() takes paths, path<Tags...> or a tag's value
 [[maybe_unused]] auto const r = Emrys::reads(3);
+#endif
+
+#if defined(READS_SELECTION_WITHOUT_A_TAG)  // static_assert: Policies.h: the repetitions this item of reads() selects
+// One repetition of a block that repeats a library space, which has no tag to be read under.
+struct Untagged : Emrys::Repeated<Emrys::Linear<2>, 4>
+{};
+
+[[maybe_unused]] auto const selected = Emrys::reads(Emrys::path<Untagged>[1]);
 #endif
 
 #if defined(READS_SHARED_NAME)  // static_assert: Policies.h: two items of reads() share a name

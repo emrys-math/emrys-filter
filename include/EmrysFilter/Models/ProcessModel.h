@@ -2167,6 +2167,7 @@ template <ProcessModel... Models>
 compose(Models &&... models)
 {
     static_assert((internal::wholeStateRefused<std::remove_cvref_t<Models>> && ...));
+    static_assert((internal::selectionRefused<std::remove_cvref_t<Models>> && ...));
     return Composition<std::remove_cvref_t<Models>...>{std::forward<Models>(models)...};
 }
 
@@ -2309,7 +2310,7 @@ public:
 
     /** Resolves \a call against \a space, which both outlive this. */
     ResolvedProcess(Call const & call, Space const & space)
-        : Base{call.arguments(), space}
+        : Base{call.arguments(), space, call.model()}
         , m_call{call}
         , m_out{outputOf<Model>(space)}
         , m_stateSize{valueDimension(space)}
@@ -2511,12 +2512,15 @@ public:
                         {
                             if constexpr (Base::inState(I))
                             {
-                                BlockRows const rows = this->m_reads.differenceRows(Base::stateIndexOf(I));
+                                // A block's rows of the state are the read indices from its start in the joint.
+                                Eigen::Index const first = this->m_reads.jointDifferenceStart(Base::stateIndexOf(I));
+                                Eigen::Index const size = this->m_reads.differenceRows(Base::stateIndexOf(I)).size;
                                 for (Eigen::Index j = 0; j < count; ++j)
                                 {
-                                    for (Eigen::Index r = 0; r < rows.size; ++r)
+                                    for (Eigen::Index r = 0; r < size; ++r)
                                     {
-                                        jacobians(rows.start + r, j * l + offset + r) = T(1);
+                                        jacobians(this->m_reads.differenceIndices()(first + r), j * l + offset + r) =
+                                            T(1);
                                     }
                                 }
                             }
@@ -2731,8 +2735,7 @@ private:
     }
 
     /** Writes into \a f, the expanded Jacobian, the rows of written block \a K: zero, and then the
-     * function's Jacobian \a jacobian in the columns of each block read. Each block has its space's
-     * fixed size where it has one, so that Eigen unrolls the copies of a small state.
+     * function's Jacobian \a jacobian in the columns of each block read (expandBlock()).
      */
     template <std::size_t K, typename F, typename J>
     void
@@ -2740,25 +2743,41 @@ private:
     {
         constexpr int Rows = writtenDifferenceRows<K>();
         BlockRows const & written = m_writeDifferenceRows[K];
-        BlockRows const & returned = m_outDifferenceRows[K];
         middleRowsOf<Rows>(f, written.start, written.size).setZero();
         [&]<std::size_t... I>(std::index_sequence<I...>) {
-            ((blockOf<Rows, rowsAtCompileTime<true, typename Base::template Item<stateItems(I)>::NameType>>(
-                  f,
-                  written.start,
-                  m_reads.differenceRows(I).start,
-                  written.size,
-                  m_reads.differenceRows(I).size
-              ) =
-                  blockOf<Rows, rowsAtCompileTime<true, typename Base::template Item<stateItems(I)>::NameType>>(
-                      jacobian,
-                      returned.start,
-                      m_differenceRows[stateItems(I)].start,
-                      returned.size,
-                      m_differenceRows[stateItems(I)].size
-                  )),
-             ...);
+            (expandBlock<K, I>(f, jacobian), ...);
         }(std::make_index_sequence<StateCount>{});
+    }
+
+    /** Writes into \a f, the expanded Jacobian, the function's Jacobian \a jacobian in the rows of
+     * written block \a K and the columns of block read \a I. A block whose rows in the state are one
+     * run (ResolvedReads::OneRun) is copied whole, with its space's fixed size where it has one, so
+     * that Eigen unrolls the copies of a small state; any other, a list of repetitions, column by
+     * column through the read indices.
+     */
+    template <std::size_t K, std::size_t I, typename F, typename J>
+    void
+    expandBlock(F & f, J const & jacobian) const
+    {
+        constexpr int Rows = writtenDifferenceRows<K>();
+        BlockRows const & written = m_writeDifferenceRows[K];
+        BlockRows const & returned = m_outDifferenceRows[K];
+        BlockRows const & columns = m_differenceRows[stateItems(I)];
+        if constexpr (Reads::template OneRun<I>)
+        {
+            constexpr int Cols = rowsAtCompileTime<true, typename Base::template Item<stateItems(I)>::NameType>;
+            blockOf<Rows, Cols>(f, written.start, m_reads.differenceRows(I).start, written.size, columns.size) =
+                blockOf<Rows, Cols>(jacobian, returned.start, columns.start, returned.size, columns.size);
+        }
+        else
+        {
+            Eigen::Index const first = m_reads.jointDifferenceStart(I);
+            for (Eigen::Index c = 0; c < columns.size; ++c)
+            {
+                blockOf<Rows, 1>(f, written.start, m_reads.differenceIndices()(first + c), written.size, 1) =
+                    blockOf<Rows, 1>(jacobian, returned.start, columns.start + c, returned.size, 1);
+            }
+        }
     }
 
     /** \returns the Jacobian's columns for uncertain input \a P, expanded to the whole state's rows */

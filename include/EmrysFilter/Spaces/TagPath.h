@@ -1115,6 +1115,25 @@ differenceBlockRows(Space const & space)
     });
 }
 
+/** \returns the rows in \a space of repetition \a element of the repeated block that the path \a P
+ * runs through, or of the block the rest of the path names within it, in an operand of values, or
+ * of differences if \a Difference
+ */
+template <bool Difference, typename P, typename Space>
+[[nodiscard]] BlockRows
+repetitionBlockRows(Space const & space, Eigen::Index element)
+{
+    return withRepeatedSplit<P>([&]<typename Outer, typename RepeatedTag, typename... Inner>() {
+        auto const [offset, tag] = locateRepeated<Difference, Outer>(space);
+        EMRYS_FILTER_ASSERT(element >= 0 && element < tag->count() && "repetition out of range");
+        constexpr ResolvedIndex inner = repetitionIndex<Difference, RepeatedTag, Inner...>();
+        return BlockRows{
+            offset + element * SizedAs<Difference, RepeatedTag>::ValueDimensionStep + inner.offset,
+            inner.size
+        };
+    });
+}
+
 /** Checks at compile time that \a X, an Eigen expression whose rows are the coordinates of a space
  * with \a Rows rows at compile time, has that many rows where both are fixed, and that it is not a
  * temporary plain matrix, whose block would dangle.

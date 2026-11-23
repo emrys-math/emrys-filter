@@ -36,21 +36,58 @@ namespace Emrys
 namespace internal
 {
 
-/** One item of reads(): the block that the path \a Path (a TagPath) names, read under the name
- * \a Name, a tag, which is the path's last tag unless on<Name>() gave another.
+/** What an item of reads() that reads its whole block has in place of a selection of repetitions. */
+struct NoSelection
+{};
+
+/** One item of reads(): the block that the path \a Path (a TagPath) names, or the repetitions
+ * \a Selection selects of the repeated block it runs through (decisions.md [repetition-selections]),
+ * read under the name \a Name, a tag, which is the path's last tag unless on<Name>() gave another.
  */
-template <typename Path, typename Name>
+template <typename Path, typename Name, typename Selection = NoSelection>
 struct ReadItem
 {
-    using PathType = Path;  ///< the path read, a TagPath
-    using NameType = Name;  ///< the name it is read under, a tag
+    using PathType = Path;            ///< the path read, a TagPath
+    using NameType = Name;            ///< the name it is read under, a tag
+    using SelectionType = Selection;  ///< the repetitions selected, as a SelectedPath holds them, or NoSelection
 
-    /// whether the path has one tag, the only form that can name an input of the call
-    static constexpr bool SingleTag = std::is_same_v<Path, TagPath<Name>>;
+    /// whether the item reads selected repetitions of a repeated block, not a whole block
+    static constexpr bool Selected = !std::is_same_v<Selection, NoSelection>;
+
+    /// whether the path has one tag and no selection, the only form that can name an input of the call
+    static constexpr bool SingleTag = !Selected && std::is_same_v<Path, TagPath<Name>>;
 };
 
-/** What an argument of reads() of type \a T denotes: nothing, for anything but a path value or an
- * on<Name>() of one.
+/** What a selected path has no tag to be read under, so that it needs on<Name>(). */
+struct NoName
+{};
+
+/** The tag that the selection \a Selection of the path \a Path is read under where on<Name>() gives
+ * none, as \c type: the tag of one repetition, or the path's last tag inside it, for an integer;
+ * the repeated block's own tag for several repetitions of it; and NoName where that space has no
+ * tag, as a repetition declared as a library space, or a block inside each of several repetitions.
+ */
+template <typename Path, typename Selection, typename Last = PathTag<Path>>
+struct SelectedNameOf
+{
+    /** The path's last tag, for one repetition's block inside it; none for that block of several. */
+    using type = std::conditional_t<RepetitionIndex<Selection>, Last, NoName>;
+};
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename Path, typename Selection, IsRepeated Last>
+struct SelectedNameOf<Path, Selection, Last>
+{
+    using type = std::conditional_t<
+        !RepetitionIndex<Selection>,
+        Last,
+        std::conditional_t<IsUntagged<RepeatedBlock<Last>>, NoName, RepeatedBlock<Last>>>;
+};
+
+/// \endcond
+
+/** What an argument of reads() of type \a T denotes: nothing, for anything but a path value, a
+ * selected path, or an on<Name>() of one.
  */
 template <typename T>
 struct ReadItemOf
@@ -73,6 +110,92 @@ struct ReadItemOf<OnPath<X, Name>>
     static constexpr bool valid = true;      ///< an item
     using type = ReadItem<PathOf<X>, Name>;  ///< the item
 };
+
+/** A selected path, <tt>path<Landmarks>[k]</tt>: the repetitions it selects, read under the tag of
+ * their space (SelectedNameOf).
+ */
+template <typename Path, typename Selection>
+struct ReadItemOf<SelectedPath<Path, Selection>>
+{
+    static constexpr bool valid = true;                                                      ///< an item
+    using type = ReadItem<Path, typename SelectedNameOf<Path, Selection>::type, Selection>;  ///< the item
+};
+
+/** on<Name>() of a selected path: the repetitions it selects, read under \a Name. */
+template <typename Path, typename Selection, typename Name>
+struct ReadItemOf<OnPath<SelectedPath<Path, Selection>, Name>>
+{
+    static constexpr bool valid = true;            ///< an item
+    using type = ReadItem<Path, Name, Selection>;  ///< the item
+};
+
+/** \returns the selection that \a item, an argument of reads(), brings: a selected path's, or none */
+template <typename T>
+[[nodiscard]] constexpr NoSelection
+readSelection(T const &)
+{
+    return {};
+}
+
+/** A selected path's selection. */
+template <typename Path, typename Selection>
+[[nodiscard]] Selection const &
+readSelection(SelectedPath<Path, Selection> const & item)
+{
+    return item.selection;
+}
+
+/** The selection of a selected path given a name. */
+template <typename Path, typename Selection, typename Name>
+[[nodiscard]] Selection const &
+readSelection(OnPath<SelectedPath<Path, Selection>, Name> const & item)
+{
+    return item.value.selection;
+}
+
+/** The selection of the item at position \a I of a reads(), held in a base of its own, so that an
+ * item without one adds nothing to the policy's size.
+ */
+template <std::size_t I, typename Selection>
+struct ItemSelection
+{
+    /** Holds \a selection. */
+    explicit ItemSelection(Selection selection)
+        : value{std::move(selection)}
+    {}
+
+    Selection value;  ///< the repetitions selected
+};
+
+/** An item that reads its whole block holds nothing. */
+template <std::size_t I>
+struct ItemSelection<I, NoSelection>
+{
+    constexpr ItemSelection() = default;
+
+    /** Holds nothing. */
+    constexpr explicit ItemSelection(NoSelection) {}
+
+    static constexpr NoSelection value{};  ///< no selection
+};
+
+/** The selections of the items \a Items of a reads(), each in a base at its position, \a I. */
+template <typename Positions, typename... Items>
+struct ReadSelections;
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <std::size_t... I, typename... Items>
+struct ReadSelections<std::index_sequence<I...>, Items...> : ItemSelection<I, typename Items::SelectionType>...
+{
+    constexpr ReadSelections() = default;
+
+    /** Holds each item's selection. */
+    explicit ReadSelections(std::in_place_t, typename Items::SelectionType const &... selections)
+        : ItemSelection<I, typename Items::SelectionType>{selections}...
+    {}
+};
+
+/// \endcond
 
 /** Whether the types \a Ts are pairwise distinct. */
 template <typename... Ts>
@@ -163,16 +286,23 @@ inline constexpr bool sameLeaf = std::derived_from<Name, Block> || std::derived_
  * <tt>path<Ownship, Position></tt> or a bare tag's value, read under its last tag, or
  * <tt>on<Name>(path<...>)</tt>, read under \a Name, so that two items whose paths end in one tag
  * can be told apart. A path of one tag that the state lacks names an input of the call, given as an
- * uncertain input over that tag's space or as sure<Tag>().
+ * uncertain input over that tag's space or as sure<Tag>(). A path into the state may select
+ * repetitions of the repeated block it runs through, <tt>path<Landmarks>[k]</tt> (SelectedPath):
+ * one repetition is read under the repetition's tag, as the block that is repeated, and a sequence
+ * or a list of them under the repeated block's own tag, as that block with their count (decisions.md
+ * [selected-reads]). The policy holds each selection by value.
  *
  * \tparam Items  the items, as internal::ReadItem
  *
  * \sa reads(), writes()
  */
 template <typename... Items>
-struct Reads
+struct Reads : internal::ReadSelections<std::index_sequence_for<Items...>, Items...>
 {
     static constexpr std::size_t Count = sizeof...(Items);  ///< the number of items
+
+    /// whether an item reads selected repetitions of a repeated block
+    static constexpr bool Selected = (Items::Selected || ... || false);
 
     /** The input space: the Composite of the names, in order. */
     using InputSpace = Composite<typename Items::NameType...>;
@@ -180,21 +310,45 @@ struct Reads
     /** The item at position \a I. */
     template <std::size_t I>
     using Item = std::tuple_element_t<I, std::tuple<Items...>>;
+
+    /** The policy of items that read whole blocks; one with a selection is made from its selections. */
+    constexpr Reads()
+        requires(!Selected)
+    = default;
+
+    /** The policy whose items hold \a selections, one for each in order, internal::NoSelection for
+     * an item that reads its whole block.
+     */
+    explicit Reads(std::in_place_t, typename Items::SelectionType const &... selections)
+        : internal::ReadSelections<std::index_sequence_for<Items...>, Items...>{std::in_place, selections...}
+    {}
+
+    /** \returns the selection of the item at position \a I, or internal::NoSelection */
+    template <std::size_t I>
+    [[nodiscard]] auto const &
+    selection() const
+    {
+        return static_cast<internal::ItemSelection<I, typename Item<I>::SelectionType> const &>(*this).value;
+    }
 };
 
 /** \ingroup Models
  * \returns the reads() policy of \a items: each a path value, <tt>path<Tags...></tt> or a tag's
- * value, read under its last tag, or <tt>on<Name>(path)</tt>, read under \a Name. Two items that
- * would share a name are refused, with a message that points at on<Name>().
+ * value, read under its last tag, a selected path, <tt>path<Landmarks>[k]</tt>, read under the tag
+ * of the repetitions' space, or <tt>on<Name>(path)</tt> of either, read under \a Name. Two items
+ * that would share a name are refused, with a message that points at on<Name>(), and so is a
+ * selection whose space has no tag.
  *
  * \code
  * reads(path<Position>, path<Velocity>, path<SpecificForce>)
  * reads(on<SensorPosition>(path<Ownship, Position>), path<Target, Position>, path<ScaleNoise>)
+ * reads(path<Position>, path<Heading>, path<Landmarks>[k])
+ * reads(path<Pose>, on<Sighted>(path<Landmarks>[seen]))
  * \endcode
  */
 template <typename... Items>
 [[nodiscard]] auto
-reads(Items const &...)
+reads(Items const &... items)
 {
     static_assert(
         (internal::ReadItemOf<std::remove_cvref_t<Items>>::valid && ...),
@@ -203,10 +357,16 @@ reads(Items const &...)
     );
     using Result = Reads<typename internal::ReadItemOf<std::remove_cvref_t<Items>>::type...>;
     static_assert(
+        (!std::is_same_v<typename internal::ReadItemOf<std::remove_cvref_t<Items>>::type::NameType, internal::NoName>
+         && ...),
+        "the repetitions this item of reads() selects have a space without a tag, so name it: "
+        "on<Name>(path<...>[...])"
+    );
+    static_assert(
         internal::distinctTypes<typename internal::ReadItemOf<std::remove_cvref_t<Items>>::type::NameType...>(),
         "two items of reads() share a name, their paths' last tag; read one under another name with on<Name>(path)"
     );
-    return Result{};
+    return Result{std::in_place, internal::readSelection(items)...};
 }
 
 /** \ingroup Models
@@ -1038,6 +1198,61 @@ placeNoise(Space const & space, AdditiveNoise<Parts...> const & noise)
     }
 }
 
+/** The space of what the item \a Item of a reads() reads from a state in \a Space, as \c type: the
+ * block its path names; for one selected repetition, the block that is repeated, or the block the
+ * path names inside it; and for several, a repeated block of their count (decisions.md
+ * [repetition-selections]).
+ */
+template <typename Space, typename Item>
+struct ReadSpaceOf
+{
+    /** The tag of the block the path names. */
+    using type = PathTag<typename Item::PathType>;
+};
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename Space, typename Item>
+    requires(Item::Selected && RepetitionIndex<typename Item::SelectionType>)
+struct ReadSpaceOf<Space, Item>
+{
+    using type = decltype(pathElementSubspace<typename Item::PathType>(std::declval<Space const &>()));
+};
+
+template <typename Space, typename Item>
+    requires(Item::Selected && !RepetitionIndex<typename Item::SelectionType>)
+struct ReadSpaceOf<Space, Item>
+{
+    using type =
+        decltype(pathRepetitionsSubspace<typename Item::PathType>(std::declval<Space const &>(), Eigen::Index{}));
+};
+
+/// \endcond
+
+/** ReadSpaceOf, as a type. */
+template <typename Space, typename Item>
+using ReadSpace = typename ReadSpaceOf<Space, Item>::type;
+
+/** Whether the tag \a Name can stand in a model's input for what an item reads, whose space is
+ * \a Block: the two have the same leaf (sameLeaf), or, for several repetitions, both are repeated
+ * blocks whose repetitions have, so that a name may bound their count more tightly than the state's
+ * block does.
+ */
+template <typename Name, typename Block, bool Several>
+inline constexpr bool nameFits = [] {
+    if constexpr (sameLeaf<Name, Block>)
+    {
+        return true;
+    }
+    else if constexpr (Several && IsRepeated<Name> && IsRepeated<Block>)
+    {
+        return sameLeaf<RepeatedBlock<Name>, RepeatedBlock<Block>>;
+    }
+    else
+    {
+        return false;
+    }
+}();
+
 /** Checks that each item of \a R, a Reads, that names a block of the state space \a Space is read
  * under a name with the same leaf as the block (sameLeaf), so that the model's input retracts as the
  * state does there. An item the state lacks names an input of the call, whose own space is its name's.
@@ -1060,7 +1275,9 @@ checkReadNames()
             if constexpr (inState)
             {
                 static_assert(
-                    sameLeaf<Name, PathTag<Path>>,
+                    nameFits < Name,
+                    ReadSpace<Space, Item>,
+                    Item::Selected && !RepetitionIndex < typename Item::SelectionType >>,
                     "a name given by on<Name>() in reads() must have the same leaf space beneath it as the block it "
                     "names, such as Linear<2> for a Position : Linear<2>"
                 );

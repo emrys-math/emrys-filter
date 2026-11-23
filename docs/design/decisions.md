@@ -93,6 +93,7 @@ Read the index, then the decisions your change touches.
 | [model-policies](#model-policies) | A model is a function with policies given as calls, and a composition's method is given at the call |
 | [function-scalars](#function-scalars) | A function the library calls with a vector may take the vector's scalar as its one template parameter, which the call supplies |
 | [model-placement](#model-placement) | A model is placed on a block by prefixing its paths, on every repetition by onEach, and models compose side by side |
+| [selected-reads](#selected-reads) | A model reads selected repetitions under the tag of their space, and holds the selection |
 | [whole-state-models](#whole-state-models) | A model given without `reads()` and `writes()` reads and writes the whole state, and is neither placed nor composed |
 | [transform-policies](#transform-policies) | `transform()` takes a measurement model's policies before its inputs, matches its inputs by tag, and takes no process model |
 | [affine-coordinates](#affine-coordinates) | A model declares the inputs it is affine in, and every sigma-point method factors them out |
@@ -884,9 +885,8 @@ block holds no other, so one subscript is never ambiguous. A sequence or a list 
 own tag, so a function written for the whole block runs unchanged on part of it.
 
 **Rejected.** A `range(first, n)` of the library's own: users know Eigen's `seqN`, and `idx()`
-returns it. The selection given at the call that uses a model, which every call would then supply.
-Refusing a sequence that counts from the end: `Indexing.h` already resolves Eigen's symbols by
-indexing a vector.
+returns it. Refusing a sequence that counts from the end: `Indexing.h` already resolves Eigen's
+symbols by indexing a vector.
 
 **Evidence.** `tests/Spaces/blocks.cpp`.
 
@@ -1902,6 +1902,37 @@ scalars, with the composition in their common type. `Composition::part<I>()`: a 
 and with no setters it could only assign a whole new part, which composing a new model does too.
 
 **Where.** `Models/Placement.h`, `Models/ProcessModel.h` (`compose()` of process models).
+
+### selected-reads
+
+*A model reads selected repetitions under the tag of their space, and holds the selection.*
+
+**Rule.** `reads()` takes a selected path [repetition-selections] wherever it takes a path into the
+state. One repetition, `path<Landmarks>[k]`, is read under the repetition's tag, or under the path's
+last tag where it goes on inside; a sequence or a list under the repeated block's own tag, and the
+function's `block<Landmarks>(in, x, i)` is the `i`th repetition read, not the state's. A space
+without a tag, a repetition declared as a library space or a block inside each of several, takes
+`on<Name>(...)`, as two selections of one block do. A name may be a repeated tag of the same
+repetition with a smaller bound, `struct Sighted : Repeated<Landmark, 8> {}`, which sizes the
+input for what is read rather than for the state's block. The policy holds each selection by value,
+so a model is built for each measurement whose selection differs, and one without a selection keeps
+its type and size. The selection meets the state when the model is resolved: an index outside the
+block's count and a coordinate read by two items are asserted then.
+
+**Why.** A sigma-point method spreads over what a model reads, so a model of one landmark that had
+to read every landmark spread over all of them, and `affineIn()` factors out only whole items. A
+model is a value that holds its function and noise, and one whose geometry changes is already built
+per measurement, so the selection belongs with them.
+
+**Rejected.** The selection given at the call that uses the model, `observe(method, model, z,
+element<Landmarks>(k))`: every call would supply it, a filter's process model at every prediction,
+and two selections of one block would need named indices. A count for the output inferred from the
+selection: a count is never inferred from what a model reads [several-resizable-blocks].
+
+**Evidence.** `tests/Models/selected_reads.cpp`: each update equals the update on a state written
+with one tag per repetition, which has the same coordinates.
+
+**Where.** `Models/Policies.h` (`ReadItem`, `Reads`), `Models/ResolvedReads.h` (`ReadBlocks`).
 
 ### whole-state-models
 

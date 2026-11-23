@@ -220,25 +220,18 @@ The rules, of which [repetition-selections] holds those built, the rest for it o
 Where a path is a value it takes the subscript. Where a path is a template argument and the call
 takes an integer repetition today, that argument takes a sequence or a list too.
 
-- [ ] **`reads()`.** A `SelectedPath` (`Spaces/TagPath.h`) is not yet a `PathValue`, so that no
-      policy takes one and drops its selection: each item here makes its policy take it.
-      `internal::resolveRepetitions()` (`Spaces/Selection.h`) gives a selection's repetitions in a
-      block, and `internal::pathRepetitionsSubspace()` (`Spaces/Subspace.h`) their space. `Reads`
-      holds each item's selection and stays empty with none, so a model without one keeps its type
-      and size; `ReadBlocks` and `ResolvedReads` take the policy's value beside the space. An integer or a run is one run of the state's rows, as a block is. A list is
-      not, and these take a list of runs where they take a `BlockRows`: `gatherItemFromRows()` and
-      `affineCoordinates()` in `ResolvedReads.h`, the state columns of a returned Jacobian in
-      `MeasurementReads.h`, and the transition matrix and the affine seeds in `ProcessModel.h`.
-      Search for others; these five were found by the row accessors' names. Test: a state written
-      with one tag per repetition, `Composite<Pose, A, B, C>`, has the coordinates of
-      `Composite<Pose, Landmarks>` with three landmarks, so an update that reads
-      `path<Landmarks>[1]` equals the update that reads `path<B>`, and `[{2, 0}]` equals
-      `path<C>, path<A>`: under `linearized()`, `unscented()` with and without `affineIn()`, a
-      returned Jacobian, and a matrix; in each Gaussian form; and through `ParticleFilter`, the
-      Rao-Blackwellized filters, and `GaussianMixtureFilter`. The function is called `2n + 1` times
-      for `n` difference coordinates read, and an update that reads an integer selection of a
-      resizable state allocates nothing where the same model on a fixed-size state allocates
-      nothing.
+- [ ] **`reads()`, the rest.** A plain model reads a selection ([selected-reads],
+      `tests/Models/selected_reads.cpp`). Left: the same equality with the state written with one
+      tag per repetition for a returned Jacobian, in each Gaussian form, and through
+      `ParticleFilter`, the Rao-Blackwellized filters, and `GaussianMixtureFilter`, whose particles
+      and cells read a list through `gatherItemFromRows()`; an update that reads an integer
+      selection of a resizable state allocates nothing where the same model on a fixed-size state
+      allocates nothing; and a process model that reads a selection, tested with the item below.
+      `on()`, `onEach()`, and `compose()` refuse a model whose `reads()` has a selection
+      (`internal::SelectionRefusal`), since they make their `reads()` from the parts' types: the
+      placing item below carries the values through and removes the refusal. A `SelectedPath`
+      (`Spaces/TagPath.h`) is not a `PathValue`, so that no policy takes one and drops its
+      selection: each item here makes its policy take it.
 - [ ] **`writes()` of a process model.** The same path values, and `on<Name>(...)`, which
       `writes()` does not take today. A repetition not written is carried as a block not written
       is. Noise is placed by the output space's names, as now. The written rows become a list of

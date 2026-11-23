@@ -35,8 +35,15 @@ instead.
   and gives a `SelectedPath`: `path<Landmarks>[k]` is one repetition,
   `path<Landmarks>[Eigen::seqN(first, n)]` or `path<Landmarks>[Eigen::placeholders::lastN(n)]`
   several, and `path<Landmarks>[{2, 5, 9}]`, or a `std::array`, a `std::vector`, a `std::span`, or
-  an Eigen vector of indices, those listed, in that order. No model takes one yet: `reads()`,
-  `writes()`, and placement follow.
+  an Eigen vector of indices, those listed, in that order.
+- `reads()` takes a selected path, so a model reads part of a repeated block:
+  `reads(path<Position>, path<Heading>, path<Landmarks>[k])` reads landmark `k` as a `Landmark`,
+  and a sigma-point method spreads over those coordinates alone, whatever the count of landmarks.
+  A sequence or a list is read as the repeated block with their count, so a function written for
+  the whole block runs on part of it, and `on<Name>(path<Landmarks>[seen])` reads it under a name
+  that may bound the count more tightly. The model holds the selection, so it is built for each
+  measurement whose selection differs. `on()`, `onEach()`, and `compose()` do not take such a
+  model yet, and `writes()` does not take a selected path yet.
 - `idx()`, `diffIdx()`, `block()`, and `diffBlock()` take an Eigen sequence or a list of
   repetitions where they take one repetition's index: `block<Fleet>(space, x, Eigen::seqN(1, 2))`
   is vehicles 1 and 2, and `idx<TagPath<Fleet, Heading>>(space, std::array{3, 0})` the headings of

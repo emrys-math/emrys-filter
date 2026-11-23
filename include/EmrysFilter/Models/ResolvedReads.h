@@ -21,6 +21,7 @@
 #include <EmrysFilter/Models/Policies.h>
 #include <EmrysFilter/Spaces/Composite.h>
 #include <EmrysFilter/Spaces/Indexing.h>
+#include <EmrysFilter/Spaces/Selection.h>
 #include <EmrysFilter/Spaces/Space.h>
 #include <EmrysFilter/Spaces/Subspace.h>
 #include <EmrysFilter/Spaces/TagPath.h>
@@ -31,27 +32,37 @@ namespace Emrys
 namespace internal
 {
 
-/** The blocks a model reads from a state in \a Space, named by the paths in \a Reads. */
-template <typename Space, typename Reads>
+/** The blocks a model reads from a state in \a Space: those of \a Items, a tuple of the items of its
+ * reads() that name blocks of the state (ReadItem).
+ */
+template <typename Space, typename Items>
 class ReadBlocks;
 
-/** The blocks named by \a Paths, resolved in \a Space: their rows in the state, in values and in
- * differences, and the joint space they form, in the order given.
+/** Whether the rows of a state that the item \a Item reads are one run whatever its selection's
+ * values: a block, one repetition, or whole repetitions of a sequence whose increment is one. The
+ * rows of any other selection are read through the blocks' indices.
  */
-template <typename Space, typename... Paths>
-class ReadBlocks<Space, TagPaths<Paths...>>
-{
-    static_assert(sizeof...(Paths) > 0, "a model reads at least one block of the state");
+template <typename Item>
+inline constexpr bool readsOneRun = !Item::Selected || RepetitionIndex<typename Item::SelectionType>
+                                 || selectsOneRun<typename Item::PathType, typename Item::SelectionType>;
 
-    /** The first path. */
-    using First = std::tuple_element_t<0, std::tuple<Paths...>>;
+/** The blocks that the items \a Items read, resolved in \a Space: their rows in the state, in values
+ * and in differences, and the joint space they form, in the order given.
+ */
+template <typename Space, typename... Items>
+class ReadBlocks<Space, std::tuple<Items...>>
+{
+    static_assert(sizeof...(Items) > 0, "a model reads at least one block of the state");
+
+    /** The first item. */
+    using First = std::tuple_element_t<0, std::tuple<Items...>>;
 
 public:
 
-    static constexpr std::size_t Count = sizeof...(Paths);  ///< the number of blocks read
+    static constexpr std::size_t Count = sizeof...(Items);  ///< the number of blocks read
 
     /** The space of the blocks read: the one block's, or the Composite of them. */
-    using JointSpace = std::conditional_t<Count == 1, PathTag<First>, Composite<PathTag<Paths>...>>;
+    using JointSpace = std::conditional_t<Count == 1, ReadSpace<Space, First>, Composite<ReadSpace<Space, Items>...>>;
 
     static constexpr int Size = valueDimensionAtCompileTime<JointSpace>;        ///< the joint value dimension
     static constexpr int MaxSize = maxValueDimensionAtCompileTime<JointSpace>;  ///< a bound on it
@@ -63,23 +74,36 @@ public:
     using DifferenceIndices = IndexVector<DifferenceSize, DifferenceMaxSize>;  ///< the difference coordinates read
     using Selection = Coordinates<Indices, DifferenceIndices>;                 ///< both, for a GaussianMarginal
 
-    /** Resolves the blocks' rows in \a space and the joint space they form. */
-    explicit ReadBlocks(Space const & space)
-        : m_rows{blockRows<Paths>(space)...}
-        , m_differenceRows{differenceBlockRows<Paths>(space)...}
-        , m_space{makeSpace(space)}
+    /** Whether block \a K's rows in a state are one run (readsOneRun), so that rows() and
+     * differenceRows() give them.
+     */
+    template <std::size_t K>
+    static constexpr bool OneRun = readsOneRun<std::tuple_element_t<K, std::tuple<Items...>>>;
+
+    /** Resolves the blocks' rows in \a space and the joint space they form, each item's with its
+     * selection of \a selections, which is NoSelection for an item that reads its whole block.
+     */
+    explicit ReadBlocks(Space const & space, typename Items::SelectionType const &... selections)
+        : m_space{makeSpace(space, selections...)}
     {
+        m_indices.resize(valueDimension(m_space));
+        m_differenceIndices.resize(differenceDimension(m_space));
         Eigen::Index offset = 0;
         Eigen::Index differenceOffset = 0;
-        for (std::size_t i = 0; i < Count; ++i)
-        {
-            m_jointStarts[i] = offset;
-            m_jointDifferenceStarts[i] = differenceOffset;
-            offset += m_rows[i].size;
-            differenceOffset += m_differenceRows[i].size;
-        }
-        m_indices = concatenate<Indices>(m_rows);
-        m_differenceIndices = concatenate<DifferenceIndices>(m_differenceRows);
+        std::size_t k = 0;
+        (
+            [&] {
+                m_rows[k] = writeRows<Items, false>(space, selections, m_indices, offset);
+                m_differenceRows[k] = writeRows<Items, true>(space, selections, m_differenceIndices, differenceOffset);
+                m_jointStarts[k] = offset;
+                m_jointDifferenceStarts[k] = differenceOffset;
+                offset += m_rows[k].size;
+                differenceOffset += m_differenceRows[k].size;
+                ++k;
+            }(),
+            ...
+        );
+        EMRYS_FILTER_ASSERT(offset == m_indices.size() && differenceOffset == m_differenceIndices.size());
         EMRYS_FILTER_ASSERT(distinctIndices(m_indices) && "a model must not read a coordinate twice");
     }
 
@@ -88,6 +112,21 @@ public:
     space() const
     {
         return m_space;
+    }
+
+    /** \returns the space of block \a K, with its parameters */
+    template <std::size_t K>
+    [[nodiscard]] auto const &
+    blockSpace() const
+    {
+        if constexpr (Count == 1)
+        {
+            return m_space;
+        }
+        else
+        {
+            return m_space.template block<K>();
+        }
     }
 
     /** \returns the state's value coordinates read, block after block */
@@ -111,14 +150,16 @@ public:
         return {m_indices, m_differenceIndices};
     }
 
-    /** \returns block \a k's rows in a state's values */
+    /** \returns block \a k's rows in a state's values, where they are one run (OneRun); of any other
+     * block, only their number, its rows being indices() from jointStart()
+     */
     [[nodiscard]] BlockRows const &
     rows(std::size_t k) const
     {
         return m_rows[k];
     }
 
-    /** \returns block \a k's rows in a state's differences */
+    /** \returns block \a k's rows in a state's differences, as rows() gives those of its values */
     [[nodiscard]] BlockRows const &
     differenceRows(std::size_t k) const
     {
@@ -141,61 +182,107 @@ public:
 
 private:
 
-    /** \returns the blocks' spaces from \a space, as one block or their Composite */
-    [[nodiscard]] static JointSpace
-    makeSpace(Space const & space)
+    /** \returns the space of what \a Item reads from \a space with \a selection */
+    template <typename Item>
+    [[nodiscard]] static ReadSpace<Space, Item>
+    readSpace(Space const & space, [[maybe_unused]] typename Item::SelectionType const & selection)
     {
-        if constexpr (Count == 1)
+        using Path = typename Item::PathType;
+        if constexpr (!Item::Selected)
         {
-            return pathBlock<First>(space);
+            return pathBlock<Path>(space);
+        }
+        else if constexpr (RepetitionIndex<typename Item::SelectionType>)
+        {
+            return pathElementSubspace<Path>(space);
         }
         else
         {
-            return JointSpace{pathBlock<Paths>(space)...};
+            return pathRepetitionsSubspace<Path>(space, selectedCount<Path>(space, selection));
         }
     }
 
-    /** \returns the rows of \a blocks, block after block, as one index vector */
-    template <typename Result>
-    [[nodiscard]] static Result
-    concatenate(std::array<BlockRows, Count> const & blocks)
+    /** \returns the blocks' spaces from \a space, as one block or their Composite */
+    [[nodiscard]] static JointSpace
+    makeSpace(Space const & space, typename Items::SelectionType const &... selections)
     {
-        Eigen::Index size = 0;
-        for (BlockRows const & rows : blocks)
+        if constexpr (Count == 1)
         {
-            size += rows.size;
+            return readSpace<First>(space, selections...);
         }
-        auto result = Result{};
-        result.resize(size);
-        Eigen::Index k = 0;
-        for (BlockRows const & rows : blocks)
+        else
         {
-            for (Eigen::Index j = 0; j < rows.size; ++j)
-            {
-                result(k++) = rows.start + j;
-            }
+            return JointSpace{readSpace<Items>(space, selections)...};
         }
-        return result;
     }
 
-    std::array<BlockRows, Count> m_rows;                        ///< each block's rows in a state's values
-    std::array<BlockRows, Count> m_differenceRows;              ///< each block's rows in a state's differences
+    /** Writes the rows of \a space that \a Item reads with \a selection into \a rows from row \a at
+     * on, in values, or in differences if \a Difference.
+     *
+     * \returns their number, after their first, which is where they start when they are one run
+     */
+    template <typename Item, bool Difference, typename Rows>
+    [[nodiscard]] static BlockRows
+    writeRows(
+        Space const & space,
+        [[maybe_unused]] typename Item::SelectionType const & selection,
+        Rows & rows,
+        Eigen::Index at
+    )
+    {
+        using Path = typename Item::PathType;
+        if constexpr (Item::Selected && !RepetitionIndex<typename Item::SelectionType>)
+        {
+            auto const coordinates = selectionCoordinates<Difference, Path>(space, selection);
+            rows.segment(at, coordinates.size()) = coordinates;
+            return BlockRows{coordinates.size() > 0 ? coordinates(0) : Eigen::Index{0}, coordinates.size()};
+        }
+        else
+        {
+            BlockRows const block = [&] {
+                if constexpr (Item::Selected)
+                {
+                    return repetitionBlockRows<Difference, Path>(space, selection);
+                }
+                else if constexpr (Difference)
+                {
+                    return differenceBlockRows<Path>(space);
+                }
+                else
+                {
+                    return blockRows<Path>(space);
+                }
+            }();
+            for (Eigen::Index j = 0; j < block.size; ++j)
+            {
+                rows(at + j) = block.start + j;
+            }
+            return block;
+        }
+    }
+
+    JointSpace m_space;                                         ///< the joint space
+    std::array<BlockRows, Count> m_rows{};                      ///< each block's rows in a state's values
+    std::array<BlockRows, Count> m_differenceRows{};            ///< each block's rows in a state's differences
     std::array<Eigen::Index, Count> m_jointStarts{};            ///< each block's first row in the joint values
     std::array<Eigen::Index, Count> m_jointDifferenceStarts{};  ///< each block's first row in the joint differences
     Indices m_indices;                                          ///< the value coordinates read
     DifferenceIndices m_differenceIndices;                      ///< the difference coordinates read
-    JointSpace m_space;                                         ///< the joint space
 };
 
 /** The blocks a whole-state model reads (decisions.md [whole-state-models]): the whole state in
  * \a Space as one block, its rows every row, with the same interface as the blocks named by paths.
  */
 template <typename Space>
-class ReadBlocks<Space, TagPaths<WholeSpace>>
+class ReadBlocks<Space, std::tuple<ReadItem<WholeSpace, Space>>>
 {
 public:
 
     static constexpr std::size_t Count = 1;  ///< one block, the whole state
+
+    /** The whole state is one run of rows. */
+    template <std::size_t K>
+    static constexpr bool OneRun = true;
 
     /** The space of the block read: the state's. */
     using JointSpace = Space;
@@ -221,6 +308,14 @@ public:
     /** \returns the state's space */
     [[nodiscard]] JointSpace const &
     space() const
+    {
+        return m_space;
+    }
+
+    /** \returns the state's space, the one block's */
+    template <std::size_t K>
+    [[nodiscard]] JointSpace const &
+    blockSpace() const
     {
         return m_space;
     }
@@ -327,6 +422,38 @@ struct WholeStateRefusal
  */
 template <typename Model>
 inline constexpr bool wholeStateRefused = WholeStateRefusal<Model>::value;
+
+/** Refuses the model \a Model where models are placed or composed, by on(), onEach(), and compose(),
+ * when an item of its reads() selects repetitions of a repeated block: a placement and a composition
+ * make their reads() from the parts' types, which do not hold a selection's value. Roadmap step 17zu
+ * builds them. The assertion is a class's, as WholeStateRefusal's is.
+ */
+template <typename Model>
+struct SelectionRefusal
+{
+    static_assert(
+        []() consteval {
+            if constexpr (readsWholeState<Model>)
+            {
+                return true;
+            }
+            else
+            {
+                return !Model::template Policy<PolicyKind::reads>::Selected;
+            }
+        }(),
+        "a model whose reads() selects repetitions of a repeated block, path<Tags...>[...], is not yet placed by "
+        "on() or onEach() or composed by compose()"
+    );
+
+    static constexpr bool value = true;  ///< read to make the assertion
+};
+
+/** True once SelectionRefusal has refused a \a Model whose reads() selects repetitions: assert it
+ * where models are placed or composed.
+ */
+template <typename Model>
+inline constexpr bool selectionRefused = SelectionRefusal<Model>::value;
 
 /** What \a Model reads in the state space \a Space: its reads(), or ReadsWhole for a whole-state model. */
 template <typename Model, typename Space>
@@ -700,20 +827,25 @@ public:
         return std::tuple<typename Item<stateItems(K)>::PathType...>{};
     }(std::make_index_sequence<StateCount>{}))>::type;
 
+    /** The items that name blocks of the state, as a tuple, in the order of reads(). */
+    using StateItems = decltype([]<std::size_t... K>(std::index_sequence<K...>) {
+        return std::tuple<Item<stateItems(K)>...>{};
+    }(std::make_index_sequence<StateCount>{}));
+
     /** The blocks of the state the model reads, resolved. */
-    using Reads = ReadBlocks<Space, StatePaths>;
+    using Reads = ReadBlocks<Space, StateItems>;
 
     /** A vector in the input space, in \a T. */
     template <typename T>
     using InVector = typename Moments<In, T>::VectorType;
 
-    /** Resolves the model's reads() against \a space and the call's \a arguments, which both outlive
-     * this.
+    /** Resolves the reads() of \a model, which holds each item's selection, against \a space and the
+     * call's \a arguments, which both outlive this.
      */
-    ResolvedReads(Arguments const & arguments, Space const & space)
+    ResolvedReads(Arguments const & arguments, Space const & space, Model const & model)
         : m_arguments{arguments}
-        , m_reads{space}
-        , m_in{makeIn(arguments, space)}
+        , m_reads{makeReads(space, model)}
+        , m_in{makeIn(arguments)}
         , m_stateDifferenceSize{differenceDimension(space)}
     {
         if constexpr (Whole)
@@ -872,19 +1004,22 @@ public:
                 [&] {
                     if constexpr (itemFactored<I>())
                     {
-                        Eigen::Index start = 0;
                         if constexpr (inState(I))
                         {
-                            start = WholeState ? m_reads.differenceRows(stateIndexOf(I)).start
-                                               : m_reads.jointDifferenceStart(stateIndexOf(I));
+                            // A block's rows of the state are the read indices from its start in the joint.
+                            Eigen::Index const start = m_reads.jointDifferenceStart(stateIndexOf(I));
+                            for (Eigen::Index r = 0; r < m_differenceRows[I].size; ++r)
+                            {
+                                result(next++) = WholeState ? m_reads.differenceIndices()(start + r) : start + r;
+                            }
                         }
                         else
                         {
-                            start = inputStarts[inputIndexOf(I)];
-                        }
-                        for (Eigen::Index r = 0; r < m_differenceRows[I].size; ++r)
-                        {
-                            result(next++) = start + r;
+                            Eigen::Index const start = inputStarts[inputIndexOf(I)];
+                            for (Eigen::Index r = 0; r < m_differenceRows[I].size; ++r)
+                            {
+                                result(next++) = start + r;
+                            }
                         }
                     }
                 }(),
@@ -950,32 +1085,49 @@ public:
 
 protected:
 
-    /** \returns the model's input space instance: each item's name over the block it reads, in the
-     * state or in the call's argument, or the state's space for a whole-state model
-     */
-    [[nodiscard]] static In
-    makeIn([[maybe_unused]] Arguments const & arguments, Space const & space)
+    /** \returns the blocks of \a space that \a model reads, resolved with its items' selections */
+    [[nodiscard]] static Reads
+    makeReads(Space const & space, [[maybe_unused]] Model const & model)
     {
         if constexpr (Whole)
         {
-            return space;
+            return Reads{space};
+        }
+        else
+        {
+            auto const & reads = model.template policy<PolicyKind::reads>();
+            return [&]<std::size_t... K>(std::index_sequence<K...>) {
+                return Reads{space, reads.template selection<stateItems(K)>()...};
+            }(std::make_index_sequence<StateCount>{});
+        }
+    }
+
+    /** \returns the model's input space instance: each item's name over the block it reads, in the
+     * state or in the call's argument, or the state's space for a whole-state model
+     */
+    [[nodiscard]] In
+    makeIn([[maybe_unused]] Arguments const & arguments) const
+    {
+        if constexpr (Whole)
+        {
+            return m_reads.space();
         }
         else
         {
             return [&]<std::size_t... I>(std::index_sequence<I...>) {
-                return In{nameOf<typename Item<I>::NameType>(blockOf<I>(arguments, space))...};
+                return In{nameOf<typename Item<I>::NameType>(blockOf<I>(arguments))...};
             }(std::make_index_sequence<ItemCount>{});
         }
     }
 
     /** \returns the space of the block item \a I reads: the state's block, or the argument's space */
     template <std::size_t I>
-    [[nodiscard]] static auto
-    blockOf([[maybe_unused]] Arguments const & arguments, [[maybe_unused]] Space const & space)
+    [[nodiscard]] auto
+    blockOf([[maybe_unused]] Arguments const & arguments) const
     {
         if constexpr (inState(I))
         {
-            return pathSubspace<typename Item<I>::PathType>(space);
+            return m_reads.template blockSpace<stateIndexOf(I)>();
         }
         else
         {
@@ -1021,12 +1173,27 @@ protected:
         auto target = middleRowsOf<Size>(x, m_valueRows[I].start, m_valueRows[I].size);
         if constexpr (inState(I))
         {
-            BlockRows const & block = m_reads.rows(stateIndexOf(I));
-            EMRYS_FILTER_ASSERT(
-                block.start >= start && block.start + block.size <= start + rows.size()
-                && "the rows must hold every block read"
-            );
-            target = middleRowsOf<Size>(rows, block.start - start, block.size).template cast<T>();
+            // Asked only of an item in the state: no other has a position among the blocks read.
+            if constexpr (Reads::template OneRun<stateIndexOf(I)>)
+            {
+                BlockRows const & block = m_reads.rows(stateIndexOf(I));
+                EMRYS_FILTER_ASSERT(
+                    block.start >= start && block.start + block.size <= start + rows.size()
+                    && "the rows must hold every block read"
+                );
+                target = middleRowsOf<Size>(rows, block.start - start, block.size).template cast<T>();
+            }
+            else
+            {
+                // The rows of a list of repetitions are not one run: read each by its index.
+                Eigen::Index const first = m_reads.jointStart(stateIndexOf(I));
+                for (Eigen::Index j = 0; j < m_valueRows[I].size; ++j)
+                {
+                    Eigen::Index const row = m_reads.indices()(first + j) - start;
+                    EMRYS_FILTER_ASSERT(row >= 0 && row < rows.size() && "the rows must hold every block read");
+                    target(j) = T(rows(row));
+                }
+            }
         }
         else
         {

@@ -274,7 +274,7 @@ public:
 
     /** Resolves \a measurement against \a space, which both outlive this. */
     ResolvedMeasurement(M const & measurement, Space const & space)
-        : Base{measurement.arguments(), space}
+        : Base{measurement.arguments(), space, measurement.model()}
         , m_measurement{measurement}
         , m_out{makeOut(measurement, space)}
         , m_noise{makeNoise(measurement)}

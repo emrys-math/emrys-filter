@@ -217,6 +217,42 @@ selectionIdx(S const & space, Selection const & selection)
     });
 }
 
+/** \returns the coordinates in \a space of the repetitions that \a selection names of the repeated
+ * block that \a Path runs through, or of the block the rest of the path names within each, as a
+ * column, repetition after repetition: value coordinates, or difference coordinates if \a Difference
+ */
+template <bool Difference, typename Path, typename S, typename Selection>
+[[nodiscard]] auto
+selectionCoordinates(S const & space, Selection const & selection)
+{
+    return withRepeatedSplit<Path>([&]<typename Outer, typename RepeatedTag, typename... Inner>() {
+        auto const [offset, tag] = locateRepeated<Difference, Outer>(space);
+        constexpr ResolvedIndex inner = repetitionIndex<Difference, RepeatedTag, Inner...>();
+        constexpr int step = SizedAs<Difference, RepeatedTag>::ValueDimensionStep;
+        auto const repetitions = resolveRepetitions<RepeatedTag::MaxCount>(tag->count(), selection);
+        return repetitionCoordinates<inner.size>(repetitions, offset + inner.offset, step);
+    });
+}
+
+/** \returns the number of repetitions that \a selection names of the repeated block that \a Path
+ * runs through in \a space
+ */
+template <typename Path, typename S, typename Selection>
+[[nodiscard]] Eigen::Index
+selectedCount(S const & space, Selection const & selection)
+{
+    return withRepeatedSplit<Path>([&]<typename Outer, typename RepeatedTag, typename... Inner>() {
+        auto const * tag = locateRepeated<false, Outer>(space).second;
+        return Eigen::Index{resolveRepetitions<RepeatedTag::MaxCount>(tag->count(), selection).size()};
+    });
+}
+
+/** Whether the rows of the repetitions that \a Selection selects through the path \a Path are one run
+ * whatever its values: whole repetitions of a sequence whose increment is one.
+ */
+template <typename Path, typename Selection>
+inline constexpr bool selectsOneRun = isConsecutive<Selection> && IsRepeated<PathTag<Path>>;
+
 /** idx<S, Path>(selection), counting value coordinates, or difference coordinates if \a Difference. */
 template <bool Difference, typename S, typename Path, typename Selection>
 [[nodiscard]] auto
