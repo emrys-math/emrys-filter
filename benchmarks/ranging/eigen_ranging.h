@@ -69,21 +69,39 @@ public:
         innovationCov.noalias() += h * cross.template topRows<Dimension>();
 
         auto const llt = Eigen::LLT<RangeMatrix>{innovationCov};
-        // Up to eight anchors, a row of the gain at a time, as the library solves it: Eigen unrolls a
-        // solve with a small fixed vector and sends a matrix right-hand side to its blocked solver.
-        auto gain = Eigen::Matrix<Scalar, StateSize, AnchorCount>{};
-        if constexpr (AnchorCount <= 8)
+        // The gain Pxy S^-1 by substitution through the factor L of S, as the library solves it
+        // (internal::transposedSolve()), since Eigen's own solve of a system this small takes
+        // several times as long: column r of the gain holds unknown r of every row, so each step
+        // is one operation on whole columns, and the divisions by L's diagonal are multiplications
+        // by its reciprocals, taken once. The columns are padded with zeros to a multiple of 16
+        // bytes, Eigen's smallest packet: it vectorizes a column of six floats from wherever its
+        // address lets a packet start, and one column's stores are then not the next one's loads.
+        RangeMatrix const & factor = llt.matrixLLT();
+        Ranges const reciprocal = factor.diagonal().cwiseInverse();
+        constexpr int Lanes = int(16 / sizeof(Scalar));
+        constexpr int Padded = (StateSize + Lanes - 1) / Lanes * Lanes;
+        using PaddedColumn = Eigen::Matrix<Scalar, Padded, 1>;
+        auto work = Eigen::Matrix<Scalar, Padded, AnchorCount>{};
+        for (int r = 0; r < AnchorCount; ++r)
         {
-            for (int i = 0; i < StateSize; ++i)
+            PaddedColumn unknown = PaddedColumn::Zero();
+            unknown.template head<StateSize>() = cross.col(r);
+            for (int c = 0; c < r; ++c)
             {
-                Ranges const row = cross.row(i).transpose();
-                gain.row(i) = llt.solve(row).transpose();
+                unknown -= factor(r, c) * work.col(c);
             }
+            work.col(r) = unknown * reciprocal(r);
         }
-        else
+        for (int r = AnchorCount - 1; r >= 0; --r)
         {
-            gain = llt.solve(cross.transpose()).transpose();
+            PaddedColumn unknown = work.col(r);
+            for (int c = r + 1; c < AnchorCount; ++c)
+            {
+                unknown -= factor(c, r) * work.col(c);
+            }
+            work.col(r) = unknown * reciprocal(r);
         }
+        Eigen::Matrix<Scalar, StateSize, AnchorCount> const gain = work.template topRows<StateSize>();
         m_mean.noalias() += gain * residual;
         m_cov.template triangularView<Eigen::StrictlyUpper>() = m_cov.transpose();
         m_cov.noalias() -= gain * cross.transpose();

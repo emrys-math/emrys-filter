@@ -64,6 +64,13 @@ instead.
 
 ### Changed
 
+- The Kalman gain, and every other solve through a Cholesky factorization of a fixed size of at
+  most 24 that gives a gain or a statistical linearization, is formed by a substitution the
+  library writes out, in place of Eigen's solve, which took most of a small update's time. In
+  [docs/benchmarks.md](docs/benchmarks.md) a step of the ranging EKF in `double` takes 114 ns
+  where it took 167 with 4 anchors in 2D, 225 where it took 547 with 8, and 1,357 where it took
+  2,018 with 24 in 3D. The result differs from before by rounding, since the substitution
+  multiplies by the reciprocals of the factor's diagonal where Eigen's solve divides by it.
 - A step no longer builds a Jacobian that nothing reads. A process model whose function returns
   its Jacobian, as `ConstantVelocity` and the other kinematic models do, had that Jacobian
   expanded to the whole state at every call, also where only the next state was read:

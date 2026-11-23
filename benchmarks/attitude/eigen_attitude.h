@@ -116,13 +116,29 @@ private:
         innovationCov.noalias() += h * cross.topRows<3>();
 
         auto const llt = Eigen::LLT<Matrix3>{innovationCov};
-        // A row of the gain at a time, as the library solves it: Eigen unrolls a solve with a small
-        // fixed vector and sends a matrix right-hand side to its blocked solver.
+        // The gain Pxy S^-1 by substitution through the factor L of S, as the library solves it
+        // (internal::transposedSolve()), since Eigen's own solve of a system this small takes
+        // several times as long: column r of the gain holds unknown r of every row, and the
+        // divisions by L's diagonal are multiplications by its reciprocals, taken once.
+        Matrix3 const & factor = llt.matrixLLT();
+        Eigen::Vector3d const reciprocal = factor.diagonal().cwiseInverse();
         auto gain = Eigen::Matrix<double, 6, 3>{};
-        for (int i = 0; i < 6; ++i)
+        for (int r = 0; r < 3; ++r)
         {
-            Eigen::Vector3d const row = cross.row(i).transpose();
-            gain.row(i) = llt.solve(row).transpose();
+            gain.col(r) = cross.col(r);
+            for (int c = 0; c < r; ++c)
+            {
+                gain.col(r) -= factor(r, c) * gain.col(c);
+            }
+            gain.col(r) *= reciprocal(r);
+        }
+        for (int r = 2; r >= 0; --r)
+        {
+            for (int c = r + 1; c < 3; ++c)
+            {
+                gain.col(r) -= factor(c, r) * gain.col(c);
+            }
+            gain.col(r) *= reciprocal(r);
         }
         auto correction = Vector6{};
         correction.noalias() = gain * residual;

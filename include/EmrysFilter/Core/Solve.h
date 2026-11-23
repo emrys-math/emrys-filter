@@ -6,11 +6,15 @@
  * Eigen factorization of \f$ A \f$, and solveInPlace() overwrites \f$ B \f$ with
  * \f$ A^{-1} B \f$, and inverseFrom() gives \f$ A^{-1} \f$, all one column of \f$ B \f$ at a time
  * where \f$ A \f$ has a small fixed size, which Eigen's solve with a matrix right-hand side
- * does not do. Multiply.h does the same for products. Everything here is in `internal`. Read Stamp.h
- * next.
+ * does not do; from a Cholesky factorization of a small fixed size, transposedSolve() substitutes
+ * through the factor itself. Multiply.h does the same for products. Everything here is in
+ * `internal`. Read Stamp.h next.
  */
 
+#include <Eigen/Cholesky>
 #include <Eigen/Core>
+
+#include <type_traits>
 
 #include <EmrysFilter/Core/Multiply.h>
 
@@ -23,6 +27,33 @@ namespace Emrys::internal
  */
 inline constexpr int unrolledSolveSize = 8;
 
+/** The largest fixed size of a Cholesky factorization through which transposedSolve() substitutes
+ * itself: the largest at which the substitution was measured against Eigen's solve [benchmarks],
+ * where it took under half the time.
+ */
+inline constexpr int substitutionSolveSize = 24;
+
+/** The number of \a Scalar in 16 bytes, the smallest packet Eigen vectorizes with, or 1 where it
+ * does not vectorize \a Scalar. A column of a multiple of this many scalars in a fixed-size matrix
+ * starts on a packet boundary, wherever it lies in the matrix.
+ */
+template <typename Scalar>
+inline constexpr int smallestPacketSize =
+    std::is_arithmetic_v<Scalar> && EIGEN_MAX_STATIC_ALIGN_BYTES >= 16 && sizeof(Scalar) <= 16
+        ? int(16 / sizeof(Scalar))
+        : 1;
+
+/** Whether transposedSolve() substitutes through \a Decomposition itself: an `Eigen::LLT` of the
+ * lower triangle of a real matrix of a fixed size of at most substitutionSolveSize.
+ */
+template <typename Decomposition>
+inline constexpr bool solvesBySubstitution = false;
+
+template <typename Matrix>
+inline constexpr bool solvesBySubstitution<Eigen::LLT<Matrix, Eigen::Lower>> =
+    Matrix::RowsAtCompileTime != Eigen::Dynamic && Matrix::RowsAtCompileTime <= substitutionSolveSize
+    && !Eigen::NumTraits<typename Matrix::Scalar>::IsComplex;
+
 /** \returns \f$ (A^{-1} B)^T \f$ as a \a Result, for the factorization \a decomposition of
  * \f$ A \f$ (an `Eigen::LLT` or `Eigen::LDLT`, or any with `solve()`) and the right-hand side
  * \a rhs, \f$ B \f$.
@@ -32,13 +63,89 @@ inline constexpr int unrolledSolveSize = 8;
  * unrolls a solve with a vector of a small fixed size. So where \f$ A \f$ has a fixed size of at
  * most unrolledSolveSize, each column of \f$ B \f$ is solved alone, with the same factorization
  * and the same arithmetic per column; any other size is solved whole, as `solve()` does.
+ *
+ * Eigen's unrolled solve is slow too, though: for the gain of a 4×4 innovation covariance it
+ * takes 208 instructions and six times as long as the substitution written out here does
+ * [benchmarks]. So through a Cholesky factorization \f$ L L^T \f$ of a fixed size of at most
+ * substitutionSolveSize (solvesBySubstitution), the result is formed by forward and backward
+ * substitution, every right-hand side together: column \f$ r \f$ of the result holds unknown
+ * \f$ r \f$ of each, so each step of the substitution is one operation on whole columns. It
+ * multiplies by the reciprocals of the diagonal of \f$ L \f$, taken once, where Eigen's solve
+ * divides by the diagonal at each step, so the two differ by rounding.
+ *
+ * Where the number of right-hand sides is fixed, the columns are padded with zeros to a multiple
+ * of smallestPacketSize. Eigen vectorizes a column that is not, six `float`s say, from wherever
+ * its address lets a packet start, so one column's stores are not the next operation's loads,
+ * and the processor waits on each: unpadded, the gain of a 6-state filter in `float` took four
+ * to six times as long as in `double` [benchmarks].
  */
 template <typename Result, typename Decomposition, typename Rhs>
 [[nodiscard]] Result
 transposedSolve(Decomposition const & decomposition, Eigen::MatrixBase<Rhs> const & rhs)
 {
     constexpr int size = Decomposition::MatrixType::RowsAtCompileTime;
-    if constexpr (size != Eigen::Dynamic && size <= unrolledSolveSize)
+    if constexpr (solvesBySubstitution<Decomposition>)
+    {
+        using Scalar = typename Decomposition::MatrixType::Scalar;
+        auto const & factor = decomposition.matrixLLT();
+        Eigen::Matrix<Scalar, size, 1> const reciprocal = factor.diagonal().cwiseInverse();
+        constexpr int count = Result::RowsAtCompileTime;
+        if constexpr (count != Eigen::Dynamic)
+        {
+            constexpr int lanes = smallestPacketSize<Scalar>;
+            constexpr int padded = (count + lanes - 1) / lanes * lanes;
+            using Column = Eigen::Matrix<Scalar, padded, 1>;
+            auto work = Eigen::Matrix<Scalar, padded, size>{};
+            // L Y = B: unknown r of every right-hand side from those before it.
+            for (int r = 0; r < size; ++r)
+            {
+                Column unknown = Column::Zero();
+                unknown.template head<count>() = rhs.row(r).transpose();
+                for (int c = 0; c < r; ++c)
+                {
+                    unknown -= factor(r, c) * work.col(c);
+                }
+                work.col(r) = unknown * reciprocal(r);
+            }
+            // L^T X = Y: unknown r of every right-hand side from those after it.
+            for (int r = size - 1; r >= 0; --r)
+            {
+                Column unknown = work.col(r);
+                for (int c = r + 1; c < size; ++c)
+                {
+                    unknown -= factor(c, r) * work.col(c);
+                }
+                work.col(r) = unknown * reciprocal(r);
+            }
+            Result result = work.template topRows<count>();
+            return result;
+        }
+        else
+        {
+            // The same two passes in the result itself, which no fixed padding fits.
+            auto result = Result{};
+            result.resize(rhs.cols(), rhs.rows());
+            for (int r = 0; r < size; ++r)
+            {
+                result.col(r) = rhs.row(r).transpose();
+                for (int c = 0; c < r; ++c)
+                {
+                    result.col(r) -= factor(r, c) * result.col(c);
+                }
+                result.col(r) *= reciprocal(r);
+            }
+            for (int r = size - 1; r >= 0; --r)
+            {
+                for (int c = r + 1; c < size; ++c)
+                {
+                    result.col(r) -= factor(c, r) * result.col(c);
+                }
+                result.col(r) *= reciprocal(r);
+            }
+            return result;
+        }
+    }
+    else if constexpr (size != Eigen::Dynamic && size <= unrolledSolveSize)
     {
         using Column = Eigen::Matrix<typename Rhs::Scalar, size, 1>;
         auto result = Result{};

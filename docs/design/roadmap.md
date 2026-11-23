@@ -896,21 +896,25 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       instructions per step beyond the hand code at the small sizes, most of them for a Jacobian
       that every prediction built and discarded; that is cut (2026-11-23, benchmarks.md, claim 1),
       and every count on the page, with the ranging and library times on Linux, is taken again
-      after it. Claim 9 holds against OpenCV and still fails in time at the small sizes against
-      TinyEKF (1.66 and 3.22 times its time in 2D with 4 and 8 anchors in double, 1.25 and 2.85
-      in float) and mherb/kalman's EKF (2.20 times in 2D with 4), though the library's
-      instructions at 2D with 4 are within 8% of mherb/kalman's and under TinyEKF's. With 8 and
-      12 anchors the instructions are found (benchmarks.md, claim 9): Eigen's factorization of
-      an 8×8 or 12×12 innovation covariance through its general kernels, with a norm
-      `LLT::compute()` takes that nothing reads, and its blocked triangular solve above size 8.
-      Next: try the three changes that follow (factorize without that norm, a fixed-size
-      Cholesky that avoids the general matrix-vector kernel, a solve for sizes 9 to under 16
-      that is not the blocked one); measure the two candidates read from the code (the calls
-      left out of line, and the covariance mirror in `kalmanConditionInPlace()`); find where
-      the time goes at 2D with 4 and 8 anchors, in the library and in the hand code alike,
-      starting with the divisions of the gain's triangular solves, which the two libraries
-      that invert S do not have, and why 3D with 6 anchors is slower in float than in double
-      on both sides; take the Windows times, and the
+      after it. The time at the small sizes was then found in Eigen's `LLT::compute()` and
+      its `llt.solve()` of a small fixed vector, nine tenths of the hand code's step at 2D
+      with 4 anchors, and the solve is replaced (2026-11-23, benchmarks.md, claim 9):
+      `transposedSolve()` substitutes through a Cholesky factor of a fixed size up to 24
+      itself, every right-hand side together in columns padded to whole packets, and the
+      hand code with it; the library's step in double went from 167 to 114 ns at 2D with 4
+      anchors and from 547 to 225 at 2D with 8, and every count and Linux time on the page
+      is taken again. Claim 9 holds against OpenCV and now fails only against mherb/kalman's
+      EKF and UKF at 2D with 4 anchors (1.50 and 1.32 times in double) and against TinyEKF at
+      2D with 4 and 8 (1.14 and 1.39). Next: the factorization, which a probe has at 13 ns
+      in place of 58 for a 4×4 matrix and which waits on two questions for the maintainer
+      (benchmarks.md, claim 9: whether the innovation covariance may be required whole where
+      it is factorized, and `Eigen::LLT` or a factor type of the library's own); the same
+      substitution in `solveInPlace()` and `inverseFrom()`, which still solve a column at a
+      time through Eigen; measure the two candidates read from the code (the calls left out
+      of line, and the covariance mirror in `kalmanConditionInPlace()`); find whether the
+      rest of a 6-state step in float has the mismatch of stores and loads the substitution
+      had, since 3D with 6 anchors is still slower in float than in double on both sides;
+      take the Windows times, and the
       attitude and particle times, again; GCC and MSVC builds of the pairs; the Cortex-M half of
       TinyEKF joins claim 6's footprint benchmark. The whole test suite passes with Clang 21 in
       WSL but `Allocation.ParticleFilterUnderAUsersPolicyStaysOffTheHeap`, which throws

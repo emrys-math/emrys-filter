@@ -95,7 +95,7 @@ might doubt, published with its method and machine, and never one per feature."
 | 6 | It fits and runs on a microcontroller | Footprint and cycles on Cortex-M4F and M7 | `.text`, `.data`, stack per function, DWT cycles per step | hand-rolled EKF and TinyEKF on the same target | after [embedded-builds]'s Cortex-M job |
 | 7 | A template library's compile cost is tolerable | Compile cost of each benchmark translation unit | seconds and peak memory per compiler | the hand-rolled translation unit | built and measured on three compilers (section 7), not in CI, not published |
 | 8 | A GPU pays above some particle count | Device path against host `par` | crossover particle count | the library's own host path | step 19, not planned here |
-| 9 | It is no slower than the C++ Kalman library a user would otherwise pick | mherb/kalman's EKF, UKF, square-root EKF, and square-root UKF, TinyEKF's EKF, and OpenCV's `cv::KalmanFilter` run as an EKF, on the ranging problem | instructions and ns per step, at the ranging sizes and scalars | each library, as its users write it | measured 2026-11-23 on branch `mherb-benchmark`; holds against OpenCV, and fails in time at the small sizes against TinyEKF and mherb/kalman's EKF and UKF; the pairs that do not agree are timed with a mark |
+| 9 | It is no slower than the C++ Kalman library a user would otherwise pick | mherb/kalman's EKF, UKF, square-root EKF, and square-root UKF, TinyEKF's EKF, and OpenCV's `cv::KalmanFilter` run as an EKF, on the ranging problem | instructions and ns per step, at the ranging sizes and scalars | each library, as its users write it | measured 2026-11-23 on branch `mherb-benchmark`; holds against OpenCV, and fails in time against mherb/kalman's EKF and UKF at 2D with 4 anchors and against TinyEKF at 2D with 4 and 8; the pairs that do not agree are timed with a mark |
 
 **1. Ranging.** What exists, plus the two axes [benchmarks] names and the ranging benchmark lacks: a
 constant-acceleration case (state dimension 6 and 9 beside 4 and 6), and the scaling curves over
@@ -132,7 +132,8 @@ fixed size of at most eight, the library solves the gain one row at a time
 (`internal::transposedSolve()`), since Eigen sends a solve with a matrix right-hand side to its
 blocked solver whatever the size; the hand code does the same. That took 2D with 4 anchors from
 about 2,600 instructions per step to about 950 in the hand code and from 2,800 to 1,240 in the
-library.
+library. Since 2026-11-23 both substitute through the factor themselves instead, for a fixed size
+of at most 24, since Eigen's solve of a small vector turned out slow in time (claim 9, below).
 
 The library's update also moved its result, with the innovation's residual and $S$, into a
 `std::expected` and out again, and each move of a fixed-size matrix is a copy, which at 3D with
@@ -533,24 +534,20 @@ the scalar TinyEKF runs in unless `_float_t` is defined, so the marked rows are 
 get. For claim 6 this is a finding before any cycle is counted: on the scalar of the target TinyEKF
 is written for, its estimate is the less accurate.
 
-*Measured* (2026-11-23, with the library as of the commit *Stop building a step's Jacobian where
-nothing reads it*; `docs/benchmarks.md` gives the tables and the machine). Against OpenCV,
-EmrysFilter's EKF takes 4 to 14% of the time and 3 to 12% of the instructions at every size, in
-either scalar. Against mherb/kalman's EKF it takes 0.33 to 0.81 of the time in double at every size
-but 2D with 4 anchors, where it takes 2.20 times, and in float 0.35 to 0.62 but at 2D with 4 (1.58)
-and 3D with 6 (1.14). Its square-root EKF takes 0.54 to 0.89 of mherb/kalman's time but at 2D with
-16 anchors and 3D with 24, where it takes 0.98 to 1.16. Its UKF takes 0.62 to 0.92 from 8 anchors
-and 1.02 to 1.69 times at 2D with 4 and 3D with 6, and its square-root UKF 0.80 to 0.97 in float
-and 0.89 to 1.37 in double. Against TinyEKF in double it takes 1.66 and 3.22 times the time in 2D
-with 4 and 8 anchors, 1.22 and 1.08 in 3D with 6 and 12, and 0.82 and 0.66 with 16 and 24; in
-float, TinyEKF's default, 1.25 and 2.85, 1.81 and 1.01, and 0.85 and 0.69. So claim 9 holds against
-OpenCV and fails at the small sizes against TinyEKF and against mherb/kalman's EKF and UKF.
-Instructions do not explain the failure at 2D with 4 anchors: the library takes 1,315 there,
-mherb/kalman 1,218, and TinyEKF 1,575, and their times are 167 ns, 76 ns, and 100 ns, while the
-hand code takes 906 instructions and 147 ns. The library and the hand code factorize the innovation
-covariance and solve for the gain a row at a time, and the other two invert it; the triangular
-solves divide by the factor's diagonal at every row, which is the first thing to measure. At 2D
-with 8 anchors the library takes 538 ns, the hand code 500 ns, and TinyEKF 167 ns.
+*Measured* (2026-11-23, at the commit *Substitute through the gain's Cholesky factor in place of Eigen's solve*;
+`docs/benchmarks.md` gives the tables and the machine, and the paragraphs below what the
+measurement before it found). Against OpenCV, EmrysFilter's EKF takes 3 to 7% of the time and of
+the instructions at every size, in either scalar. Against mherb/kalman's EKF it takes 0.22 to 0.54
+of the time at every size but 2D with 4 anchors, where it takes 1.50 times in double and 1.39 in
+float. Its square-root EKF takes 0.55 to 0.87 of mherb/kalman's time but at 2D with 16 anchors and
+3D with 24, where it takes 0.98 to 1.11. Its UKF takes 0.50 to 0.90 but at 2D with 4 anchors (1.32
+and 1.63), and its square-root UKF 0.83 to 0.97 in float and 0.87 to 1.33 in double. Against
+TinyEKF it takes 1.14 and 1.39 times the time in 2D with 4 and 8 anchors in double, and 1.08 and
+1.21 in float, TinyEKF's default, and 0.44 to 0.85 at the other four sizes. So claim 9 holds
+against OpenCV, and fails against mherb/kalman's EKF and UKF at 2D with 4 anchors and against
+TinyEKF at 2D with 4 and 8. At 2D with 4 anchors the library takes 1,218 instructions and 114 ns,
+mherb/kalman 1,218 and 76 ns, and TinyEKF 1,575 and 95 ns, while the hand code takes 864 and 98 ns;
+what is left there is Eigen's factorization (below).
 
 *Where the instructions go with 8 and 12 anchors (2026-11-23).* The instruction ratios against
 TinyEKF are worst at 2D with 8 anchors (1.56) and 3D with 12 (1.19), between sizes where the
@@ -573,7 +570,84 @@ the solves, so none of this shows in the ratios to it. Three changes follow from
 factorizing without `LLT::compute()`'s norm; a Cholesky factorization for fixed sizes that does
 not go through the general matrix-vector kernel; and a solve for sizes from 9 to somewhere under
 16 that is not the blocked one. The time at 2D with 8 anchors, 3.22 times TinyEKF's, is further
-from it than the instructions, 1.56 times, and that part is not explained.
+from it than the instructions, 1.56 times; the next paragraph finds why.
+
+*Where the time goes at the small sizes (2026-11-23).* Callgrind's simulation of the four EKFs
+rules out memory, with under 3 first-level data cache misses per step in every filter and size,
+and does not single out branches or divisions: at 2D with 4 anchors the library executes 34
+divisions per step, the hand code 24, TinyEKF 15, and mherb/kalman 3, but at 2D with 8 the library
+and TinyEKF execute 78 and 72. A probe then timed each part of the hand code's step alone, over
+the inputs it has in a real run (the median of 4001 passes over 1000 recorded steps, pinned to
+one CPU, Clang 21.1.8 with `-march=x86-64-v3` in WSL2):
+
+| Part of the hand code's step | 2D, 4: ns | instructions | 2D, 8: ns | instructions | 3D, 6: ns | instructions |
+|---|---|---|---|---|---|---|
+| Whole step | 144 | 981 | 526 | 3,919 | 380 | 3,438 |
+| Prediction | 8 | 104 | 5 | 104 | 23 | 573 |
+| Residual, $H$, $P H^T$, $S$ | 7 | 106 | 29 | 385 | 35 | 446 |
+| `LLT::compute()` of $S$ | 58 | 525 | 127 | 2,371 | 50 | 1,414 |
+| The gain, a row at a time by `llt.solve()` | 71 | 208 | 354 | 965 | 224 | 626 |
+| Mean and covariance update | 7 | 85 | 10 | 125 | 30 | 408 |
+| The gain by a substitution written out, dividing | 12 | 116 | 52 | 415 | 38 | 425 |
+| The same, multiplying by the diagonal's reciprocals | 8 | 126 | 42 | 427 | 29 | 434 |
+| The gain by `S.inverse()`, as mherb/kalman | 10 | 205 | 532 | 12,586 | 308 | 7,221 |
+
+The factorization and the gain's solves are 129 of the step's 144 ns at 2D with 4 anchors, 482 of
+526 at 2D with 8, and 273 of 380 at 3D with 6. The solves are the larger part and the one out of
+proportion: 208 instructions in 71 ns, about half an instruction per cycle, where the same gain by
+a substitution written out, every row of the gain together a column at a time, takes 116
+instructions and 12 ns with the divisions kept, and 8 ns multiplying by the reciprocals of the
+factor's diagonal. It agrees with `llt.solve()`'s gain to 1e-13. So the divisions are not the
+cost; what in Eigen's unrolled solve of a small fixed vector is, is not established (the scalar
+stores of one row read back by the vector load of the next, which the processor cannot forward,
+is the first suspect). The factorization is out of proportion too at 4x4, 58 ns where a 6x6 takes
+50. With the written-out substitution in place of the solves, the hand code's step would take
+about 81 ns at 2D with 4 anchors, 214 at 2D with 8, and 185 at 3D with 6, against TinyEKF's 100,
+167, and 316 and mherb/kalman's 76, 749, and 507; a factorization written out the same way is the
+second change to try. The library's `transposedSolve()` calls the same `llt.solve()` a row at a
+time, so both changes are the library's to make, and the hand code's with it.
+
+*The solve, cut (2026-11-23).* The commit *Substitute through the gain's Cholesky factor in place of Eigen's solve*
+puts that substitution in `transposedSolve()`, for an `Eigen::LLT` of a fixed size of at most 24
+(`substitutionSolveSize`), and in the two hand-written filters. Up to 24 is where it was measured:
+against Eigen's blocked solve it took 115 ns in place of 352 at 3D with 12 anchors, 161 in place of
+399 at 2D with 16, and 386 in place of 922 at 3D with 24. Two things about its form were measured
+too. Solving every row of the gain together, a column at a time, beats solving a row at a time
+from 12 anchors (115 ns against 271 at 3D with 12) and is about a fifth faster below. And the columns must be
+whole packets: with a 6-state filter in `float`, the unpadded form took 184 ns at 3D with 6
+anchors where `double` took 30, and 2,440 ns at 3D with 24 where Eigen's solve took 1,100. Eigen
+vectorizes a column of six `float`s from wherever its address lets a 16-byte packet start, so
+the stores of one column are not the loads of the next operation on it, and the processor cannot
+forward them. Padded with zeros to a multiple of 16 bytes (`smallestPacketSize`), the same solve
+takes 51 ns and 450 ns. The same substitution as plain index loops avoids the problem too and is
+two to three times as slow in `double`, so the padded columns are what the library uses. That mismatch
+of stores and loads is the likeliest reason Eigen's own small solve and factorization run at
+half an instruction per cycle, since both work on blocks whose size and alignment are run-time
+values; it is not confirmed.
+
+After it, in `double`, a step of the library's EKF takes 114 ns at 2D with 4 anchors (167
+before), 225 at 2D with 8 (547), 581 at 2D with 16 (882), 186 at 3D with 6 (412), 482 at 3D with
+12 (720), and 1,357 at 3D with 24 (2,018), and the instructions fall from 4,397 to 3,833 at 2D
+with 8, from 18,946 to 12,505 at 2D with 16, from 17,675 to 10,439 at 3D with 12, and from 45,099
+to 30,752 at 3D with 24. The hand code's fall alike, so the ratios to it move little.
+
+*The factorization, measured and not made (2026-11-23).* The probe also timed two Cholesky
+factorizations written out. One that reduces each column by the columns before it over its whole
+length, padded to whole packets, with what that leaves above the diagonal never read, beats
+`LLT::compute()` at every size in both scalars: 13 ns in place of 58 for a 4×4 matrix in
+`double`, 61 in place of 122 for 8×8, 34 in place of 50 for 6×6, 166 in place of 209 for 12×12,
+245 in place of 312 for 16×16, and 453 in place of 624 for 24×24. With it and the substitution
+the hand code's whole step took 49 ns at 2D with 4 anchors in the probe, where the runner's takes
+98 with Eigen's factorization. Two things stand between that and the library. It reads the whole
+of each column, and the library promises only a covariance's lower triangle
+[borrowed-intermediates], so values above the diagonal that nothing wrote, a denormal among them,
+would go through the arithmetic; copying the lower triangle into zeros first, an element at a
+time, with the norm that `LLT` keeps for `rcond()`, took 37 ns for the 4×4, most of the gain
+gone. And the library's factorizations are `Eigen::LLT` objects, which cannot be built from a
+factor computed elsewhere without reaching their protected members. Both are design questions
+for the maintainer: whether the innovation covariance may be required whole where it is
+factorized, and whether the library keeps `Eigen::LLT` or a factor type of its own, which could
+also keep the reciprocals of the diagonal that the substitution takes again.
 
 mherb/kalman's EKF, on Eigen too, has a larger step of its own, between 4 anchors and 6: 1,218
 instructions at 2D with 4 anchors, 11,455 at 3D with 6, and 17,467 at 2D with 8, which is why the
