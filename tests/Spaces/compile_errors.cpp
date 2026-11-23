@@ -8,6 +8,7 @@
 
 #include <Eigen/Core>
 
+#include <array>
 #include <limits>
 
 namespace
@@ -213,11 +214,11 @@ everyCaseSharesThis()
 [[maybe_unused]] Emrys::TagPath<> const path;
 #endif
 
-#if defined(IDX_ELEMENT_OF_UNREPEATED)  // static_assert: TagPath.h: the element form takes a path that starts at a
+#if defined(IDX_ELEMENT_OF_UNREPEATED)  // static_assert: TagPath.h: repetitions are selected from a path that runs
 [[maybe_unused]] auto const index = Emrys::idx<State, Heading>(0);
 #endif
 
-#if defined(BLOCK_ELEMENT_OF_UNREPEATED)  // static_assert: TagPath.h: the element form takes a path that starts at a
+#if defined(BLOCK_ELEMENT_OF_UNREPEATED)  // static_assert: TagPath.h: repetitions are selected from a path that runs
 [[maybe_unused]] void
 blockElement()
 {
@@ -274,6 +275,22 @@ diffBlockColumns()
 
 #if defined(IDX_ELEMENT_AFTER_RESIZABLE)  // static_assert: TagPath.h: this block's offset depends on the size of a
 [[maybe_unused]] auto const index = Emrys::idx<Emrys::Composite<Landmarks, Fleet>, Fleet>(0);
+#endif
+
+#if defined(PATH_SUBSCRIPT_OF_UNREPEATED)  // static_assert: TagPath.h: repetitions are selected from a path that runs
+[[maybe_unused]] auto const selected = Emrys::path<Heading>[0];
+#endif
+
+#if defined(IDX_SELECTION_OF_UNREPEATED)  // static_assert: TagPath.h: repetitions are selected from a path that runs
+[[maybe_unused]] auto const index = Emrys::idx<Heading>(State{}, std::array{0});
+#endif
+
+#if defined(IDX_SELECTION_AFTER_RESIZABLE)  // static_assert: Selection.h: this block's offset depends on the size of a
+[[maybe_unused]] auto const index = Emrys::idx<Emrys::Composite<Landmarks, Fleet>, Fleet>(std::array{0});
+#endif
+
+#if defined(IDX_SELECTION_FROM_THE_END)  // static_assert: Selection.h: a sequence that counts from the block's end
+[[maybe_unused]] auto const index = Emrys::idx<Emrys::Composite<Position, Fleet>, Fleet>(Eigen::placeholders::lastN(1));
 #endif
 
 #if defined(MAP_NOT_A_MATRIX)  // static_assert: UnitQuaternion.h: map() takes an Eigen vector of four coordinates

@@ -31,6 +31,19 @@ instead.
   an installed OpenCV 4 or 5: timed over runs of 300 steps, over which the two agree in `double`,
   beside how far OpenCV's estimate drifts over 3000, and in `float`, its default, in which the pair
   is marked, behind a test that only OpenCV's estimate strays.
+- A path value takes a subscript that selects repetitions of the repeated block it runs through,
+  and gives a `SelectedPath`: `path<Landmarks>[k]` is one repetition,
+  `path<Landmarks>[Eigen::seqN(first, n)]` or `path<Landmarks>[Eigen::placeholders::lastN(n)]`
+  several, and `path<Landmarks>[{2, 5, 9}]`, or a `std::array`, a `std::vector`, a `std::span`, or
+  an Eigen vector of indices, those listed, in that order. No model takes one yet: `reads()`,
+  `writes()`, and placement follow.
+- `idx()`, `diffIdx()`, `block()`, and `diffBlock()` take an Eigen sequence or a list of
+  repetitions where they take one repetition's index: `block<Fleet>(space, x, Eigen::seqN(1, 2))`
+  is vehicles 1 and 2, and `idx<TagPath<Fleet, Heading>>(space, std::array{3, 0})` the headings of
+  vehicles 3 and 0. They are in `Spaces/Selection.h`.
+- The forms of `idx()`, `diffIdx()`, `block()`, `diffBlock()`, and `marginal()` that take a
+  repetition take a path that reaches its repeated block through other tags:
+  `block<TagPath<Theater, Fleet>>(space, x, k)`. The path had to start at the repeated block.
 - `KalmanFilter<...>::UpdateType<M>` and `ResultType<M>`, what `update()` with a measurement of
   type `M` returns and fills, as the other filters name them; it was
   `decltype(filter)::RecursionType::UpdateType<M>`.

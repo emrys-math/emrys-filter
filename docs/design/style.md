@@ -24,7 +24,8 @@ the decision, and history belongs in the commit message. An open question goes i
   only by changing [params-and-density]. Prose and the first sentence of a Doxygen comment write the
   words out. The index utilities are overloaded on their arguments: `idx<Space, Path>()` from the
   type, `idx<Path>(space)`, and `idx<Path>(space, k)` or `idx<Space, Path>(k)` for one repetition,
-  and `block<Path>(space, x)`, `block<Path>(space, x, k)`, and `block<Space, Path>(x)` the same way.
+  and `block<Path>(space, x)`, `block<Path>(space, x, k)`, and `block<Space, Path>(x)` the same way;
+  an Eigen sequence or a list of repetitions goes where `k` does.
 - A name that a protocol looks up keeps the protocol's spelling: `allocator_type`, `value_type`,
   `const_iterator`, `begin()`, and `get_allocator()` for the standard library; `Real` and
   `Literal` in a `Eigen::NumTraits` specialization. A trait is a variable template or a concept,

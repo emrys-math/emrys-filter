@@ -55,6 +55,7 @@ Read the index, then the decisions your change touches.
 | [coordinate-parameters](#coordinate-parameters) | A coordinate type's parameters are template arguments, and an interval is spelled by its ends |
 | [difference-spaces](#difference-spaces) | A space has at most one normalize(); its differences live in an untagged difference space; updates, residuals, and differences taken away are plus(), minus(), and less(), with defaults |
 | [tag-addressing](#tag-addressing) | Blocks and axes are addressed by tag path, never by type or by index |
+| [repetition-selections](#repetition-selections) | Repetitions of a repeated block are selected by an integer, an Eigen sequence, or a list, as a path value's subscript |
 | [tangent-gaussians](#tangent-gaussians) | A Gaussian on a non-linear space is a Gaussian in the tangent space at its mean; the wrapped normal is not computed |
 | [space-storage](#space-storage) | A space costs what its state costs, and a whole distribution keeps its own copy |
 | **Distributions** | |
@@ -861,6 +862,35 @@ addressing call feeds every view, `UnitQuaternion::map(block<Attitude>(space, x)
 
 **Where.** `Spaces/TagPath.h`, `Spaces/Indexing.h`, `Spaces/Discrete.h`,
 `Distributions/GridGaussian.h`.
+
+### repetition-selections
+
+*Repetitions of a repeated block are selected by an integer, an Eigen sequence, or a list, as a path
+value's subscript.*
+
+**Rule.** A path value that runs through a `Repeated` block takes a subscript, which gives a
+`SelectedPath`. `path<Landmarks>[k]` is repetition `k`, whose space is the block that is repeated.
+`path<Landmarks>[Eigen::seqN(first, n)]` and a list, `path<Landmarks>[{2, 5, 9}]` or a container of
+indices, are those repetitions in the order named: a repeated block of their count, even of one.
+The path may reach the repeated block through other tags and go on inside it
+(`path<Fleet, Heading>[k]`). Where a path is a template argument, the selection is an argument of
+the call: `block<Fleet>(space, x, k)`, `idx<Fleet>(space, Eigen::seqN(1, 2))`. A selection names
+each repetition once and is held by value. A sequence may count from the block's end
+(`Eigen::placeholders::lastN(3)`), and is resolved against the count of the space it meets.
+
+**Why.** A path is a type and a repetition's index is a run-time value, so [tag-addressing] alone
+names only a whole repeated block, and a model of one landmark read every landmark. A repeated
+block holds no other, so one subscript is never ambiguous. A sequence or a list keeps the block's
+own tag, so a function written for the whole block runs unchanged on part of it.
+
+**Rejected.** A `range(first, n)` of the library's own: users know Eigen's `seqN`, and `idx()`
+returns it. The selection given at the call that uses a model, which every call would then supply.
+Refusing a sequence that counts from the end: `Indexing.h` already resolves Eigen's symbols by
+indexing a vector.
+
+**Evidence.** `tests/Spaces/blocks.cpp`.
+
+**Where.** `Spaces/TagPath.h` (`SelectedPath`), `Spaces/Selection.h`, `Spaces/Subspace.h`.
 
 ### tangent-gaussians
 

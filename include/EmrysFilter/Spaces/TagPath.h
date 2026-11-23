@@ -2,16 +2,19 @@
 
 /** \file
  * Tag paths and the index utilities (decisions.md [tag-addressing], [index-names]): TagPath and TagPaths, and path,
- * a path as a value; on() and onEach(), which place a factor or a matrix by path in a space not yet known
- * [product-factors], or name a path differently; idx() and diffIdx(), which turn a path into Eigen
- * indices from a space's run-time sizes or as compile-time constants; block() and diffBlock(), the block an Eigen
- * vector or matrix has for a path; and zeros(), the vector a function fills block by block. The internal
- * namespace finds a tag in a space and resolves a path through composites and repeated blocks. Read Subspace.h
- * next.
+ * a path as a value, whose subscript selects repetitions of a repeated block (SelectedPath); on() and onEach(), which
+ * place a factor or a matrix by path in a space not yet known [product-factors], or name a path differently; idx()
+ * and diffIdx(), which turn a path into Eigen indices from a space's run-time sizes or as compile-time constants;
+ * block() and diffBlock(), the block an Eigen vector or matrix has for a path; and zeros(), the vector a function
+ * fills block by block. The internal namespace finds a tag in a space and resolves a path through composites and
+ * repeated blocks. Selection.h gives idx() and block() a sequence or a list of repetitions. Read Subspace.h next.
  */
 
 #include <array>
+#include <concepts>
 #include <cstddef>
+#include <iterator>
+#include <ranges>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -334,7 +337,144 @@ shiftIndex(Index const & index, Eigen::Index offset)
     }
 }
 
+/** A column of resolved indices with compile-time size \a Size and bound \a MaxSize. */
+template <int Size, int MaxSize>
+using IndexVector = Eigen::Matrix<Eigen::Index, Size, 1, Eigen::ColMajor, MaxSize, 1>;
+
+/** The index of one repetition of a repeated block: an integer other than \c bool. */
+template <typename T>
+concept RepetitionIndex = std::integral<std::remove_cvref_t<T>> && !std::same_as<std::remove_cvref_t<T>, bool>;
+
+/** An Eigen vector, array, or vector expression of repetition indices. */
+template <typename T>
+concept EigenRepetitionList =
+    std::derived_from<T, Eigen::DenseBase<T>> && bool(T::IsVectorAtCompileTime) && RepetitionIndex<typename T::Scalar>;
+
+/** A list of repetition indices: an Eigen vector of them, or a range of them such as a
+ * <tt>std::vector</tt>, a <tt>std::array</tt>, or a <tt>std::span</tt>.
+ */
+template <typename T>
+concept RepetitionList =
+    EigenRepetitionList<T>
+    || (std::ranges::forward_range<T const &> && RepetitionIndex<std::ranges::range_value_t<T const &>>);
+
+/** \returns the number of indices a list of type \a List holds, or Eigen::Dynamic where its type does not fix it */
+template <typename List>
+consteval int
+repetitionListSize()
+{
+    if constexpr (EigenRepetitionList<List>)
+    {
+        return List::SizeAtCompileTime;
+    }
+    else if constexpr (requires { std::tuple_size<List>::value; })
+    {
+        return int(std::tuple_size<List>::value);
+    }
+    else
+    {
+        return Eigen::Dynamic;
+    }
+}
+
+/** \returns a bound on the number of indices a list of type \a List holds, or Eigen::Dynamic */
+template <typename List>
+consteval int
+repetitionListMaxSize()
+{
+    if constexpr (EigenRepetitionList<List>)
+    {
+        return List::MaxSizeAtCompileTime;
+    }
+    else
+    {
+        return repetitionListSize<List>();
+    }
+}
+
+/** The column of indices that a list of type \a List is copied into, of fixed size where the list's type fixes it. */
+template <typename List>
+using RepetitionListCopy = IndexVector<repetitionListSize<List>(), repetitionListMaxSize<List>()>;
+
+/** \returns the number of indices \a list holds */
+template <RepetitionList List>
+[[nodiscard]] Eigen::Index
+repetitionListLength(List const & list)
+{
+    if constexpr (EigenRepetitionList<List>)
+    {
+        return list.size();
+    }
+    else
+    {
+        return Eigen::Index(std::ranges::distance(list));
+    }
+}
+
+/** Copies the indices of \a list, in order, into \a result, a column that has a row for each. */
+template <RepetitionList List, typename Result>
+void
+copyRepetitionListInto(List const & list, Result & result)
+{
+    if constexpr (EigenRepetitionList<List>)
+    {
+        auto const & indices = list.eval();
+        for (Eigen::Index i = 0; i < indices.size(); ++i)
+        {
+            result[i] = Eigen::Index(indices.coeff(i));
+        }
+    }
+    else
+    {
+        Eigen::Index i = 0;
+        for (auto const index : list)
+        {
+            result[i++] = Eigen::Index(index);
+        }
+    }
+}
+
+/** \returns the indices of \a list, in order, in a column of their own, so that what holds them outlives the list */
+template <RepetitionList List>
+[[nodiscard]] RepetitionListCopy<List>
+copyRepetitionList(List const & list)
+{
+    auto result = RepetitionListCopy<List>{};
+    result.resize(repetitionListLength(list));
+    copyRepetitionListInto(list, result);
+    return result;
+}
+
+/** Checks that the path of \a Tags runs through a repeated block, which a selection of repetitions needs. */
+template <typename... Tags>
+consteval void
+checkSelectedPath()
+{
+    static_assert((IsRepeated<Tags> || ...), "repetitions are selected from a path that runs through a repeated block");
+}
+
 }  // namespace internal
+
+/** \ingroup Spaces
+ * \brief A path with a selection of the repetitions of the repeated block it runs through, made by
+ * subscripting a path value (decisions.md [repetition-selections]).
+ *
+ * <tt>path<Landmarks>[k]</tt> is repetition \a k, whose space is the block that is repeated;
+ * <tt>path<Landmarks>[Eigen::seqN(first, n)]</tt> is \a n repetitions from \a first, and
+ * <tt>path<Landmarks>[seen]</tt> or <tt>path<Landmarks>[{2, 5, 9}]</tt> the repetitions listed, in
+ * that order, each a repeated block of that many repetitions, even of one. The path may go on
+ * inside the repeated block: <tt>path<Fleet, Heading>[k]</tt> is vehicle \a k's heading. A sequence
+ * may count from the block's end, as <tt>Eigen::placeholders::lastN(3)</tt> does, and is resolved
+ * against the count of the space it meets.
+ *
+ * \tparam Path       the path, a TagPath
+ * \tparam Selection  an <tt>Eigen::Index</tt>, an <tt>Eigen::ArithmeticSequence</tt>, or a column of indices
+ */
+template <typename Path, typename Selection>
+struct SelectedPath
+{
+    Selection selection;  ///< the repetitions selected
+};
 
 /** \ingroup Spaces
  * A path of tags, each naming a block inside the one before: <tt>TagPath<Ownship, Position></tt>
@@ -347,11 +487,59 @@ shiftIndex(Index const & index, Eigen::Index offset)
  * <tt>TagPath<Fleet, Position></tt>, and is not counted against the same tag outside it. So in
  * a space of an Ownship and a Fleet of vehicles, each with a Position, the bare Position is the
  * ownship's.
+ *
+ * A path that runs through a repeated block takes a subscript, which selects repetitions of that
+ * block (SelectedPath).
  */
 template <typename... Tags>
 struct TagPath
 {
     static_assert(sizeof...(Tags) > 0, "a tag path needs at least one tag");
+
+    /** \returns this path with repetition \a repetition of the repeated block it runs through selected */
+    template <internal::RepetitionIndex Index>
+    [[nodiscard]] constexpr SelectedPath<TagPath, Eigen::Index>
+    operator[](Index repetition) const
+    {
+        internal::checkSelectedPath<Tags...>();
+        return {Eigen::Index(repetition)};
+    }
+
+    /** \returns this path with the repetitions of the sequence \a repetitions selected, such as
+     * <tt>Eigen::seqN(first, n)</tt> or <tt>Eigen::placeholders::lastN(n)</tt>
+     */
+    template <typename First, typename Size, typename Increment>
+    [[nodiscard]] constexpr SelectedPath<TagPath, Eigen::ArithmeticSequence<First, Size, Increment>>
+    operator[](Eigen::ArithmeticSequence<First, Size, Increment> const & repetitions) const
+    {
+        internal::checkSelectedPath<Tags...>();
+        return {repetitions};
+    }
+
+    /** \returns this path with the repetitions listed in \a repetitions selected, in that order; the
+     * list is copied, at fixed size where its type fixes its size
+     */
+    template <internal::RepetitionList List>
+    [[nodiscard]] SelectedPath<TagPath, internal::RepetitionListCopy<List>>
+    operator[](List const & repetitions) const
+    {
+        internal::checkSelectedPath<Tags...>();
+        return {internal::copyRepetitionList(repetitions)};
+    }
+
+    /** \returns this path with the repetitions of a braced list selected: <tt>path<Landmarks>[{2, 5, 9}]</tt> */
+    template <internal::RepetitionIndex Index, std::size_t N>
+    [[nodiscard]] SelectedPath<TagPath, internal::IndexVector<int(N), int(N)>>
+    operator[](Index const (&repetitions)[N]) const
+    {
+        internal::checkSelectedPath<Tags...>();
+        auto list = internal::IndexVector<int(N), int(N)>{};
+        for (std::size_t i = 0; i < N; ++i)
+        {
+            list[Eigen::Index(i)] = Eigen::Index(repetitions[i]);
+        }
+        return {std::move(list)};
+    }
 };
 
 /** \ingroup Spaces
@@ -580,6 +768,69 @@ withPathTags(F && f)
     }(static_cast<AsTagPath<P> *>(nullptr));
 }
 
+/** \returns the position among \a Tags of the first tag that is a repeated block, or their number if
+ * none is. A repeated block holds no other, so a path runs through at most one.
+ */
+template <typename... Tags>
+consteval std::size_t
+repeatedTagPosition()
+{
+    constexpr bool repeated[] = {IsRepeated<Tags>...};
+    for (std::size_t i = 0; i < sizeof...(Tags); ++i)
+    {
+        if (repeated[i])
+        {
+            return i;
+        }
+    }
+    return sizeof...(Tags);
+}
+
+/** withRepeatedSplit() for the tags \a Tuple, a tuple, whose tag at \a Position is the repeated block:
+ * \a O are the positions up to it and \a I count the tags after it.
+ */
+template <std::size_t Position, typename Tuple, typename F, std::size_t... O, std::size_t... I>
+[[nodiscard]] constexpr decltype(auto)
+callWithRepeatedSplit(F && f, std::index_sequence<O...>, std::index_sequence<I...>)
+{
+    return f.template operator()<
+        TagPath<std::tuple_element_t<O, Tuple>...>,
+        std::tuple_element_t<Position, Tuple>,
+        std::tuple_element_t<Position + 1 + I, Tuple>...>();
+}
+
+/** \returns \a f.template operator()<Outer, RepeatedTag, Inner...>() for the path \a P (a tag or a
+ * TagPath) split at the repeated block it runs through: \a Outer is the TagPath to that block,
+ * \a RepeatedTag the block's tag, and \a Inner the tags that go on inside one repetition.
+ */
+template <typename P, typename F>
+[[nodiscard]] constexpr decltype(auto)
+withRepeatedSplit(F && f)
+{
+    return withPathTags<P>([&]<typename... Tags>() -> decltype(auto) {
+        checkSelectedPath<Tags...>();
+        // Past the check's failure, read the first tag as the repeated one, so that the check's error is the first.
+        constexpr std::size_t position = repeatedTagPosition<Tags...>() % sizeof...(Tags);
+        return callWithRepeatedSplit<position, std::tuple<Tags...>>(
+            f,
+            std::make_index_sequence<position + 1>{},
+            std::make_index_sequence<sizeof...(Tags) - position - 1>{}
+        );
+    });
+}
+
+/** \returns the offset of the repeated block that the path \a Outer ends at within \a space, counting
+ * value coordinates, or difference coordinates if \a Difference, and a pointer to the block
+ */
+template <bool Difference, typename Outer, typename S>
+[[nodiscard]] auto
+locateRepeated(S const & space)
+{
+    return withPathTags<Outer>([&]<typename... Tags>() {
+        return locatePathIn<Difference, Tags...>(space);
+    });
+}
+
 /** resolveTagsIn() for the path \a P, a tag or a TagPath. */
 template <typename Space, typename P, bool Difference = false>
 struct ResolvePath
@@ -709,8 +960,12 @@ template <bool Difference, typename RepeatedTag, typename... Inner>
 consteval ResolvedIndex
 repetitionIndex()
 {
-    static_assert(IsRepeated<RepeatedTag>, "the element form takes a path that starts at a repeated block");
-    if constexpr (sizeof...(Inner) == 0)
+    if constexpr (!IsRepeated<RepeatedTag>)
+    {
+        // checkSelectedPath() has refused the path; this keeps its error the only one.
+        return ResolvedIndex{0, 1, false, 0};
+    }
+    else if constexpr (sizeof...(Inner) == 0)
     {
         return ResolvedIndex{0, SizedAs<Difference, RepeatedTag>::ValueDimensionStep, false, 0};
     }
@@ -742,8 +997,8 @@ template <bool Difference, typename Path, typename S>
 [[nodiscard]] auto
 elementIdx(S const & space, Eigen::Index element)
 {
-    return withPathTags<Path>([&]<typename RepeatedTag, typename... Inner>() {
-        auto const [offset, tag] = locate<RepeatedTag, Difference>(space);
+    return withRepeatedSplit<Path>([&]<typename Outer, typename RepeatedTag, typename... Inner>() {
+        auto const [offset, tag] = locateRepeated<Difference, Outer>(space);
         EMRYS_FILTER_ASSERT(element >= 0 && element < tag->count() && "repetition out of range");
         constexpr ResolvedIndex inner = repetitionIndex<Difference, RepeatedTag, Inner...>();
         return repetitionIndexAt<inner>(
@@ -757,8 +1012,8 @@ template <bool Difference, typename S, typename Path>
 [[nodiscard]] auto
 staticElementIdx(Eigen::Index element)
 {
-    return withPathTags<Path>([&]<typename RepeatedTag, typename... Inner>() {
-        constexpr ResolvedIndex outer = resolveTagsIn<Difference, S, RepeatedTag>();
+    return withRepeatedSplit<Path>([&]<typename Outer, typename RepeatedTag, typename... Inner>() {
+        constexpr ResolvedIndex outer = ResolvePath<S, Outer, Difference>::value;
         static_assert(
             outer.staticOffset,
             "this block's offset depends on the size of a resizable block; use idx(space, element)"
@@ -774,10 +1029,12 @@ staticElementIdx(Eigen::Index element)
 
 /** \ingroup Spaces
  * \returns the index of repetition \a element of a repeated block within \a space, from the
- * space's runtime sizes. \a Path starts at the repeated block: <tt>idx<Fleet>(space, k)</tt>
- * is vehicle \a k, and <tt>idx<TagPath<Fleet, Heading>>(space, k)</tt> its heading. The
+ * space's runtime sizes. \a Path runs through the repeated block: <tt>idx<Fleet>(space, k)</tt>
+ * is vehicle \a k, <tt>idx<TagPath<Fleet, Heading>>(space, k)</tt> its heading, and
+ * <tt>idx<TagPath<Theater, Fleet>>(space, k)</tt> vehicle \a k of the fleet inside Theater. The
  * result is an \c Eigen::Index for one coordinate, otherwise \c seqN(start, fix<size>).
- * \a element must be one of its repetitions.
+ * \a element must be one of its repetitions. Selection.h takes a sequence or a list of
+ * repetitions in its place.
  */
 template <typename Path>
 [[nodiscard]] auto
@@ -909,7 +1166,7 @@ rowsByPath(S const & space, X && x)
     });
 }
 
-/** rowsByPath() for repetition \a element of the repeated block that \a Path starts at, or of the
+/** rowsByPath() for repetition \a element of the repeated block that \a Path runs through, or of the
  * block the rest of the path names within it. See block(space, x, element).
  */
 template <bool Difference, typename Path, typename S, typename X>
@@ -918,8 +1175,8 @@ repetitionRowsByPath(S const & space, X && x, Eigen::Index element)
 {
     checkBlockRows<rowsAtCompileTime<Difference, S>, X>();
     EMRYS_FILTER_ASSERT(x.rows() == rowsOf<Difference>(space) && "the rows do not match the space");
-    return withPathTags<Path>([&]<typename RepeatedTag, typename... Inner>() {
-        auto const [offset, tag] = locate<RepeatedTag, Difference>(space);
+    return withRepeatedSplit<Path>([&]<typename Outer, typename RepeatedTag, typename... Inner>() {
+        auto const [offset, tag] = locateRepeated<Difference, Outer>(space);
         EMRYS_FILTER_ASSERT(element >= 0 && element < tag->count() && "repetition out of range");
         constexpr ResolvedIndex inner = repetitionIndex<Difference, RepeatedTag, Inner...>();
         return middleRowsOf<inner.size>(
@@ -982,10 +1239,11 @@ block(Space auto const & space, X && x)
 }
 
 /** \ingroup Spaces
- * \returns block<Path>(space, x) for repetition \a element of the Repeated block that \a Path starts
- * at, or of the block the rest of the path names within it: <tt>block<Fleet>(space, x, k)</tt> is
- * vehicle \a k, and <tt>block<TagPath<Fleet, Heading>>(space, x, k)</tt> its heading. \a element
- * must be one of its repetitions.
+ * \returns block<Path>(space, x) for repetition \a element of the Repeated block that \a Path runs
+ * through, or of the block the rest of the path names within it: <tt>block<Fleet>(space, x, k)</tt>
+ * is vehicle \a k, and <tt>block<TagPath<Fleet, Heading>>(space, x, k)</tt> its heading. \a element
+ * must be one of its repetitions. Selection.h takes a sequence or a list of repetitions in its
+ * place.
  */
 template <typename Path, MatrixExpression X>
 [[nodiscard]] auto
@@ -1021,7 +1279,7 @@ diffBlock(Space auto const & space, D && d)
 
 /** \ingroup Spaces
  * \returns diffBlock<Path>(space, d) for repetition \a element of the Repeated block that \a Path
- * starts at, as block(space, x, element) does for values.
+ * runs through, as block(space, x, element) does for values.
  */
 template <typename Path, MatrixExpression D>
 [[nodiscard]] auto

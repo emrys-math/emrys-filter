@@ -114,22 +114,46 @@ subspace(Space const & space)
 template <typename Space, typename... Path>
 using SubspaceType = decltype(subspace<Space, Path...>(std::declval<Space const &>()));
 
-/** \returns the space of one repetition of the repeated block \a RepeatedTag within \a space,
- * or of the subspace named by \a Inner within it.
+/** \returns the space of one repetition of the repeated block that the path \a Outer ends at within
+ * \a space, or of the subspace named by \a Inner within it.
  */
-template <typename RepeatedTag, typename... Inner, typename Space>
+template <typename Outer, typename... Inner, typename Space>
 [[nodiscard]] auto
 elementSubspace(Space const & space)
 {
-    static_assert(IsRepeated<RepeatedTag>, "this takes a repeated block");
-    auto const & block = findTag<RepeatedTag>(space).block();
+    static_assert(IsRepeated<PathTag<Outer>>);
+    auto const & block = pathBlock<Outer>(space).block();
     if constexpr (sizeof...(Inner) == 0)
     {
         return block;
     }
     else
     {
-        return subspace<RepeatedBlock<RepeatedTag>, Inner...>(block);
+        return subspace<RepeatedBlock<PathTag<Outer>>, Inner...>(block);
+    }
+}
+
+/** \returns the space of \a count repetitions of the repeated block that the path \a Outer ends at
+ * within \a space: the block's own tag with that count, or, where \a Inner go on inside a repetition,
+ * the block they name repeated \a count times, up to the same maximum count.
+ */
+template <typename Outer, typename... Inner, typename Space>
+[[nodiscard]] auto
+repetitionsSubspace(Space const & space, Eigen::Index count)
+{
+    using RepeatedTag = PathTag<Outer>;
+    static_assert(IsRepeated<RepeatedTag>);
+    RepeatedTag const & tag = pathBlock<Outer>(space);
+    if constexpr (sizeof...(Inner) == 0)
+    {
+        RepeatedTag selected = tag;
+        selected.setCount(count);
+        return selected;
+    }
+    else
+    {
+        auto inner = subspace<RepeatedBlock<RepeatedTag>, Inner...>(tag.block());
+        return Repeated<decltype(inner), RepeatedTag::MaxCount>{std::move(inner), count};
     }
 }
 
@@ -254,13 +278,23 @@ pathSubspace(Space const & space)
 template <typename Space, typename P>
 using PathSubspaceType = decltype(pathSubspace<P>(std::declval<Space const &>()));
 
-/** elementSubspace() of the path \a P, which starts at a repeated block. */
+/** elementSubspace() of the path \a P, which runs through a repeated block. */
 template <typename P, typename Space>
 [[nodiscard]] auto
 pathElementSubspace(Space const & space)
 {
-    return withPathTags<P>([&]<typename... Tags>() {
-        return elementSubspace<Tags...>(space);
+    return withRepeatedSplit<P>([&]<typename Outer, typename RepeatedTag, typename... Inner>() {
+        return elementSubspace<Outer, Inner...>(space);
+    });
+}
+
+/** repetitionsSubspace() of the path \a P, which runs through a repeated block. */
+template <typename P, typename Space>
+[[nodiscard]] auto
+pathRepetitionsSubspace(Space const & space, Eigen::Index count)
+{
+    return withRepeatedSplit<P>([&]<typename Outer, typename RepeatedTag, typename... Inner>() {
+        return repetitionsSubspace<Outer, Inner...>(space, count);
     });
 }
 

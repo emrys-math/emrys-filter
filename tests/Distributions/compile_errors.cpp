@@ -787,7 +787,7 @@ conditionalOnMissingTag()
 }
 #endif
 
-#if defined(ELEMENT_MARGINAL_OF_UNREPEATED)  // static_assert: Subspace.h: this takes a repeated block
+#if defined(ELEMENT_MARGINAL_OF_UNREPEATED)  // static_assert: TagPath.h: repetitions are selected from a path that runs
 [[maybe_unused]] void
 elementOfUnrepeated()
 {

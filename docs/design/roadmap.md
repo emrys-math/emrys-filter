@@ -187,7 +187,7 @@ Emrys::measurementModel(
     Emrys::additiveNoise(Emrys::onEach<RangeBearings>(r)));
 ```
 
-The rules, each for [tag-addressing] or [model-policies] when built:
+The rules, of which [repetition-selections] holds those built, the rest for it or [model-policies]:
 
 - **Name.** A selected path is read or written under its last tag, and under the repetition's tag
   where the path ends at the repeated block and the subscript is an integer. A space without a tag
@@ -200,12 +200,15 @@ The rules, each for [tag-addressing] or [model-policies] when built:
   asserted to fit: the name check accepts a repeated tag of the same repetition and another bound.
 - **Index in the function.** `block<Landmarks>(in, x, i)` is the `i`th repetition read, not the
   state's `i`th.
-- **Sequences.** Eigen's `seq` and `seqN` with integer bounds. An increment of 1 is one run of rows;
-  any other increment is treated as a list. `Eigen::last` and `Eigen::all` are refused, since
-  resolving them needs Eigen's internals. Eigen's types were chosen over a `range(first, n)` of the
-  library's own: users know them, and `idx()` returns them.
+- **Sequences.** Eigen's `seq` and `seqN`. An increment of 1 is one run of rows; any other
+  increment is treated as a list. A sequence may count from the block's end, as
+  `Eigen::placeholders::lastN(3)` does, and is resolved against the count of the state it meets:
+  `Indexing.h` already resolved Eigen's symbols by indexing a vector, which needs none of Eigen's
+  internals. `Eigen::placeholders::all` and a bare `last` have no overload. Eigen's types were
+  chosen over a `range(first, n)` of the library's own: users know them, and `idx()` returns them.
 - **Lists.** Any range of integers, copied into the path value. A braced list or a `std::array` is
-  stored at fixed size, so a model that holds one allocates nothing.
+  stored at fixed size, so a model that holds one allocates nothing. A selection names each
+  repetition once, which bounds a list by the block's `MaxCount`.
 - **Checks.** At compile time: a subscript on a path through no repeated block, and a selection
   with no name. Asserted when the model meets a state: every index within the block's count, no
   coordinate named twice among a model's reads or among its writes, and equal selections wherever
@@ -217,14 +220,12 @@ The rules, each for [tag-addressing] or [model-policies] when built:
 Where a path is a value it takes the subscript. Where a path is a template argument and the call
 takes an integer repetition today, that argument takes a sequence or a list too.
 
-- [ ] **Spaces.** `TagPath::operator[]` and the selected path, a `PathValue`. `idx()`, `diffIdx()`,
-      `block()`, and `diffBlock()`, with a space and as `<S, Path>`, take a sequence or a list where
-      they take an integer, and a path that reaches its repeated block through other tags, which
-      they refuse today. Test: `tests/Spaces/blocks.cpp` against indices written out by hand, values
-      and differences, with a unit quaternion as the repetition.
-- [ ] **`reads()`.** `Reads` holds each item's selection and stays empty with none, so a model
-      without one keeps its type and size; `ReadBlocks` and `ResolvedReads` take the policy's value
-      beside the space. An integer or a run is one run of the state's rows, as a block is. A list is
+- [ ] **`reads()`.** A `SelectedPath` (`Spaces/TagPath.h`) is not yet a `PathValue`, so that no
+      policy takes one and drops its selection: each item here makes its policy take it.
+      `internal::resolveRepetitions()` (`Spaces/Selection.h`) gives a selection's repetitions in a
+      block, and `internal::pathRepetitionsSubspace()` (`Spaces/Subspace.h`) their space. `Reads`
+      holds each item's selection and stays empty with none, so a model without one keeps its type
+      and size; `ReadBlocks` and `ResolvedReads` take the policy's value beside the space. An integer or a run is one run of the state's rows, as a block is. A list is
       not, and these take a list of runs where they take a `BlockRows`: `gatherItemFromRows()` and
       `affineCoordinates()` in `ResolvedReads.h`, the state columns of a returned Jacobian in
       `MeasurementReads.h`, and the transition matrix and the affine seeds in `ProcessModel.h`.
@@ -271,7 +272,7 @@ takes an integer repetition today, that argument takes a sequence or a list too.
       path through a repeated block with no subscript (`path<Fleet, Heading>`), and give each a
       test with a selection or a `static_assert` that refuses one, with its negative compile case.
       The list goes in the commit message.
-- [ ] **Records.** The rules in [tag-addressing], [model-policies], [model-placement],
+- [ ] **Records.** The rules in [repetition-selections], [model-policies], [model-placement],
       [linear-sensors], [product-factors], and [consider-states]; a section of usage.md and the user
       skills that describe `reads()`; CHANGELOG, with the `erase()` change; and
       `examples/landmarks.cpp`, a vehicle sighting landmarks one at a time, which fails when its

@@ -5,7 +5,7 @@
  * the shared implementations of marginal<Path>() and conditional<Path>(); inserting and erasing
  * rows of vectors and symmetric matrices for insert() and erase(); reading a symmetric matrix
  * from its lower triangle; and conditionMoments() and conditionMomentsWithEvidence(), the %Gaussian
- * conditioning every %Gaussian form calls. Everything here is in `internal`. Read Discrete.h next.
+ * conditioning every %Gaussian form calls. Everything here is in `internal`. Read Selection.h next.
  */
 
 #include <algorithm>
@@ -29,10 +29,6 @@
 
 namespace Emrys::internal
 {
-
-/** A column of resolved indices with compile-time size \a Size and bound \a MaxSize. */
-template <int Size, int MaxSize>
-using IndexVector = Eigen::Matrix<Eigen::Index, Size, 1, Eigen::ColMajor, MaxSize, 1>;
 
 /** Compile-time size of the subset that \a Indices selects from a vector of size \a SourceSize. */
 template <typename Indices, int SourceSize, int SourceMaxSize>

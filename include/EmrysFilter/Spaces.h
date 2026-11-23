@@ -14,7 +14,8 @@
  * (TagPath.h, [index-names]), and Subspace.h builds the space a path names and grows and shrinks blocks; a discrete
  * space is a finite set of named values (Discrete.h, [discrete-spaces]); Reset.h carries a covariance to the tangent
  * space at a moved mean [covariance-reset]; UnitQuaternion.h is an attitude stored as Eigen stores a quaternion
- * [unit-quaternion]; and Indexing.h holds what marginals and conditionals by path are built from. Read Space.h first.
+ * [unit-quaternion]; Indexing.h holds what marginals and conditionals by path are built from; and Selection.h indexes
+ * several repetitions of a repeated block at once. Read Space.h first.
  *
  * A space describes how the coordinates of a vector behave: whether they wrap or are plain
  * linear values, and how many there are. Every
@@ -99,6 +100,7 @@
 #include <EmrysFilter/Spaces/Discrete.h>
 #include <EmrysFilter/Spaces/Indexing.h>
 #include <EmrysFilter/Spaces/Reset.h>
+#include <EmrysFilter/Spaces/Selection.h>
 #include <EmrysFilter/Spaces/Space.h>
 #include <EmrysFilter/Spaces/Subspace.h>
 #include <EmrysFilter/Spaces/TagPath.h>
