@@ -658,13 +658,12 @@ explained for people and agents alike. The documents for each reader:
       and `parallel.cpp` cases, bibliography entry, roadmap row), `record-decision`,
       `guide-review`, `guide-to-reference`, and `benchmark`. Each states a procedure and points to
       style.md and decisions.md.
-- [ ] `KalmanFilter` names its update's type only through its recursion,
-      `decltype(filter)::RecursionType::UpdateType<M>`; give the filter the alias too (from the
-      Kalman filter review).
-- [ ] `Gate::operator()` declares its result as what the inner policy returns for the update's own
-      `Count`, and calls the inner policy on a `std::dynamic_extent` update when it drops
-      branches, so a user's policy whose result type depends on `Count` fails inside `Gate`. None
-      of the built-in policies does (from the Kalman filter review).
+- [ ] `emptyUpdate<M>()` of a `KalmanFilter`, and so of each filter whose result holds a
+      `FilterUpdate` of a fixed number of branches, fails to compile for a measurement without
+      mixture noise: the branches are a `std::array` of `FilterBranch`, whose `Innovation` has no
+      default constructor, so `FilterUpdate<MeasurementSpace, 1>` has none. Decide what an empty
+      innovation is (sized by the measurement space, as `Moments` is), or constrain
+      `emptyUpdate()` to a run-time number of branches and say so (found 2026-11-22).
 
 ## Agent-friendly use — in progress
 

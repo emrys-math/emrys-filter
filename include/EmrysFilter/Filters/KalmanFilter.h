@@ -573,6 +573,14 @@ public:
     using StateType = Params<Component_>;                      ///< the state the filter owns
     using RecursionType = Recursion_;                          ///< the steps it runs (see Recursion)
 
+    /** What update() with \a M returns: the recursion's UpdateType (see Recursion). */
+    template <Measurement M>
+    using UpdateType = typename RecursionType::template UpdateType<M>;
+
+    /** What update() with \a M fills when given a result: the value of UpdateType. */
+    template <Measurement M>
+    using ResultType = typename UpdateType<M>::value_type;
+
     /** A filter with process model \a model, initial state \a state, prediction method \a method, and
      * upkeep \a upkeep, which maintain() runs; a fixed-step model carries its own method, so there is
      * none to give.

@@ -250,6 +250,12 @@ TEST(KalmanFilter, DeducesItsTypeAndHoldsItsParts)
     static_assert(std::is_same_v<decltype(filter), KalmanFilter<Gaussian<State>, decltype(makeModel())>>);
     static_assert(std::is_same_v<decltype(filter)::StateType, GaussianParams<State>>);
     static_assert(!Emrys::KalmanState<GaussianParams<State>>);
+    // The filter names its update's type as its recursion does.
+    using Fix = decltype(makeFix(Eigen::Vector2d::Zero(), methods::linearized()));
+    static_assert(
+        std::is_same_v<decltype(filter.update(std::declval<Fix const &>())), decltype(filter)::UpdateType<Fix>>
+    );
+    static_assert(std::is_same_v<decltype(filter)::UpdateType<Fix>, decltype(filter)::RecursionType::UpdateType<Fix>>);
     auto const unscented = KalmanFilter{makeModel(), makeInitial(), methods::unscented()};
     static_assert(std::is_same_v<std::remove_cvref_t<decltype(unscented.method())>, methods::Unscented<>>);
     EXPECT_EQ(filter.state().mean(), makeInitial().mean());
@@ -888,5 +894,12 @@ TEST(KalmanFilter, PoliciesMeetReductionPolicy)
     static_assert(!Emrys::ReductionPolicy<decltype(mean), Measured, Component>);
     static_assert(!Emrys::MixtureReductionPolicy<decltype(mean), Measured, Gaussian<State>>);
     static_assert(!Emrys::ReductionPolicy<int, Measured, Component>);
+    // A policy that takes only the update's own branches meets the contract, and a Gate over it
+    // doesn't, since a gate that drops branches passes the rest as another range.
+    auto const ownBranchesOnly = [](typename Measured::Container const & branches) {
+        return std::optional{branches[0].posterior};
+    };
+    static_assert(Emrys::ReductionPolicy<decltype(ownBranchesOnly), Measured, Component>);
+    static_assert(!Emrys::ReductionPolicy<reductions::Gate<decltype(ownBranchesOnly)>, Measured, Component>);
     SUCCEED();
 }

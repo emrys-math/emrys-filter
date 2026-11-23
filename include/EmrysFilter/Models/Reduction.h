@@ -483,7 +483,10 @@ public:
      * nothing when none pass. When some but not all pass, \a Inner reads them through their
      * indices, held in an array on the stack for an array of branches or a run-time number of up
      * to InlinePassing, and otherwise in a buffer from the branches' allocator, the one case that
-     * allocates; posteriors are moved out of \a branches given as an rvalue.
+     * allocates; posteriors are moved out of \a branches given as an rvalue. So \a Inner must
+     * reduce the passing branches as well as \a branches, a range of another type, and a gate
+     * over a policy that takes only its update's own branches fails this constraint, not a call
+     * inside the gate.
      */
     template <typename Branches, typename Out>
         requires internal::BranchRange<Branches> && internal::ReducesInto<Inner, Branches, Out>

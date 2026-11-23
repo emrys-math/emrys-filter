@@ -8,6 +8,9 @@ instead.
 
 ### Added
 
+- `KalmanFilter<...>::UpdateType<M>` and `ResultType<M>`, what `update()` with a measurement of
+  type `M` returns and fills, as the other filters name them; it was
+  `decltype(filter)::RecursionType::UpdateType<M>`.
 - An update takes a sigma-point method spread by axes that can fail, such as
   `spread(cubature(), roots::cholesky())`, and returns `GaussianError::NotPositiveDefinite` when
   the axes cannot take the root of the blocks the measurement reads; it was a compile error. A
