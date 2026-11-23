@@ -221,12 +221,12 @@ Where a path is a value it takes the subscript. Where a path is a template argum
 takes an integer repetition today, that argument takes a sequence or a list too.
 
 - [ ] **`reads()`, the rest.** A plain model reads a selection ([selected-reads],
-      `tests/Models/selected_reads.cpp`). Left: the same equality with the state written with one
-      tag per repetition for a returned Jacobian, in each Gaussian form, and through
-      `ParticleFilter`, the Rao-Blackwellized filters, and `GaussianMixtureFilter`, whose particles
-      and cells read a list through `gatherItemFromRows()`; an update that reads an integer
-      selection of a resizable state allocates nothing where the same model on a fixed-size state
-      allocates nothing; and a process model that reads a selection, tested with the item below.
+      `tests/Models/selected_reads.cpp`), with a returned Jacobian and for the likelihoods of
+      sampled states. Left: the same equality with the state written with one tag per repetition in
+      each Gaussian form, and through `ParticleFilter`, the Rao-Blackwellized filters, and
+      `GaussianMixtureFilter` themselves; an update that reads an integer selection of a resizable
+      state allocates nothing where the same model on a fixed-size state allocates nothing; and a
+      process model that reads a selection, tested with the item below.
       `on()`, `onEach()`, and `compose()` refuse a model whose `reads()` has a selection
       (`internal::SelectionRefusal`), since they make their `reads()` from the parts' types: the
       placing item below carries the values through and removes the refusal. A `SelectedPath`

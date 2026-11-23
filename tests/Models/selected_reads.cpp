@@ -4,10 +4,11 @@
 // Second, Third>, has the coordinates of Composite<Position, Heading, Landmarks> with three landmarks,
 // in the same order, so an update whose model reads a selection must equal the update whose model reads
 // the tagged blocks, under every method; the two differ only in the sizes Eigen fixes at compile time,
-// hence the tolerance. Also covered: the names and types of the items, the selection held by value, a
-// name that bounds the count, affineIn() of a selection, and the assertions.
+// hence the tolerance. Also covered: the likelihoods of sampled states, a returned Jacobian, the names and types of the
+// items, the selection held by value, a name that bounds the count, affineIn() of a selection, and the assertions.
 
 #include <EmrysFilter/Distributions/Gaussian.h>
+#include <EmrysFilter/Models/Likelihood.h>
 #include <EmrysFilter/Models/Measurement.h>
 #include <EmrysFilter/Spaces/Composite.h>
 #include <EmrysFilter/Spaces/Coordinates.h>
@@ -387,6 +388,90 @@ TEST(SelectedReads, AffineInFactorsASelectionOut)
     expectSamePosterior(
         Emrys::update(mapPrior(), observe(methods::unscented(), selected, observed)),
         Emrys::update(taggedPrior(), observe(methods::unscented(), byTag, observed))
+    );
+}
+
+// The log-likelihoods of sampled states under a model that reads a list or a sequence equal those
+// under the model that reads the tagged blocks: each sample's input is gathered from its rows of
+// the state, which for a list are not one run. This is how a particle filter weights its particles.
+TEST(SelectedReads, LikelihoodsOfSamplesAreTheirTaggedBlocks)
+{
+    Eigen::Matrix<double, 9, 5> states;
+    for (Eigen::Index j = 0; j < 5; ++j)
+    {
+        for (Eigen::Index i = 0; i < 9; ++i)
+        {
+            states(i, j) = priorMean()(i) + 0.4 * std::sin(2.0 + 5.0 * double(i) + 3.0 * double(j));
+        }
+    }
+    Eigen::Matrix2d const noise = 0.04 * Eigen::Matrix2d::Identity();
+    Eigen::Vector2d const observed{9.0, 11.0};
+    auto const space = Map{Position{}, Heading{}, Landmarks{Landmark{}, 3}};
+    auto const selected = [&](auto const & item) {
+        auto const model = measurementModel(
+            ranges,
+            reads(path<Position>, item),
+            outputSpace(Ranges{Range{}, 2}),
+            additiveNoise(noise)
+        );
+        return Eigen::VectorXd{Emrys::logLikelihoods(observe(model, observed), space, states).matrix()};
+    };
+    auto const byTags = [&]<typename A, typename B>() {
+        auto const model = measurementModel(
+            ranges,
+            reads(path<Position>, path<A>, path<B>),
+            outputSpace(Ranges{Range{}, 2}),
+            additiveNoise(noise)
+        );
+        return Eigen::VectorXd{Emrys::logLikelihoods<Tagged>(observe(model, observed), states).matrix()};
+    };
+    auto const lastAndFirst = std::array{2, 0};
+    Eigen::VectorXd const listed = selected(path<Landmarks>[lastAndFirst]);
+    ASSERT_EQ(listed.size(), 5);
+    EXPECT_LT((listed - byTags.template operator()<Third, First>()).norm(), 1e-12);
+    Eigen::VectorXd const run = selected(path<Landmarks>[Eigen::seqN(1, 2)]);
+    EXPECT_LT((run - byTags.template operator()<Second, Third>()).norm(), 1e-12);
+    // The two selections name different landmarks, so the comparison tells them apart.
+    EXPECT_GT((listed - run).norm(), 1e-3);
+}
+
+// A function that returns its Jacobian, whose columns are the input's, updates as the same function
+// differentiated automatically: the columns of a list of repetitions reach those repetitions' rows
+// of the state.
+TEST(SelectedReads, AReturnedJacobianIsOverTheSelection)
+{
+    using In = Composite<Position, Landmarks>;
+    auto const returning = [](Emrys::ValueVector<In, double> const & x) {
+        Eigen::Index const count = (x.size() - 2) / 2;
+        Eigen::VectorXd value(count);
+        Eigen::MatrixXd jacobian = Eigen::MatrixXd::Zero(count, x.size());
+        for (Eigen::Index i = 0; i < count; ++i)
+        {
+            Eigen::Vector2d const d = x.segment<2>(2 + 2 * i) - x.head<2>();
+            value(i) = d.norm();
+            jacobian.block<1, 2>(i, 0) = -d.transpose() / value(i);
+            jacobian.block<1, 2>(i, 2 + 2 * i) = d.transpose() / value(i);
+        }
+        return Emrys::withJacobian(value, jacobian);
+    };
+    Eigen::Matrix2d const noise = 0.04 * Eigen::Matrix2d::Identity();
+    Eigen::Vector2d const observed{9.0, 11.0};
+    auto const lastAndFirst = std::array{2, 0};
+    auto const supplied = measurementModel(
+        returning,
+        reads(path<Position>, path<Landmarks>[lastAndFirst]),
+        outputSpace(Ranges{Range{}, 2}),
+        additiveNoise(noise)
+    );
+    auto const automatic = measurementModel(
+        ranges,
+        reads(path<Position>, path<Landmarks>[lastAndFirst]),
+        outputSpace(Ranges{Range{}, 2}),
+        additiveNoise(noise)
+    );
+    expectSamePosterior(
+        Emrys::update(mapPrior(), observe(methods::linearized(), supplied, observed)),
+        Emrys::update(mapPrior(), observe(methods::linearized(), automatic, observed))
     );
 }
 
