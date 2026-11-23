@@ -152,8 +152,7 @@ reads are resolved from those types and the space alone, so a model that uses on
 `Landmarks` reads the whole block. A sigma-point method then spreads its points over every landmark.
 `affineIn()` does not replace the selection: it names whole items, so it is right only where the
 function is affine in the repetition it uses, and it still forms the Jacobian and $P_{a|n}$ over
-every repetition. Designed on 2026-11-23 and not built; the two spellings marked "Decide" are open.
-Every place that names a block takes a selection in this one step, so that no spelling is left to
+every repetition. Designed on 2026-11-23, its spellings decided that day, and not built. Every place that names a block takes a selection in this one step, so that no spelling is left to
 be found incompatible later.
 
 **The selection** is the subscript of a path value that runs through a repeated block. A repeated
@@ -203,8 +202,8 @@ The rules, each for [tag-addressing] or [model-policies] when built:
   state's `i`th.
 - **Sequences.** Eigen's `seq` and `seqN` with integer bounds. An increment of 1 is one run of rows;
   any other increment is treated as a list. `Eigen::last` and `Eigen::all` are refused, since
-  resolving them needs Eigen's internals. **Decide:** Eigen's types (recommended: users know them,
-  and `idx()` returns them) or a `range(first, n)` of the library's own.
+  resolving them needs Eigen's internals. Eigen's types were chosen over a `range(first, n)` of the
+  library's own: users know them, and `idx()` returns them.
 - **Lists.** Any range of integers, copied into the path value. A braced list or a `std::array` is
   stored at fixed size, so a model that holds one allocates nothing.
 - **Checks.** At compile time: a subscript on a path through no repeated block, and a selection
@@ -247,9 +246,9 @@ takes an integer repetition today, that argument takes a sequence or a list too.
       composition write two repetitions of one block.
 - [ ] **Placing a model.** `on(path<Fleet>[k], model, renames...)` places it on one repetition, and
       `onEach(path<Fleet>[moving], model, renames...)` on each repetition of a sequence or a list;
-      an input renamed to a `Repeated` tag has a value per repetition placed. **Decide:** this
-      value form beside `on<Path>(model)` (recommended: the path value is the one that `reads()`
-      takes) or the selection as an argument, `on<Fleet>(k, model)`. Test: equal to
+      an input renamed to a `Repeated` tag has a value per repetition placed. This value form
+      stands beside `on<Path>(model)`, since the path value is the one that `reads()` takes; the
+      selection as an argument, `on<Fleet>(k, model)`, was rejected. Test: equal to
       `compose(on<A>(model), on<C>(model))` on the state with one tag per repetition.
 - [ ] **Placing a matrix, a factor, and noise.** `Columns{onEach(path<Landmarks>[seen], h),
       on<Position>(-h)}` measures the landmarks listed, and its inferred space has the list's
@@ -278,8 +277,8 @@ takes an integer repetition today, that argument takes a sequence or a list too.
       `examples/landmarks.cpp`, a vehicle sighting landmarks one at a time, which fails when its
       consistency check does.
 
-Done when: both decisions are made, every item's test and every negative compile case passes on all
-three compilers, and the audit's list has no function without a test or a refusal.
+Done when: every item's test and every negative compile case passes on all three compilers, and the
+audit's list has no function without a test or a refusal.
 
 ## 19b. A public API ready for the GPU backend — not started
 
