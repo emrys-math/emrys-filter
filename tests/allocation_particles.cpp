@@ -554,7 +554,8 @@ expectRbpFilterStepsWithinItsResource(Model const & model)
         }
     };
 
-    auto const resampling = upkeep::whenEss(std::less{}, 0.5, upkeep::resample(rng));
+    // Roughening moves the particles in place, as it does a particle set's.
+    auto const resampling = upkeep::whenEss(std::less{}, 0.5, upkeep::resample(rng), upkeep::roughen(rng, 0.2));
     expectStepsAllocateNothing(
         [&](int k) {
             predictOverTheStep(filter, rng);
@@ -571,8 +572,9 @@ expectRbpFilterStepsWithinItsResource(Model const & model)
 }
 
 // An RbParticleFilter over a pmr ParticleGaussian, under both covariance forms, takes its allocator and runs
-// predict, two updates and a likelihood into one result, and resampling without allocating after warm-up,
-// with a fixed-step model too, whose prediction given each particle takes the cached transition.
+// predict, two updates and a likelihood into one result, and resampling and roughening without allocating
+// after warm-up, with a fixed-step model too, whose prediction given each particle takes the cached
+// transition.
 TEST(Allocation, RbpFilterStepsWithinItsResource)
 {
     auto const fixedStep = FixedStepModel{makeModel(), State{}, timeStep};

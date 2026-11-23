@@ -11,6 +11,8 @@ instead.
 - `KalmanFilter<...>::UpdateType<M>` and `ResultType<M>`, what `update()` with a measurement of
   type `M` returns and fills, as the other filters name them; it was
   `decltype(filter)::RecursionType::UpdateType<M>`.
+- `ParticleGaussianParams::forEachParticle(policy, f)`, which calls `f` on each particle as a
+  `ParticleSet`'s `forEach()` does, to move the particles in place and keep their Gaussians.
 - An update takes a sigma-point method spread by axes that can fail, such as
   `spread(cubature(), roots::cholesky())`, and returns `GaussianError::NotPositiveDefinite` when
   the axes cannot take the root of the blocks the measurement reads; it was a compile error. A
@@ -44,6 +46,10 @@ instead.
 
 ### Changed
 
+- **Breaking:** `Roughen` moves the particles of a Rao-Blackwellized state in place, so it no
+  longer allocates a copy of the particle set at each call. A state of the user's own that it
+  roughens needs `forEachParticle(policy, f)`, as `ParticleGaussianParams` has, in place of
+  `setParticleStates()`.
 - [docs/choosing.md](docs/choosing.md), "Starting without a prior", recommends starting a
   `SqrtInfoFilter` from no information, the diffuse initialization of the literature, over a
   least-squares fit to the first measurements, and says when to convert once the state is

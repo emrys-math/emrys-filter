@@ -916,9 +916,8 @@ Allocation [allocation]:
 - [ ] A point-mass filter with a hybrid per cell, and a particle filter with a hybrid per particle,
       allocate at every update the IMM result they reuse across the points
       (rao-blackwellized-filters.md Q26), and run their points only in order (Q25).
-- [ ] `Roughen` of a Rao-Blackwellized state copies the particle set on every call; `drawSamples()`
-      of a gamma, `drawParticleGaussian()`, the fitting, and the samplers' batches build owning
-      sample sets, which a bounded space shouldn't need.
+- [ ] `drawSamples()` of a gamma, `drawParticleGaussian()`, the fitting, and the samplers'
+      batches build owning sample sets, which a bounded space shouldn't need.
 - [ ] `GridGaussianParams::subdivide()`, `PointGrid::subdivided()`, and `collapseGivenPoints` allocate
       from the global heap (rao-blackwellized-filters.md Q18); `PoissonEmission`,
       `ExponentialEmission`, and `ArrivalInterval` copy their rates into every measurement

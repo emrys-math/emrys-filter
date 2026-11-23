@@ -932,7 +932,8 @@ It offers what `ParticleSet` does for weights (`logWeights()`, `logTotalWeight()
 `ess()`, `mostProbable()`, the last three also under a policy, §12), per-particle
 access (`particle(i)`, `conditional(i)`, `particles()`), `toDensity()` for the collapse, `setCapacity()` (§14), and
 `resample([policy], rng, [size], [resampler])`, which copies each particle's Gaussian from its
-ancestor. `setParticleStates()` replaces the particles' values and leaves their Gaussians, and is
+ancestor. `setParticleStates()` replaces the particles' values and leaves their Gaussians, and
+`forEachParticle(policy, f)` moves them in place as a `ParticleSet`'s `forEach()` does, which is
 what `Roughen` uses. So `upkeep::whenEss(std::less{}, 0.5, upkeep::resample(rng))` and `upkeep::roughen(rng, scale)` apply to it unchanged
 [upkeep].
 

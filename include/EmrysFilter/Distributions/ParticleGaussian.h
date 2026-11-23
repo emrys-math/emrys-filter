@@ -611,6 +611,18 @@ public:
         m_particles.setStates(states);
     }
 
+    /** Calls \a f on each particle of the sampled block, under \a policy, as the particle set's
+     * forEach() does: \a f may set the particle's value, and the particles keep their weights and
+     * Gaussians, so that Roughen moves them in place.
+     */
+    template <ExecutionPolicy P, typename F>
+    void
+    forEachParticle(P && policy, F && f)
+    {
+        m_stamp.touchValues();
+        m_particles.forEach(std::forward<P>(policy), std::forward<F>(f));
+    }
+
 private:
 
     /** The filter reweights and replaces the Gaussians. */

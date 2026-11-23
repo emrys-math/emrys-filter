@@ -52,7 +52,7 @@ comment gained when `Keep` gains over `Collapse`, the collapse bound as a test o
 the gate as a commitment, and in `Reduction.h`, whose `Select` says why it keeps the whole
 likelihood; and the rules in [mixture-filter] and [reduction-policies].
 Upkeep followed on 2026-11-12, with every question decided but Q11, `Roughen`'s copy of a
-Rao-Blackwellized particle set, which is in the roadmap's allocation items: the explanation is in
+Rao-Blackwellized particle set, which was removed on 2026-11-22 (`forEachParticle()`): the explanation is in
 `Upkeep.h`, whose module page gained the table of the operations each state takes, what keeping
 the state's type means, what each action's return means, and what each allocates, and in
 `FilterUpkeep.h`; the rules in [upkeep], [rao-blackwellized-core], [autonomous-multiple-model], and

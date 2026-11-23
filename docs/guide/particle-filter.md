@@ -881,8 +881,8 @@ filter built from a copy of a set, or a copy of a whole filter, steps without an
 the first step on (`Allocation.CopiesKeepTheirSourcesResourceAndCapacity`). Nothing in the
 particle filter's own orbit allocates per call on `Sequential` any longer: every resampler takes
 the set's scratch through `resample()` (§7), and `Roughen` draws and moves one particle at a time
-(`Allocation.RoughenKernelDensityAndSingleDrawsAllocateNothing`). `Roughen` of a
-`ParticleGaussianParams` still copies the set, which the roadmap's allocation items list.
+(`Allocation.RoughenKernelDensityAndSingleDrawsAllocateNothing`), and of a
+`ParticleGaussianParams` it moves the particles in place (`Allocation.RbpFilterStepsWithinItsResource`).
 
 ## 14. Printing
 

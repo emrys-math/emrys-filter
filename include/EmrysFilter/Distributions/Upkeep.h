@@ -101,9 +101,9 @@ namespace Emrys
  *
  * Upkeep runs on the filter's state, which allocates through its allocator (decisions.md
  * [allocation]). Under execution::sequential, Resample to a size within the set's capacity, Roughen on
- * a ParticleSet, the prunes once the state's capacity is set, and FloorModes allocate nothing. Subdivide
- * allocates the larger grid, Roughen on a Rao-Blackwellized state a copy of its particle set, and
- * RepairCovariance a copy of each covariance it repairs. Under another policy the standard algorithms
+ * a ParticleSet or a Rao-Blackwellized state, the prunes once the state's capacity is set, and
+ * FloorModes allocate nothing. Subdivide allocates the larger grid, and RepairCovariance a copy of
+ * each covariance it repairs. Under another policy the standard algorithms
  * allocate, as [execution-policies] allows.
  *
  * \code
@@ -149,6 +149,18 @@ namespace Emrys
 
 namespace internal
 {
+
+/** A callable that leaves the particle it is given as it is: Roughen's test that a state visits its
+ * particles.
+ */
+struct LeaveParticle
+{
+    /** Does nothing to \a particle. */
+    template <typename Particle>
+    void
+    operator()(Particle & /*particle*/) const
+    {}
+};
 
 /** Runs \a actions in order on \a state, stopping at the first error.
  * \returns whether any changed the state
@@ -587,7 +599,61 @@ public:
     [[nodiscard]] std::expected<bool, WeightError>
     operator()(ParticleSet<Space, Scalar, Allocator> & particles) const
     {
-        using Set = ParticleSet<Space, Scalar, Allocator>;
+        return roughen(particles, [&](auto const & move) {
+            particles.forEach(policy_, move);
+        });
+    }
+
+    /** Roughens the particles of a Rao-Blackwellized state, such as a ParticleGaussianParams, by their
+     * own bandwidth, in place, as a ParticleSet is roughened. Their Gaussians are left as they were,
+     * as if each particle had always been where it is moved to: an approximation, as roughening
+     * always is.
+     */
+    template <typename State>
+        requires requires(State & state, Policy_ const & policy, internal::LeaveParticle leave) {
+            state.particles().kdeBandwidth(policy);
+            state.forEachParticle(policy, leave);
+        }
+    [[nodiscard]] std::expected<bool, WeightError>
+    operator()(State & state) const
+    {
+        return roughen(state.particles(), [&](auto const & move) {
+            state.forEachParticle(policy_, move);
+        });
+    }
+
+    /** \returns the generator drawn from */
+    [[nodiscard]] constexpr G &
+    generator() const noexcept
+    {
+        return *generator_;
+    }
+
+    /** \returns the kernel covariance as a multiple of the bandwidth */
+    [[nodiscard]] constexpr Scalar_
+    scale() const noexcept
+    {
+        return scale_;
+    }
+
+    /** \returns the execution policy */
+    [[nodiscard]] constexpr Policy_ const &
+    policy() const noexcept
+    {
+        return policy_;
+    }
+
+private:
+
+    /** The body of both call operators: moves each of \a particles by a draw from the kernel,
+     * through \a forEach, which calls what it is given with each particle as a mutable particle,
+     * in order under Sequential.
+     */
+    template <typename Set, typename ForEach>
+    [[nodiscard]] std::expected<bool, WeightError>
+    roughen(Set const & particles, ForEach const & forEach) const
+    {
+        using Scalar = typename Set::Scalar;
         using Vector = typename Set::VectorType;
         using Difference = typename Set::DifferenceVectorType;
         static_assert(std::floating_point<Scalar>, "sampling requires a standard floating-point scalar");
@@ -614,12 +680,11 @@ public:
             auto normal = std::normal_distribution<Scalar>{};
             auto z = Difference{};
             z.resize(rows);
-            for (Eigen::Index i = 0; i < particles.size(); ++i)
-            {
+            forEach([&](auto & particle) {
                 internal::fillStandardNormal(z, rng, normal);
-                Vector const moved = Emrys::plus(space, particles.state(i), Difference{internal::multiply(kernel, z)});
-                particles.setState(i, moved);
-            }
+                Vector const moved = Emrys::plus(space, particle.state(), Difference{internal::multiply(kernel, z)});
+                particle.setState(moved);
+            });
         }
         else
         {
@@ -627,7 +692,7 @@ public:
             auto draws = internal::scratchVector<Scalar>(policy_, std::size_t(rows * particles.size()));
             auto normals = Eigen::Map<Normals>{draws.data(), rows, particles.size()};
             internal::fillStandardNormal(normals, rng);
-            particles.forEach(policy_, [&](auto & particle) {
+            forEach([&](auto & particle) {
                 Vector const moved =
                     Emrys::plus(space, particle.state(), Difference{kernel * normals.col(particle.index())});
                 particle.setState(moved);
@@ -635,48 +700,6 @@ public:
         }
         return true;
     }
-
-    /** Roughens the particles of a Rao-Blackwellized state, such as a ParticleGaussianParams, by their
-     * own bandwidth. Their Gaussians are left as they were, as if each particle had always been
-     * where it is moved to: an approximation, as roughening always is. It roughens a copy of the
-     * particle set and writes the states back, so it allocates the copy at each call.
-     */
-    template <typename State>
-        requires requires(State & state) { state.setParticleStates(state.particles().states()); }
-    [[nodiscard]] std::expected<bool, WeightError>
-    operator()(State & state) const
-    {
-        auto particles = state.particles();
-        std::expected<bool, WeightError> const roughened = (*this)(particles);
-        if (roughened && *roughened)
-        {
-            state.setParticleStates(particles.states());
-        }
-        return roughened;
-    }
-
-    /** \returns the generator drawn from */
-    [[nodiscard]] constexpr G &
-    generator() const noexcept
-    {
-        return *generator_;
-    }
-
-    /** \returns the kernel covariance as a multiple of the bandwidth */
-    [[nodiscard]] constexpr Scalar_
-    scale() const noexcept
-    {
-        return scale_;
-    }
-
-    /** \returns the execution policy */
-    [[nodiscard]] constexpr Policy_ const &
-    policy() const noexcept
-    {
-        return policy_;
-    }
-
-private:
 
     G * generator_;                                  ///< the generator the jitter comes from
     Scalar_ scale_;                                  ///< the kernel covariance as a multiple of the bandwidth
