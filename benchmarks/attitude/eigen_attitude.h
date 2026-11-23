@@ -12,10 +12,11 @@
 
 #include "scenario.h"
 
-#include <Eigen/Cholesky>
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 #include <unsupported/Eigen/AutoDiff>
+
+#include <cmath>
 
 namespace Orientation
 {
@@ -115,30 +116,48 @@ private:
         Matrix3 innovationCov = variance * Matrix3::Identity();
         innovationCov.noalias() += h * cross.topRows<3>();
 
-        auto const llt = Eigen::LLT<Matrix3>{innovationCov};
-        // The gain Pxy S^-1 by substitution through the factor L of S, as the library solves it
-        // (internal::transposedSolve()), since Eigen's own solve of a system this small takes
-        // several times as long: column r of the gain holds unknown r of every row, and the
-        // divisions by L's diagonal are multiplications by its reciprocals, taken once.
-        Matrix3 const & factor = llt.matrixLLT();
-        Eigen::Vector3d const reciprocal = factor.diagonal().cwiseInverse();
+        // The Cholesky factorization of S without square roots, S = L D L^T with L unit lower
+        // triangular, a column at a time, as the library takes it
+        // (internal::CholeskyFactorization), since Eigen's LLT of a matrix this small takes
+        // several times as long, and since each step of the filter waits on this one: column k of
+        // L D is column k of S less L(k, j) times each column j before it, and the column after
+        // it waits on one division. Each column is padded with a zero to two packets, so that
+        // each step is one operation on a whole column.
+        auto unscaled = Eigen::Matrix<double, 4, 3>{};
+        auto unit = Eigen::Matrix<double, 4, 3>{};
+        auto reciprocal = Eigen::Vector3d{};
+        for (int k = 0; k < 3; ++k)
+        {
+            Eigen::Vector4d column = Eigen::Vector4d::Zero();
+            column.head<3>() = innovationCov.col(k);
+            for (int j = 0; j < k; ++j)
+            {
+                column -= (unscaled(k, j) * reciprocal(j)) * unscaled.col(j);
+            }
+            reciprocal(k) = 1 / column(k);
+            unscaled.col(k) = column;
+            unit.col(k) = column * reciprocal(k);
+        }
+
+        // The gain Pxy S^-1 by substitution, as the library solves it: forward through L, a
+        // multiplication by the reciprocals of the pivots, and backward through L^T. Column r of
+        // the gain holds unknown r of every row.
         auto gain = Eigen::Matrix<double, 6, 3>{};
         for (int r = 0; r < 3; ++r)
         {
             gain.col(r) = cross.col(r);
             for (int c = 0; c < r; ++c)
             {
-                gain.col(r) -= factor(r, c) * gain.col(c);
+                gain.col(r) -= unit(r, c) * gain.col(c);
             }
-            gain.col(r) *= reciprocal(r);
         }
         for (int r = 2; r >= 0; --r)
         {
+            gain.col(r) *= reciprocal(r);
             for (int c = r + 1; c < 3; ++c)
             {
-                gain.col(r) -= factor(c, r) * gain.col(c);
+                gain.col(r) -= unit(c, r) * gain.col(c);
             }
-            gain.col(r) *= reciprocal(r);
         }
         auto correction = Vector6{};
         correction.noalias() = gain * residual;

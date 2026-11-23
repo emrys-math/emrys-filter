@@ -81,9 +81,12 @@ TEST(Roots, EachAxesMultipliesBackToItsCovariance)
 TEST(Roots, CholeskyIsTheLowerFactorAndSymmetricIsSymmetric)
 {
     auto const cov = positiveDefinite();
+    // The Cholesky root is the lower factor, zero above its diagonal. It comes from the library's
+    // own factorization [own-cholesky], which differs from Eigen's LLT by rounding.
     Eigen::Matrix4d const lower = Eigen::LLT<Eigen::Matrix4d>{cov}.matrixL();
     auto const cholesky = roots::squareRoot(roots::cholesky(), cov).value();
-    EXPECT_EQ(cholesky, lower);
+    EXPECT_TRUE(cholesky.isApprox(lower, 1e-14));
+    EXPECT_TRUE(cholesky.triangularView<Eigen::StrictlyUpper>().toDenseMatrix().isZero(0.0));
     auto const symmetric = roots::squareRoot(roots::symmetric(), cov);
     EXPECT_LE((symmetric - symmetric.transpose()).cwiseAbs().maxCoeff(), 1e-12);
     EXPECT_GT(Eigen::SelfAdjointEigenSolver<Eigen::Matrix4d>{symmetric}.eigenvalues().minCoeff(), 0.0);

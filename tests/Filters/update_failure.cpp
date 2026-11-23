@@ -1,6 +1,7 @@
 // An update whose innovation covariance is not positive definite (roadmap step 17k, [innovation-cholesky]): a
 // measurement with no noise of a block the prior knows exactly makes S = 0, and every update
-// returns GaussianError::NotPositiveDefinite with the state unchanged, through Emrys::update(),
+// returns GaussianError::NotPositiveDefinite with the state unchanged, as it does for an S that holds
+// a NaN ([own-cholesky]), through Emrys::update(),
 // KalmanFilter in the covariance, square-root, and information forms, mixture noise,
 // GaussianMixtureFilter, ImmFilter, RbParticleFilter, and RbPointMassFilter; a particle set's
 // conditional on a block in which every particle coincides returns the same error. A measurement
@@ -581,6 +582,30 @@ TEST(UpdateFailure, AMeasurementTakesARepairOfTheUsersOwn)
         kept.triangularView<Eigen::Lower>().toDenseMatrix(),
         expected.triangularView<Eigen::Lower>().toDenseMatrix()
     );
+}
+
+// An S that holds a NaN is not positive definite either, where Eigen's LLT alone reports success
+// for it and the update wrote NaN into the state [own-cholesky]: a range to a beacon at the
+// prior's mean position has an undefined Jacobian there by automatic differentiation, zero times
+// infinity, so S is NaN, and the update returns the error and keeps the state.
+TEST(UpdateFailure, AnInnovationThatHoldsANaNFails)
+{
+    using Vector1 = Eigen::Matrix<double, 1, 1>;
+    auto filter = KalmanFilter{makeModel(), makeUncertain()};
+    auto const before = filter.state();
+    auto const beacon = Eigen::Vector2d{1.0, 2.0};
+    auto const range = Emrys::measurementModel(
+        [beacon]<typename T>(auto const & in, auto const &, auto const & x) {
+            auto const offset = (Emrys::block<Position>(in, x) - beacon.cast<T>()).eval();
+            return Eigen::Matrix<T, 1, 1>{Eigen::numext::sqrt(T(offset.squaredNorm()))};
+        },
+        Emrys::reads(Emrys::path<Position>),
+        additiveNoise(GaussianParams<Linear<1>>{Vector1::Zero(), Vector1{0.01}})
+    );
+    auto const updated = filter.update(Emrys::observe(methods::linearized(), range, Vector1{1.0}));
+    ASSERT_FALSE(updated);
+    EXPECT_EQ(updated.error(), GaussianError::NotPositiveDefinite);
+    EXPECT_TRUE(same(filter.state(), before));
 }
 
 // A zero S has no ridge, since the margin scales with its diagonal, so the repaired update still

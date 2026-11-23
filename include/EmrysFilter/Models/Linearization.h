@@ -19,6 +19,7 @@
 
 #include <Eigen/Cholesky>
 
+#include <EmrysFilter/Core/Cholesky.h>
 #include <EmrysFilter/Core/Macros.h>
 #include <EmrysFilter/Core/Math.h>
 #include <EmrysFilter/Core/Multiply.h>
@@ -436,19 +437,24 @@ struct InnovationStatistics
  * repaired matrix, and whose axes that cannot fail would hide a covariance that is not positive
  * definite.
  *
+ * The factorization is a CholeskyFactorization, which loads the upper triangle of \a cov too, so
+ * that must be initialized, and counts a covariance with a NaN as not positive definite
+ * (decisions.md [own-cholesky]).
+ *
  * \returns the factorization, or GaussianError::NotPositiveDefinite if \a cov does not factorize
  *          and is not repaired, or the repair's error or GaussianError::NotPositiveDefinite, with
  *          \a cov unchanged, if the repair fails
  */
 template <typename R, typename Matrix>
-[[nodiscard]] std::expected<Eigen::LLT<std::remove_const_t<Matrix>>, GaussianError>
+[[nodiscard]] std::expected<CholeskyFactorization<std::remove_const_t<Matrix>>, GaussianError>
 innovationCholesky(Matrix & cov)
 {
+    using Factorization = CholeskyFactorization<std::remove_const_t<Matrix>>;
     if constexpr (std::is_same_v<R, NoRepair>)
     {
         // Factorized where it is returned, with one return, so that the factor is not copied.
-        auto result = std::expected<Eigen::LLT<std::remove_const_t<Matrix>>, GaussianError>{std::in_place, cov};
-        if (result->info() != Eigen::Success)
+        auto result = std::expected<Factorization, GaussianError>{std::in_place, cov};
+        if (!result->isPositiveDefinite())
         {
             result = std::unexpected{GaussianError::NotPositiveDefinite};
         }
@@ -456,10 +462,10 @@ innovationCholesky(Matrix & cov)
     }
     else
     {
-        auto llt = Eigen::LLT<std::remove_const_t<Matrix>>{cov};
-        if (llt.info() == Eigen::Success)
+        auto cholesky = Factorization{cov};
+        if (cholesky.isPositiveDefinite())
         {
-            return llt;
+            return cholesky;
         }
         static_assert(!std::is_const_v<Matrix>, "a repaired innovation covariance replaces the one given");
         auto repaired = R{}.repaired(cov);
@@ -467,28 +473,25 @@ innovationCholesky(Matrix & cov)
         {
             return std::unexpected{repaired.error()};
         }
-        llt.compute(*repaired);
-        if (llt.info() != Eigen::Success)
+        cholesky.compute(*repaired);
+        if (!cholesky.isPositiveDefinite())
         {
             return std::unexpected{GaussianError::NotPositiveDefinite};
         }
         cov = std::move(*repaired);
-        return llt;
+        return cholesky;
     }
 }
 
 /** \returns the NIS and log-determinant of the residual \a residual under the covariance that
- * \a llt factorizes, \f$ S = L L^T \f$: \f$ r^T S^{-1} r = |L^{-1} r|^2 \f$, one forward
+ * \a cholesky factorizes, \f$ S = L L^T \f$: \f$ r^T S^{-1} r = |L^{-1} r|^2 \f$, one forward
  * substitution where a solve takes two, and \f$ \log |S| = 2 \sum_i \log L_{ii} \f$.
  */
 template <typename Matrix, typename Residual>
 [[nodiscard]] InnovationStatistics<typename Matrix::Scalar>
-innovationStatistics(Eigen::LLT<Matrix> const & llt, Eigen::MatrixBase<Residual> const & residual)
+innovationStatistics(CholeskyFactorization<Matrix> const & cholesky, Eigen::MatrixBase<Residual> const & residual)
 {
-    using Scalar = typename Matrix::Scalar;
-    typename Residual::PlainObject whitened = residual;
-    llt.matrixL().solveInPlace(whitened);
-    return {whitened.squaredNorm(), Scalar(2) * llt.matrixLLT().diagonal().array().log().sum()};
+    return {cholesky.inverseQuadraticForm(residual), cholesky.logDeterminant()};
 }
 
 /** Selects the Innovation constructor that makes the covariance where the innovation keeps it,
@@ -632,9 +635,9 @@ private:
     {
         if (!m_statistics)
         {
-            auto const llt = Eigen::LLT<MatrixType>{m_cov};
-            EMRYS_FILTER_ASSERT(llt.info() == Eigen::Success && "the innovation covariance must be positive definite");
-            m_statistics = internal::innovationStatistics(llt, m_residual);
+            auto const cholesky = internal::CholeskyFactorization<MatrixType>{m_cov};
+            EMRYS_FILTER_ASSERT(cholesky.isPositiveDefinite() && "the innovation covariance must be positive definite");
+            m_statistics = internal::innovationStatistics(cholesky, m_residual);
         }
         return *m_statistics;
     }

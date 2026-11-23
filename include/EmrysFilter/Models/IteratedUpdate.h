@@ -546,10 +546,10 @@ iteratedUpdate(
         {
             return std::unexpected{factored.error()};
         }
-        auto const & llt = *factored;
+        auto const & cholesky = *factored;
         auto next = Difference{};
         next.resize(delta.size());
-        next.noalias() = multiply(cross, llt.solve(residual));
+        next.noalias() = multiply(cross, cholesky.solve(residual));
         if constexpr (Considers)
         {
             zeroConsideredRows(next, considered);
@@ -565,7 +565,7 @@ iteratedUpdate(
                 Reads::DifferenceMaxSize,
                 InnovationMatrix::MaxRowsAtCompileTime>;
             spreadCov.noalias() -=
-                multiply(internal::transposedSolve<ReadCross>(llt, readCross.transpose()), readCross.transpose());
+                multiply(internal::transposedSolve<ReadCross>(cholesky, readCross.transpose()), readCross.transpose());
             spreadCov = (Scalar(0.5) * (spreadCov + spreadCov.transpose())).eval();
             if constexpr (Considers)
             {

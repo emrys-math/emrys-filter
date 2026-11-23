@@ -27,6 +27,7 @@ add_executable(emrys_filter_tests
   Core/math.cpp
   Core/execution.cpp
   Core/triangularization.cpp
+  Core/cholesky.cpp
   Core/solve.cpp
   Core/time.cpp
   Spaces/space.cpp

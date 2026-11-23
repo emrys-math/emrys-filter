@@ -1142,7 +1142,10 @@ checkLikelihoodLeavesTheRest()
     auto filter = RbPointMassFilter{makeModel(), grid, initialRest(), Covariance{}};
     auto const truth = Eigen::Vector2d{17.3, -8.6};
     filter.predict(timeStep);
-    ASSERT_TRUE(filter.update(makeRange(rangeFrom(truth, 0, 0.5), beacons[0])));
+    // A range to a beacon off the grid: the first beacon lies on a grid point, where the range's
+    // Jacobian is undefined, so a cell with its own covariance has an innovation covariance of NaN
+    // there and the update fails [innovation-cholesky].
+    ASSERT_TRUE(filter.update(makeRange(rangeFrom(truth, 1, 0.5), beacons[1])));
     auto const before = filter.state();
     auto const range = quantizedRanges(truth)[1];
     auto const result = filter.update(range.measurement());

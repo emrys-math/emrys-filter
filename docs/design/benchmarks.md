@@ -95,7 +95,7 @@ might doubt, published with its method and machine, and never one per feature."
 | 6 | It fits and runs on a microcontroller | Footprint and cycles on Cortex-M4F and M7 | `.text`, `.data`, stack per function, DWT cycles per step | hand-rolled EKF and TinyEKF on the same target | after [embedded-builds]'s Cortex-M job |
 | 7 | A template library's compile cost is tolerable | Compile cost of each benchmark translation unit | seconds and peak memory per compiler | the hand-rolled translation unit | built and measured on three compilers (section 7), not in CI, not published |
 | 8 | A GPU pays above some particle count | Device path against host `par` | crossover particle count | the library's own host path | step 19, not planned here |
-| 9 | It is no slower than the C++ Kalman library a user would otherwise pick | mherb/kalman's EKF, UKF, square-root EKF, and square-root UKF, TinyEKF's EKF, and OpenCV's `cv::KalmanFilter` run as an EKF, on the ranging problem | instructions and ns per step, at the ranging sizes and scalars | each library, as its users write it | measured 2026-11-23 on branch `mherb-benchmark`; holds against OpenCV, and fails in time against mherb/kalman's EKF and UKF at 2D with 4 anchors and against TinyEKF at 2D with 4 and 8; the pairs that do not agree are timed with a mark |
+| 9 | It is no slower than the C++ Kalman library a user would otherwise pick | mherb/kalman's EKF, UKF, square-root EKF, and square-root UKF, TinyEKF's EKF, and OpenCV's `cv::KalmanFilter` run as an EKF, on the ranging problem | instructions and ns per step, at the ranging sizes and scalars | each library, as its users write it | measured 2026-11-23 on branch `mherb-benchmark`; the EKF holds against all three at every size, and the claim fails in time for the UKF at 2D with 4 anchors, the square-root EKF at 3D with 24 and in double at 2D with 16, and the square-root UKF in double from 2D with 16 on; the pairs that do not agree are timed with a mark |
 
 **1. Ranging.** What exists, plus the two axes [benchmarks] names and the ranging benchmark lacks: a
 constant-acceleration case (state dimension 6 and 9 beside 4 and 6), and the scaling curves over
@@ -133,7 +133,8 @@ fixed size of at most eight, the library solves the gain one row at a time
 blocked solver whatever the size; the hand code does the same. That took 2D with 4 anchors from
 about 2,600 instructions per step to about 950 in the hand code and from 2,800 to 1,240 in the
 library. Since 2026-11-23 both substitute through the factor themselves instead, for a fixed size
-of at most 24, since Eigen's solve of a small vector turned out slow in time (claim 9, below).
+of at most 24, since Eigen's solve of a small vector turned out slow in time, and both factorize
+$S$ without square roots, a column at a time, as [own-cholesky] has it (claim 9, below).
 
 The library's update also moved its result, with the innovation's residual and $S$, into a
 `std::expected` and out again, and each move of a fixed-size matrix is a copy, which at 3D with
@@ -534,20 +535,21 @@ the scalar TinyEKF runs in unless `_float_t` is defined, so the marked rows are 
 get. For claim 6 this is a finding before any cycle is counted: on the scalar of the target TinyEKF
 is written for, its estimate is the less accurate.
 
-*Measured* (2026-11-23, at the commit *Substitute through the gain's Cholesky factor in place of Eigen's solve*;
+*Measured* (2026-11-23, at the commit *Factorize the innovation covariance by the library's own Cholesky factorization*;
 `docs/benchmarks.md` gives the tables and the machine, and the paragraphs below what the
-measurement before it found). Against OpenCV, EmrysFilter's EKF takes 3 to 7% of the time and of
-the instructions at every size, in either scalar. Against mherb/kalman's EKF it takes 0.22 to 0.54
-of the time at every size but 2D with 4 anchors, where it takes 1.50 times in double and 1.39 in
-float. Its square-root EKF takes 0.55 to 0.87 of mherb/kalman's time but at 2D with 16 anchors and
-3D with 24, where it takes 0.98 to 1.11. Its UKF takes 0.50 to 0.90 but at 2D with 4 anchors (1.32
-and 1.63), and its square-root UKF 0.83 to 0.97 in float and 0.87 to 1.33 in double. Against
-TinyEKF it takes 1.14 and 1.39 times the time in 2D with 4 and 8 anchors in double, and 1.08 and
-1.21 in float, TinyEKF's default, and 0.44 to 0.85 at the other four sizes. So claim 9 holds
-against OpenCV, and fails against mherb/kalman's EKF and UKF at 2D with 4 anchors and against
-TinyEKF at 2D with 4 and 8. At 2D with 4 anchors the library takes 1,218 instructions and 114 ns,
-mherb/kalman 1,218 and 76 ns, and TinyEKF 1,575 and 95 ns, while the hand code takes 864 and 98 ns;
-what is left there is Eigen's factorization (below).
+measurements before it found). EmrysFilter's EKF takes less time than each library's at every size
+and in either scalar: 2 to 6% of OpenCV's; 0.93 of mherb/kalman's at 2D with 4 anchors in double,
+0.76 in float, and 0.14 to 0.45 elsewhere; and 0.72 and 0.86 of TinyEKF's at 2D with 4 and 8
+anchors in double, 0.61 and 0.63 in float, TinyEKF's default, and 0.32 to 0.75 at the other four
+sizes. Its square-root EKF takes 0.55 to 0.88 of mherb/kalman's time but at 3D with 24 anchors
+(1.13 in double, 1.04 in float) and 2D with 16 (1.05 and 0.97). Its UKF takes 0.40 to 0.84 but at
+2D with 4 anchors (1.10 and 1.33), and its square-root UKF 0.81 to 0.99 in float and 0.85 to 1.34
+in double. So claim 9 holds for the EKF against all three, and fails for the UKF at 2D with 4
+anchors, the square-root EKF at 3D with 24 anchors and, in double, at 2D with 16, and the
+square-root UKF in double from 2D with 16 anchors on. At 2D with 4 anchors the library takes 723 instructions and 70 ns, mherb/kalman
+1,218 and 75 ns, and TinyEKF 1,575 and 102 ns, while the hand code takes 401 and 55 ns. The other
+libraries' own times are 1% to 15% longer in this run than in the one before, with their code
+unchanged, so times of different runs compare only to about that.
 
 *Where the instructions go with 8 and 12 anchors (2026-11-23).* The instruction ratios against
 TinyEKF are worst at 2D with 8 anchors (1.56) and 3D with 12 (1.19), between sizes where the
@@ -631,23 +633,82 @@ before), 225 at 2D with 8 (547), 581 at 2D with 16 (882), 186 at 3D with 6 (412)
 with 8, from 18,946 to 12,505 at 2D with 16, from 17,675 to 10,439 at 3D with 12, and from 45,099
 to 30,752 at 3D with 24. The hand code's fall alike, so the ratios to it move little.
 
-*The factorization, measured and not made (2026-11-23).* The probe also timed two Cholesky
-factorizations written out. One that reduces each column by the columns before it over its whole
-length, padded to whole packets, with what that leaves above the diagonal never read, beats
-`LLT::compute()` at every size in both scalars: 13 ns in place of 58 for a 4×4 matrix in
-`double`, 61 in place of 122 for 8×8, 34 in place of 50 for 6×6, 166 in place of 209 for 12×12,
-245 in place of 312 for 16×16, and 453 in place of 624 for 24×24. With it and the substitution
-the hand code's whole step took 49 ns at 2D with 4 anchors in the probe, where the runner's takes
-98 with Eigen's factorization. Two things stand between that and the library. It reads the whole
-of each column, and the library promises only a covariance's lower triangle
-[borrowed-intermediates], so values above the diagonal that nothing wrote, a denormal among them,
-would go through the arithmetic; copying the lower triangle into zeros first, an element at a
-time, with the norm that `LLT` keeps for `rcond()`, took 37 ns for the 4×4, most of the gain
-gone. And the library's factorizations are `Eigen::LLT` objects, which cannot be built from a
-factor computed elsewhere without reaching their protected members. Both are design questions
-for the maintainer: whether the innovation covariance may be required whole where it is
-factorized, and whether the library keeps `Eigen::LLT` or a factor type of its own, which could
-also keep the reciprocals of the diagonal that the substitution takes again.
+*The factorization, made (2026-11-23).* The commit *Factorize the innovation covariance by the library's own Cholesky factorization*
+adds `internal::CholeskyFactorization` (`Core/Cholesky.h`, [own-cholesky]) and takes the
+innovation covariance's gain, NIS, and log-determinant from it; the two hand-written filters
+factorize the same way. The probe had first timed a Cholesky factorization written out by whole
+padded columns, with what that leaves above the diagonal never read, alone: 13 ns in place of
+`LLT::compute()`'s 58 for a 4×4 matrix in `double`, 61 in place of 122 for 8×8, 34 in place of 50
+for 6×6, and 453 in place of 624 for 24×24. Two questions stood before it and are answered.
+
+- *Whether the matrix must be whole.* No. The factorization loads the upper triangle with its
+  columns and nothing is taken from it: with NaN, values too large to square, denormals, or other
+  numbers there, the factor is the same bit for bit and the time the same (13.0 ns against 13.6 to
+  13.8). So only the lower triangle's values are used, as [borrowed-intermediates] says, and the
+  upper triangle need only be initialized. Copying the lower triangle into zeros first, an element
+  at a time, was what made the careful version slow, 36 ns for the 4×4.
+- *`Eigen::LLT` or a type of the library's own.* Its own, since an `Eigen::LLT` cannot be filled
+  from a factor made elsewhere, and a type keeps what its readers take.
+
+Built that way and timed in the runners, it gave less than the probe promised: the library's step
+at 2D with 4 anchors went from 114 ns to about 90, and at 3D with 6 not at all. The reason is that
+the probe timed independent calls, which overlap in the processor, while a filter's steps wait on
+each other: the covariance one step writes is what the next reads. Timed with each call's matrix
+and right-hand sides depending on the result of the call before, a factorization and a solve of
+four right-hand sides take, in `double`:
+
+| Factorization and substitution, ns | 4×4 | 8×8 | 16×16 | 6×6, 6 right-hand sides | 12×12, 6 | 24×24, 6 |
+|---|---|---|---|---|---|---|
+| Eigen's `LLT`, then the substitution through $L$ | 78 | 185 | 483 | 115 | 354 | 963 |
+| By columns, each scaled by `1 / sqrt(pivot)` | 54 | 127 | 353 | 92 | 262 | 737 |
+| The same, scaled by `sqrt(pivot) * (1 / pivot)` | 47 | 114 | 332 | 82 | 239 | 708 |
+| Columns kept unscaled for the updates, substitution through $L$ | 40 | 98 | 314 | 77 | 214 | 771 |
+| The same, substitution through the unit factor | 36 | 97 | 289 | 74 | 205 | 734 |
+| The first row as independent calls | 70 | 176 | 464 | 100 | 329 | 906 |
+| The last row as independent calls | 12 | 72 | 272 | 54 | 186 | 680 |
+
+With square roots, each column waits on a root and then a division before the next can be
+reduced by it. Keeping the columns unscaled, $\tilde L D$, the next column waits on one division,
+and the substitution through the unit factor $\tilde L$ scales nothing inside a pass: it
+multiplies by the reciprocals of the pivots once, between the passes. The pivots are those of the
+Cholesky factorization, so the same matrices fail. That last form is what the library and the hand
+code use. It is the fastest at every size but 24×24, where scaling by `sqrt(pivot) * (1 / pivot)`
+takes 708 ns against its 734; in `float` it takes 34 ns against 49 for the 4×4 and 67 against 92
+for the 6×6, and the two are level at 24×24 (561 and 559). Keeping the factor in the padded columns it was
+written in, in place of copying it into a square matrix, changed the runners' times by nothing
+that could be told from noise.
+
+After it, in `double`, a step of the library's EKF takes 70 ns at 2D with 4 anchors (114 at the
+commit before), 155 at 2D with 8 (225), 431 at 2D with 16 (581), 175 at 3D with 6 (186), 398 at
+3D with 12 (482), and 1,144 at 3D with 24 (1,357), and 723 instructions at 2D with 4 anchors
+(1,218), 1,862 at 2D with 8 (3,833), and 28,024 at 3D with 24 (30,752). The hand code's step fell
+from 98 to 55 ns at 2D with 4 anchors and from 864 to 401 instructions, so what the library adds
+there is what it added before, 16 ns and about 320 instructions, and the ratios to the hand code
+rose: 1.80 to 1.89 in instructions and 1.17 to 1.71 in time at 2D with 4 anchors.
+
+One test relied on what Eigen did with a NaN. `Eigen::LLT` reports success for a matrix that
+holds one; the factorization here does not, at any size. A grid point of
+`RbPointMassFilter.ALikelihoodOverTheGridLeavesTheRest` lay on a beacon, where the range's
+Jacobian by automatic differentiation is zero times infinity, so that cell's innovation
+covariance was NaN, and the update used to drop the cell without a word; it now returns
+`GaussianError::NotPositiveDefinite`, as [innovation-cholesky] says an update does. The test's
+set-up measures a beacon off the grid now, and `UpdateFailure.AnInnovationThatHoldsANaNFails`
+holds the new behavior.
+
+The commit after it, *Take a covariance's Cholesky root by the library's own factorization*, moves
+`roots::Cholesky`, whose root the default sigma points are spread by, to the same type. Two runs
+of the runner against mherb/kalman after it have the UKF at 2D with 4 anchors at 0.90 and 0.93 of
+mherb/kalman's time in double and 1.03 and 1.04 in float, where the tables have 1.10 and 1.33; one
+of the two runs had 3D with 6 anchors at 0.89 and the other at 0.74, where the tables have 0.77, so
+a single run of that runner is good to about 0.15 in a ratio. The page's tables are not taken
+again for it.
+
+Left for the next commits: the library's other Cholesky factorizations, which are still
+`Eigen::LLT` (the Gaussian's own, the information forms, the divergences,
+the fitting, the Cramér-Rao bound, the conditionals), with the whitening and the factor $L$ that
+they read; then `solvesBySubstitution` and `substituteTransposed()` in `Core/Solve.h` go, which
+serve only an `Eigen::LLT`. Whether the report to Eigen is worth making waits on GCC, MSVC, and
+ARM measurements.
 
 mherb/kalman's EKF, on Eigen too, has a larger step of its own, between 4 anchors and 6: 1,218
 instructions at 2D with 4 anchors, 11,455 at 3D with 6, and 17,467 at 2D with 8, which is why the

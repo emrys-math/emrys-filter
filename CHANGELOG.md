@@ -64,13 +64,28 @@ instead.
 
 ### Changed
 
+- An update factorizes its innovation covariance by a Cholesky factorization of the library's own
+  where the measurement has a fixed size of at most 24, in place of `Eigen::LLT`: without square
+  roots, a column at a time, which is what a filter's step waits on. With the substitution of the
+  next entry, a step of the ranging EKF in `double` takes 70 ns where it took 167 with 4 anchors
+  in 2D, 155 where it took 547 with 8, and 1,144 where it took 2,018 with 24 in 3D
+  ([docs/benchmarks.md](docs/benchmarks.md)), and the EKF is now faster than mherb/kalman's,
+  TinyEKF's, and OpenCV's at every size measured, by 7% where it is closest. The gain, the NIS,
+  and the log-likelihood differ from before by rounding.
+- `roots::cholesky()`, by which the default sigma points are spread, takes the root of a
+  covariance of a fixed size of at most 24 by the same factorization, so a sigma-point filter's
+  points differ from before by rounding. In two runs the ranging UKF with 4 anchors in 2D took
+  0.90 and 0.93 of mherb/kalman's time in `double`, where it took 1.10 before.
 - The Kalman gain, and every other solve through a Cholesky factorization of a fixed size of at
   most 24 that gives a gain or a statistical linearization, is formed by a substitution the
-  library writes out, in place of Eigen's solve, which took most of a small update's time. In
-  [docs/benchmarks.md](docs/benchmarks.md) a step of the ranging EKF in `double` takes 114 ns
-  where it took 167 with 4 anchors in 2D, 225 where it took 547 with 8, and 1,357 where it took
-  2,018 with 24 in 3D. The result differs from before by rounding, since the substitution
-  multiplies by the reciprocals of the factor's diagonal where Eigen's solve divides by it.
+  library writes out, in place of Eigen's solve, which took most of a small update's time. The
+  result differs from before by rounding.
+- An update whose innovation covariance holds a NaN returns
+  `GaussianError::NotPositiveDefinite` and leaves the state as it was. Before, `Eigen::LLT`
+  reported success for such a matrix, and the update wrote NaN into the state, or, in a
+  Rao-Blackwellized point-mass filter with a covariance per point, dropped the cell. A measurement
+  function whose Jacobian is undefined at a point, as a range's is at the point it is measured
+  from, gives such a covariance there.
 - A step no longer builds a Jacobian that nothing reads. A process model whose function returns
   its Jacobian, as `ConstantVelocity` and the other kinematic models do, had that Jacobian
   expanded to the whole state at every call, also where only the next state was read:

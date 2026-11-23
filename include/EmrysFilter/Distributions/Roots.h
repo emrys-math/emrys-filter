@@ -22,6 +22,7 @@
 #include <Eigen/Eigenvalues>
 #include <Eigen/SVD>
 
+#include <EmrysFilter/Core/Cholesky.h>
 #include <EmrysFilter/Core/Macros.h>
 #include <EmrysFilter/Core/Math.h>
 #include <EmrysFilter/Core/NumericError.h>
@@ -397,7 +398,9 @@ struct Cholesky
 {
     static constexpr bool canFail = true;  ///< a covariance that is not positive definite has no Cholesky factor
 
-    /** \returns the lower Cholesky factor of \a cov, of which only the lower triangle is read */
+    /** \returns the lower Cholesky factor of \a cov, of which only the lower triangle's values are
+     *           used (internal::CholeskyFactorization, decisions.md [own-cholesky])
+     */
     template <typename Derived>
     [[nodiscard]] std::expected<internal::SquareMatrixOf<Derived>, GaussianError>
     root(Eigen::MatrixBase<Derived> const & cov) const
@@ -407,12 +410,12 @@ struct Cholesky
         {
             return std::unexpected{GaussianError::NonFinite};
         }
-        auto const llt = Eigen::LLT<Matrix>{Matrix{cov}};
-        if (llt.info() != Eigen::Success)
+        auto const cholesky = internal::CholeskyFactorization<Matrix>{cov};
+        if (!cholesky.isPositiveDefinite())
         {
             return std::unexpected{GaussianError::NotPositiveDefinite};
         }
-        return Matrix{llt.matrixL()};
+        return cholesky.lower();
     }
 
     /** \returns the lower-triangular root of \f$ F F^T \f$ for \a factor, by triangularization */

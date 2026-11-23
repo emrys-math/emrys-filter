@@ -5,7 +5,7 @@
  * \f$ A B \f$ by Eigen's coefficient-based product wherever both operands have a fixed size, which
  * Eigen itself chooses only while no dimension reaches eight, and asTriangular() is a triangular
  * factor as a dense matrix to multiply by, which a triangular view never is. Everything here is
- * in `internal`. Read Solve.h next.
+ * in `internal`. Read Cholesky.h next.
  */
 
 #include <concepts>

@@ -401,11 +401,11 @@ kalmanConditionInPlace(
     {
         return std::unexpected{factored.error()};
     }
-    auto const & llt = *factored;
+    auto const & cholesky = *factored;
     auto result = ConditionedInPlace<Scalar>{};
     if constexpr (Statistics || acceptsByNis<Accept>)
     {
-        result.statistics = innovationStatistics(llt, residual);
+        result.statistics = innovationStatistics(cholesky, residual);
     }
     if constexpr (acceptsByNis<Accept>)
     {
@@ -419,7 +419,7 @@ kalmanConditionInPlace(
     // With nothing to condition, only the likelihood remains; MSVC can't form an empty gain.
     if constexpr (valueDimensionAtCompileTime<DifferenceSpace<Space>> != 0)
     {
-        auto gain = transposedSolve<typename Cross::PlainObject>(llt, cross.transpose());
+        auto gain = transposedSolve<typename Cross::PlainObject>(cholesky, cross.transpose());
         auto & moments = GaussianAccess::moments(state);
         Matrix & cov = moments.covarianceLower();
         if constexpr (K > 0)

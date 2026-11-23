@@ -239,7 +239,7 @@ updateGivenShared(
     {
         return std::unexpected{factored.error()};
     }
-    auto const & llt = *factored;
+    auto const & cholesky = *factored;
     // With nothing left Gaussian, only the likelihoods remain; MSVC can't form an empty gain.
     constexpr bool NothingLeft = std::remove_cvref_t<decltype(cross)>::RowsAtCompileTime == 0;
     auto const gain = [&] {
@@ -250,14 +250,13 @@ updateGivenShared(
         else
         {
             return transposedSolve<std::remove_cvref_t<decltype(predicted.crossCovariance())>>(
-                llt,
+                cholesky,
                 predicted.crossCovariance().transpose()
             );
         }
     }();
     Eigen::Index const m = y.differenceDimension();
-    Scalar const logNormalizer =
-        Scalar(-0.5) * (Scalar(m) * log2Pi<Scalar>() + Scalar(2) * llt.matrixLLT().diagonal().array().log().sum());
+    Scalar const logNormalizer = Scalar(-0.5) * (Scalar(m) * log2Pi<Scalar>() + cholesky.logDeterminant());
 
     result.reject(points.size(), m);
     // Each posterior mean is written once, from the prior's, rather than copied and then moved.
@@ -271,7 +270,7 @@ updateGivenShared(
             y.space(),
             Emrys::plus(y.space(), valueOf(f(conditionals.mean(i), points.center(i))), noise.mean())
         );
-        Scalar const nis = residual.dot(llt.solve(residual));
+        Scalar const nis = residual.dot(cholesky.solve(residual));
         result.nisData[std::size_t(i)] = nis;
         result.logLikelihoodData[std::size_t(i)] = logNormalizer - Scalar(0.5) * nis;
         if constexpr (!NothingLeft)
