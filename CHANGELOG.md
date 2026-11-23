@@ -12,17 +12,20 @@ instead.
   time per step against the same filter written by hand in Eigen, the compile times, the method,
   and how to run the benchmarks yourself.
 - The ranging Kalman filters benchmarked against mherb/kalman's four (`emrys_filter_mherb_benchmark`),
-  with their agreement and allocation tests: the EKF and the square-root EKF timed, the EKF in
-  `float` and both UKFs compared for accuracy. Building the tests or the benchmarks now fetches mherb/kalman;
+  with their agreement and allocation tests, each timed in `double` and in `float`. The pairs
+  that do not agree, the EKF in `float` and both UKFs, are timed with a mark, behind tests that
+  the difference is mherb/kalman's. Building the tests or the benchmarks now fetches mherb/kalman;
   configure with `-DEMRYS_FILTER_BENCHMARK_MHERB=OFF` to build without it.
 - The ranging EKF benchmarked against TinyEKF's (`emrys_filter_tinyekf_benchmark`), with its
-  agreement and allocation tests: timed in `double`, compared for accuracy in `float`. Building
-  the tests or the benchmarks now fetches TinyEKF; configure with
+  agreement and allocation tests: timed in `double` and in `float`, TinyEKF's default, in which the
+  two do not agree and the pair is marked, behind a test that only TinyEKF's estimate strays.
+  Building the tests or the benchmarks now fetches TinyEKF; configure with
   `-DEMRYS_FILTER_BENCHMARK_TINYEKF=OFF` to build without it.
 - The ranging EKF benchmarked against OpenCV's `cv::KalmanFilter` (`emrys_filter_opencv_benchmark`),
   with its agreement and allocation tests, built with `-DEMRYS_FILTER_BENCHMARK_OPENCV=ON` against
-  an installed OpenCV 4 or 5: timed over runs of 300 steps, over which the two agree, beside how
-  far OpenCV's estimate drifts over 3000.
+  an installed OpenCV 4 or 5: timed over runs of 300 steps, over which the two agree in `double`,
+  beside how far OpenCV's estimate drifts over 3000, and in `float`, its default, in which the pair
+  is marked, behind a test that only OpenCV's estimate strays.
 - `KalmanFilter<...>::UpdateType<M>` and `ResultType<M>`, what `update()` with a measurement of
   type `M` returns and fills, as the other filters name them; it was
   `decltype(filter)::RecursionType::UpdateType<M>`.

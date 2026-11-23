@@ -1,11 +1,14 @@
 // The precondition of the ranging benchmark against OpenCV [benchmarks]: before any timing counts,
 // EmrysFilter's EKF of emrys_ranging_kinds.h and cv::KalmanFilter run as an EKF in
 // opencv_ranging.h must agree in state and covariance, with the analytic Jacobian, the only one
-// OpenCV has, over the run that opencv_benchmark.cpp times. They agree in double, and only that is
-// timed (cases.h, OpenCvAgreementCases). The EmrysFilter EKF's consistency carries to OpenCV's
-// through the agreement; agreement.cpp tests it. Roadmap: the benchmarks against other libraries.
+// OpenCV has, over the run that opencv_benchmark.cpp times, or the difference must be shown to be
+// OpenCV's. They agree in double (cases.h, OpenCvAgreementCases). In float, the default type of
+// cv::KalmanFilter, they do not, and the pair is timed with a mark (OpenCvDisagreementCases), which
+// the second test here backs. The EmrysFilter EKF's consistency carries to OpenCV's through the
+// agreement; agreement.cpp tests it. Roadmap: the benchmarks against other libraries.
 
 #include "cases.h"
+#include "disagreement.h"
 #include "emrys_ranging_kinds.h"
 #include "opencv_ranging.h"
 #include "scenario.h"
@@ -59,6 +62,34 @@ TYPED_TEST(RangingOpenCvTest, ImplementationsAgree)
         ASSERT_LT(covDifference.template triangularView<Eigen::Lower>().toDenseMatrix().norm(), tolerance * covScale)
             << "at step " << k;
     }
+}
+
+template <typename C>
+class RangingOpenCvDisagreementTest : public ::testing::Test
+{};
+
+TYPED_TEST_SUITE(RangingOpenCvDisagreementTest, Ranging::OpenCvDisagreementCases);
+
+// In float the pair is timed with a mark, since over the same 300 steps only OpenCV's EKF strays
+// from the double estimate (disagreement.h): by 2e-4 to 2e-3 relative in the mean and 4e-3 to 2e-2
+// in the covariance, where EmrysFilter's float EKF stays within 3e-5. The cause is its solve for
+// the gain by a singular value decomposition of an innovation covariance that its unmirrored
+// covariance leaves asymmetric: a copy of correct()'s arithmetic that solves by Cholesky instead
+// stays within 1e-5 at every size, and so does OpenCV's own correct() to 4e-5 when the covariance
+// is mirrored after it.
+TYPED_TEST(RangingOpenCvDisagreementTest, OnlyOpenCvStraysInFloat)
+{
+    constexpr int D = TypeParam::Dimension;
+    constexpr int A = TypeParam::AnchorCount;
+    using CvFilter = Ranging::OpenCvRanging<D, A, float>;
+    auto const scenario = Ranging::makeScenario<D, A>();
+    auto const run = Ranging::simulate(scenario, 300, 1);
+    auto const ranges = Ranging::rangesIn<float>(run);
+    auto cv = CvFilter{scenario};
+    Ranging::expectOnlyTheOtherStrays(scenario, run, cv, [&](CvFilter & filter, std::size_t k) {
+        filter.predict();
+        filter.update(ranges[k]);
+    });
 }
 
 }  // namespace

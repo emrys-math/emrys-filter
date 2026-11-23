@@ -1,11 +1,14 @@
 // The precondition of the ranging benchmark against TinyEKF [benchmarks]: before any timing counts,
 // EmrysFilter's EKF of emrys_ranging_kinds.h and TinyEKF's of tinyekf_ranging.h must agree in
-// state and covariance, with the analytic Jacobian, the only one TinyEKF has. They agree in double,
-// and only that is timed (cases.h, TinyEkfAgreementCases). The EmrysFilter EKF's consistency carries
-// to TinyEKF's through the agreement; agreement.cpp tests it. Roadmap: the benchmarks against other
-// libraries.
+// state and covariance, with the analytic Jacobian, the only one TinyEKF has, or the difference
+// must be shown to be TinyEKF's. They agree in double (cases.h, TinyEkfAgreementCases). In float,
+// TinyEKF's default scalar, they do not, and the pair is timed with a mark
+// (TinyEkfDisagreementCases), which the second test here backs. The EmrysFilter EKF's consistency
+// carries to TinyEKF's through the agreement; agreement.cpp tests it. Roadmap: the benchmarks
+// against other libraries.
 
 #include "cases.h"
+#include "disagreement.h"
 #include "emrys_ranging_kinds.h"
 #include "scenario.h"
 #include "tinyekf_ranging.h"
@@ -60,6 +63,31 @@ TYPED_TEST(RangingTinyEkfTest, ImplementationsAgree)
         ASSERT_LT(covDifference.template triangularView<Eigen::Lower>().toDenseMatrix().norm(), tolerance * covScale)
             << "at step " << k;
     }
+}
+
+template <typename C>
+class RangingTinyEkfDisagreementTest : public ::testing::Test
+{};
+
+TYPED_TEST_SUITE(RangingTinyEkfDisagreementTest, Ranging::TinyEkfDisagreementCases);
+
+// In float the pair is timed with a mark, since over the same 500 steps only TinyEKF's EKF strays
+// from the double estimate (disagreement.h): by 4e-4 relative in the mean and 1e-3 in the
+// covariance in 2D with 4 anchors, where EmrysFilter's float EKF stays within 4e-6. The cause is
+// the three choices above together, which the copy of its header described there shows.
+TYPED_TEST(RangingTinyEkfDisagreementTest, OnlyTinyEkfStraysInFloat)
+{
+    constexpr int D = TypeParam::Dimension;
+    constexpr int A = TypeParam::AnchorCount;
+    using TinyFilter = Ranging::TinyEkfRanging<D, A, float>;
+    auto const scenario = Ranging::makeScenario<D, A>();
+    auto const run = Ranging::simulate(scenario, 500, 1);
+    auto const ranges = Ranging::rangesIn<float>(run);
+    auto tiny = TinyFilter{scenario};
+    Ranging::expectOnlyTheOtherStrays(scenario, run, tiny, [&](TinyFilter & filter, std::size_t k) {
+        filter.predict();
+        filter.update(ranges[k]);
+    });
 }
 
 }  // namespace

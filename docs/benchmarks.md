@@ -37,7 +37,9 @@ and have not been taken again since that commit, which makes the library's steps
   `double` (1e-4 relative in `float`) over hundreds of steps, both must pass a NEES consistency
   test over 50 runs, and neither may allocate during a step. These are tests that run in every CI
   build: `agreement.cpp` and `allocation.cpp` under each problem in
-  [benchmarks/](../benchmarks/).
+  [benchmarks/](../benchmarks/). A pair against another library that cannot agree is timed all the
+  same and marked, once a test shows the difference to be that library's
+  ([Against other libraries](#against-other-libraries)).
 - **A fixed step.** Both sides compute what depends only on the step, such as the process noise,
   once at construction.
 - **Instructions.** Callgrind counts the instructions of the filter steps alone
@@ -155,34 +157,68 @@ Debug).
 ## Against other libraries
 
 The same ranging problem run by the Kalman filters of three other libraries, each written as its
-users write it, with the analytic Jacobian, the only one they have. Each pair must agree to 1e-9 in
-`double` over the run that is timed, so only the pairs that agree are timed; the runners print the
-rest. Here a ratio is EmrysFilter's cost divided by the other library's: below 1, EmrysFilter costs
-less. Measured on 2026-11-23 at the commit named under the summary, with Ubuntu 26.04 under WSL2 on
-an Intel Core i9-13900F, Clang 21.1.8 with `-march=x86-64-v3`, each runner pinned to one CPU by
-`taskset` at normal priority, the median of 2000 batches; instructions by Callgrind as above.
+users write it, with the analytic Jacobian, the only one they have. Here a ratio is EmrysFilter's
+cost divided by the other library's: below 1, EmrysFilter costs less.
 
-| EKF, `double` | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
+Each pair is checked before it is timed. Most agree, to 1e-9 in `double` and 1e-4 in `float` over
+the run that is timed. A pair marked \* does not agree: the other library's estimate differs from
+EmrysFilter's, and a test shows the difference to be that library's, either because EmrysFilter's
+estimate stays with the `double` estimate, on which all five implementations agree to 1e-9, or
+because the other library's filter fails a check that involves no EmrysFilter code. A marked
+ratio therefore compares two steps that do not compute the same estimate;
+[the table after the ratios](#the-marked-pairs) gives how far apart they are, and the notes on
+each library give the cause. TinyEKF and OpenCV run in `float` unless told otherwise, so their
+marked rows are the ones their users get by default.
+
+Measured on 2026-11-23, with the library as of the commit named under the summary, with Ubuntu 26.04
+under WSL2 on an Intel Core i9-13900F, Clang 21.1.8 with `-march=x86-64-v3`, each runner pinned to
+one CPU by `taskset` at normal priority, the median of 2000 batches; instructions by Callgrind as
+above.
+
+| EKF | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
 |---|---|---|---|---|---|---|
-| mherb/kalman, instructions | 1.08 | 0.25 | 0.31 | 0.36 | 0.45 | 0.28 |
-| mherb/kalman, time | 2.19 | 0.71 | 0.32 | 0.80 | 0.42 | 0.31 |
-| TinyEKF, instructions | 0.83 | 1.56 | 0.81 | 0.63 | 1.19 | 0.73 |
-| TinyEKF, time | 1.68 | 3.24 | 0.79 | 1.23 | 1.00 | 0.60 |
-| OpenCV, instructions | 0.03 | 0.07 | 0.11 | 0.06 | 0.12 | 0.08 |
-| OpenCV, time | 0.07 | 0.14 | 0.09 | 0.10 | 0.08 | 0.06 |
+| mherb/kalman, `double`, instructions | 1.08 | 0.25 | 0.31 | 0.36 | 0.45 | 0.28 |
+| mherb/kalman, `double`, time | 2.20 | 0.73 | 0.33 | 0.81 | 0.42 | 0.33 |
+| mherb/kalman, `float` \*, instructions | 1.08 | 0.25 | 0.36 | 0.34 | 0.44 | 0.36 |
+| mherb/kalman, `float` \*, time | 1.58 | 0.62 | 0.35 | 1.14 | 0.41 | 0.37 |
+| TinyEKF, `double`, instructions | 0.83 | 1.56 | 0.81 | 0.63 | 1.19 | 0.73 |
+| TinyEKF, `double`, time | 1.66 | 3.22 | 0.82 | 1.22 | 1.08 | 0.66 |
+| TinyEKF, `float` \*, instructions | 0.75 | 1.51 | 0.88 | 0.54 | 1.22 | 0.89 |
+| TinyEKF, `float` \*, time | 1.25 | 2.85 | 0.85 | 1.81 | 1.01 | 0.69 |
+| OpenCV, `double`, instructions | 0.03 | 0.07 | 0.11 | 0.06 | 0.12 | 0.08 |
+| OpenCV, `double`, time | 0.07 | 0.14 | 0.09 | 0.10 | 0.08 | 0.06 |
+| OpenCV, `float` \*, instructions | 0.03 | 0.06 | 0.10 | 0.05 | 0.11 | 0.08 |
+| OpenCV, `float` \*, time | 0.04 | 0.12 | 0.07 | 0.14 | 0.07 | 0.06 |
 
-| Square-root EKF, against mherb/kalman | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
+| Against mherb/kalman | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
 |---|---|---|---|---|---|---|
-| `double`, instructions | 0.24 | 0.39 | 0.75 | 0.36 | 0.63 | 0.99 |
-| `double`, time | 0.68 | 0.78 | 1.04 | 0.74 | 0.92 | 1.15 |
-| `float`, instructions | 0.15 | 0.25 | 0.48 | 0.25 | 0.41 | 0.76 |
-| `float`, time | 0.55 | 0.73 | 0.98 | 0.68 | 0.84 | 1.07 |
+| Square-root EKF, `double`, instructions | 0.24 | 0.39 | 0.75 | 0.36 | 0.63 | 0.99 |
+| Square-root EKF, `double`, time | 0.71 | 0.84 | 1.04 | 0.75 | 0.89 | 1.16 |
+| Square-root EKF, `float`, instructions | 0.15 | 0.25 | 0.48 | 0.25 | 0.41 | 0.76 |
+| Square-root EKF, `float`, time | 0.54 | 0.74 | 0.98 | 0.68 | 0.87 | 1.08 |
+| UKF, `double` \*, instructions | 1.62 | 0.54 | 0.55 | 0.71 | 0.75 | 0.57 |
+| UKF, `double` \*, time | 1.57 | 0.92 | 0.62 | 1.02 | 0.85 | 0.68 |
+| UKF, `float` \*, instructions | 1.69 | 0.49 | 0.54 | 0.62 | 0.71 | 0.60 |
+| UKF, `float` \*, time | 1.69 | 0.83 | 0.62 | 1.18 | 0.72 | 0.65 |
+| Square-root UKF, `double` \*, instructions | 0.97 | 0.97 | 1.20 | 1.04 | 1.15 | 1.51 |
+| Square-root UKF, `double` \*, time | 0.89 | 0.89 | 1.03 | 1.17 | 1.09 | 1.37 |
+| Square-root UKF, `float` \*, instructions | 0.86 | 0.88 | 0.98 | 0.90 | 1.00 | 1.13 |
+| Square-root UKF, `float` \*, time | 0.80 | 0.85 | 0.97 | 0.93 | 0.87 | 0.97 |
 
-At 2D with 4 anchors a step of EmrysFilter's EKF takes 166 ns and 1,315 instructions,
-mherb/kalman's 76 ns and 1,218, and TinyEKF's 101 ns and 1,575. EmrysFilter is slower than TinyEKF
-at three of the six sizes, 3.24 times at 2D with 8 anchors (535 ns against 165 ns), and than
-mherb/kalman's EKF at the smallest; its square-root EKF is up to 15% slower than mherb/kalman's at
-the largest sizes. It is faster than OpenCV at every size, by 7 to 16 times.
+At 2D with 4 anchors in `double`, a step of EmrysFilter's EKF takes 167 ns and 1,315 instructions,
+mherb/kalman's 76 ns and 1,218, and TinyEKF's 100 ns and 1,575; in `float`, 106 to 111 ns and 1,149,
+67 ns and 1,063, and 89 ns and 1,530.
+
+- **Against TinyEKF** the EKF is slower at 2D with 4 and 8 anchors and at 3D with 6, in both
+  scalars, by up to 3.22 times (2D with 8 anchors in `double`, 538 ns against 167 ns). It is level
+  at 3D with 12 (1.08 and 1.01), and faster with 16 and 24.
+- **Against mherb/kalman** the EKF is slower at 2D with 4 anchors in both scalars and at 3D with 6
+  in `float`, and faster elsewhere, by up to 3 times. The square-root EKF is slower at 3D with 24
+  anchors, by 16% in `double` and 8% in `float`, and at 2D with 16 in `double`, by 4%, and faster
+  elsewhere. The UKF is slower at 2D with 4 anchors and 3D with 6 and faster from 8 anchors. The
+  square-root UKF is slower in `double` at 2D with 16 anchors and at every 3D size, by up to 37%,
+  and faster in `float` at every size.
+- **Against OpenCV** the EKF is faster at every size, by 7 to 25 times.
 
 At the small sizes the time does not follow the instructions: the hand-written Eigen filter of the
 ranging table takes 906 instructions and 147 ns at 2D with 4 anchors, fewer instructions than
@@ -190,20 +226,78 @@ either library and more time. EmrysFilter and the hand code factorize the innova
 Cholesky and solve for the gain, where mherb/kalman and TinyEKF invert it. Which part of that
 takes the time has not been measured.
 
-- **mherb/kalman** (`9f40c2f`, 2018-08-22): its EKF and square-root EKF are timed. Its `float` EKF
-  strays up to 4e-2 relative in the mean and 9e-2 in the covariance from the `double` estimate,
-  where EmrysFilter's stays within 3e-5, and its two UKFs update with the sigma points of the
-  prediction, which leave the process noise out, so they differ from EmrysFilter's by 5e-4 to 3e-3
-  relative in the mean and 2e-3 to 4e-3 in the covariance; neither is timed.
-- **TinyEKF** (`ba0d2a9`, 2026-04-09): timed in `double`. In `float` it strays up to 5e-3 relative
-  in the mean and 3e-2 in the covariance, while the prior is wide, so `float` is not timed.
+The instruction ratios against TinyEKF are worst with 8 and 12 anchors, where the innovation
+covariance is 8×8 or 12×12: too large for Eigen's unrolled fixed-size code, and small enough that
+the overhead of its general kernels is most of their cost. At 2D with 8 anchors, 2,357 of
+EmrysFilter's 4,397 instructions factorize that matrix: 940 in Eigen's Cholesky loop, 730 in the
+general matrix-vector kernel it calls once per column, and 687 in `LLT::compute()` around them,
+507 of which compute a norm that only `rcond()` reads and the filter never asks for. TinyEKF
+factorizes and inverts the same matrix in about 1,000. At 3D with 12 anchors, 9,148 of
+EmrysFilter's 17,675 are the gain's two triangular solves, which the library solves a column at a
+time only up to size 8 and hands to Eigen's blocked solver beyond it, and 4,488 the factorization.
+With 16 and 24 anchors the same kernels spread their overhead over more work while TinyEKF's
+scalar loops grow with the cube of the anchor count. With 4 and 6, TinyEKF is slower than its own
+trend, since Clang leaves its matrix product out of line as a loop with run-time bounds (896 of
+its 1,575 instructions at 2D with 4 anchors, 5,648 of 6,484 at 3D with 6). The hand-written Eigen
+filter shares the factorization and the solves, and their cost. None of this is changed yet.
+
+At 3D with 6 anchors a step takes longer in `float` than in `double`, for EmrysFilter (573 ns
+against 412 ns) and for the hand-written Eigen filter alike, though it takes fewer instructions,
+which is why the `float` ratios of that column are the worse ones. The cause has not been
+measured.
+
+### The marked pairs
+
+The largest distance over the timed run, relative to the size of the mean and of the covariance of
+the estimate it is measured from, as mean / covariance, over the six sizes.
+
+| Marked pair | Measured from | EmrysFilter | The other library |
+|---|---|---|---|
+| EKF, `float`, mherb/kalman | the `double` estimate | up to 8e-6 / 3e-5 | 2e-4 to 4e-2 / 6e-4 to 9e-2 |
+| EKF, `float`, TinyEKF | the `double` estimate | up to 8e-6 / 3e-5 | 2e-4 to 5e-3 / 1e-3 to 3e-2 |
+| EKF, `float`, OpenCV | the `double` estimate | up to 8e-6 / 3e-5 | 2e-4 to 2e-3 / 4e-3 to 2e-2 |
+| UKF and square-root UKF, `double` | EmrysFilter's filter | | 5e-4 to 3e-3 / 2e-3 to 4e-3 |
+| UKF, `float` | each library's own `double` UKF | up to 3e-5 / 9e-5 | 1e-4 to 1e-2 / 1e-3 to 6e-2 |
+| Square-root UKF, `float` | each library's own `double` filter | up to 4e-6 / 2e-5 | up to 2e-5 / 1e-4 |
+
+- **mherb/kalman** (`9f40c2f`, 2018-08-22).
+  - *Its EKF in `float`* forms the gain with an explicit inverse of the innovation covariance
+    (`S.inverse()`), which loses accuracy while the prior is wide. A copy of its header with that
+    one line changed, the gain solved by the Cholesky factor of $S$, stays within 6e-5 of the
+    `double` estimate at every size; mirroring its covariance instead changes nothing.
+  - *Its two UKFs*, in either scalar, compute the innovation covariance and the cross covariance
+    from the sigma points their prediction moved, which were drawn before the process noise was
+    added, so both leave the process noise out while the covariance includes it. No EmrysFilter
+    code is needed to show it: on a linear problem, where a UKF gives the Kalman filter's
+    estimate, mherb/kalman's UKF agrees with its own EKF to 1e-12 without process noise and
+    differs from it by 2e-3 in the covariance with this problem's. Without process noise the two
+    libraries' UKFs agree on the ranging problem to 1e-5 in 2D and 1e-3 in 3D.
+  - *Its UKF in `float`* also strays from its own `double` UKF, by up to 1e-2 in the mean, and
+    its square-root UKF does not. It forms that gain with an explicit inverse too, which is the
+    likely cause and has not been checked.
+  - Its square-root UKF allocates on the heap in its prediction, so its times include its
+    allocator.
+- **TinyEKF** (`ba0d2a9`, 2026-04-09). `float` is the scalar it runs in unless `_float_t` is
+  defined. Its estimate strays in `float` over the first steps, while the prior is wide, by three
+  of its choices together: the gain through an explicit inverse of $S$, the covariance updated as
+  $(I - G H) P$, and no triangle mirrored. A copy of its header with all three changed stays
+  within 4e-5 of the `double` estimate; the solve alone, the solve with the update form, and the
+  mirroring alone do not.
 - **OpenCV** 4.14.0, its core, imgproc, and video modules built from source in Release with its
   default CPU flags: `cv::KalmanFilter` is linear and run as an EKF by the pseudo-measurement
-  $z - h(x) + H x$. It never makes its covariance symmetric again, and the asymmetry rounding leaves
-  grows until the filter diverges: the two agree to 1e-9 until somewhere between steps 400 and 504,
-  and by step 2000 OpenCV's 3D estimates are lost, their covariances 1e7 to 3e11 times the size of
-  EmrysFilter's away from it. So it is timed over runs of 300 steps that start over, untimed, at
-  their end. With 8 anchors or more it allocates once per step in `double`.
+  $z - h(x) + H x$.
+  - *In `double`* it never makes its covariance symmetric again, and the asymmetry rounding leaves
+    grows until the filter diverges: the two agree to 1e-9 until somewhere between steps 400 and
+    504, and by step 2000 OpenCV's 3D estimates are lost, their covariances 1e7 to 3e11 times the
+    size of EmrysFilter's away from it. So it is timed over runs of 300 steps that start over,
+    untimed, at their end.
+  - *In `float`*, the type its filter has unless it is constructed with `CV_64F`, it strays within
+    those 300 steps. It solves for the gain by a singular value decomposition of an innovation
+    covariance that the unmirrored covariance has left asymmetric: a copy of `correct()`'s
+    arithmetic that solves by Cholesky instead stays within 1e-5 of the `double` estimate, and
+    OpenCV's own `correct()` within 4e-5 when `cv::completeSymm()` mirrors `errorCovPost` after
+    each call.
+  - With 8 anchors or more in `double`, and 12 or more in `float`, it allocates once per step.
 
 ## Not measured yet
 

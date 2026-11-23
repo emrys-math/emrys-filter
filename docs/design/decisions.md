@@ -2722,11 +2722,19 @@ timing counts. Reproducible measures (Callgrind instruction counts, heap allocat
 `.text` size, and stack use on Cortex-M) can gate a change; wall-clock time is reported as a ratio
 to the hand code, for users to run on their own hardware. Where another library runs the same
 problem, it is one more implementation, written as its users write it, under the same agreement and
-NEES checks, and a reference beside the hand code rather than in its place.
+NEES checks, and a reference beside the hand code rather than in its place. Where its estimate does
+not agree with EmrysFilter's, the pair is timed all the same and its numbers are marked, once a
+test shows the difference to be the other library's: EmrysFilter's side stays with the estimate on
+which the implementations that agree do, or the other library's filter fails a check that does not
+involve EmrysFilter. The results name the cause and give the size of the difference beside the
+marked numbers. A difference that is EmrysFilter's is a bug, fixed before anything is timed.
 
 **Why.** A library's claim to efficiency is credible only against the code its users would
 otherwise write; a one-sided benchmark is a strawman. Instruction and allocation counts are
-deterministic; ratios carry across machines better than nanoseconds.
+deterministic; ratios carry across machines better than nanoseconds. Another library's pair is
+marked rather than left out because a reader comes for the number at the precision they run that
+library in, and TinyEKF and OpenCV's `cv::KalmanFilter` run in `float` unless told otherwise;
+leaving the pair out hid both the time and the loss of accuracy that it buys.
 
 **Where.** `benchmarks/`; [benchmarks.md](benchmarks.md) is the plan, and the rule that a test
 checks the implementation while a benchmark backs a claim.

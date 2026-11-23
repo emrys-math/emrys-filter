@@ -9,15 +9,18 @@
 // 2e-15 of its own estimate in long double. So each timed run is the first AgreedLength steps,
 // over which the pair agrees (opencv_agreement.cpp), and a timed filter starts over from the
 // initial estimate at its end, untimed. Each case first runs both filters through that run and
-// checks that they agree, and stops if they don't. It then times batches of steps through the pair
-// driver of harness.h, alternating between the two filters.
+// compares them, and stops if the comparison fails. It then times batches of steps through the
+// pair driver of harness.h, alternating between the two filters. The pairs in double must agree
+// (cases.h, OpenCvAgreementCases). Those in float, the default type of cv::KalmanFilter, do not
+// agree and are timed all the same, their rows marked [benchmarks], since opencv_agreement.cpp
+// shows the difference to be OpenCV's; they must stay within disagreementBound.
 //
-// Two tables follow, not timed: OpenCV's distance from EmrysFilter over a long run, beside
+// Two tables follow: OpenCV's distance from EmrysFilter over a long run in double, beside
 // EmrysFilter's largest distance from its long double self, and each library's float EKF's largest
 // distance from the double EmrysFilter EKF over the timed run.
 //
-// With --count, it only runs the agreement pass of each timed pair, one pass of each filter
-// through runSteps over the whole run, for Callgrind:
+// With --count, it only runs the comparison pass of each pair, one pass of each filter through
+// runSteps over the whole run, for Callgrind:
 //
 //     valgrind --tool=callgrind --toggle-collect='*runSteps*' emrys_filter_opencv_benchmark --count
 
@@ -29,6 +32,7 @@
 
 #include <cstddef>
 #include <cstdio>
+#include <type_traits>
 
 namespace
 {
@@ -42,19 +46,25 @@ constexpr std::size_t AgreedLength = 300;
 /// The steps of the long run, over which OpenCV's EKF diverges.
 constexpr int LongLength = 3000;
 
-/// The width of each table's first column: the dimension and the anchor count.
+/// The width of the distance tables' first column: the dimension and the anchor count.
 constexpr int LabelWidth = 8;
 
-/// Benchmarks one case in double and prints its row, or reports that the filters disagree and
-/// returns false.
-template <int D, int A>
+/// The width of the timing table's first column: the dimension, the anchor count, the scalar, and
+/// the mark of a pair that does not agree.
+constexpr int TimingLabelWidth = 17;
+
+/// Benchmarks one case in \a Scalar and prints its row, marked in float, in which the pair does not
+/// agree (cases.h, OpenCvDisagreementCases). Reports that the filters disagree in double, or
+/// are further apart than disagreementBound in float, and returns false.
+template <int D, int A, typename Scalar>
 [[nodiscard]] bool
 benchmarkCase(Options const & options)
 {
-    using EmrysFilter = Ranging::EmrysRangingKind<D, A, Ranging::FilterKind::Ekf>;
-    using CvFilter = Ranging::OpenCvRanging<D, A>;
+    using EmrysFilter = Ranging::EmrysRangingKind<D, A, Ranging::FilterKind::Ekf, Scalar>;
+    using CvFilter = Ranging::OpenCvRanging<D, A, Scalar>;
+    constexpr bool Agrees = std::is_same_v<Scalar, double>;
     auto const scenario = Ranging::makeScenario<D, A>();
-    auto const ranges = Ranging::rangesIn<double>(Ranging::simulate(scenario, static_cast<int>(AgreedLength), 1));
+    auto const ranges = Ranging::rangesIn<Scalar>(Ranging::simulate(scenario, static_cast<int>(AgreedLength), 1));
     auto const makeEmrys = [&] {
         return EmrysFilter{scenario};
     };
@@ -70,7 +80,7 @@ benchmarkCase(Options const & options)
         filter.update(ranges[k]);
     };
 
-    // The agreement pass: one pass of each filter over the whole run, then a comparison.
+    // The comparison pass: one pass of each filter over the whole run, then a comparison.
     {
         auto emrys = makeEmrys();
         auto cv = makeCv();
@@ -78,13 +88,15 @@ benchmarkCase(Options const & options)
         Benchmark::runSteps(cv, cvStep, 0, AgreedLength);
         Distance const d = Ranging::distance(emrys.mean(), emrys.covarianceLower(), cv.mean(), cv.covariance());
         Benchmark::consume(double(emrys.mean().sum() + cv.mean().sum()));
-        double const tolerance = Ranging::agreementTolerance<double>;
+        double const tolerance = Agrees ? Ranging::agreementTolerance<Scalar> : Ranging::disagreementBound;
         if (!(d.mean < tolerance && d.cov < tolerance))
         {
             std::printf(
-                "%dD, %2d anchors: the filters disagree (mean %.3g, covariance %.3g relative)\n",
+                "%dD, %2d anchors, %s: the filters %s (mean %.3g, covariance %.3g relative)\n",
                 D,
                 A,
+                Ranging::scalarName<Scalar>(),
+                Agrees ? "disagree" : "are further apart than a marked pair may be",
                 d.mean,
                 d.cov
             );
@@ -101,10 +113,20 @@ benchmarkCase(Options const & options)
     Benchmark::PairTiming const timing = Benchmark::timePair(options, emrys, cv);
     Benchmark::consume(double(emrys.filter().mean().sum() + cv.filter().mean().sum()));
 
-    char label[LabelWidth + 1];
-    std::snprintf(label, sizeof label, "%dD %3d", D, A);
-    Benchmark::printRow(label, LabelWidth, timing);
+    char label[TimingLabelWidth + 1];
+    std::snprintf(label, sizeof label, "%dD %3d   %-6s%s", D, A, Ranging::scalarName<Scalar>(), Agrees ? "" : " *");
+    Benchmark::printRow(label, TimingLabelWidth, timing);
     return true;
+}
+
+/// Benchmarks the pair at a dimension and anchor count, in double and in float.
+template <int D, int A>
+[[nodiscard]] bool
+benchmarkSize(Options const & options)
+{
+    bool const inDouble = benchmarkCase<D, A, double>(options);
+    bool const inFloat = benchmarkCase<D, A, float>(options);
+    return inDouble && inFloat;
 }
 
 /// Prints the row of the long-run table for one case: OpenCV's distance from EmrysFilter in double
@@ -202,23 +224,24 @@ main(int argc, char ** argv)
     }
     if (!options.count)
     {
-        Benchmark::printPreamble("Ranging EKF in double, analytic Jacobian", "OpenCV");
+        Benchmark::printPreamble("Ranging EKF, analytic Jacobian", "OpenCV");
         std::printf(
             "Nanoseconds per predict-update step, %d batches of each filter per case, over runs of %zu steps.\n\n",
             options.samples,
             AgreedLength
         );
-        std::printf("Case: dimension and anchor count. Ratio: EmrysFilter's time over OpenCV's.\n\n");
-        Benchmark::printColumns("case", LabelWidth, "OpenCV");
+        std::printf("Case: dimension and anchor count. Ratio: EmrysFilter's time over OpenCV's.\n");
+        std::printf("* The pair does not agree, and the difference is OpenCV's: the float table below gives it.\n\n");
+        Benchmark::printColumns("case     scalar", TimingLabelWidth, "OpenCV");
     }
 
     bool ok = true;
-    ok = benchmarkCase<2, 4>(options) && ok;
-    ok = benchmarkCase<2, 8>(options) && ok;
-    ok = benchmarkCase<2, 16>(options) && ok;
-    ok = benchmarkCase<3, 6>(options) && ok;
-    ok = benchmarkCase<3, 12>(options) && ok;
-    ok = benchmarkCase<3, 24>(options) && ok;
+    ok = benchmarkSize<2, 4>(options) && ok;
+    ok = benchmarkSize<2, 8>(options) && ok;
+    ok = benchmarkSize<2, 16>(options) && ok;
+    ok = benchmarkSize<3, 6>(options) && ok;
+    ok = benchmarkSize<3, 12>(options) && ok;
+    ok = benchmarkSize<3, 24>(options) && ok;
     if (options.count)
     {
         return ok ? 0 : 1;
@@ -257,7 +280,7 @@ main(int argc, char ** argv)
     longRunRow<3, 24>();
 
     std::printf(
-        "\nThe EKF in float, not timed: the largest distance from the double EmrysFilter EKF over %zu steps, ",
+        "\nThe EKF in float: the largest distance from the double EmrysFilter EKF over %zu steps, ",
         AgreedLength
     );
     std::printf("relative to the size of its mean and of its covariance.\n\n");

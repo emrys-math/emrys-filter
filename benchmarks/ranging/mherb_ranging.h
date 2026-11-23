@@ -38,6 +38,51 @@
 namespace Ranging
 {
 
+/// The constant-velocity model in \a Dimension dimensions as a mherb/kalman system model over
+/// \a Base, Kalman::StandardBase or Kalman::SquareRootBase. Its step is fixed, so F, W, and Q are
+/// set once in the constructor, and updateJacobians(), which the extended filters call before
+/// every prediction, has nothing to do.
+template <int Dimension, typename Scalar, template <class> class Base>
+class MherbConstantVelocity
+    : public Kalman::LinearizedSystemModel<Kalman::Vector<Scalar, 2 * Dimension>, Kalman::Vector<Scalar, 1>, Base>
+{
+public:
+
+    using State = Kalman::Vector<Scalar, 2 * Dimension>;
+    using Control = Kalman::Vector<Scalar, 1>;
+
+    /// The model with the time step \a dt and the white-noise acceleration's spectral density
+    /// \a accelDensity.
+    MherbConstantVelocity(Scalar dt, Scalar accelDensity)
+        : m_timeStep{dt}
+    {
+        using PositionMatrix = Eigen::Matrix<Scalar, Dimension, Dimension>;
+        PositionMatrix const identity = PositionMatrix::Identity();
+        this->F.setIdentity();
+        this->F.template topRightCorner<Dimension, Dimension>() = dt * identity;
+        this->W.setIdentity();
+        auto processNoise = Kalman::Covariance<State>{};
+        processNoise << dt * dt * dt / 3 * identity, dt * dt / 2 * identity, dt * dt / 2 * identity, dt * identity;
+        this->setCovariance(accelDensity * processNoise);
+    }
+
+    [[nodiscard]] State
+    f(State const & x, Control const &) const override
+    {
+        State next = x;
+        next.template head<Dimension>() += m_timeStep * x.template tail<Dimension>();
+        return next;
+    }
+
+    void
+    updateJacobians(State const &, Control const &) override
+    {}
+
+private:
+
+    Scalar m_timeStep;  ///< the fixed time between measurements
+};
+
 /// The ranging filter \a Kind with mherb/kalman in \a Scalar, with the analytic Jacobian.
 template <int Dimension, int AnchorCount, FilterKind Kind = FilterKind::Ekf, typename Scalar = double>
 class MherbRanging
@@ -103,46 +148,6 @@ public:
 
 private:
 
-    using Control = Kalman::Vector<Scalar, 1>;
-
-    /// The constant-velocity model. Its step is fixed, so F, W, and Q are set once here, and
-    /// updateJacobians(), which the extended filters call before every prediction, has nothing to
-    /// do.
-    template <template <class> class Base>
-    class SystemOver : public Kalman::LinearizedSystemModel<State, Control, Base>
-    {
-    public:
-
-        SystemOver(Scalar dt, Scalar accelDensity)
-            : m_timeStep{dt}
-        {
-            using PositionMatrix = Eigen::Matrix<Scalar, Dimension, Dimension>;
-            PositionMatrix const identity = PositionMatrix::Identity();
-            this->F.setIdentity();
-            this->F.template topRightCorner<Dimension, Dimension>() = dt * identity;
-            this->W.setIdentity();
-            auto processNoise = Kalman::Covariance<State>{};
-            processNoise << dt * dt * dt / 3 * identity, dt * dt / 2 * identity, dt * dt / 2 * identity, dt * identity;
-            this->setCovariance(accelDensity * processNoise);
-        }
-
-        [[nodiscard]] State
-        f(State const & x, Control const &) const override
-        {
-            State next = x;
-            next.template head<Dimension>() += m_timeStep * x.template tail<Dimension>();
-            return next;
-        }
-
-        void
-        updateJacobians(State const &, Control const &) override
-        {}
-
-    private:
-
-        Scalar m_timeStep;  ///< the fixed time between measurements
-    };
-
     /// The ranges to the anchors, with their Jacobian in position.
     template <template <class> class Base>
     class MeasurementOver : public Kalman::LinearizedMeasurementModel<State, Ranges, Base>
@@ -180,8 +185,10 @@ private:
         Eigen::Matrix<Scalar, Dimension, AnchorCount> m_anchors;  ///< one anchor per column
     };
 
-    using System =
-        std::conditional_t<isSqrt(Kind), SystemOver<Kalman::SquareRootBase>, SystemOver<Kalman::StandardBase>>;
+    using System = std::conditional_t<
+        isSqrt(Kind),
+        MherbConstantVelocity<Dimension, Scalar, Kalman::SquareRootBase>,
+        MherbConstantVelocity<Dimension, Scalar, Kalman::StandardBase>>;
     using Measurement = std::
         conditional_t<isSqrt(Kind), MeasurementOver<Kalman::SquareRootBase>, MeasurementOver<Kalman::StandardBase>>;
     using Filter = std::conditional_t<

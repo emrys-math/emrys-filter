@@ -2,10 +2,10 @@
 // filters, with EmrysFilter (emrys_ranging_kinds.h) and with mherb/kalman (mherb_ranging.h), in
 // double and in float. EmrysFilter's make none, and neither do mherb/kalman's but its square-root
 // UKF, whose prediction downdates its factor by Eigen's LLT::rankUpdate(), which allocates a
-// temporary vector of dynamic size on each call. That filter is not timed (cases.h), so the timings
-// contain no allocator. The target is built with EIGEN_RUNTIME_NO_MALLOC, so Eigen asserts on any
-// heap allocation while it is forbidden, and heap_counter.cpp's operator new counts what anything
-// else asks of the heap. Roadmap: the benchmarks against other libraries.
+// temporary vector of dynamic size on each call. That filter's timings include its allocator, as its
+// users' do, and no other timing contains one. The target is built with EIGEN_RUNTIME_NO_MALLOC, so
+// Eigen asserts on any heap allocation while it is forbidden, and heap_counter.cpp's operator new
+// counts what anything else asks of the heap. Roadmap: the benchmarks against other libraries.
 
 #include "../heap_counter.h"
 #include "cases.h"

@@ -877,18 +877,19 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       filters, at its last commit (`9f40c2f`, 2018-08-22), build and run unchanged against Eigen
       5.0.1 with Clang 21, warning once (`-Wdeprecated-enum-enum-conversion` in
       `SquareRootExtendedKalmanFilter.hpp`), so its headers come in as system includes. All four
-      pairs are written (benchmarks.md, claim 9). Timed: the EKF in double and the square-root EKF
-      in both scalars. Not timed: the EKF in float, where mherb/kalman's explicit inverse of S
-      loses its accuracy (the runner prints both libraries' float error), and both UKFs, which
-      differ by mherb/kalman's reuse of the predicted sigma points (the runner prints the
-      difference). Whether to time the UKFs under some other precondition is open. TinyEKF, at
-      its last commit (`ba0d2a9`, 2026-04-09): the pair is written, timed in double and compared
-      for accuracy in float, where its explicit inverse, its `(I - G H) P`, and its unmirrored
-      covariance together lose its accuracy (benchmarks.md, claim 9). OpenCV, found rather than
-      fetched (`EMRYS_FILTER_BENCHMARK_OPENCV`, off by default), probed with 4.14.0 built in WSL
-      under `~/opt/opencv-4.14.0`: the pair is written and timed over runs of 300 steps, since
-      its unmirrored covariance drifts from step 400 on and diverges by step 2000 (benchmarks.md,
-      claim 9); with 8 anchors or more it allocates once per step. No CI job installs OpenCV.
+      pairs are written (benchmarks.md, claim 9), and every pair of every library is timed in
+      double and in float. A pair that does not agree is timed with a mark [benchmarks], behind a
+      test that the difference is the other library's: mherb/kalman's EKF in float, where its
+      explicit inverse of S loses its accuracy, and both its UKFs, whose update leaves the
+      process noise out of the sigma points; TinyEKF in float, its default, where its explicit
+      inverse, its `(I - G H) P`, and its unmirrored covariance together lose its accuracy; and
+      OpenCV in float, its default, where it solves for the gain by an SVD of an asymmetric
+      innovation covariance. TinyEKF is at its last commit (`ba0d2a9`, 2026-04-09). OpenCV is
+      found rather than fetched (`EMRYS_FILTER_BENCHMARK_OPENCV`, off by default), probed with
+      4.14.0 built in WSL under `~/opt/opencv-4.14.0`, and timed over runs of 300 steps, since
+      in double its unmirrored covariance drifts from step 400 on and diverges by step 2000
+      (benchmarks.md, claim 9); with 8 anchors or more it allocates once per step. No CI job
+      installs OpenCV.
       Every pair is built and tested with Clang 21 in WSL (2026-11-22, the mherb/kalman EKF also
       with Clang on Windows), and measured there: instructions and time are in
       `docs/benchmarks.md`. The first measurement found the library taking about 1,500
@@ -896,11 +897,20 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       that every prediction built and discarded; that is cut (2026-11-23, benchmarks.md, claim 1),
       and every count on the page, with the ranging and library times on Linux, is taken again
       after it. Claim 9 holds against OpenCV and still fails in time at the small sizes against
-      TinyEKF (1.68 and 3.24 times its time in 2D with 4 and 8 anchors) and mherb/kalman's EKF
-      (2.19 times in 2D with 4), though the library's instructions there are now within 8% of
-      mherb/kalman's and under TinyEKF's. Next: find where the time goes at those sizes, in the
-      library and in the hand code alike, starting with the divisions of the gain's triangular
-      solves, which the two libraries that invert S do not have; take the Windows times, and the
+      TinyEKF (1.66 and 3.22 times its time in 2D with 4 and 8 anchors in double, 1.25 and 2.85
+      in float) and mherb/kalman's EKF (2.20 times in 2D with 4), though the library's
+      instructions at 2D with 4 are within 8% of mherb/kalman's and under TinyEKF's. With 8 and
+      12 anchors the instructions are found (benchmarks.md, claim 9): Eigen's factorization of
+      an 8×8 or 12×12 innovation covariance through its general kernels, with a norm
+      `LLT::compute()` takes that nothing reads, and its blocked triangular solve above size 8.
+      Next: try the three changes that follow (factorize without that norm, a fixed-size
+      Cholesky that avoids the general matrix-vector kernel, a solve for sizes 9 to under 16
+      that is not the blocked one); measure the two candidates read from the code (the calls
+      left out of line, and the covariance mirror in `kalmanConditionInPlace()`); find where
+      the time goes at 2D with 4 and 8 anchors, in the library and in the hand code alike,
+      starting with the divisions of the gain's triangular solves, which the two libraries
+      that invert S do not have, and why 3D with 6 anchors is slower in float than in double
+      on both sides; take the Windows times, and the
       attitude and particle times, again; GCC and MSVC builds of the pairs; the Cortex-M half of
       TinyEKF joins claim 6's footprint benchmark. The whole test suite passes with Clang 21 in
       WSL but `Allocation.ParticleFilterUnderAUsersPolicyStaysOffTheHeap`, which throws

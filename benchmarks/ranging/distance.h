@@ -1,12 +1,14 @@
 #pragma once
 
-// The distance between two filters' estimates, as the agreement tests measure it, for the runners
-// against other libraries (mherb_benchmark.cpp, tinyekf_benchmark.cpp), which check agreement
-// before they time and print the distances of the pairs they don't time.
+// The distance between two filters' estimates, as the agreement tests measure it, for the tests
+// and the runners against other libraries (mherb, tinyekf, and opencv), which check each pair
+// before they time it and print how far the pairs that do not agree are from the estimate they are
+// compared with.
 
 #include <Eigen/Core>
 
 #include <algorithm>
+#include <cstddef>
 #include <type_traits>
 
 namespace Ranging
@@ -38,6 +40,45 @@ distance(Mean const & mean, Cov const & cov, RefMean const & refMean, RefCov con
 largerOf(Distance const & a, Distance const & b)
 {
     return Distance{std::max(a.mean, b.mean), std::max(a.cov, b.cov)};
+}
+
+/// The covariance of \a filter as distance() takes it: the lower triangle that an EmrysFilter
+/// filter guarantees, or the whole matrix of another library's.
+template <typename Filter>
+[[nodiscard]] auto
+covarianceOf(Filter const & filter)
+{
+    if constexpr (requires { filter.covarianceLower(); })
+    {
+        return filter.covarianceLower();
+    }
+    else
+    {
+        return filter.covariance();
+    }
+}
+
+/// The largest distance of \a filter from \a reference over the first \a steps steps of a run,
+/// where `step(filter, k)` and `referenceStep(reference, k)` run step k on each.
+template <typename Filter, typename Step, typename Reference, typename ReferenceStep>
+[[nodiscard]] Distance
+largestDistance(
+    Filter & filter,
+    Step const & step,
+    Reference & reference,
+    ReferenceStep const & referenceStep,
+    std::size_t steps
+)
+{
+    auto worst = Distance{0, 0};
+    for (std::size_t k = 0; k < steps; ++k)
+    {
+        referenceStep(reference, k);
+        step(filter, k);
+        worst =
+            largerOf(worst, distance(filter.mean(), covarianceOf(filter), reference.mean(), covarianceOf(reference)));
+    }
+    return worst;
 }
 
 /// The name of \a Scalar, for the tables.

@@ -58,6 +58,12 @@ inline constexpr double agreementTolerance = 1e-9;
 template <>
 inline constexpr double agreementTolerance<float> = 1e-4;
 
+/// How far another library's filter may be from the estimate it is compared with and still be
+/// timed, with a mark, as a less accurate filter of the same problem [benchmarks]: 0.2 of the size
+/// of the state and of the covariance, under a modeling difference, which is of order one. The
+/// largest seen is 0.09, the covariance of mherb/kalman's float EKF in 2D with 4 anchors.
+inline constexpr double disagreementBound = 0.2;
+
 /// The problem in Dimension spatial dimensions with AnchorCount anchors: the anchors, the noise
 /// levels, and the initial estimate. The state is position then velocity.
 template <int Dimension, int AnchorCount>

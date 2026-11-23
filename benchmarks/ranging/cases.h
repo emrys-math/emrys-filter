@@ -63,13 +63,11 @@ using MherbCases = ::testing::Types<
     KindCase<2, 4, FilterKind::SqrtUkf, float>,
     KindCase<3, 6, FilterKind::SqrtUkf, float>>;
 
-/// The cases in which mherb/kalman's filter agrees with EmrysFilter's, and so is timed: the EKF in
-/// double, and the square-root EKF in double and in float. The EKF in float does not agree: its
-/// explicit inverse of S loses up to a third of a meter of the mean in 2D with 4 anchors, where
-/// EmrysFilter's float filter stays within 1e-4 of its double one (mherb_benchmark.cpp prints both).
-/// Neither UKF agrees in either scalar: mherb/kalman's updates with the sigma points its prediction
-/// moved, which leave out the process noise, rather than with points drawn from the predicted
-/// covariance, a difference of 7 to 13 mm in the mean.
+/// The cases in which mherb/kalman's filter agrees with EmrysFilter's, and is timed without a mark:
+/// the EKF in double, and the square-root EKF in double and in float. The others are timed with
+/// one [benchmarks]: MherbDisagreementCases, and both UKFs in either scalar, since mherb/kalman's
+/// update uses the sigma points its prediction moved, which leave out the process noise, rather
+/// than points drawn from the predicted covariance, a difference of 7 to 13 mm in the mean.
 using MherbAgreementCases = ::testing::Types<
     KindCase<2, 4, FilterKind::Ekf>,
     KindCase<3, 6, FilterKind::Ekf>,
@@ -77,6 +75,13 @@ using MherbAgreementCases = ::testing::Types<
     KindCase<3, 6, FilterKind::SqrtEkf>,
     KindCase<2, 4, FilterKind::SqrtEkf, float>,
     KindCase<3, 6, FilterKind::SqrtEkf, float>>;
+
+/// The EKF in float, in which mherb/kalman's does not agree with EmrysFilter's: its explicit inverse
+/// of S loses up to a third of a meter of the mean in 2D with 4 anchors, where EmrysFilter's float
+/// EKF stays within 1e-4 of its double one (mherb_agreement.cpp tests both, and mherb_benchmark.cpp
+/// prints them).
+using MherbDisagreementCases =
+    ::testing::Types<KindCase<2, 4, FilterKind::Ekf, float>, KindCase<3, 6, FilterKind::Ekf, float>>;
 
 /// The cases of the benchmark against TinyEKF, which has only the EKF: the planar and spatial
 /// cases in double and in float.
@@ -86,11 +91,16 @@ using TinyEkfCases = ::testing::Types<
     KindCase<2, 4, FilterKind::Ekf, float>,
     KindCase<3, 6, FilterKind::Ekf, float>>;
 
-/// The cases in which TinyEKF's EKF agrees with EmrysFilter's, and so is timed: those in double.
-/// In float it strays up to 5e-4 relative in the mean and 2e-3 in the covariance in 2D with 4
-/// anchors, where EmrysFilter's float EKF stays within 1e-5 of its double one
-/// (tinyekf_benchmark.cpp prints both).
+/// The cases in which TinyEKF's EKF agrees with EmrysFilter's, and is timed without a mark: those
+/// in double.
 using TinyEkfAgreementCases = ::testing::Types<KindCase<2, 4, FilterKind::Ekf>, KindCase<3, 6, FilterKind::Ekf>>;
+
+/// The cases in float, TinyEKF's default scalar, in which it does not agree: it strays up to 5e-4
+/// relative in the mean and 2e-3 in the covariance in 2D with 4 anchors, where EmrysFilter's float
+/// EKF stays within 1e-5 of its double one (tinyekf_agreement.cpp tests both, and
+/// tinyekf_benchmark.cpp prints them).
+using TinyEkfDisagreementCases =
+    ::testing::Types<KindCase<2, 4, FilterKind::Ekf, float>, KindCase<3, 6, FilterKind::Ekf, float>>;
 
 /// The cases of the benchmark against OpenCV, which has only the linear filter, run as an EKF: the
 /// planar and spatial cases, and the planar case with 8 anchors, from which OpenCV's steps allocate
@@ -103,8 +113,15 @@ using OpenCvCases = ::testing::Types<
     KindCase<2, 8, FilterKind::Ekf, float>,
     KindCase<3, 6, FilterKind::Ekf, float>>;
 
-/// The cases in which OpenCV's EKF agrees with EmrysFilter's over the timed run, and so is timed:
-/// those in double (opencv_benchmark.cpp prints the float distances and the long run).
+/// The cases in which OpenCV's EKF agrees with EmrysFilter's over the timed run, and is timed
+/// without a mark: those in double (opencv_benchmark.cpp prints the long run).
 using OpenCvAgreementCases = ::testing::Types<KindCase<2, 4, FilterKind::Ekf>, KindCase<3, 6, FilterKind::Ekf>>;
+
+/// The cases in float, the default type of cv::KalmanFilter, in which it does not agree over the
+/// timed run: it strays up to 2e-3 relative in the mean and 2e-2 in the covariance, where
+/// EmrysFilter's float EKF stays within 3e-5 of its double one (opencv_agreement.cpp tests both,
+/// and opencv_benchmark.cpp prints them).
+using OpenCvDisagreementCases =
+    ::testing::Types<KindCase<2, 4, FilterKind::Ekf, float>, KindCase<3, 6, FilterKind::Ekf, float>>;
 
 }  // namespace Ranging
