@@ -128,6 +128,9 @@ Debug).
   square-root EKF in both scalars. In `float`, mherb/kalman's EKF loses accuracy, and its two UKFs
   compute a different update from the standard one, so those are compared for accuracy but not
   timed.
+- Against TinyEKF: its EKF on the ranging problem. The runner is built
+  (`emrys_filter_tinyekf_benchmark`) and times it in `double`. In `float`, TinyEKF loses
+  accuracy while the prior is wide, so it is compared for accuracy but not timed.
 - The particle filter's scaling with threads under `std::execution::par`.
 - Code size, stack, and cycles per step on Cortex-M4F and Cortex-M7.
 - The price of each option (update form, Gaussian form, sigma points) relative to the plain EKF.

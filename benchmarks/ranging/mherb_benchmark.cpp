@@ -20,19 +20,19 @@
 //     valgrind --tool=callgrind --toggle-collect='*runSteps*' emrys_filter_mherb_benchmark --count
 
 #include "../harness.h"
+#include "distance.h"
 #include "emrys_ranging_kinds.h"
 #include "mherb_ranging.h"
 #include "scenario.h"
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdio>
-#include <type_traits>
 
 namespace
 {
 
 using Benchmark::Options;
+using Ranging::Distance;
 using Ranging::EmrysRangingKind;
 using Ranging::FilterKind;
 using Ranging::MherbRanging;
@@ -63,42 +63,6 @@ nameOf(FilterKind kind)
             return "sqrt UKF";
     }
     return "";
-}
-
-/// The name of a scalar, for the tables.
-template <typename Scalar>
-[[nodiscard]] char const *
-nameOf()
-{
-    return std::is_same_v<Scalar, float> ? "float" : "double";
-}
-
-/// The distance of a mean and a covariance from a reference's, each relative to the size of the
-/// reference's, as the agreement tests measure it.
-struct Distance
-{
-    double mean;  ///< of the means
-    double cov;   ///< of the covariances' lower triangles, the part EmrysFilter guarantees
-};
-
-/// The distance of the mean \a mean and the covariance \a cov from \a refMean and \a refCov.
-template <typename Mean, typename Cov, typename RefMean, typename RefCov>
-[[nodiscard]] Distance
-distance(Mean const & mean, Cov const & cov, RefMean const & refMean, RefCov const & refCov)
-{
-    auto const covDifference = (cov.template cast<double>() - refCov.template cast<double>()).eval();
-    return Distance{
-        (mean.template cast<double>() - refMean.template cast<double>()).norm() / std::max(1.0, double(refMean.norm())),
-        covDifference.template triangularView<Eigen::Lower>().toDenseMatrix().norm()
-            / std::max(1.0, double(refCov.norm()))
-    };
-}
-
-/// The larger of \a a and \a b in each part.
-[[nodiscard]] Distance
-largerOf(Distance const & a, Distance const & b)
-{
-    return Distance{std::max(a.mean, b.mean), std::max(a.cov, b.cov)};
 }
 
 /// Benchmarks one case and prints its row, or reports that the filters disagree and returns false.
@@ -132,7 +96,7 @@ benchmarkCase(Options const & options)
         auto mherb = makeMherb();
         Benchmark::runSteps(emrys, emrysStep, 0, TrajectoryLength);
         Benchmark::runSteps(mherb, mherbStep, 0, TrajectoryLength);
-        Distance const d = distance(emrys.mean(), emrys.covarianceLower(), mherb.mean(), mherb.covariance());
+        Distance const d = Ranging::distance(emrys.mean(), emrys.covarianceLower(), mherb.mean(), mherb.covariance());
         Benchmark::consume(double(emrys.mean().sum() + mherb.mean().sum()));
         double const tolerance = Ranging::agreementTolerance<Scalar>;
         if (!(d.mean < tolerance && d.cov < tolerance))
@@ -142,7 +106,7 @@ benchmarkCase(Options const & options)
                 D,
                 A,
                 nameOf(Kind),
-                nameOf<Scalar>(),
+                Ranging::scalarName<Scalar>(),
                 d.mean,
                 d.cov
             );
@@ -160,7 +124,7 @@ benchmarkCase(Options const & options)
     Benchmark::consume(double(emrys.filter().mean().sum() + mherb.filter().mean().sum()));
 
     char label[LabelWidth + 1];
-    std::snprintf(label, sizeof label, "%dD %3d   %-9s %-6s", D, A, nameOf(Kind), nameOf<Scalar>());
+    std::snprintf(label, sizeof label, "%dD %3d   %-9s %-6s", D, A, nameOf(Kind), Ranging::scalarName<Scalar>());
     Benchmark::printRow(label, LabelWidth, timing);
     return true;
 }
@@ -200,8 +164,14 @@ floatRow()
         emrys.update(floatRanges[k]);
         mherb.update(mherbRanges[k]);
         auto const refCov = reference.covarianceLower();
-        worstEmrys = largerOf(worstEmrys, distance(emrys.mean(), emrys.covarianceLower(), reference.mean(), refCov));
-        worstMherb = largerOf(worstMherb, distance(mherb.mean(), mherb.covariance(), reference.mean(), refCov));
+        worstEmrys = Ranging::largerOf(
+            worstEmrys,
+            Ranging::distance(emrys.mean(), emrys.covarianceLower(), reference.mean(), refCov)
+        );
+        worstMherb = Ranging::largerOf(
+            worstMherb,
+            Ranging::distance(mherb.mean(), mherb.covariance(), reference.mean(), refCov)
+        );
     }
     std::printf(
         "%dD %3d    %10.2e %10.2e    %10.2e %10.2e\n",
@@ -232,7 +202,10 @@ largestDifference()
         mherb.predict();
         emrys.update(ranges[k]);
         mherb.update(mherbRanges[k]);
-        worst = largerOf(worst, distance(mherb.mean(), mherb.covariance(), emrys.mean(), emrys.covarianceLower()));
+        worst = Ranging::largerOf(
+            worst,
+            Ranging::distance(mherb.mean(), mherb.covariance(), emrys.mean(), emrys.covarianceLower())
+        );
     }
     return worst;
 }

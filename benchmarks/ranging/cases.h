@@ -78,4 +78,18 @@ using MherbAgreementCases = ::testing::Types<
     KindCase<2, 4, FilterKind::SqrtEkf, float>,
     KindCase<3, 6, FilterKind::SqrtEkf, float>>;
 
+/// The cases of the benchmark against TinyEKF, which has only the EKF: the planar and spatial
+/// cases in double and in float.
+using TinyEkfCases = ::testing::Types<
+    KindCase<2, 4, FilterKind::Ekf>,
+    KindCase<3, 6, FilterKind::Ekf>,
+    KindCase<2, 4, FilterKind::Ekf, float>,
+    KindCase<3, 6, FilterKind::Ekf, float>>;
+
+/// The cases in which TinyEKF's EKF agrees with EmrysFilter's, and so is timed: those in double.
+/// In float it strays up to 5e-4 relative in the mean and 2e-3 in the covariance in 2D with 4
+/// anchors, where EmrysFilter's float EKF stays within 1e-5 of its double one
+/// (tinyekf_benchmark.cpp prints both).
+using TinyEkfAgreementCases = ::testing::Types<KindCase<2, 4, FilterKind::Ekf>, KindCase<3, 6, FilterKind::Ekf>>;
+
 }  // namespace Ranging

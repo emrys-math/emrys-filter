@@ -25,6 +25,21 @@ if(EMRYS_FILTER_BENCHMARK_MHERB)
   target_link_libraries(emrys_filter_mherb_kalman INTERFACE Eigen3::Eigen)
 endif()
 
+# TinyEKF, a C EKF for microcontrollers, another implementation of the ranging EKF (claims 6 and 9).
+# It is fetched at its last commit, for the benchmarks alone, like mherb/kalman. It is one header,
+# src/tinyekf.h, which comes in as a system include, since it is C that warns as C++ under these
+# warnings; the repository has no CMakeLists.txt, so nothing of it is built.
+option(EMRYS_FILTER_BENCHMARK_TINYEKF "Build the ranging benchmark against TinyEKF, which is fetched" ON)
+if(EMRYS_FILTER_BENCHMARK_TINYEKF)
+  FetchContent_Declare(tinyekf
+    URL https://github.com/simondlevy/TinyEKF/archive/ba0d2a90e22f2f4e4120a91cb05ca2ca6a8e8da3.tar.gz
+    URL_HASH SHA256=78ed05682c5863b452741cfe07c10eee7896c4def8d43d5c07128a1407f1e6ed
+  )
+  FetchContent_MakeAvailable(tinyekf)
+  add_library(emrys_filter_tinyekf INTERFACE)
+  target_include_directories(emrys_filter_tinyekf SYSTEM INTERFACE "${tinyekf_SOURCE_DIR}/src")
+endif()
+
 if(EMRYS_FILTER_BUILD_TESTS)
   add_executable(emrys_filter_benchmark_tests
     heap_counter.cpp
@@ -45,6 +60,13 @@ if(EMRYS_FILTER_BUILD_TESTS)
       ranging/mherb_allocation.cpp
     )
     target_link_libraries(emrys_filter_benchmark_tests PRIVATE emrys_filter_mherb_kalman)
+  endif()
+  if(EMRYS_FILTER_BENCHMARK_TINYEKF)
+    target_sources(emrys_filter_benchmark_tests PRIVATE
+      ranging/tinyekf_agreement.cpp
+      ranging/tinyekf_allocation.cpp
+    )
+    target_link_libraries(emrys_filter_benchmark_tests PRIVATE emrys_filter_tinyekf)
   endif()
   target_compile_options(emrys_filter_benchmark_tests PRIVATE ${EMRYS_FILTER_WARNINGS})
   target_compile_definitions(emrys_filter_benchmark_tests PRIVATE EIGEN_RUNTIME_NO_MALLOC)
@@ -73,11 +95,18 @@ if(EMRYS_FILTER_BUILD_BENCHMARKS)
     target_compile_options(emrys_filter_mherb_benchmark PRIVATE ${EMRYS_FILTER_WARNINGS})
     list(APPEND benchmark_commands COMMAND emrys_filter_mherb_benchmark)
   endif()
+  # The ranging EKF against TinyEKF's.
+  if(EMRYS_FILTER_BENCHMARK_TINYEKF)
+    add_executable(emrys_filter_tinyekf_benchmark ranging/tinyekf_benchmark.cpp)
+    target_link_libraries(emrys_filter_tinyekf_benchmark PRIVATE EmrysFilter::EmrysFilter emrys_filter_tinyekf)
+    target_compile_options(emrys_filter_tinyekf_benchmark PRIVATE ${EMRYS_FILTER_WARNINGS})
+    list(APPEND benchmark_commands COMMAND emrys_filter_tinyekf_benchmark)
+  endif()
 
   add_custom_target(benchmark
     ${benchmark_commands}
     USES_TERMINAL
-    COMMENT "Timing each problem, EmrysFilter against plain Eigen and against mherb/kalman"
+    COMMENT "Timing each problem, EmrysFilter against plain Eigen, mherb/kalman, and TinyEKF"
   )
 endif()
 

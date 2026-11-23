@@ -15,6 +15,10 @@ instead.
   with their agreement and allocation tests: the EKF and the square-root EKF timed, the EKF in
   `float` and both UKFs compared for accuracy. Building the tests or the benchmarks now fetches mherb/kalman;
   configure with `-DEMRYS_FILTER_BENCHMARK_MHERB=OFF` to build without it.
+- The ranging EKF benchmarked against TinyEKF's (`emrys_filter_tinyekf_benchmark`), with its
+  agreement and allocation tests: timed in `double`, compared for accuracy in `float`. Building
+  the tests or the benchmarks now fetches TinyEKF; configure with
+  `-DEMRYS_FILTER_BENCHMARK_TINYEKF=OFF` to build without it.
 - `KalmanFilter<...>::UpdateType<M>` and `ResultType<M>`, what `update()` with a measurement of
   type `M` returns and fills, as the other filters name them; it was
   `decltype(filter)::RecursionType::UpdateType<M>`.

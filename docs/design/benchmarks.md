@@ -90,10 +90,10 @@ might doubt, published with its method and machine, and never one per feature."
 | 3 | Sampled filters are as fast as a loop you would write, and scale with threads | Particle filter on the ranging problem | ns per particle-step; ratio of `par` at $T$ threads to `Sequential` | hand-rolled Eigen particle filter (sequential) | the pair is built, not in CI, not published; the thread sweep is step 18's |
 | 4 | Each option has a known price | Options table on the ranging problem | ns per step relative to the plain EKF row | the library's own EKF | not started |
 | 5 | Composition is additive | Filters table on the ranging problem | ns per step relative to the EKF, divided by the component count | the library's own EKF | not started |
-| 6 | It fits and runs on a microcontroller | Footprint and cycles on Cortex-M4F and M7 | `.text`, `.data`, stack per function, DWT cycles per step | hand-rolled EKF on the same target | after [embedded-builds]'s Cortex-M job |
+| 6 | It fits and runs on a microcontroller | Footprint and cycles on Cortex-M4F and M7 | `.text`, `.data`, stack per function, DWT cycles per step | hand-rolled EKF and TinyEKF on the same target | after [embedded-builds]'s Cortex-M job |
 | 7 | A template library's compile cost is tolerable | Compile cost of each benchmark translation unit | seconds and peak memory per compiler | the hand-rolled translation unit | built and measured on three compilers (section 7), not in CI, not published |
 | 8 | A GPU pays above some particle count | Device path against host `par` | crossover particle count | the library's own host path | step 19, not planned here |
-| 9 | It is no slower than the C++ Kalman library a user would otherwise pick | mherb/kalman's EKF, UKF, square-root EKF, and square-root UKF on the ranging problem | instructions and ns per step, at the ranging sizes and scalars | mherb/kalman, as its users write it | started on branch `mherb-benchmark` |
+| 9 | It is no slower than the C++ Kalman library a user would otherwise pick | mherb/kalman's EKF, UKF, square-root EKF, and square-root UKF, and TinyEKF's EKF, on the ranging problem | instructions and ns per step, at the ranging sizes and scalars | each library, as its users write it | started on branch `mherb-benchmark` |
 
 **1. Ranging.** What exists, plus the two axes [benchmarks] names and the ranging benchmark lacks: a
 constant-acceleration case (state dimension 6 and 9 beside 4 and 6), and the scaling curves over
@@ -458,6 +458,34 @@ NEES test on this problem, whose process noise is small beside the prior. Under 
 UKF pairs are not timed; the runner prints the largest distance between the libraries' UKFs
 instead, and the results page says why. Timing them would take a precondition other than
 agreement, which is a change to [benchmarks] and the maintainer's to make.
+
+**TinyEKF.** The EKF a user on a microcontroller would otherwise pick is TinyEKF
+(simondlevy/TinyEKF, MIT license): one C header, sized at compile time by the macros `EKF_N` and
+`EKF_M`, which allocates nothing and runs in `float` by default. It backs claim 9 on the desktop
+and claim 6 on the target; this pair is the desktop half, and the Cortex-M half waits on the
+footprint benchmark. It is fetched at its last commit (`ba0d2a9`, 2026-04-09) and compiled as C++
+from a system include, since it is C that warns under the library's warnings. It has an EKF only,
+and its caller computes the predicted mean, the predicted ranges, and both Jacobians into row-major
+arrays, as its examples do. Its arithmetic is kept as its users get it: $F P F^T + Q$, the gain
+$P H^T S^{-1}$ through an explicit inverse of $S$ by its Cholesky factor, and the covariance
+$(I - G H) P$, with no triangle mirrored, every product a loop over the arrays.
+
+The pair is `benchmarks/ranging/tinyekf_ranging.h`, against `emrys_ranging_kinds.h`'s EKF, with
+`tinyekf_agreement.cpp`, `tinyekf_allocation.cpp`, and the runner `tinyekf_benchmark.cpp`. Its
+sizes and scalar are macros fixed for a translation unit, and its header has no include guard, so
+each size and scalar is an instance of the header in a namespace of its own
+(`tinyekf_instance.h`); its functions are `static`, so the pair has internal linkage too. Neither
+side allocates. In double the two agree to 6e-11 relative over 1000 steps, so the pair is timed
+in double. In float they do not agree: TinyEKF's float EKF strays from the double EmrysFilter EKF
+by 5e-4 to 3e-3 relative in the mean (0.8 to 4 mm) and up to 2e-2 in the covariance, over the
+first steps, while the prior is wide; EmrysFilter's float EKF stays within 1e-5. The cause is the
+three choices together. A scratch copy of its header with the gain solved by the Cholesky factor,
+the covariance updated as $P - G (H P)$, and its triangles mirrored agrees to 4e-5; the solve
+alone brings the mean within 3e-5 but not the covariance, and the solve with the form, the
+mirroring alone, or the inverse computed in double do not suffice. So the float pair is compared
+for accuracy, and the runner prints both libraries' float error as it does for mherb/kalman. For
+claim 6 this is a finding before any cycle is counted: on the scalar of the target TinyEKF is
+written for, its estimate is the less accurate.
 
 ## How the numbers are measured
 

@@ -866,22 +866,28 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       from a free source, are the first. The maintainer obtains the paywalled papers and keeps
       them out of the repository, which is public. Done when no entry says **Not read.** and a
       reader who checks a citation finds what the comment says there.
-- [ ] Benchmarks against the other libraries in the README's comparison table that run the same
-      problem, by the method of benchmarks.md (claim 9), since a reader's first question is "how
-      fast against X", and the README's numbers are only against hand-written Eigen. That is
-      mherb/kalman alone, all four of its filters (EKF, UKF, square-root EKF, square-root UKF) on
-      the ranging problem, with the results in `docs/benchmarks.md`. Started on branch
-      `mherb-benchmark` (2026-11-22): the plan and the results page are written, and its four
+- [ ] Benchmarks against the other libraries that run the same problem, those in the README's
+      comparison table and the ones a user would otherwise pick, by the method of benchmarks.md
+      (claim 9), since a reader's first question is "how fast against X", and the README's
+      numbers are only against hand-written Eigen. That is mherb/kalman, all four of its filters
+      (EKF, UKF, square-root EKF, square-root UKF) on the ranging problem, and TinyEKF's EKF, the
+      C filter a microcontroller user would pick (claims 6 and 9), with the results in
+      `docs/benchmarks.md`. Started on branch `mherb-benchmark` (2026-11-22): the plan and the results page are written, and its four
       filters, at its last commit (`9f40c2f`, 2018-08-22), build and run unchanged against Eigen
       5.0.1 with Clang 21, warning once (`-Wdeprecated-enum-enum-conversion` in
       `SquareRootExtendedKalmanFilter.hpp`), so its headers come in as system includes. All four
-      pairs are built (benchmarks.md, claim 9). Timed: the EKF in double and the square-root EKF
+      pairs are written (benchmarks.md, claim 9). Timed: the EKF in double and the square-root EKF
       in both scalars. Not timed: the EKF in float, where mherb/kalman's explicit inverse of S
       loses its accuracy (the runner prints both libraries' float error), and both UKFs, which
       differ by mherb/kalman's reuse of the predicted sigma points (the runner prints the
-      difference). Whether to time the UKFs under some other precondition is open. Built and
-      tested with Clang on Windows only, not yet measured. Next: GCC and MSVC, then measure and
-      publish.
+      difference). Whether to time the UKFs under some other precondition is open. TinyEKF, at
+      its last commit (`ba0d2a9`, 2026-04-09): the pair is written, timed in double and compared
+      for accuracy in float, where its explicit inverse, its `(I - G H) P`, and its unmirrored
+      covariance together lose its accuracy (benchmarks.md, claim 9). The mherb/kalman EKF pair
+      is built and tested with Clang on Windows; its other three pairs and TinyEKF's are
+      syntax-checked under the warnings only, and their numbers come from single-file probes.
+      Nothing is measured. Next: build and test every pair with Clang, then GCC and MSVC, then
+      measure and publish; the Cortex-M half of TinyEKF joins claim 6's footprint benchmark.
 - [ ] GitHub Discussions turned on, so questions have somewhere to go besides issues. The
       repository's 20 topics, GitHub's limit, were chosen on 2026-11-12 by how many public
       repositories use each, so that each has an audience browsing it; a filter named in the
