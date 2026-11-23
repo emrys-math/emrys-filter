@@ -26,6 +26,7 @@
 #include <EmrysFilter/Models/SwitchingModel.h>
 #include <EmrysFilter/Distributions/Sampling.h>
 
+#include <Eigen/Cholesky>
 #include <Eigen/LU>
 
 #include <gtest/gtest.h>
@@ -994,7 +995,8 @@ TEST(RbParticleFilter, StraysLessThanAParticleFilterWhenTheGaussianPartIsMeasure
 
 // Seen only through ranges to three beacons over 30 steps, the filter localizes the position within
 // 1.5 units and learns the velocity through the particles' motion, its standard deviation falling
-// from 2 to under 0.5 with the error within three of them.
+// from 2 to under 0.5 with the error within three of them, and the position consistent with its
+// covariance.
 TEST(RbParticleFilter, LearnsAVelocityFromRanges)
 {
     // A target moving at constant velocity, seen only through ranges to three beacons, which say
@@ -1029,6 +1031,13 @@ TEST(RbParticleFilter, LearnsAVelocityFromRanges)
     EXPECT_LT(std::sqrt(velocityCov(1, 1)), 0.5);
     EXPECT_LT((estimate.mean().tail<2>() - truth.tail<2>()).norm(), 3 * std::sqrt(velocityCov.trace()))
         << estimate.mean().transpose();
+    // The position is consistent with its covariance: its squared Mahalanobis error is under the
+    // 99.9% chi-squared quantile of two degrees of freedom. Over seeds 1 to 30 it averages 1.7,
+    // against the 2 it should, and is at most 7.8; this seed's is 2.5.
+    Eigen::Matrix2d const positionCov =
+        estimate.covarianceLower().topLeftCorner<2, 2>().selfadjointView<Eigen::Lower>();
+    Eigen::Vector2d const positionError = estimate.mean().head<2>() - truth.head<2>();
+    EXPECT_LT(positionError.dot(positionCov.ldlt().solve(positionError)), 13.8) << positionError.transpose();
 }
 
 // A Rao-Blackwellized particle filter prints its name, with its state nested under it; the state

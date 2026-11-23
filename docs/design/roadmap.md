@@ -934,8 +934,6 @@ Allocation [allocation]:
 
 Decisions and comments that disagree with the code:
 
-- [ ] Tests: `LearnsAVelocityFromRanges` doesn't check the position's consistency
-      (rao-blackwellized-filters.md §9).
 - [ ] The page numbers of Särkkä, Bunch, and Godsill (2012) in the bibliography, from the SYSID
       2012 proceedings.
 - [ ] GCC 14 at `-O1 -Wall` warns `-Wmaybe-uninitialized` where Clang is silent: the autodiff reset

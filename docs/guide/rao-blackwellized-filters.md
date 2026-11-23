@@ -1017,8 +1017,11 @@ particles impoverish: many copies of few positions, whose spread understates the
 seeds 1 to 5 the error at $k = 20$ is 0.10 to 0.77 m against about 0.28; adding
 `upkeep::roughen(rng, 0.2)` to the trigger (`upkeep::whenEss(std::less{}, 0.5, upkeep::resample(rng), upkeep::roughen(rng, 0.2))`) brings seed 11 to
 0.27 m and seeds 1 to 5 to 0.08 to 0.47, all within 1.5 standard deviations. The test
-`LearnsAVelocityFromRanges` checks the velocity, within three of its standard deviations, and the
-position within 1.5 m, not the position's consistency. The class's Doxygen example and
+`LearnsAVelocityFromRanges` checks the velocity, within three of its standard deviations, the
+position within 1.5 m, and the position's consistency: its squared Mahalanobis error under the
+99.9% chi-squared quantile of two degrees of freedom. Its process noise is larger and it runs 30
+steps, and over seeds 1 to 30 that error averages 1.7, against the 2 it should, and is at most
+7.8, without roughening. The class's Doxygen example and
 particle-filter.md's roughening section are where a reader would look for that advice.
 
 ### Hybrid particles
