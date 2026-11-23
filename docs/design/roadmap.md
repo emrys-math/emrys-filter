@@ -922,8 +922,6 @@ Allocation [allocation]:
       from the global heap (rao-blackwellized-filters.md Q18); `PoissonEmission`,
       `ExponentialEmission`, and `ArrivalInterval` copy their rates into every measurement
       (hidden-markov-filter.md Q5).
-- [ ] `moments()` of a `ParticleSet` allocates count-sized temporaries under every policy: take
-      scratch from the policy's allocator, or say that statistics allocate.
 - [ ] The smoothers refactorize each step's predicted covariance on every `smooth()`, and the
       information form builds the covariance where the root suffices. Left as they are, with
       reasons: the histories copy the filtered estimate into the smoothed slot at `push()`;

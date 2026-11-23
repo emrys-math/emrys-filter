@@ -50,6 +50,9 @@ instead.
   longer allocates a copy of the particle set at each call. A state of the user's own that it
   roughens needs `forEachParticle(policy, f)`, as `ParticleGaussianParams` has, in place of
   `setParticleStates()`.
+- `ParticleSet::moments(policy)` under a policy other than `Sequential` takes its chunks' weights
+  and deviations from scratch for the policy, from a user's policy's allocator where it has one,
+  in place of a heap allocation per chunk.
 - [docs/choosing.md](docs/choosing.md), "Starting without a prior", recommends starting a
   `SqrtInfoFilter` from no information, the diffuse initialization of the literature, over a
   least-squares fit to the first measurements, and says when to convert once the state is

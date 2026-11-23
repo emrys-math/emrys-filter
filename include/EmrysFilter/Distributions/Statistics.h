@@ -20,23 +20,22 @@ namespace Emrys::internal
 {
 
 /** Weighted covariance \f$ \sum_i w_i d_i d_i^T \f$ of the columns of \a deviations with
- * linear weights \a w. Exactly symmetric.
+ * linear weights \a w, which scales each column by \f$ \sqrt{w_i} \f$ in place, so that it
+ * allocates nothing sized by the columns. Exactly symmetric.
  *
  * The biased weighted sample covariance, with the weights already normalized to sum to one; see
  * [weighted sample covariance](https://en.wikipedia.org/wiki/Weighted_arithmetic_mean#Weighted_sample_covariance).
  */
 template <typename MatrixType, typename DeviationsDerived, typename WeightsDerived>
 [[nodiscard]] MatrixType
-weightedCovariance(Eigen::MatrixBase<DeviationsDerived> const & deviations, Eigen::ArrayBase<WeightsDerived> const & w)
+weightedCovarianceInPlace(Eigen::MatrixBase<DeviationsDerived> & deviations, Eigen::ArrayBase<WeightsDerived> const & w)
 {
-    using Scalar = typename MatrixType::Scalar;
-    using Deviations = MatrixOf<
-        Scalar,
-        MatrixType::RowsAtCompileTime,
-        DeviationsDerived::ColsAtCompileTime,
-        MatrixType::MaxRowsAtCompileTime,
-        DeviationsDerived::MaxColsAtCompileTime>;
-    Deviations const scaled = deviations * w.sqrt().matrix().asDiagonal();
+    // Column by column: a rowwise product would evaluate the square roots into a temporary first.
+    for (Eigen::Index j = 0; j < deviations.cols(); ++j)
+    {
+        deviations.col(j) *= Eigen::numext::sqrt(w(j));
+    }
+    auto const & scaled = deviations;
     auto cov = MatrixType{deviations.rows(), deviations.rows()};
     if constexpr (MatrixType::MaxRowsAtCompileTime == 1)
     {
@@ -210,7 +209,9 @@ weightedMomentsIn(
  * the heaviest point as the reference, the mean shifted twice, and the covariance of the
  * differences from the second pass's starting point less its shift. Each chunk keeps its
  * whole-array Eigen expressions, and the chunks' sums are added in order, so the result matches
- * Sequential's to rounding and is the same at every thread count.
+ * Sequential's to rounding and is the same at every thread count. The chunks' weights and
+ * differences go in count-sized scratch for \a policy (see scratchVector()), taken before the
+ * loops.
  */
 template <typename MomentsType, ExecutionPolicy P, typename Space, typename StatesDerived, typename WeightsDerived>
 [[nodiscard]] MomentsType
@@ -235,8 +236,21 @@ weightedMomentsIn(
         using Deviations = SampleSet<DifferenceSpace<typename MomentsType::SpaceType>, Scalar>;
         using Weights = Eigen::Array<Scalar, Eigen::Dynamic, 1>;
         Eigen::Index const count = states.cols();
+        Eigen::Index const rows = differenceDimension(space);
+        // Each chunk writes its points' weights and deviations into its own columns of scratch
+        // taken here for the policy, on the calling thread, so that the chunks allocate nothing.
+        auto weightScratch = scratchVector<Scalar>(policy, std::size_t(count));
+        auto deviationScratch = scratchVector<Scalar>(policy, std::size_t(rows * count));
         auto const weightsOf = [&](Eigen::Index begin, Eigen::Index length) {
-            return Weights{(logWeights.derived().segment(begin, length) - logTotal).exp()};
+            auto weights = Eigen::Map<Weights>{weightScratch.data() + begin, length};
+            weights = (logWeights.derived().segment(begin, length) - logTotal).exp();
+            return weights;
+        };
+        // The differences of the points from center, which the next call for the chunk overwrites.
+        auto const deviationsOf = [&](Eigen::Index begin, Eigen::Index length, auto const & center) {
+            auto deviations = Eigen::Map<Deviations>{deviationScratch.data() + begin * rows, rows, length};
+            minusInto(space, inMemory(states.middleCols(begin, length)), withColumns<true>(center, length), deviations);
+            return deviations;
         };
         auto const add = [](auto a, auto const & b) {
             a += b;
@@ -248,9 +262,9 @@ weightedMomentsIn(
                 policy,
                 count,
                 [&](Eigen::Index begin, Eigen::Index length) {
-                    Deviations deviations = Emrys::minus(space, states.middleCols(begin, length), center);
+                    auto deviations = deviationsOf(begin, length, center);
                     deviations.colwise() -= shift;
-                    return weightedCovariance<MatrixType>(deviations, weightsOf(begin, length));
+                    return weightedCovarianceInPlace<MatrixType>(deviations, weightsOf(begin, length));
                 },
                 add
             );
@@ -297,8 +311,7 @@ weightedMomentsIn(
                     count,
                     [&](Eigen::Index begin, Eigen::Index length) {
                         return DifferenceVectorType{
-                            Emrys::minus(space, states.middleCols(begin, length), center)
-                            * weightsOf(begin, length).matrix()
+                            deviationsOf(begin, length, center) * weightsOf(begin, length).matrix()
                         };
                     },
                     add

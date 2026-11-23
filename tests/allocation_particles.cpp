@@ -212,9 +212,9 @@ struct PolicyWithMemory : EmrysTest::ReversedPolicy
 }  // namespace
 
 // Under a user's policy with an allocator, a particle filter of several chunks predicts, updates,
-// and resamples when its effective sample size falls without the global heap, as under Sequential:
-// its own buffers come from its resource after warm-up, and the primitives' scratch from the
-// policy's memory, which a pool reuses after warm-up.
+// resamples when its effective sample size falls, and reads its moments without the global heap,
+// as under Sequential: its own buffers come from its resource after warm-up, and the primitives'
+// scratch from the policy's memory, which a pool reuses after warm-up.
 TEST(Allocation, ParticleFilterUnderAUsersPolicyStaysOffTheHeap)
 {
     constexpr Eigen::Index count = 3 * Emrys::internal::chunkSize + 5;
@@ -241,6 +241,7 @@ TEST(Allocation, ParticleFilterUnderAUsersPolicyStaysOffTheHeap)
         filter.predict(policy, rng, timeStep);
         static_cast<void>(filter.update(policy, makeFix(fixAt(k))));
         static_cast<void>(resampling(filter.state()));
+        EXPECT_TRUE(filter.state().moments(policy));
     };
     step(0);
     int const warmed = scratch.allocations();
