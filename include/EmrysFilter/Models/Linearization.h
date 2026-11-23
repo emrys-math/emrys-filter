@@ -635,7 +635,7 @@ private:
     {
         if (!m_statistics)
         {
-            auto const cholesky = internal::CholeskyFactorization<MatrixType>{m_cov};
+            auto const cholesky = CholeskyFactorization<MatrixType>{m_cov};
             EMRYS_FILTER_ASSERT(cholesky.isPositiveDefinite() && "the innovation covariance must be positive definite");
             m_statistics = internal::innovationStatistics(cholesky, m_residual);
         }

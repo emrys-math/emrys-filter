@@ -192,7 +192,7 @@ public:
     {
         static_assert(Derived::IsVectorAtCompileTime, "logDensity() expects a vector");
         EMRYS_FILTER_ASSERT(x.size() == valueDimension());
-        auto const & llt = internal::FactorizedGaussian::llt(m_kernel);
+        auto const & cholesky = internal::FactorizedGaussian::cholesky(m_kernel);
         auto const & set = particles();
         LogSumExp<Scalar> const sum = internal::reduceRanges(
             std::forward<P>(policy),
@@ -201,9 +201,8 @@ public:
                 auto range = LogSumExp<Scalar>{};
                 for (Index i = begin; i < begin + length; ++i)
                 {
-                    DifferenceVectorType residual = Emrys::minus(set.space(), set.state(i), x);
-                    llt.matrixL().solveInPlace(residual);
-                    range.add(set.logWeight(i) - Scalar(0.5) * residual.squaredNorm());
+                    DifferenceVectorType const residual = Emrys::minus(set.space(), set.state(i), x);
+                    range.add(set.logWeight(i) - Scalar(0.5) * cholesky.inverseQuadraticForm(residual));
                 }
                 return range;
             },
@@ -300,7 +299,7 @@ drawSamples(KernelDensity<Space, Scalar, Allocator> const & kde, Eigen::Index n,
 
     using Normals = SampleSet<DifferenceSpace<Space>, Scalar>;
     Normals const offsets = internal::multiply(
-        internal::asTriangular<Eigen::Lower>(kde.kernel().llt().matrixLLT()),
+        kde.kernel().covarianceRoot(),
         internal::standardNormal<Normals>(kde.differenceDimension(), n, rng)
     );
     auto samples = SampleSetType{kde.valueDimension(), n};
@@ -334,7 +333,7 @@ drawSample(KernelDensity<Space, Scalar, Allocator> const & kde, G & rng)
     return typename Moments<Space, Scalar>::VectorType{Emrys::plus(
         kde.space(),
         particles.state(picked),
-        Difference{internal::multiply(internal::asTriangular<Eigen::Lower>(kde.kernel().llt().matrixLLT()), z)}
+        Difference{internal::multiply(kde.kernel().covarianceRoot(), z)}
     )};
 }
 

@@ -131,7 +131,7 @@ fitSource(GaussianMixture<Space, Scalar, Allocator> const & mixture)
         source.points.col(i) = gaussian->mean();
         source.weights(i) = Eigen::numext::exp(entry.logWeight - mixture.logTotalWeight());
         source.covs.push_back(MatrixType{entry.component.covarianceLower().template selfadjointView<Eigen::Lower>()});
-        source.covFactors.push_back(MatrixType{gaussian->llt().matrixL()});
+        source.covFactors.push_back(gaussian->covarianceRoot());
         ++i;
     }
     return source;
@@ -255,7 +255,7 @@ private:
         m_floor = m_options.regularization * variances;
         total.diagonal() += m_floor;
         m_whitening.compute(total);
-        return m_whitening.info() == Eigen::Success;
+        return m_whitening.isPositiveDefinite();
     }
 
     /** \returns the squared Mahalanobis distance, under the source's overall covariance,
@@ -266,7 +266,7 @@ private:
     distancesFrom(Points const & points, Eigen::MatrixBase<Derived> const & center) const
     {
         Deviations differences = Emrys::minus(m_source.space, points, center);
-        solveInPlace(m_whitening.matrixL(), differences);
+        m_whitening.whitenInPlace(differences);
         return differences.colwise().squaredNorm().transpose().array();
     }
 
@@ -409,23 +409,27 @@ private:
     [[nodiscard]] std::expected<Scalar, FitError>
     eStep(P && policy, Responsibilities & responsibilities)
     {
-        auto factors = std::vector<Eigen::LLT<MatrixType>>{};
+        auto factors = std::vector<CholeskyFactorization<MatrixType>>{};
         auto logDeterminants = std::vector<Scalar>{};
         factors.reserve(m_covs.size());
         logDeterminants.reserve(m_covs.size());
         std::size_t out = 0;
         for (std::size_t k = 0; k < m_covs.size(); ++k)
         {
-            auto llt = Eigen::LLT<MatrixType>{m_covs[k]};
-            Scalar const logDeterminant = Scalar(2) * llt.matrixLLT().diagonal().array().log().sum();
-            if (llt.info() != Eigen::Success || !isFinite(logDeterminant))
+            auto cholesky = CholeskyFactorization<MatrixType>{m_covs[k]};
+            if (!cholesky.isPositiveDefinite())
+            {
+                continue;
+            }
+            Scalar const logDeterminant = cholesky.logDeterminant();
+            if (!isFinite(logDeterminant))
             {
                 continue;
             }
             m_logWeights[out] = m_logWeights[k];
             m_means[out] = m_means[k];
             m_covs[out] = m_covs[k];
-            factors.push_back(std::move(llt));
+            factors.push_back(std::move(cholesky));
             logDeterminants.push_back(logDeterminant);
             ++out;
         }
@@ -448,14 +452,14 @@ private:
             {
                 Deviations residuals =
                     Emrys::minus(m_source.space, m_source.points.middleCols(begin, length), m_means[k]);
-                solveInPlace(factors[k].matrixL(), residuals);
+                factors[k].whitenInPlace(residuals);
                 logTerms.row(Eigen::Index(k)).segment(begin, length) =
                     m_logWeights[k] - Scalar(0.5) * (dimension * log2Pi + logDeterminants[k])
                     - Scalar(0.5) * residuals.colwise().squaredNorm().array();
                 for (Eigen::Index i = begin; i < std::min(begin + length, withCovariance); ++i)
                 {
                     MatrixType solved = m_source.covFactors[std::size_t(i)];
-                    solveInPlace(factors[k].matrixL(), solved);
+                    factors[k].whitenInPlace(solved);
                     logTerms(Eigen::Index(k), i) -= Scalar(0.5) * solved.squaredNorm();
                 }
             }
@@ -502,14 +506,14 @@ private:
         return {std::move(mixture), logLikelihood, iterations, converged};
     }
 
-    Source const & m_source;             ///< the points being fitted
-    FitOptions<Scalar> m_options;        ///< the options
-    Allocator m_allocator;               ///< for the result's mixture
-    Eigen::LLT<MatrixType> m_whitening;  ///< the source's overall covariance, factorized, for distances
-    DifferenceVectorType m_floor;        ///< the covariance floor added to each component's variances
-    std::vector<Scalar> m_logWeights;    ///< the current components' log-weights
-    std::vector<VectorType> m_means;     ///< the current components' means
-    std::vector<MatrixType> m_covs;      ///< the current components' covariances
+    Source const & m_source;                        ///< the points being fitted
+    FitOptions<Scalar> m_options;                   ///< the options
+    Allocator m_allocator;                          ///< for the result's mixture
+    CholeskyFactorization<MatrixType> m_whitening;  ///< the source's overall covariance, factorized, for distances
+    DifferenceVectorType m_floor;                   ///< the covariance floor added to each component's variances
+    std::vector<Scalar> m_logWeights;               ///< the current components' log-weights
+    std::vector<VectorType> m_means;                ///< the current components' means
+    std::vector<MatrixType> m_covs;                 ///< the current components' covariances
 };
 
 }  // namespace internal

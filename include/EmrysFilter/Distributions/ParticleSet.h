@@ -172,23 +172,22 @@ conditionalParticlesIn(
 
     using Result = ParticleSet<TargetSpace, Scalar, typename Source::allocator_type>;
 
-    auto const llt =
-        Eigen::LLT<GivenMatrix>{GivenMatrix{lowerSymmetricBlock(bandwidth, given.differences, given.differences)}};
-    if (llt.info() != Eigen::Success)
+    auto const cholesky = CholeskyFactorization<GivenMatrix>{
+        GivenMatrix{lowerSymmetricBlock(bandwidth, given.differences, given.differences)}
+    };
+    if (!cholesky.isPositiveDefinite())
     {
         return std::expected<Result, GaussianError>{std::unexpected{GaussianError::NotPositiveDefinite}};
     }
     CrossMatrix const cross = lowerSymmetricBlock(bandwidth, target.differences, given.differences);
-    CrossMatrix const gain = transposedSolve<CrossMatrix>(llt, cross.transpose());
+    CrossMatrix const gain = transposedSolve<CrossMatrix>(cholesky, cross.transpose());
 
     GivenOffsets offsets = Emrys::minus(givenSpace, source.states()(given.values, Eigen::placeholders::all), values);
     GivenOffsets solved = offsets;
-    solveInPlace(llt, solved);
+    cholesky.solveInPlace(solved);
     Eigen::Array<Scalar, 1, Eigen::Dynamic> const squaredDistance = (offsets.array() * solved.array()).colwise().sum();
     Scalar const log2Pi = Emrys::log2Pi<Scalar>();
-    Scalar const logNormalizer =
-        Scalar(-0.5)
-        * (Scalar(given.differences.size()) * log2Pi + Scalar(2) * llt.matrixLLT().diagonal().array().log().sum());
+    Scalar const logNormalizer = Scalar(-0.5) * (Scalar(given.differences.size()) * log2Pi + cholesky.logDeterminant());
 
     TargetStates const centers =
         Emrys::plus(targetSpace, source.states()(target.values, Eigen::placeholders::all), -(gain * offsets));

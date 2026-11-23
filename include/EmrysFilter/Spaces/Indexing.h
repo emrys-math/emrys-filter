@@ -593,7 +593,7 @@ using GivenVectorOf = Eigen::Matrix<
     1>;
 
 /** The moments of conditionMoments() and conditionMomentsWithEvidence(), from \a factorization of
- * \f$ \Sigma_{bb} \f$ (an `Eigen::LLT` or `Eigen::LDLT`) and the \a residual
+ * \f$ \Sigma_{bb} \f$ (a CholeskyFactorization or an `Eigen::LDLT`) and the \a residual
  * \f$ v \boxminus \mu_b \f$.
  */
 template <
@@ -726,21 +726,20 @@ conditionMomentsWithEvidence(
     using Scalar = typename MeanDerived::Scalar;
     using GivenVector = GivenVectorOf<Scalar, GivenSpace>;
     EMRYS_FILTER_ASSERT(values.size() == given.values.size());
-    auto const llt =
-        Eigen::LLT<GivenMatrixOf<Scalar, GivenSpace>>{lowerSymmetricBlock(cov, given.differences, given.differences)};
-    if (llt.info() != Eigen::Success)
+    auto const cholesky = CholeskyFactorization<GivenMatrixOf<Scalar, GivenSpace>>{
+        lowerSymmetricBlock(cov, given.differences, given.differences)
+    };
+    if (!cholesky.isPositiveDefinite())
     {
         return std::nullopt;
     }
     GivenVector const residual = Emrys::minus(givenSpace, values, mean.derived()(given.values));
-    GivenVector whitened = residual;
-    llt.matrixL().solveInPlace(whitened);
 
     Scalar const log2Pi = Emrys::log2Pi<Scalar>();
-    Scalar const logDeterminant = Scalar(2) * llt.matrixLLT().diagonal().array().log().sum();
-    Scalar const squaredDistance = whitened.squaredNorm();
+    Scalar const logDeterminant = cholesky.logDeterminant();
+    Scalar const squaredDistance = cholesky.inverseQuadraticForm(residual);
     return ConditionedMomentsWithEvidence<Scalar, TargetSpace>{
-        conditionMomentsBy(llt, mean, cov, target, given, residual, targetSpace),
+        conditionMomentsBy(cholesky, mean, cov, target, given, residual, targetSpace),
         Scalar(-0.5) * (Scalar(given.differences.size()) * log2Pi + logDeterminant + squaredDistance),
         squaredDistance
     };

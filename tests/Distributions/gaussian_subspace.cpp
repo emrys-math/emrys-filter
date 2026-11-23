@@ -266,7 +266,9 @@ TEST(GaussianMarginalDeathTest, ReadAfterStructuralChange)
 #    ifndef __clang_analyzer__
     EXPECT_DEATH(
         {
-            auto stolen = std::move(mg);
+            // The move is the point; without Eigen's LLT among its members the parameters'
+            // destructor is trivial, and GCC would call the variable set but not used.
+            [[maybe_unused]] auto stolen = std::move(mg);
             std::ignore = marginal.mean();
         },
         "changed size or structure while a marginal"

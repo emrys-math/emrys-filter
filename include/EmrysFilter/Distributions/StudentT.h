@@ -392,7 +392,7 @@ drawStudentT(StudentT<Space, Scalar> const & t, Eigen::Index n, G & rng)
     {
         stretch(j) = Eigen::numext::sqrt(t.dof() / chiSquared(rng));
     }
-    Normals offsets = multiply(asTriangular<Eigen::Lower>(t.scaleDensity().llt().matrixLLT()), z);
+    Normals offsets = multiply(t.scaleDensity().covarianceRoot(), z);
     for (Eigen::Index j = 0; j < n; ++j)
     {
         offsets.col(j) *= stretch(j);
@@ -421,7 +421,7 @@ drawOneStudentT(StudentT<Space, Scalar> const & t, G & rng)
     using Difference = DifferenceVector<Space, Scalar>;
     Difference const z = standardNormalVector<Difference>(t.differenceDimension(), rng);
     Scalar const stretch = Eigen::numext::sqrt(t.dof() / std::chi_squared_distribution<Scalar>{t.dof()}(rng));
-    Difference offset = multiply(asTriangular<Eigen::Lower>(t.scaleDensity().llt().matrixLLT()), z);
+    Difference offset = multiply(t.scaleDensity().covarianceRoot(), z);
     offset *= stretch;
     return {
         typename Moments<Space, Scalar>::VectorType{Emrys::plus(t.space(), t.location(), offset)},

@@ -19,6 +19,7 @@
 #include <Eigen/Cholesky>
 #include <Eigen/SVD>
 
+#include <EmrysFilter/Core/Cholesky.h>
 #include <EmrysFilter/Core/Execution.h>
 #include <EmrysFilter/Core/Macros.h>
 #include <EmrysFilter/Core/Math.h>
@@ -448,7 +449,7 @@ covarianceRootOf(D const & d)
     using MatrixType = typename D::MatrixType;
     if constexpr (isCovarianceDensity<D>)
     {
-        return MatrixType{d.llt().matrixL()};
+        return MatrixType{d.covarianceRoot()};
     }
     else if constexpr (D::ParamsType::IsInfoForm)
     {
@@ -471,7 +472,7 @@ whitenInPlace(D const & d, Eigen::MatrixBase<Derived> & matrix)
 {
     if constexpr (isCovarianceDensity<D>)
     {
-        solveInPlace(d.llt().matrixL(), matrix);
+        d.cholesky().whitenInPlace(matrix);
     }
     else if constexpr (D::ParamsType::IsInfoForm)
     {
@@ -798,8 +799,8 @@ template <typename Scalar, typename CovarianceDerived, typename ForEach>
 collapseBounds(Eigen::MatrixBase<CovarianceDerived> const & covarianceLower, ForEach forEach)
 {
     using MatrixType = typename CovarianceDerived::PlainObject;
-    auto const llt = Eigen::LLT<MatrixType>{covarianceLower};
-    EMRYS_FILTER_ASSERT(llt.info() == Eigen::Success && "the mixture's covariance must be positive definite");
+    auto const cholesky = CholeskyFactorization<MatrixType>{covarianceLower};
+    EMRYS_FILTER_ASSERT(cholesky.isPositiveDefinite() && "the mixture's covariance must be positive definite");
     Scalar componentLogDeterminants = 0;
     Scalar weightEntropy = 0;
     forEach([&](Scalar const logWeight, auto const & gaussian) {
@@ -810,7 +811,7 @@ collapseBounds(Eigen::MatrixBase<CovarianceDerived> const & covarianceLower, For
             weightEntropy -= weight * logWeight;
         }
     });
-    Scalar const logDeterminant = Scalar(2) * llt.matrixLLT().diagonal().array().log().sum();
+    Scalar const logDeterminant = cholesky.logDeterminant();
     Scalar const upper = Eigen::numext::maxi(Scalar(0.5) * (logDeterminant - componentLogDeterminants), Scalar(0));
     return CollapseBounds<Scalar>{Eigen::numext::maxi(upper - weightEntropy, Scalar(0)), upper};
 }
@@ -951,10 +952,10 @@ bhattacharyya(P const & p, Q const & q)
     if constexpr (internal::isCovarianceDensity<P> && internal::isCovarianceDensity<Q>)
     {
         MatrixType const average = Scalar(0.5) * (p.covarianceLower() + q.covarianceLower());
-        auto const llt = Eigen::LLT<MatrixType>{average};
-        EMRYS_FILTER_ASSERT(llt.info() == Eigen::Success && "the average covariance must be positive definite");
-        llt.matrixL().solveInPlace(difference);
-        logDeterminant = Scalar(2) * llt.matrixLLT().diagonal().array().log().sum();
+        auto const cholesky = CholeskyFactorization<MatrixType>{average};
+        EMRYS_FILTER_ASSERT(cholesky.isPositiveDefinite() && "the average covariance must be positive definite");
+        cholesky.whitenInPlace(difference);
+        logDeterminant = cholesky.logDeterminant();
     }
     else
     {

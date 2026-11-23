@@ -10,24 +10,26 @@ reference is hand-written code, and what is still to be measured.
 
 | Problem | Instructions per step | Time per step, Windows | Time per step, Linux |
 |---|---|---|---|
-| Ranging EKF, 2D, 4 anchors | 1.80–1.89 | 1.15–1.68 | 1.17–1.71 |
-| Ranging EKF, 2D, 8 anchors | 1.24–1.31 | 1.02–1.44 | 1.10–1.35 |
-| Ranging EKF, 3D, 6 anchors | 1.31–1.33 | 1.11–1.21 | 1.24–1.48 |
-| Ranging EKF, 12 or more anchors | 0.72–0.87 | 0.91–0.97 | 0.88–1.02 |
+| Ranging EKF, 2D, 4 anchors | 1.80–1.89 | 1.15–1.68 | 1.16–1.71 |
+| Ranging EKF, 2D, 8 anchors | 1.24–1.31 | 1.02–1.44 | 1.12–1.36 |
+| Ranging EKF, 3D, 6 anchors | 1.30–1.33 | 1.11–1.21 | 1.24–1.49 |
+| Ranging EKF, 12 or more anchors | 0.72–0.87 | 0.91–0.97 | 0.87–1.11 |
 | Attitude EKF, analytic Jacobians | 1.56 | 1.15 | 1.21 |
 | Attitude EKF, autodiff | 1.52 | 1.32 | 1.29 |
-| Particle filter, 2D | 1.08–1.12 | 1.10–1.18 | 1.00–1.04 |
-| Particle filter, 3D | 1.07–1.13 | 1.25–1.40 | 1.02–1.12 |
+| Particle filter, 2D | 1.08–1.11 | 1.10–1.18 | 1.00–1.04 |
+| Particle filter, 3D | 1.05–1.11 | 1.25–1.40 | 1.02–1.12 |
 
 A range covers every case of its row: `double` and `float`, analytic and automatic Jacobians, and
 for the particle filter its likelihoods, and in its times every particle count. Neither side
 allocates on the heap during a step, in any case.
 
 The instruction column, and the Linux times of the ranging rows, were measured on 2026-11-23 at the
-commit *Factorize the innovation covariance by the library's own Cholesky factorization*. The
-other times are of 2026-11-08 and have not been taken again since. That commit and two before it on the same day,
-*Substitute through the gain's Cholesky factor in place of Eigen's solve* and *Stop building a
-step's Jacobian where nothing reads it*, make the steps of both sides shorter. At the small sizes
+commit *Make the Cholesky factorization public and the Gaussian's own*. The other times are of
+2026-11-08 and have not been taken again since. Four commits of 2026-11-23 before that one make
+the steps of both sides shorter: *Stop building a step's Jacobian where nothing reads it*,
+*Substitute through the gain's Cholesky factor in place of Eigen's solve*,
+*Factorize the innovation covariance by the library's own Cholesky factorization*, and
+*Take a covariance's Cholesky root by the library's own factorization*. At the small sizes
 the hand code's step lost a larger part of itself than the library's did, so those ratios rose
 while both sides got faster: the nanoseconds are under each table.
 
@@ -85,30 +87,31 @@ by every range.
 
 | Time per step, Linux | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
 |---|---|---|---|---|---|---|
-| `double`, analytic | 1.29 | 1.19 | 0.92 | 1.24 | 0.94 | 1.00 |
-| `double`, autodiff | 1.40 | 1.12 | 0.95 | 1.30 | 0.96 | 1.02 |
-| `float`, analytic | 1.17 | 1.10 | 0.92 | 1.47 | 0.88 | 0.95 |
-| `float`, autodiff | 1.71 | 1.35 | 0.94 | 1.48 | 0.91 | 0.99 |
+| `double`, analytic | 1.31 | 1.18 | 0.91 | 1.24 | 0.94 | 1.09 |
+| `double`, autodiff | 1.40 | 1.13 | 0.94 | 1.30 | 0.96 | 1.11 |
+| `float`, analytic | 1.16 | 1.12 | 0.90 | 1.49 | 0.87 | 0.95 |
+| `float`, autodiff | 1.71 | 1.36 | 0.94 | 1.49 | 0.90 | 0.99 |
 
 | Time per step, Linux, `double`, analytic | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
 |---|---|---|---|---|---|---|
-| Hand code | 55 ns | 128 ns | 454 ns | 137 ns | 402 ns | 1,179 ns |
-| EmrysFilter | 71 ns | 152 ns | 417 ns | 170 ns | 376 ns | 1,177 ns |
-| Hand code, a commit earlier | 98 ns | 205 ns | 636 ns | 151 ns | 505 ns | 1,203 ns |
-| EmrysFilter, a commit earlier | 115 ns | 237 ns | 579 ns | 184 ns | 473 ns | 1,298 ns |
-| Hand code, two commits earlier | 147 ns | 500 ns | 833 ns | 349 ns | 749 ns | 1,756 ns |
-| EmrysFilter, two commits earlier | 167 ns | 549 ns | 795 ns | 385 ns | 698 ns | 1,880 ns |
+| Hand code | 52 ns | 119 ns | 428 ns | 126 ns | 370 ns | 996 ns |
+| EmrysFilter | 68 ns | 140 ns | 390 ns | 156 ns | 349 ns | 1,090 ns |
+| Hand code, with Eigen's factorization | 98 ns | 205 ns | 636 ns | 151 ns | 505 ns | 1,203 ns |
+| EmrysFilter, with Eigen's factorization | 115 ns | 237 ns | 579 ns | 184 ns | 473 ns | 1,298 ns |
+| Hand code, with Eigen's solve too | 147 ns | 500 ns | 833 ns | 349 ns | 749 ns | 1,756 ns |
+| EmrysFilter, with Eigen's solve too | 167 ns | 549 ns | 795 ns | 385 ns | 698 ns | 1,880 ns |
 
 At 2D with 4 anchors in `double` with analytic Jacobians, the hand code takes 401 instructions and
-the library 723. The tables were measured on 2026-11-23. The commit named under the summary
+the library 723. The tables were measured on 2026-11-23. The commit
+*Factorize the innovation covariance by the library's own Cholesky factorization*
 replaced Eigen's Cholesky factorization of the innovation covariance, on both sides, by one written
 out without square roots, and the commit before it replaced Eigen's solve for the Kalman gain by a
 substitution through the factor ([Against other libraries](#against-other-libraries) says what was
-found). Together they took between 37% and 72% off the time of the library's step. What the
+found). Together they took between 42% and 74% off the time of the library's step. What the
 library adds to the hand code's step at 2D with 4 anchors is about what it was, 16 ns and 320
 instructions where it was 17 ns and 350, and is now a larger part of a shorter step.
 
-Until the first of the three commits, every prediction built the process model's
+Until the first of those commits, every prediction built the process model's
 Jacobian, expanded it to the whole state, and discarded it, and the library took 2,410 instructions
 at 2D with 4 anchors, as it did at the public launch (2,399). The ratios this page gave at first,
 1.36 at 2D with 4 anchors and 1.32 at 3D with 6 (909 against 1,233 instructions), were of an
@@ -128,8 +131,8 @@ gravity and a magnetic field. The hand code is the multiplicative EKF of Markley
 | Autodiff measurement Jacobians | 5,011 | 7,622 | 1.52 | 375 ns | 495 ns |
 
 The instruction counts are of 2026-11-23. Three commits of that day cut them: before the first the
-library took 7,281 and 9,439, the second took about 120 off both sides, and the third, named under
-the summary, about 540 off both sides, which raises the ratio. This page gave 4,830 and 7,186 for the library at first (1.18 and 1.27), which no commit
+library took 7,281 and 9,439, the second took about 120 off both sides, and the third, which
+replaced the factorization, about 540 off both sides, which raises the ratio. This page gave 4,830 and 7,186 for the library at first (1.18 and 1.27), which no commit
 since the launch reproduces. The times are of 2026-11-08 and have not been taken again.
 
 ## Particle filter
@@ -145,13 +148,15 @@ weights to 1e-9 over 300 steps. Instructions are counted at 1000 particles.
 
 | Instructions per particle and step | Hand code | The noise's likelihood | Its own likelihood | Batched |
 |---|---|---|---|---|
-| 2D | 833 | 924 | 899 | 932 |
-| 3D | 1,345 | 1,517 | 1,468 | 1,433 |
+| 2D | 833 | 914 | 899 | 927 |
+| 3D | 1,345 | 1,499 | 1,468 | 1,414 |
 
 The instructions are of 2026-11-23. Before the commit of that day that stopped building unread
 Jacobians, each particle's step also built and discarded the process model's Jacobian, and the library took 2,800
 to 2,880 instructions in 3D; this page gave 1,397 at first for its own likelihood in 3D, against
-the hand code's 1,347. The times are of 2026-11-08 and have not been taken again.
+the hand code's 1,347. The commit named under the summary took 5 to 19 instructions off the
+rows that draw their noise from a Gaussian, whose samplers now multiply by a factor the Gaussian
+keeps. The times are of 2026-11-08 and have not been taken again.
 
 ## Compile time
 
@@ -195,13 +200,13 @@ Intel Core i9-13900F, Clang 21.1.8 with `-march=x86-64-v3`, each runner pinned t
 | EKF | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
 |---|---|---|---|---|---|---|
 | mherb/kalman, `double`, instructions | 0.59 | 0.11 | 0.13 | 0.24 | 0.18 | 0.18 |
-| mherb/kalman, `double`, time | 0.93 | 0.19 | 0.16 | 0.33 | 0.21 | 0.18 |
+| mherb/kalman, `double`, time | 0.93 | 0.18 | 0.16 | 0.32 | 0.21 | 0.18 |
 | mherb/kalman, `float` \*, instructions | 0.61 | 0.09 | 0.12 | 0.20 | 0.14 | 0.12 |
-| mherb/kalman, `float` \*, time | 0.76 | 0.14 | 0.15 | 0.45 | 0.20 | 0.16 |
+| mherb/kalman, `float` \*, time | 0.76 | 0.13 | 0.15 | 0.46 | 0.20 | 0.16 |
 | TinyEKF, `double`, instructions | 0.46 | 0.66 | 0.34 | 0.43 | 0.48 | 0.45 |
-| TinyEKF, `double`, time | 0.72 | 0.86 | 0.39 | 0.50 | 0.52 | 0.38 |
+| TinyEKF, `double`, time | 0.72 | 0.86 | 0.38 | 0.50 | 0.51 | 0.37 |
 | TinyEKF, `float` \*, instructions | 0.42 | 0.54 | 0.30 | 0.32 | 0.39 | 0.30 |
-| TinyEKF, `float` \*, time | 0.61 | 0.63 | 0.35 | 0.75 | 0.53 | 0.32 |
+| TinyEKF, `float` \*, time | 0.61 | 0.52 | 0.34 | 0.73 | 0.56 | 0.34 |
 | OpenCV, `double`, instructions | 0.02 | 0.03 | 0.04 | 0.04 | 0.05 | 0.05 |
 | OpenCV, `double`, time | 0.03 | 0.04 | 0.04 | 0.04 | 0.04 | 0.04 |
 | OpenCV, `float` \*, instructions | 0.02 | 0.02 | 0.03 | 0.03 | 0.04 | 0.03 |
@@ -209,47 +214,47 @@ Intel Core i9-13900F, Clang 21.1.8 with `-march=x86-64-v3`, each runner pinned t
 
 | Against mherb/kalman | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
 |---|---|---|---|---|---|---|
-| Square-root EKF, `double`, instructions | 0.24 | 0.39 | 0.75 | 0.36 | 0.63 | 0.99 |
-| Square-root EKF, `double`, time | 0.67 | 0.82 | 1.05 | 0.74 | 0.88 | 1.13 |
-| Square-root EKF, `float`, instructions | 0.15 | 0.25 | 0.48 | 0.25 | 0.41 | 0.76 |
-| Square-root EKF, `float`, time | 0.55 | 0.75 | 0.97 | 0.69 | 0.85 | 1.04 |
-| UKF, `double` \*, instructions | 1.40 | 0.41 | 0.36 | 0.64 | 0.52 | 0.47 |
-| UKF, `double` \*, time | 1.10 | 0.49 | 0.44 | 0.77 | 0.62 | 0.53 |
-| UKF, `float` \*, instructions | 1.48 | 0.35 | 0.31 | 0.54 | 0.46 | 0.36 |
-| UKF, `float` \*, time | 1.33 | 0.44 | 0.40 | 0.84 | 0.52 | 0.42 |
-| Square-root UKF, `double` \*, instructions | 0.97 | 0.97 | 1.20 | 1.04 | 1.15 | 1.51 |
-| Square-root UKF, `double` \*, time | 0.85 | 0.89 | 1.02 | 1.12 | 1.09 | 1.34 |
-| Square-root UKF, `float` \*, instructions | 0.86 | 0.88 | 0.98 | 0.90 | 1.00 | 1.13 |
-| Square-root UKF, `float` \*, time | 0.83 | 0.81 | 0.98 | 0.93 | 0.87 | 0.99 |
+| Square-root EKF, `double`, instructions | 0.23 | 0.35 | 0.69 | 0.35 | 0.59 | 1.02 |
+| Square-root EKF, `double`, time | 0.63 | 0.74 | 0.98 | 0.74 | 0.86 | 1.06 |
+| Square-root EKF, `float`, instructions | 0.14 | 0.23 | 0.43 | 0.24 | 0.38 | 0.73 |
+| Square-root EKF, `float`, time | 0.51 | 0.67 | 0.91 | 0.66 | 0.78 | 0.98 |
+| UKF, `double` \*, instructions | 1.25 | 0.39 | 0.35 | 0.59 | 0.50 | 0.46 |
+| UKF, `double` \*, time | 0.89 | 0.45 | 0.43 | 0.73 | 0.61 | 0.53 |
+| UKF, `float` \*, instructions | 1.30 | 0.33 | 0.30 | 0.50 | 0.44 | 0.35 |
+| UKF, `float` \*, time | 1.03 | 0.38 | 0.39 | 0.83 | 0.50 | 0.42 |
+| Square-root UKF, `double` \*, instructions | 0.94 | 0.90 | 1.13 | 1.01 | 1.10 | 1.54 |
+| Square-root UKF, `double` \*, time | 0.83 | 0.84 | 0.97 | 1.16 | 1.05 | 1.29 |
+| Square-root UKF, `float` \*, instructions | 0.83 | 0.81 | 0.89 | 0.88 | 0.94 | 1.10 |
+| Square-root UKF, `float` \*, time | 0.78 | 0.81 | 0.92 | 0.92 | 0.83 | 0.93 |
 
 | EKF, time per step | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
 |---|---|---|---|---|---|---|
-| EmrysFilter, `double` | 70 ns | 155 ns | 431 ns | 175 ns | 398 ns | 1,144 ns |
-| mherb/kalman, `double` | 75 ns | 811 ns | 2,743 ns | 538 ns | 1,938 ns | 6,226 ns |
-| TinyEKF, `double` | 102 ns | 183 ns | 1,068 ns | 332 ns | 703 ns | 3,078 ns |
-| OpenCV, `double` | 2,698 ns | 4,128 ns | 10,034 ns | 4,165 ns | 9,641 ns | 35,095 ns |
-| EmrysFilter, `float` | 54 ns | 113 ns | 365 ns | 245 ns | 370 ns | 920 ns |
-| mherb/kalman, `float` \* | 71 ns | 821 ns | 2,479 ns | 542 ns | 1,873 ns | 5,875 ns |
-| TinyEKF, `float` \* | 92 ns | 175 ns | 986 ns | 315 ns | 699 ns | 2,883 ns |
-| OpenCV, `float` \* | 2,755 ns | 4,187 ns | 11,710 ns | 4,311 ns | 10,017 ns | 38,599 ns |
+| EmrysFilter, `double` | 67 ns | 148 ns | 522 ns | 182 ns | 378 ns | 1,177 ns |
+| mherb/kalman, `double` | 72 ns | 804 ns | 3,361 ns | 567 ns | 1,807 ns | 6,442 ns |
+| TinyEKF, `double` | 103 ns | 183 ns | 1,169 ns | 348 ns | 726 ns | 3,411 ns |
+| OpenCV, `double` | 2,556 ns | 4,235 ns | 10,053 ns | 3,793 ns | 9,243 ns | 30,734 ns |
+| EmrysFilter, `float` | 51 ns | 102 ns | 379 ns | 239 ns | 380 ns | 952 ns |
+| mherb/kalman, `float` \* | 67 ns | 757 ns | 2,606 ns | 521 ns | 1,885 ns | 5,993 ns |
+| TinyEKF, `float` \* | 92 ns | 218 ns | 1,078 ns | 359 ns | 636 ns | 2,842 ns |
+| OpenCV, `float` \* | 2,544 ns | 4,379 ns | 10,681 ns | 4,065 ns | 9,697 ns | 34,794 ns |
 
-EmrysFilter's times are those of the run against mherb/kalman; they vary by up to 12% between the
-three runs. The other libraries' times are 1% to 15% longer than at the measurement before this
-one, with no change to their code or its build, so times of different runs compare only to about
-that; each ratio is of medians taken in interleaved batches of one run.
+EmrysFilter's times are those of the run against mherb/kalman; they vary by up to 19% between the
+three runs. The other libraries' times, whose code and build do not change, moved by up to 23%
+between this measurement and the one two commits before it, so times of different runs compare
+only to about that; each ratio is of medians taken in interleaved batches of one run.
 
 - **Against TinyEKF** the EKF is faster at every size. In `double` it takes 0.72 and 0.86 of
-  TinyEKF's time at 2D with 4 and 8 anchors and 0.38 to 0.52 at the other four sizes; in `float`,
-  0.32 to 0.75.
+  TinyEKF's time at 2D with 4 and 8 anchors and 0.37 to 0.51 at the other four sizes; in `float`,
+  0.34 to 0.73.
 - **Against mherb/kalman** the EKF is faster at every size: it takes 0.93 of mherb/kalman's time at
-  2D with 4 anchors in `double` and 0.76 in `float`, and 0.14 to 0.45 elsewhere. The square-root
-  EKF is slower at 3D with 24 anchors, by 13% in `double` and 4% in `float`, and at 2D with 16 in
-  `double`, by 5%, and faster elsewhere. The UKF is slower at 2D with 4 anchors, by 10% in
-  `double` and 33% in `float`, and faster elsewhere. The square-root UKF is slower in `double` at
-  2D with 16 anchors and at every 3D size, by up to 34%, and faster in `float` at every size.
+  2D with 4 anchors in `double` and 0.76 in `float`, and 0.13 to 0.46 elsewhere. The square-root
+  EKF is slower at 3D with 24 anchors in `double`, by 6%, and faster or level elsewhere. The UKF
+  is faster at every size in `double`, by 11% at 2D with 4 anchors, and in `float` it is 3% slower
+  there and faster elsewhere. The square-root UKF is slower in `double` at every 3D size, by up to
+  29%, and faster in `float` at every size.
 - **Against OpenCV** the EKF takes 2 to 6% of the time at every size.
 
-Three commits earlier EmrysFilter's EKF was slower than both small libraries at the small sizes:
+Before those commits EmrysFilter's EKF was slower than both small libraries at the small sizes:
 2.20 times mherb/kalman's time at 2D with 4 anchors, and 3.22 times TinyEKF's at 2D with 8. Its
 instructions did not explain that, and timing each part of the hand-written filter's step alone
 did. At 2D with 4 anchors, Eigen's Cholesky factorization of the innovation covariance took 58 of
@@ -260,7 +265,7 @@ cache under 3 times a step.
 
 Both are now written out, in the library and in the hand code, for a matrix of a fixed size up to
 24. One commit replaced the solves by a substitution through the factor, every row of the gain
-together. The next, named under the summary, replaced the factorization. What decided its form is
+together. The next replaced the factorization. What decided its form is
 that a filter's steps wait on each other: the covariance that one step writes is what the next
 reads, so a step takes as long as its longest chain of operations that wait on each other, however
 few its instructions. Timed that way, each call's input depending on the result of the call
@@ -273,18 +278,20 @@ not positive definite, are the same. Timed as independent calls, which overlap i
 the three take 70, 23, and 12 ns, which is why timing a part alone understates what it costs in a
 filter.
 
-Two things are left at the small sizes. The library's step is longer than the hand code's by
-about what it was before these commits, 16 ns at 2D with 4 anchors, and where that goes is not
-measured yet. And mherb/kalman's UKF is ahead at 2D with 4 anchors in the tables above. The UKF
-also factorizes the state covariance for its sigma points, which at the commit of the tables was
-still Eigen's factorization. The commit after it, *Take a covariance's Cholesky root by the
-library's own factorization*, changed that, and in two runs after it the UKF at 2D with 4 anchors
-took 0.90 and 0.93 of mherb/kalman's time in `double` and 1.03 and 1.04 in `float`; the tables are
-not taken again for it. The library's other Cholesky factorizations are still Eigen's.
+The UKF spreads its sigma points by a Cholesky root of the state covariance, which was Eigen's
+factorization too. Until the commit *Take a covariance's Cholesky root by the library's own factorization*
+the UKF at 2D with 4 anchors took 1.10 times mherb/kalman's time in `double` and 1.33 times in
+`float`; it takes 0.89 and 1.03 times now.
 
-At 3D with 6 anchors a step takes longer in `float` than in `double`, for EmrysFilter (245 ns
-against 175 ns) and for the hand-written Eigen filter (161 ns against 137 ns), though it takes
-fewer instructions, and the library's `float` step there is 1.47 times the hand code's, where its
+What is left at the small sizes is the library's own overhead: its step is longer than the hand
+code's by about what it was before these commits, 16 ns at 2D with 4 anchors, and where that goes
+is not measured yet. Since these measurements the library's factorizations of information matrices
+and its local ones have moved to its own factorization too, all but the posterior Cramér-Rao
+bound's; none of them is in a step timed here.
+
+At 3D with 6 anchors a step takes longer in `float` than in `double`, for EmrysFilter (239 ns
+against 182 ns) and for the hand-written Eigen filter (149 ns against 126 ns), though it takes
+fewer instructions, and the library's `float` step there is 1.49 times the hand code's, where its
 `double` step is 1.24 times. One cause was found in the substitution: Eigen vectorizes a column of
 six `float`s from wherever its address lets a 16-byte packet start, so that one column's stores
 are not the next operation's loads, and the processor waits on each. The substitution and the

@@ -2644,7 +2644,7 @@ drawSamples(
         samples.col(j) = Emrys::plus(
             mixture.space(),
             gaussian->mean(),
-            internal::multiply(internal::asTriangular<Eigen::Lower>(gaussian->llt().matrixLLT()), noise.col(j))
+            internal::multiply(gaussian->covarianceRoot(), noise.col(j))
         );
     }
     return samples;

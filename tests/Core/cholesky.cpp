@@ -1,9 +1,10 @@
-// internal::CholeskyFactorization from Core/Cholesky.h, the Cholesky factorization that the
+// CholeskyFactorization from Core/Cholesky.h, the Cholesky factorization that the
 // innovation covariance's gain, NIS, and log-determinant are taken from (decisions.md [own-cholesky],
 // [innovation-cholesky]): its own factorization without square roots, by whole columns, of a real
 // matrix of a fixed size of at most 24, against Eigen's LLT and against the matrix itself; that
 // only the lower triangle's values are used; what it reports for a matrix that is not positive
-// definite; its solves; and the Eigen::LLT it holds for any other matrix.
+// definite; its solves and its whitening; and the Eigen::LLT it holds for any other matrix. It is
+// public: Gaussian::cholesky() returns one.
 
 #include <EmrysFilter/Core/Cholesky.h>
 #include <EmrysFilter/Core/Solve.h>
@@ -22,7 +23,7 @@
 namespace
 {
 
-using Emrys::internal::CholeskyFactorization;
+using Emrys::CholeskyFactorization;
 
 /// A symmetric positive definite matrix of \a Matrix's type, \a size × \a size where that is not
 /// fixed.
@@ -210,6 +211,11 @@ expectFactorizesByEigen(Eigen::Index size = Matrix::RowsAtCompileTime)
     EXPECT_EQ(inPlace, solved);
     Transposed const transposed = solved.transpose();
     EXPECT_EQ(Emrys::internal::transposedSolve<Transposed>(cholesky, b), transposed);
+    Rhs whitenedByEigen = b;
+    llt.matrixL().solveInPlace(whitenedByEigen);
+    Rhs whitenedHere = b;
+    cholesky.whitenInPlace(whitenedHere);
+    EXPECT_EQ(whitenedHere, whitenedByEigen);
 }
 
 // A fixed size above 24, a dynamic size, and a bounded one are factorized and solved by the
@@ -226,8 +232,9 @@ TEST(Cholesky, FactorizesOtherSizesByEigen)
 
 /// Expects the solves through the factorization of a \a Size × \a Size matrix in \a Scalar to
 /// agree with Eigen's LLT and to solve the system: the transposed solve with \a Count right-hand
-/// sides, solve() and solveInPlace(), which are its transpose, and the quadratic form of the
-/// inverse, which the NIS is.
+/// sides, solve() and solveInPlace(), which are its transpose, the quadratic form of the
+/// inverse, which the NIS is, and the whitening, whose columns have that form as their squared
+/// length.
 template <int Size, int Count, typename Scalar = double>
 void
 expectSolves()
@@ -256,8 +263,19 @@ expectSolves()
     EXPECT_TRUE(cholesky.solve(first).isApprox(expected.col(0), rounding<Scalar>)) << "size " << Size;
 
     Scalar const form = first.dot(llt.solve(first));
-    EXPECT_NEAR(cholesky.inverseQuadraticForm(first), form, rounding<Scalar> * form) << "size " << Size;
-    EXPECT_NEAR(cholesky.inverseQuadraticForm(b.col(0)), form, rounding<Scalar> * form) << "size " << Size;
+    double const formTolerance = double(rounding<Scalar> * form);
+    EXPECT_NEAR(double(cholesky.inverseQuadraticForm(first)), double(form), formTolerance) << "size " << Size;
+    EXPECT_NEAR(double(cholesky.inverseQuadraticForm(b.col(0))), double(form), formTolerance) << "size " << Size;
+
+    Rhs whitened = b;
+    cholesky.whitenInPlace(whitened);
+    Rhs expectedWhitened = b;
+    llt.matrixL().solveInPlace(expectedWhitened);
+    EXPECT_TRUE(whitened.isApprox(expectedWhitened, rounding<Scalar>)) << "size " << Size;
+    EXPECT_NEAR(double(whitened.col(0).squaredNorm()), double(form), formTolerance) << "size " << Size;
+    Vector whitenedVector = first;
+    cholesky.whitenInPlace(whitenedVector);
+    EXPECT_EQ(whitenedVector, Vector{whitened.col(0)}) << "size " << Size;
 }
 
 // The solves through a factorization made here agree with Eigen's, with one right-hand side, a
@@ -298,6 +316,9 @@ TEST(Cholesky, SolvesWithADynamicNumberOfRightHandSides)
     Eigen::Matrix<double, 3, Eigen::Dynamic> inPlace = b;
     cholesky.solveInPlace(inPlace);
     EXPECT_TRUE(inPlace.isApprox(expected, 1e-12));
+    Eigen::Matrix<double, 3, Eigen::Dynamic> whitened = b;
+    cholesky.whitenInPlace(whitened);
+    EXPECT_TRUE((whitened.transpose() * whitened).isApprox(b.transpose() * expected, 1e-12));
 }
 
 // A matrix given as an expression, here a sum, is evaluated once and factorized, and a block of a

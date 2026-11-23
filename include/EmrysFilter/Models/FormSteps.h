@@ -650,14 +650,14 @@ iterateMeasurementLinearization(
         Gain crossed(delta.size(), linearization.residual.size());
         NoiseMatrix innovationCov = linearization.noise;
         addSpread(*spread, linearization.jacobian, crossed, innovationCov);
-        auto const llt = Eigen::LLT<NoiseMatrix>{innovationCov};
-        if (llt.info() != Eigen::Success)
+        auto const cholesky = CholeskyFactorization<NoiseMatrix>{innovationCov};
+        if (!cholesky.isPositiveDefinite())
         {
             return Result{std::unexpected{GaussianError::NotPositiveDefinite}};
         }
         auto next = Difference{};
         next.resize(delta.size());
-        next.noalias() = multiply(crossed, llt.solve(linearization.residual));
+        next.noalias() = multiply(crossed, cholesky.solve(linearization.residual));
         if constexpr (Spreads)
         {
             // The posterior covariance of the blocks read, P_SS - C_S S^-1 C_S^T with C_S the rows of
@@ -671,7 +671,7 @@ iterateMeasurementLinearization(
                 Gain::MaxColsAtCompileTime>;
             ReadMatrix posterior = priorReadCov;
             posterior.noalias() -=
-                multiply(transposedSolve<ReadCross>(llt, readCross.transpose()), readCross.transpose());
+                multiply(transposedSolve<ReadCross>(cholesky, readCross.transpose()), readCross.transpose());
             if constexpr (!hasIdentityReset<typename Reads::JointSpace>)
             {
                 ReadDifference const nextReadStep = next(reads.differenceIndices());
@@ -1028,17 +1028,17 @@ foldIntoInfo(
     using InnovationMatrix = typename GaussianParams<MeasurementSpace, Scalar>::MatrixType;
     using Lin = MeasurementLinearization<Space, MeasurementSpace, Scalar>;
     Eigen::Index const m = linearization.residual.size();
-    auto const llt = Eigen::LLT<InnovationMatrix>{linearization.noise};
-    if (llt.info() != Eigen::Success)
+    auto const cholesky = CholeskyFactorization<InnovationMatrix>{linearization.noise};
+    if (!cholesky.isPositiveDefinite())
     {
         return std::unexpected{GaussianError::NotPositiveDefinite};
     }
     typename Lin::JacobianMatrix whitened = linearization.jacobian;
-    solveInPlace(llt, whitened);
+    cholesky.solveInPlace(whitened);
     auto added = typename InfoGaussianParams<Space, Scalar>::MatrixType{};
     added.noalias() = multiply(linearization.jacobian.transpose(), whitened);
     auto vector = typename InfoGaussianParams<Space, Scalar>::DifferenceVectorType{};
-    vector.noalias() = multiply(linearization.jacobian.transpose(), llt.solve(linearization.residual));
+    vector.noalias() = multiply(linearization.jacobian.transpose(), cholesky.solve(linearization.residual));
 
     auto innovation = [&] {
         if (!covariance)
@@ -1223,8 +1223,8 @@ foldIntoSqrtInfo(
     Eigen::Index const n = state.differenceDimension();
     Eigen::Index const m = linearization.residual.size();
 
-    auto const llt = Eigen::LLT<InnovationMatrix>{linearization.noise};
-    if (llt.info() != Eigen::Success)
+    auto const cholesky = CholeskyFactorization<InnovationMatrix>{linearization.noise};
+    if (!cholesky.isPositiveDefinite())
     {
         return std::unexpected{GaussianError::NotPositiveDefinite};
     }
@@ -1233,9 +1233,11 @@ foldIntoSqrtInfo(
     stacked.col(n).head(n) = state.whitenedOffset();
     typename MeasurementLinearization<Space, MeasurementSpace, Scalar>::JacobianMatrix whitened =
         linearization.jacobian;
-    solveInPlace(llt.matrixL(), whitened);
+    cholesky.whitenInPlace(whitened);
     stacked.bottomLeftCorner(m, n) = whitened;
-    stacked.col(n).tail(m) = llt.matrixL().solve(linearization.residual);
+    auto whitenedResidual = linearization.residual;
+    cholesky.whitenInPlace(whitenedResidual);
+    stacked.col(n).tail(m) = whitenedResidual;
     Scalar const priorLogDet = Scalar(2) * state.infoRoot().diagonal().array().abs().log().sum();
     triangularize(stacked);
 
@@ -1245,7 +1247,7 @@ foldIntoSqrtInfo(
     if (covarianceRoot)
     {
         Scalar const posteriorLogDet = Scalar(2) * stacked.diagonal().head(n).array().abs().log().sum();
-        logDeterminant = Scalar(2) * llt.matrixLLT().diagonal().array().log().sum() + posteriorLogDet - priorLogDet;
+        logDeterminant = cholesky.logDeterminant() + posteriorLogDet - priorLogDet;
         typename MeasurementLinearization<Space, MeasurementSpace, Scalar>::JacobianMatrix const scaled =
             multiply(linearization.jacobian, *covarianceRoot);
         innovationCov = linearization.noise;
@@ -1542,13 +1544,13 @@ predictRootWithNoise(
                     cov.noalias() += multiply(spread, spread.transpose());
                     cov.noalias() -= multiply(center, center.transpose());
                     cov = (Scalar(0.5) * (cov + cov.transpose())).eval();
-                    auto const llt = Eigen::LLT<MatrixType>{cov};
-                    if (llt.info() != Eigen::Success)
+                    auto const cholesky = CholeskyFactorization<MatrixType>{cov};
+                    if (!cholesky.isPositiveDefinite())
                     {
                         return std::unexpected{GaussianError::NotPositiveDefinite};
                     }
                     state.setMean(typename Form::VectorType{std::move(deviations.mean)});
-                    state.setRoot(MatrixType{llt.matrixL()});
+                    state.setRoot(cholesky.lower());
                     return {};
                 }
                 else

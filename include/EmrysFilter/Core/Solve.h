@@ -6,9 +6,8 @@
  * factorization of \f$ A \f$, and solveInPlace() overwrites \f$ B \f$ with
  * \f$ A^{-1} B \f$, and inverseFrom() gives \f$ A^{-1} \f$, all one column of \f$ B \f$ at a time
  * where \f$ A \f$ has a small fixed size, which Eigen's solve with a matrix right-hand side
- * does not do; from a Cholesky factorization of a small fixed size, transposedSolve() substitutes
- * through the factor itself (Cholesky.h). Multiply.h does the same for products. Everything here
- * is in `internal`. Read Stamp.h next.
+ * does not do; a CholeskyFactorization (Cholesky.h) gives its own transposed solve. Multiply.h
+ * does the same for products. Everything here is in `internal`. Read Stamp.h next.
  */
 
 #include <Eigen/Cholesky>
@@ -35,97 +34,8 @@ inline constexpr bool isCholeskyFactorization = false;
 /// \cond INTERNAL_SPECIALIZATIONS
 template <typename Matrix>
 inline constexpr bool isCholeskyFactorization<CholeskyFactorization<Matrix>> = true;
-/// \endcond
-
-/** Whether transposedSolve() substitutes through \a Decomposition itself: an `Eigen::LLT` of the
- * lower triangle of a matrix that a CholeskyFactorization would factorize itself
- * (factorizesByColumns).
- */
-template <typename Decomposition>
-inline constexpr bool solvesBySubstitution = false;
-
-/// \cond INTERNAL_SPECIALIZATIONS
-template <typename Matrix>
-inline constexpr bool solvesBySubstitution<Eigen::LLT<Matrix, Eigen::Lower>> = factorizesByColumns<Matrix>;
 
 /// \endcond
-
-/** \returns \f$ (A^{-1} B)^T \f$ as a \a Result, for \f$ A = L L^T \f$ of a fixed size, with
- * \f$ L \f$ the lower triangle of \a factor, \a reciprocal the reciprocals of its diagonal, and
- * \a rhs the right-hand side \f$ B \f$: forward and backward substitution, every right-hand side
- * together.
- *
- * Column \f$ r \f$ of the result holds unknown \f$ r \f$ of each right-hand side, so each step of
- * the substitution is one operation on whole columns. It multiplies by the reciprocals of the
- * diagonal, taken once, where Eigen's solve divides by the diagonal at each step, so the two
- * differ by rounding.
- *
- * Where the number of right-hand sides is fixed, the columns are padded with zeros to a multiple
- * of smallestPacketSize. Eigen vectorizes a column that is not, six `float`s say, from wherever
- * its address lets a packet start, so one column's stores are not the next operation's loads,
- * and the processor waits on each: unpadded, the gain of a 6-state filter in `float` took four
- * to six times as long as in `double` [benchmarks].
- */
-template <typename Result, typename Factor, typename Reciprocal, typename Rhs>
-[[nodiscard]] Result
-substituteTransposed(Factor const & factor, Reciprocal const & reciprocal, Eigen::MatrixBase<Rhs> const & rhs)
-{
-    using Scalar = typename Factor::Scalar;
-    constexpr int size = Factor::RowsAtCompileTime;
-    constexpr int count = Result::RowsAtCompileTime;
-    if constexpr (count != Eigen::Dynamic)
-    {
-        using Column = Eigen::Matrix<Scalar, paddedSize<Scalar, count>, 1>;
-        auto work = Eigen::Matrix<Scalar, paddedSize<Scalar, count>, size>{};
-        // L Y = B: unknown r of every right-hand side from those before it.
-        for (int r = 0; r < size; ++r)
-        {
-            Column unknown = Column::Zero();
-            unknown.template head<count>() = rhs.row(r).transpose();
-            for (int c = 0; c < r; ++c)
-            {
-                unknown -= factor(r, c) * work.col(c);
-            }
-            work.col(r) = unknown * reciprocal(r);
-        }
-        // L^T X = Y: unknown r of every right-hand side from those after it.
-        for (int r = size - 1; r >= 0; --r)
-        {
-            Column unknown = work.col(r);
-            for (int c = r + 1; c < size; ++c)
-            {
-                unknown -= factor(c, r) * work.col(c);
-            }
-            work.col(r) = unknown * reciprocal(r);
-        }
-        Result result = work.template topRows<count>();
-        return result;
-    }
-    else
-    {
-        // The same two passes in the result itself, which no fixed padding fits.
-        auto result = Result{};
-        result.resize(rhs.cols(), rhs.rows());
-        for (int r = 0; r < size; ++r)
-        {
-            result.col(r) = rhs.row(r).transpose();
-            for (int c = 0; c < r; ++c)
-            {
-                result.col(r) -= factor(r, c) * result.col(c);
-            }
-            result.col(r) *= reciprocal(r);
-        }
-        for (int r = size - 1; r >= 0; --r)
-        {
-            for (int c = r + 1; c < size; ++c)
-            {
-                result.col(r) -= factor(c, r) * result.col(c);
-            }
-            result.col(r) *= reciprocal(r);
-        }
-        return result;
-    }
-}
 
 /** \returns \f$ (A^{-1} B)^T \f$ as a \a Result, for the factorization \a decomposition of
  * \f$ A \f$ (a CholeskyFactorization, an `Eigen::LLT` or `Eigen::LDLT`, or any with `solve()`)
@@ -138,10 +48,10 @@ substituteTransposed(Factor const & factor, Reciprocal const & reciprocal, Eigen
  * and the same arithmetic per column; any other size is solved whole, as `solve()` does.
  *
  * Eigen's unrolled solve is slow too, though: for the gain of a 4×4 innovation covariance it
- * takes 208 instructions and six times as long as substituteTransposed() does [benchmarks]. So a
- * CholeskyFactorization gives the result itself, by that substitution where it factorized the
- * matrix itself, and through an `Eigen::LLT` of such a matrix (solvesBySubstitution) the result
- * is formed by the same substitution, from the reciprocals of its factor's diagonal.
+ * takes 208 instructions and six times as long as a substitution written out [benchmarks]. So a
+ * CholeskyFactorization gives the result itself, by its own substitution where it factorized the
+ * matrix itself; what is solved a column at a time here is one of Eigen's factorizations, a
+ * pivoted `Eigen::LDLT` or an `Eigen::LLT`.
  */
 template <typename Result, typename Decomposition, typename Rhs>
 [[nodiscard]] Result
@@ -151,12 +61,6 @@ transposedSolve(Decomposition const & decomposition, Eigen::MatrixBase<Rhs> cons
     if constexpr (isCholeskyFactorization<Decomposition>)
     {
         return decomposition.template transposedSolve<Result>(rhs);
-    }
-    else if constexpr (solvesBySubstitution<Decomposition>)
-    {
-        using Scalar = typename Decomposition::MatrixType::Scalar;
-        Eigen::Matrix<Scalar, size, 1> const reciprocal = decomposition.matrixLLT().diagonal().cwiseInverse();
-        return substituteTransposed<Result>(decomposition.matrixLLT(), reciprocal, rhs);
     }
     else if constexpr (size != Eigen::Dynamic && size <= unrolledSolveSize)
     {

@@ -18,6 +18,7 @@
 #include <Eigen/Cholesky>
 
 #include <EmrysFilter/Core/ChiSquared.h>
+#include <EmrysFilter/Core/Cholesky.h>
 #include <EmrysFilter/Core/Forwarding.h>
 #include <EmrysFilter/Core/Macros.h>
 #include <EmrysFilter/Core/Math.h>
@@ -113,10 +114,9 @@ struct FactorizedGaussian
     squaredMahalanobisDistance(GaussianParams<Space, Scalar> const & gaussian, Eigen::MatrixBase<Derived> const & x)
     {
         EMRYS_FILTER_ASSERT(gaussian.m_factorValid && "the Gaussian must be factorized");
-        typename GaussianParams<Space, Scalar>::DifferenceVectorType residual =
+        typename GaussianParams<Space, Scalar>::DifferenceVectorType const residual =
             Emrys::minus(gaussian.space(), x, gaussian.mean());
-        gaussian.m_llt->matrixL().solveInPlace(residual);
-        return residual.squaredNorm();
+        return gaussian.m_cholesky->inverseQuadraticForm(residual);
     }
 
     /** \returns the log-density of \a gaussian at \a x, as Gaussian::logDensity() */
@@ -127,14 +127,14 @@ struct FactorizedGaussian
         return logPeak(gaussian) - Scalar(0.5) * squaredMahalanobisDistance(gaussian, x);
     }
 
-    /** \returns the Cholesky factorization of \a gaussian's covariance, as Gaussian::llt() */
+    /** \returns the Cholesky factorization of \a gaussian's covariance, as Gaussian::cholesky() */
     template <typename Space, typename Scalar>
-    [[nodiscard]] static Eigen::LLT<typename GaussianParams<Space, Scalar>::MatrixType> const &
-    llt(GaussianParams<Space, Scalar> const & gaussian)
+    [[nodiscard]] static CholeskyFactorization<typename GaussianParams<Space, Scalar>::MatrixType> const &
+    cholesky(GaussianParams<Space, Scalar> const & gaussian)
     {
         EMRYS_FILTER_ASSERT(gaussian.m_factorValid && "the Gaussian must be factorized");
-        auto const & llt = gaussian.m_llt;
-        return *llt;
+        auto const & cholesky = gaussian.m_cholesky;
+        return *cholesky;
     }
 };
 
@@ -365,11 +365,12 @@ public:
     GaussianParams(GaussianParams const & other)
         : m_moments{other.m_moments}
         , m_space{other.m_space}
-        , m_llt{other.m_factorValid ? other.m_llt : std::nullopt}
+        , m_cholesky{other.m_factorValid ? other.m_cholesky : std::nullopt}
         , m_factorValid{other.m_factorValid}
     {
         if (m_factorValid)
         {
+            m_root = other.m_root;
             m_logDeterminant = other.m_logDeterminant;
         }
     }
@@ -378,11 +379,12 @@ public:
     GaussianParams(GaussianParams && other) noexcept
         : m_moments{std::move(other.m_moments)}
         , m_space{std::move(other.m_space)}
-        , m_llt{other.m_factorValid ? std::move(other.m_llt) : std::nullopt}
+        , m_cholesky{other.m_factorValid ? std::move(other.m_cholesky) : std::nullopt}
         , m_factorValid{other.m_factorValid}
     {
         if (m_factorValid)
         {
+            m_root = std::move(other.m_root);
             m_logDeterminant = other.m_logDeterminant;
         }
         other.m_stamp.touchShape();
@@ -400,7 +402,8 @@ public:
         m_space = other.m_space;
         if (other.m_factorValid)
         {
-            m_llt = other.m_llt;
+            m_cholesky = other.m_cholesky;
+            m_root = other.m_root;
             m_logDeterminant = other.m_logDeterminant;
         }
         m_factorValid = other.m_factorValid;
@@ -419,7 +422,8 @@ public:
         m_space = std::move(other.m_space);
         if (other.m_factorValid)
         {
-            m_llt = std::move(other.m_llt);
+            m_cholesky = std::move(other.m_cholesky);
+            m_root = std::move(other.m_root);
             m_logDeterminant = other.m_logDeterminant;
         }
         m_factorValid = other.m_factorValid;
@@ -688,7 +692,7 @@ public:
             return std::unexpected{factorized.error()};
         }
         MatrixType result = MatrixType::Identity(differenceDimension(), differenceDimension());
-        internal::solveInPlace(*m_llt, result);
+        m_cholesky->solveInPlace(result);
         return result;
     }
 
@@ -702,8 +706,7 @@ public:
         {
             return std::unexpected{factorized.error()};
         }
-        MatrixType result = m_llt->matrixL();
-        return result;
+        return m_root;
     }
 
     /** \returns \f$ L^{-1} \f$, the triangular factor of the precision that this form gives
@@ -719,7 +722,7 @@ public:
             return std::unexpected{factorized.error()};
         }
         MatrixType result = MatrixType::Identity(differenceDimension(), differenceDimension());
-        internal::solveInPlace(m_llt->matrixL(), result);
+        m_cholesky->whitenInPlace(result);
         return result;
     }
 
@@ -929,22 +932,26 @@ private:
     [[nodiscard]] std::expected<void, GaussianError>
     factorizeCovariance(MatrixType const & cov) const
     {
-        if (!m_llt)
+        if (!m_cholesky)
         {
-            m_llt.emplace(cov.rows());
+            m_cholesky.emplace();
         }
-        m_llt->compute(cov);
-        if (m_llt->info() != Eigen::Success)
+        m_cholesky->compute(cov);
+        if (!m_cholesky->isPositiveDefinite())
         {
-            return std::unexpected{GaussianError::NotPositiveDefinite};
+            // A NaN fails the factorization as a pivot that is not positive does; it is told
+            // apart here, where the failure is already known.
+            return std::unexpected{
+                internal::lowerFinite(cov) ? GaussianError::NotPositiveDefinite : GaussianError::NonFinite
+            };
         }
-        // NaN slips through LLT's positivity test but always reaches the diagonal of
-        // L, so checking the log-determinant catches any non-finite lower-triangle input.
-        Scalar const logDet = Scalar(2) * m_llt->matrixLLT().diagonal().array().log().sum();
+        // An infinity can pass every pivot's test, and reaches the log-determinant.
+        Scalar const logDet = m_cholesky->logDeterminant();
         if (!isFinite(logDet))
         {
             return std::unexpected{GaussianError::NonFinite};
         }
+        m_root = m_cholesky->lower();
         m_logDeterminant = logDet;
         m_factorValid = true;
         return {};
@@ -987,7 +994,11 @@ private:
     // members (see factorize()).
     /// the Cholesky factorization of the covariance, absent until one is made, and copied only
     /// while valid
-    mutable std::optional<Eigen::LLT<MatrixType>> m_llt;
+    mutable std::optional<CholeskyFactorization<MatrixType>> m_cholesky;
+
+    /// the lower Cholesky factor \f$ L \f$ from that factorization, which the samplers multiply by;
+    /// read only while the factorization is valid
+    mutable MatrixType m_root;
 
     mutable Scalar m_logDeterminant{};  ///< \f$ \log|\Sigma| \f$ from the factorization
     mutable bool m_factorValid{false};  ///< whether the cache matches the covariance
@@ -1019,7 +1030,7 @@ public:
     using VectorType = typename ParamsType::VectorType;                      ///< a value, such as the mean
     using DifferenceVectorType = typename ParamsType::DifferenceVectorType;  ///< a difference, such as a residual
     using MatrixType = typename ParamsType::MatrixType;                      ///< a matrix over differences
-    using LltType = Eigen::LLT<MatrixType>;                                  ///< the Cholesky factorization
+    using CholeskyType = CholeskyFactorization<MatrixType>;                  ///< the Cholesky factorization
 
     /// the length of a value, or Eigen::Dynamic
     static constexpr int ValueDimensionAtCompileTime = ParamsType::ValueDimensionAtCompileTime;
@@ -1117,12 +1128,24 @@ public:
         return source().template covariance<RowPath, ColPath>();
     }
 
-    /** \returns the Cholesky factorization \f$ \Sigma = L L^T \f$ of the covariance */
-    [[nodiscard]] LltType const &
-    llt() const
+    /** \returns the Cholesky factorization of the covariance, which gives the solves by it, the
+     *           quadratic form of its inverse, and its log-determinant
+     */
+    [[nodiscard]] CholeskyType const &
+    cholesky() const
     {
-        auto const & llt = source().m_llt;
-        return *llt;
+        auto const & cholesky = source().m_cholesky;
+        return *cholesky;
+    }
+
+    /** \returns the lower-triangular Cholesky factor \f$ L \f$, with \f$ L L^T = \Sigma \f$ and
+     *           zeros above the diagonal, kept with the factorization: a sample is the mean plus
+     *           \f$ L \f$ times standard normal draws
+     */
+    [[nodiscard]] MatrixType const &
+    covarianceRoot() const
+    {
+        return source().m_root;
     }
 
     /** \returns the log-determinant \f$ \log|\Sigma| \f$ of the covariance */
@@ -1455,13 +1478,13 @@ public:
     [[nodiscard]] std::expected<MatrixType, GaussianError>
     precision() const
     {
-        auto const llt = factorization();
-        if (!llt)
+        auto const cholesky = factorization();
+        if (!cholesky)
         {
-            return std::unexpected{llt.error()};
+            return std::unexpected{cholesky.error()};
         }
         MatrixType result = MatrixType::Identity(differenceDimension(), differenceDimension());
-        internal::solveInPlace(*llt, result);
+        cholesky->solveInPlace(result);
         return result;
     }
 
@@ -1471,13 +1494,12 @@ public:
     [[nodiscard]] std::expected<MatrixType, GaussianError>
     covarianceRoot() const
     {
-        auto const llt = factorization();
-        if (!llt)
+        auto const cholesky = factorization();
+        if (!cholesky)
         {
-            return std::unexpected{llt.error()};
+            return std::unexpected{cholesky.error()};
         }
-        MatrixType result = llt->matrixL();
-        return result;
+        return cholesky->lower();
     }
 
     /** \returns \f$ L^{-1} \f$, lower triangular, as GaussianParams::precisionRoot() gives it, or
@@ -1486,13 +1508,13 @@ public:
     [[nodiscard]] std::expected<MatrixType, GaussianError>
     precisionRoot() const
     {
-        auto const llt = factorization();
-        if (!llt)
+        auto const cholesky = factorization();
+        if (!cholesky)
         {
-            return std::unexpected{llt.error()};
+            return std::unexpected{cholesky.error()};
         }
         MatrixType result = MatrixType::Identity(differenceDimension(), differenceDimension());
-        internal::solveInPlace(llt->matrixL(), result);
+        cholesky->whitenInPlace(result);
         return result;
     }
 
@@ -1509,20 +1531,24 @@ private:
      * GaussianError::NotPositiveDefinite or GaussianError::NonFinite as GaussianParams::factorize()
      * returns them
      */
-    [[nodiscard]] std::expected<Eigen::LLT<MatrixType>, GaussianError>
+    [[nodiscard]] std::expected<CholeskyFactorization<MatrixType>, GaussianError>
     factorization() const
     {
-        auto llt = Eigen::LLT<MatrixType>{MatrixType{covarianceLower()}};
-        if (llt.info() != Eigen::Success)
+        MatrixType const cov = covarianceLower();
+        auto cholesky = CholeskyFactorization<MatrixType>{cov};
+        // As in GaussianParams::factorize(): a NaN fails the factorization, and an infinity
+        // reaches the log-determinant.
+        if (!cholesky.isPositiveDefinite())
         {
-            return std::unexpected{GaussianError::NotPositiveDefinite};
+            return std::unexpected{
+                internal::lowerFinite(cov) ? GaussianError::NotPositiveDefinite : GaussianError::NonFinite
+            };
         }
-        // As in GaussianParams::factorize(): NaN passes LLT's test but reaches the diagonal.
-        if (!allFinite(llt.matrixLLT().diagonal()))
+        if (!isFinite(cholesky.logDeterminant()))
         {
             return std::unexpected{GaussianError::NonFinite};
         }
-        return llt;
+        return cholesky;
     }
 
     internal::HolderFor<Source> m_holder;  ///< the check of parameters, or a copy of a view

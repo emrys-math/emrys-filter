@@ -118,7 +118,7 @@ private:
 
         // The Cholesky factorization of S without square roots, S = L D L^T with L unit lower
         // triangular, a column at a time, as the library takes it
-        // (internal::CholeskyFactorization), since Eigen's LLT of a matrix this small takes
+        // (CholeskyFactorization), since Eigen's LLT of a matrix this small takes
         // several times as long, and since each step of the filter waits on this one: column k of
         // L D is column k of S less L(k, j) times each column j before it, and the column after
         // it waits on one division. Each column is padded with a zero to two packets, so that

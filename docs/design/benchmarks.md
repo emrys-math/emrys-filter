@@ -95,7 +95,7 @@ might doubt, published with its method and machine, and never one per feature."
 | 6 | It fits and runs on a microcontroller | Footprint and cycles on Cortex-M4F and M7 | `.text`, `.data`, stack per function, DWT cycles per step | hand-rolled EKF and TinyEKF on the same target | after [embedded-builds]'s Cortex-M job |
 | 7 | A template library's compile cost is tolerable | Compile cost of each benchmark translation unit | seconds and peak memory per compiler | the hand-rolled translation unit | built and measured on three compilers (section 7), not in CI, not published |
 | 8 | A GPU pays above some particle count | Device path against host `par` | crossover particle count | the library's own host path | step 19, not planned here |
-| 9 | It is no slower than the C++ Kalman library a user would otherwise pick | mherb/kalman's EKF, UKF, square-root EKF, and square-root UKF, TinyEKF's EKF, and OpenCV's `cv::KalmanFilter` run as an EKF, on the ranging problem | instructions and ns per step, at the ranging sizes and scalars | each library, as its users write it | measured 2026-11-23 on branch `mherb-benchmark`; the EKF holds against all three at every size, and the claim fails in time for the UKF at 2D with 4 anchors, the square-root EKF at 3D with 24 and in double at 2D with 16, and the square-root UKF in double from 2D with 16 on; the pairs that do not agree are timed with a mark |
+| 9 | It is no slower than the C++ Kalman library a user would otherwise pick | mherb/kalman's EKF, UKF, square-root EKF, and square-root UKF, TinyEKF's EKF, and OpenCV's `cv::KalmanFilter` run as an EKF, on the ranging problem | instructions and ns per step, at the ranging sizes and scalars | each library, as its users write it | measured 2026-11-23 on branch `mherb-benchmark`; the EKF holds against all three at every size and the UKF in double; the claim fails in time for the UKF in float at 2D with 4 anchors (1.03), the square-root EKF in double at 3D with 24 (1.06), and the square-root UKF in double at every 3D size (up to 1.29); the pairs that do not agree are timed with a mark |
 
 **1. Ranging.** What exists, plus the two axes [benchmarks] names and the ranging benchmark lacks: a
 constant-acceleration case (state dimension 6 and 9 beside 4 and 6), and the scaling curves over
@@ -535,21 +535,21 @@ the scalar TinyEKF runs in unless `_float_t` is defined, so the marked rows are 
 get. For claim 6 this is a finding before any cycle is counted: on the scalar of the target TinyEKF
 is written for, its estimate is the less accurate.
 
-*Measured* (2026-11-23, at the commit *Factorize the innovation covariance by the library's own Cholesky factorization*;
+*Measured* (2026-11-23, at the commit *Make the Cholesky factorization public and the Gaussian's own*;
 `docs/benchmarks.md` gives the tables and the machine, and the paragraphs below what the
 measurements before it found). EmrysFilter's EKF takes less time than each library's at every size
 and in either scalar: 2 to 6% of OpenCV's; 0.93 of mherb/kalman's at 2D with 4 anchors in double,
-0.76 in float, and 0.14 to 0.45 elsewhere; and 0.72 and 0.86 of TinyEKF's at 2D with 4 and 8
-anchors in double, 0.61 and 0.63 in float, TinyEKF's default, and 0.32 to 0.75 at the other four
-sizes. Its square-root EKF takes 0.55 to 0.88 of mherb/kalman's time but at 3D with 24 anchors
-(1.13 in double, 1.04 in float) and 2D with 16 (1.05 and 0.97). Its UKF takes 0.40 to 0.84 but at
-2D with 4 anchors (1.10 and 1.33), and its square-root UKF 0.81 to 0.99 in float and 0.85 to 1.34
-in double. So claim 9 holds for the EKF against all three, and fails for the UKF at 2D with 4
-anchors, the square-root EKF at 3D with 24 anchors and, in double, at 2D with 16, and the
-square-root UKF in double from 2D with 16 anchors on. At 2D with 4 anchors the library takes 723 instructions and 70 ns, mherb/kalman
-1,218 and 75 ns, and TinyEKF 1,575 and 102 ns, while the hand code takes 401 and 55 ns. The other
-libraries' own times are 1% to 15% longer in this run than in the one before, with their code
-unchanged, so times of different runs compare only to about that.
+0.76 in float, and 0.13 to 0.46 elsewhere; and 0.72 and 0.86 of TinyEKF's at 2D with 4 and 8
+anchors in double, 0.61 and 0.52 in float, TinyEKF's default, and 0.34 to 0.73 at the other four
+sizes. Its UKF takes 0.89 of mherb/kalman's time at 2D with 4 anchors in double and 1.03 in float,
+and 0.38 to 0.83 elsewhere. Its square-root EKF takes 0.51 to 0.98 but at 3D with 24 anchors in
+double (1.06), and its square-root UKF 0.78 to 0.93 in float and 0.83 to 1.29 in double. So claim
+9 holds for the EKF against all three, and for the UKF in double; it fails for the UKF in float at
+2D with 4 anchors by 3%, the square-root EKF in double at 3D with 24 by 6%, and the square-root
+UKF in double at every 3D size. At 2D with 4 anchors the library takes 723 instructions and 67 ns,
+mherb/kalman 1,218 and 72 ns, and TinyEKF 1,575 and 103 ns, while the hand code takes 401 and
+52 ns. The other libraries' own times moved by up to 23% between this run and the one two commits
+before, with their code unchanged, so times of different runs compare only to about that.
 
 *Where the instructions go with 8 and 12 anchors (2026-11-23).* The instruction ratios against
 TinyEKF are worst at 2D with 8 anchors (1.56) and 3D with 12 (1.19), between sizes where the
@@ -700,15 +700,33 @@ The commit after it, *Take a covariance's Cholesky root by the library's own fac
 of the runner against mherb/kalman after it have the UKF at 2D with 4 anchors at 0.90 and 0.93 of
 mherb/kalman's time in double and 1.03 and 1.04 in float, where the tables have 1.10 and 1.33; one
 of the two runs had 3D with 6 anchors at 0.89 and the other at 0.74, where the tables have 0.77, so
-a single run of that runner is good to about 0.15 in a ratio. The page's tables are not taken
-again for it.
+a single run of that runner is good to about 0.15 in a ratio.
 
-Left for the next commits: the library's other Cholesky factorizations, which are still
-`Eigen::LLT` (the Gaussian's own, the information forms, the divergences,
-the fitting, the Cramér-Rao bound, the conditionals), with the whitening and the factor $L$ that
-they read; then `solvesBySubstitution` and `substituteTransposed()` in `Core/Solve.h` go, which
-serve only an `Eigen::LLT`. Whether the report to Eigen is worth making waits on GCC, MSVC, and
-ARM measurements.
+The commit after that makes the type public, `Emrys::CholeskyFactorization`, and the Gaussian's
+own: `Gaussian::cholesky()` replaces `llt()`, and the factor $L$ that the samplers multiply by is
+made from it once and kept, `covarianceRoot()`. The page's tables are taken again at that commit:
+the EKF's rows are as before to within the runs' noise, the UKF's are those of the root's commit,
+and the particle filter's rows that draw from a Gaussian take 5 to 19 instructions fewer per
+particle, since the samplers no longer copy a triangle of Eigen's factor at each draw.
+
+The commit *Factorize the information forms and the remaining local matrices by the library's own
+Cholesky factorization* moves the rest: the information form's cached factorization, which keeps
+its upper factor $R = L^T$ beside it as the Gaussian keeps $L$, and the local factorizations of the
+form steps, the fitting, the particle sets, the Rao-Blackwellized particle filter's weights, and
+the conditional with its evidence. It is not timed; none of them is in the benchmarks' steps.
+
+One stays on `Eigen::LLT`: the posterior Cramér-Rao bound. From no information its prediction is
+$Q^{-1} - Q^{-1} F (F^T Q^{-1} F)^{-1} F^T Q^{-1}$, which is zero, and with Eigen's factorization
+and solves the terms cancel to exact zeros, so that the bound's `covariance()` reports that it has
+none (`PosteriorCramerRaoBound.StartsFromNoInfo`). With the library's factorization the inverse,
+the gain, and the whitened factor are rounded differently from each other, and the same
+cancellation leaves 1e-14 where the terms are of order 1, which then factorizes as if it were
+information. That recursion wants one consistent way to form its terms before it changes
+factorization; nothing times it.
+
+`Core/Solve.h` then lost its substitution through an `Eigen::LLT`, which had no caller left; an
+`Eigen::LLT` given to `transposedSolve()` is solved a column at a time by Eigen, as a pivoted LDLT
+is. Whether the report to Eigen is worth making waits on GCC, MSVC, and ARM measurements.
 
 mherb/kalman's EKF, on Eigen too, has a larger step of its own, between 4 anchors and 6: 1,218
 instructions at 2D with 4 anchors, 11,455 at 3D with 6, and 17,467 at 2D with 8, which is why the

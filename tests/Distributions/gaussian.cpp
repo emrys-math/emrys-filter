@@ -395,13 +395,37 @@ TEST(GaussianConfidence, TwoDimensionalQuantileIsClosedForm)
     EXPECT_TRUE(g.covarianceLower().isApprox(-2 * std::log(0.01) * cov, 1e-12));
 }
 
+// A density gives the Cholesky factorization of its covariance and the lower factor kept with it
+// (decisions.md [own-cholesky]): the factor times its transpose is the covariance, with a zero above the
+// diagonal; the parameters' covarianceRoot() and the factorization's lower() are that factor; the
+// factorization's log-determinant is log(2 * 1 - 0.5^2); and its quadratic form of the inverse is
+// the squared Mahalanobis distance.
+TEST(Gaussian, GivesItsCholeskyFactorizationAndItsRoot)
+{
+    Eigen::Matrix2d const cov = Eigen::Matrix2d{{2.0, 0.5}, {0.5, 1.0}};
+    auto g = GaussianParams<Linear<2>>{Eigen::Vector2d{1.0, -1.0}, cov};
+    auto const density = g.toDensity();
+    ASSERT_TRUE(density.has_value());
+    Eigen::Matrix2d const root = density->covarianceRoot();
+    EXPECT_TRUE((root * root.transpose()).isApprox(cov, 1e-14));
+    EXPECT_EQ(root(0, 1), 0.0);
+    EXPECT_EQ(g.covarianceRoot().value(), root);
+    Emrys::CholeskyFactorization<Eigen::Matrix2d> const & cholesky = density->cholesky();
+    ASSERT_TRUE(cholesky.isPositiveDefinite());
+    EXPECT_EQ(cholesky.lower(), root);
+    EXPECT_NEAR(cholesky.logDeterminant(), std::log(1.75), 1e-14);
+    auto const x = Eigen::Vector2d{1.5, 0.0};
+    Eigen::Vector2d const difference = x - g.mean();
+    EXPECT_NEAR(cholesky.inverseQuadraticForm(difference), density->squaredMahalanobisDistance(x), 1e-14);
+}
+
 // In two dimensions the confidence of a value at Mahalanobis distance r is 1 - e^{-r^2 / 2}.
 TEST(GaussianConfidence, TwoDimensionalConfidenceIsClosedForm)
 {
     auto g = GaussianParams<Linear<2>>{Eigen::Vector2d{1.0, -1.0}, Eigen::Matrix2d{{2.0, 0.5}, {0.5, 1.0}}};
     auto const density = g.toDensity();
     ASSERT_TRUE(density.has_value());
-    Eigen::Vector2d const x = g.mean() + density->llt().matrixL() * Eigen::Vector2d{0.0, std::sqrt(2.0)};
+    Eigen::Vector2d const x = g.mean() + density->covarianceRoot() * Eigen::Vector2d{0.0, std::sqrt(2.0)};
     EXPECT_NEAR(density->confidence(x), 1 - std::exp(-1.0), 1e-12);
     EXPECT_TRUE(density->contains(x, 0.64));
     EXPECT_FALSE(density->contains(x, 0.63));
@@ -654,7 +678,9 @@ TEST_F(GaussianDeathTest, ReadAfterMove)
 #    ifndef __clang_analyzer__
     EXPECT_DEATH(
         {
-            auto stolen = std::move(mg);
+            // The move is the point; without Eigen's LLT among its members the parameters'
+            // destructor is trivial, and GCC would call the variable set but not used.
+            [[maybe_unused]] auto stolen = std::move(mg);
             std::ignore = g->logPeak();
         },
         "changed while a view"

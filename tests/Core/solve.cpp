@@ -1,16 +1,15 @@
-// internal::transposedSolve() from Core/Solve.h, the solve by a factorization that gives the
-// Kalman gain (decisions.md [innovation-cholesky]) and the other transposed solves of the library: by its own
-// substitution through a Cholesky factorization of a fixed size of at most 24, and column by column
-// through a pivoted LDLT of a fixed size of at most eight, each against Eigen's solve of the whole
-// right-hand side, and the whole solve unchanged for any other size.
+// internal::transposedSolve() from Core/Solve.h, the solve by a factorization that gives the gain
+// of a conditional and the other transposed solves of the library through one of Eigen's
+// factorizations (decisions.md [innovation-cholesky]): column by column through an LLT or a pivoted LDLT of a
+// fixed size of at most eight, against Eigen's solve of the whole right-hand side, and the whole
+// solve unchanged for any other size. The library's own factorization has its own transposed
+// solve, which tests/Core/cholesky.cpp covers.
 
 #include <EmrysFilter/Core/Solve.h>
 
 #include <gtest/gtest.h>
 
 #include <Eigen/Cholesky>
-
-#include <type_traits>
 
 namespace
 {
@@ -25,82 +24,27 @@ positiveDefinite(Eigen::Index size = Size)
     return result;
 }
 
-/// Expects transposedSolve() through the Cholesky factorization of a \a Size × \a Size matrix in
-/// \a Scalar, with \a Count right-hand sides, to agree with Eigen's solve of the whole right-hand
-/// side and to solve the system. The two differ by rounding: the substitution multiplies by the
-/// reciprocals of the factor's diagonal where Eigen divides by it.
-template <int Size, int Count, typename Scalar = double>
-void
-expectSubstitutionSolves()
+// An Eigen::LLT of a fixed size of at most eight is solved a column at a time, with Eigen's
+// arithmetic for each column: the result agrees with Eigen's solve of the whole right-hand side
+// to rounding and solves the system, with a fixed number of right-hand sides and with one known
+// only at run time.
+TEST(Solve, SolvesASmallFixedLltAColumnAtATime)
 {
-    using Matrix = Eigen::Matrix<Scalar, Size, Size>;
-    using Rhs = Eigen::Matrix<Scalar, Size, Count>;
-    using Result = Eigen::Matrix<Scalar, Count, Size>;
-    Matrix const spread = Matrix::Random();
-    Matrix a = spread * spread.transpose();
-    a.diagonal().array() += Scalar(0.5);
-    Rhs const b = Rhs::Random();
-    auto const llt = Eigen::LLT<Matrix>{a};
-    ASSERT_TRUE(Emrys::internal::solvesBySubstitution<Eigen::LLT<Matrix>>);
+    Eigen::Matrix4d const a = positiveDefinite<4>();
+    Eigen::Matrix<double, 4, 6> const b = Eigen::Matrix<double, 4, 6>::Random();
+    auto const llt = Eigen::LLT<Eigen::Matrix4d>{a};
 
-    auto const x = Emrys::internal::transposedSolve<Result>(llt, b);
+    auto const x = Emrys::internal::transposedSolve<Eigen::Matrix<double, 6, 4>>(llt, b);
 
-    Result const expected = llt.solve(b).transpose();
-    Scalar const rounding = std::is_same_v<Scalar, float> ? Scalar(1e-3) : Scalar(1e-10);
-    EXPECT_TRUE(x.isApprox(expected, rounding)) << "size " << Size << ", " << Count << " right-hand sides";
-    EXPECT_TRUE((a * x.transpose()).isApprox(b, rounding)) << "size " << Size << ", " << Count << " right-hand sides";
-}
+    Eigen::Matrix<double, 6, 4> const expected = llt.solve(b).transpose();
+    EXPECT_TRUE(x.isApprox(expected, 1e-14));
+    EXPECT_TRUE((a * x.transpose()).isApprox(b, 1e-12));
 
-// A Cholesky factorization of a fixed size of at most 24 is solved by the substitution written out
-// in transposedSolve(), every right-hand side together: from 1×1 to the largest size, with one
-// right-hand side, a few, and more of them than the size.
-TEST(Solve, SubstitutesThroughASmallFixedCholeskyFactorization)
-{
-    expectSubstitutionSolves<1, 1>();
-    expectSubstitutionSolves<1, 4>();
-    expectSubstitutionSolves<3, 6>();
-    expectSubstitutionSolves<4, 4>();
-    expectSubstitutionSolves<8, 4>();
-    expectSubstitutionSolves<12, 6>();
-    expectSubstitutionSolves<24, 6>();
-    expectSubstitutionSolves<24, 1>();
-}
-
-// The columns of the substitution are padded with zeros to whole packets of 16 bytes, and the
-// padding does not reach the result: numbers of right-hand sides that are not a multiple of a
-// packet, 1, 3, 5, and 7 doubles and 1, 3, 5, 6, 7, and 9 floats, beside those that are.
-TEST(Solve, PadsTheRightHandSidesToWholePackets)
-{
-    EXPECT_GE(Emrys::internal::smallestPacketSize<float>, Emrys::internal::smallestPacketSize<double>);
-    expectSubstitutionSolves<4, 1>();
-    expectSubstitutionSolves<4, 3>();
-    expectSubstitutionSolves<6, 5>();
-    expectSubstitutionSolves<3, 7>();
-    expectSubstitutionSolves<4, 1, float>();
-    expectSubstitutionSolves<4, 3, float>();
-    expectSubstitutionSolves<4, 4, float>();
-    expectSubstitutionSolves<6, 5, float>();
-    expectSubstitutionSolves<6, 6, float>();
-    expectSubstitutionSolves<12, 6, float>();
-    expectSubstitutionSolves<3, 7, float>();
-    expectSubstitutionSolves<8, 8, float>();
-    expectSubstitutionSolves<5, 9, float>();
-    expectSubstitutionSolves<4, 6, long double>();
-}
-
-// The substitution writes into a result whose number of right-hand sides is known only at run
-// time, as the gain of a state of dynamic size is.
-TEST(Solve, SubstitutesIntoADynamicNumberOfRightHandSides)
-{
-    Eigen::Matrix3d const a = positiveDefinite<3>();
-    Eigen::Matrix<double, 3, Eigen::Dynamic> const b = Eigen::Matrix<double, 3, Eigen::Dynamic>::Random(3, 5);
-    auto const llt = Eigen::LLT<Eigen::Matrix3d>{a};
-
-    auto const x = Emrys::internal::transposedSolve<Eigen::Matrix<double, Eigen::Dynamic, 3>>(llt, b);
-
-    ASSERT_EQ(x.rows(), 5);
-    Eigen::Matrix<double, Eigen::Dynamic, 3> const expected = llt.solve(b).transpose();
-    EXPECT_TRUE(x.isApprox(expected, 1e-12));
+    Eigen::Matrix<double, 4, Eigen::Dynamic> const dynamicB = Eigen::Matrix<double, 4, Eigen::Dynamic>::Random(4, 5);
+    auto const dynamicX = Emrys::internal::transposedSolve<Eigen::Matrix<double, Eigen::Dynamic, 4>>(llt, dynamicB);
+    ASSERT_EQ(dynamicX.rows(), 5);
+    Eigen::Matrix<double, Eigen::Dynamic, 4> const dynamicExpected = llt.solve(dynamicB).transpose();
+    EXPECT_TRUE(dynamicX.isApprox(dynamicExpected, 1e-14));
 }
 
 // A pivoted LDLT of a 4×4 with a coordinate known exactly (decisions.md [gaussian-forms]), a zero row and
@@ -123,7 +67,7 @@ TEST(Solve, KeepsThePivotedLdltOfASingularMatrix)
     EXPECT_TRUE((a * x.transpose()).isApprox(b, 1e-12));
 }
 
-// A dynamic size, a bounded one, and a fixed size above 24 are solved whole, exactly as Eigen
+// A dynamic size, a bounded one, and a fixed size above eight are solved whole, exactly as Eigen
 // solves them.
 TEST(Solve, SolvesOtherSizesWhole)
 {
@@ -147,7 +91,7 @@ TEST(Solve, SolvesOtherSizesWhole)
     Eigen::Matrix<double, 2, 25> const largeExpected = largeLlt.solve(largeB).transpose();
     EXPECT_EQ((Emrys::internal::transposedSolve<Eigen::Matrix<double, 2, 25>>(largeLlt, largeB)), largeExpected);
 
-    // A fixed size above eight through a pivoted LDLT, which has no substitution here.
+    // A fixed size above eight through a pivoted LDLT.
     using Middle = Eigen::Matrix<double, 12, 12>;
     Middle const middleA = positiveDefinite<12>();
     Eigen::Matrix<double, 12, 2> const middleB = Eigen::Matrix<double, 12, 2>::Random();

@@ -399,7 +399,7 @@ struct Cholesky
     static constexpr bool canFail = true;  ///< a covariance that is not positive definite has no Cholesky factor
 
     /** \returns the lower Cholesky factor of \a cov, of which only the lower triangle's values are
-     *           used (internal::CholeskyFactorization, decisions.md [own-cholesky])
+     *           used (CholeskyFactorization, decisions.md [own-cholesky])
      */
     template <typename Derived>
     [[nodiscard]] std::expected<internal::SquareMatrixOf<Derived>, GaussianError>
@@ -410,7 +410,7 @@ struct Cholesky
         {
             return std::unexpected{GaussianError::NonFinite};
         }
-        auto const cholesky = internal::CholeskyFactorization<Matrix>{cov};
+        auto const cholesky = CholeskyFactorization<Matrix>{cov};
         if (!cholesky.isPositiveDefinite())
         {
             return std::unexpected{GaussianError::NotPositiveDefinite};

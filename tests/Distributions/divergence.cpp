@@ -750,8 +750,11 @@ TEST(ExpectedSquaredError, ParticleSetWithInvalidWeightsFails)
 }
 
 // The Monte Carlo divergence is infinite as soon as a draw from p has no density under q, and the
-// Hellinger distance between a density and itself is zero, with a standard error of zero, since
-// every term of the coefficient is one.
+// Hellinger distance between a density and itself is zero to rounding, with a standard error of
+// zero to rounding, since every term of the coefficient is one to rounding: a draw's log-density
+// under p is read from its standard normal z, and under q from the point through the
+// factorization, which agree only to an ulp or so, and the distance is the square root of one
+// minus their mean, so 1e-16 in a term is 1e-8 in the distance.
 TEST(Divergences, MonteCarloEdges)
 {
     auto rng = std::mt19937{71};
@@ -763,7 +766,7 @@ TEST(Divergences, MonteCarloEdges)
     EXPECT_EQ(infinite.value, std::numeric_limits<double>::infinity());
 
     auto const same = hellinger(MonteCarlo{10}, p, p, rng);
-    EXPECT_EQ(same.value, 0.0);
+    EXPECT_NEAR(same.value, 0.0, 1e-7);
     EXPECT_LT(same.standardError, 1e-6);
 }
 

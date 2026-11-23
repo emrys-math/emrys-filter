@@ -64,6 +64,19 @@ instead.
 
 ### Changed
 
+- `Gaussian::llt()` is `Gaussian::cholesky()`, and returns a `CholeskyFactorization<MatrixType>`,
+  the library's own factorization, where it returned an `Eigen::LLT`; `Gaussian::LltType` is
+  `Gaussian::CholeskyType`. Write `g.covarianceRoot()`, new on the density, for
+  `g.llt().matrixL()`; `g.cholesky().solve(b)` for `g.llt().solve(b)`; and
+  `g.cholesky().logDeterminant()` for the sum over the diagonal of `g.llt().matrixLLT()`.
+  `CholeskyFactorization` (`EmrysFilter/Core/Cholesky.h`) also gives `lower()`,
+  `inverseQuadraticForm()`, `whitenInPlace()`, and `isPositiveDefinite()`, and can factorize a
+  matrix of your own.
+- The information form of the Gaussian, the iterated update and the updates of the information
+  and square-root forms, the fitting of a mixture, a particle set's conditional, a
+  Rao-Blackwellized particle filter's weights, and a conditional with its evidence factorize by
+  `CholeskyFactorization` too, so their results differ from before by rounding. The posterior
+  Cramér-Rao bound still uses `Eigen::LLT`.
 - An update factorizes its innovation covariance by a Cholesky factorization of the library's own
   where the measurement has a fixed size of at most 24, in place of `Eigen::LLT`: without square
   roots, a column at a time, which is what a filter's step waits on. With the substitution of the

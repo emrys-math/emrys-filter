@@ -18,8 +18,8 @@ the decision, and history belongs in the commit message. An open question goes i
   (information), `Rb` (Rao-Blackwellized), `Imm` and `Amm` (interacting and autonomous multiple
   model), `Ess` (effective sample size), and the index utilities `idx()` and `block()` for values and
   `diffIdx()` and `diffBlock()` for differences [index-names]. An abbreviation is a camel-case word: `RbParticleFilter`,
-  `SqrtInfoGaussian`, `toSqrtInfo()`. So is an acronym in our own identifiers (`LltType`,
-  `noiseLlt`), while Eigen's names keep Eigen's spelling (`Eigen::LLT`, `matrixLLT()`). Don't
+  `SqrtInfoGaussian`, `toSqrtInfo()`. So is an acronym in our own identifiers (`NisMonitor`,
+  `positionNees`), while Eigen's names keep Eigen's spelling (`Eigen::LLT`, `matrixLLT()`). Don't
   shorten anything else; it is `differenceDimension()`, not `diffDimension()`. A word joins the list
   only by changing [params-and-density]. Prose and the first sentence of a Doxygen comment write the
   words out. The index utilities are overloaded on their arguments: `idx<Space, Path>()` from the
@@ -227,7 +227,7 @@ the decision, and history belongs in the commit message. An open question goes i
   silently, and constructors whose meaning braces change: any class with an initializer-list
   constructor, such as a standard container or `internal::Buffer`, takes parentheses
   (`auto v = std::vector<T>(n);`, `Base(allocator)`).
-- Write `*` directly before the object it dereferences (`*density`, `*m_llt`). Where the operand
+- Write `*` directly before the object it dereferences (`*density`, `*m_cholesky`). Where the operand
   is a call or a member chain, examples and tests spell out the accessor instead:
   `initial.toDensity().value()`, not `*initial.toDensity()`. The library can't, since `value()`
   throws, so it parenthesizes the operand, which `*` applies to as a whole against the reading

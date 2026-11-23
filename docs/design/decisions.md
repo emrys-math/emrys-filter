@@ -34,7 +34,7 @@ Read the index, then the decisions your change touches.
 | [embedded-builds](#embedded-builds) | The library builds warning-free, without exceptions, and for Cortex-M |
 | [value-preconditions](#value-preconditions) | No floating-point value reaches undefined behavior or a loop that does not end, whether or not an assertion checks it |
 | [borrowed-intermediates](#borrowed-intermediates) | Inside a step, intermediates are borrowed; what a step returns is owned or written in place |
-| [own-cholesky](#own-cholesky) | A Cholesky factorization is the library's own type, which factorizes a small fixed-size matrix itself, without square roots, and leaves any other to Eigen (the innovation covariance's and `roots::cholesky()`'s built; the others: roadmap, benchmarks) |
+| [own-cholesky](#own-cholesky) | A Cholesky factorization is the library's own type, which factorizes a small fixed-size matrix itself, without square roots, and leaves any other to Eigen (built everywhere but the posterior Cramér-Rao bound) |
 | [execution-policies](#execution-policies) | A loop over a count takes an execution policy as its first argument, `execution::sequential` by default |
 | [view-stamp](#view-stamp) | A view checks its parameters' modification stamp when read, in builds with assertions, and no view is made of a temporary; every build keeps the stamp |
 | [time-steps](#time-steps) | A time step is any type with a conversion to the filter's scalar, made once, below which time is that scalar |
@@ -273,23 +273,23 @@ internals hold.
 *A Cholesky factorization is the library's own type, which factorizes a small fixed-size matrix
 itself, without square roots, and leaves any other to Eigen.*
 
-**Rule.** A positive definite matrix is factorized by `internal::CholeskyFactorization`, not by an
-`Eigen::LLT` that the library's code names. A real matrix of a fixed size of at most 24 it
+**Rule.** A positive definite matrix is factorized by `CholeskyFactorization`, a public type, not
+by an `Eigen::LLT` that the library's code names. A real matrix of a fixed size of at most 24 it
 factorizes itself, as $\tilde L D \tilde L^T$ with $\tilde L$ unit triangular, a whole column at a
 time, and gives a gain by its own substitution; any other matrix goes to an `Eigen::LLT` that it
 holds. A pivot that is not greater than zero is a failure, at every size, so a matrix with a NaN is
 not positive definite. Only the values of the lower triangle are used [borrowed-intermediates]; the
-upper triangle is loaded with its columns, so it must be initialized, and may hold anything. The
-pivoted LDLT of a prior's block [innovation-cholesky] stays Eigen's. The hand-written filters of
-the benchmarks factorize the same way [benchmarks].
+upper triangle is loaded with its columns, so it must be initialized, and may hold anything. A
+Gaussian keeps one, `cholesky()`, and the factor $L$ made from it once, `covarianceRoot()`, for
+its samplers. The pivoted LDLT of a prior's block [innovation-cholesky] stays Eigen's, and so does
+the posterior Cramér-Rao bound's `LLT`, whose recursion needs its arithmetic (roadmap).
 
 **Why.** Eigen's factorization and solves were most of a small step: for a 4×4 matrix and four
 right-hand sides they take 78 ns where this takes 36, each call waiting on the one before as a
 filter's steps do. That wait decides the form. With square roots a column waits on a root and a
 division, and the same code took 54 ns; without them it waits on one division, and the pivots, and
 so what fails, are the same. And an `Eigen::LLT` cannot be filled from a factor made elsewhere, so
-the factorization needs a type, which keeps what its readers take: the reciprocals of the pivots
-and whether the matrix was positive definite.
+the factorization needs a type, which keeps what its readers take.
 
 **Rejected.** The upper triangle as the one whose values count: Eigen stores a matrix by columns,
 and a column's update uses its lower part. Copying the lower triangle into zeros first, so that
@@ -298,7 +298,7 @@ Waiting on Eigen: users have Eigen 5.0 as released; a report upstream waits on G
 
 **Evidence.** `tests/Core/cholesky.cpp`; the timings in [benchmarks.md](benchmarks.md), claim 9.
 
-**Where.** `Core/Cholesky.h`, `Core/Solve.h`, `Models/Linearization.h`, `Distributions/Roots.h`.
+**Where.** `Core/Cholesky.h`, `Models/Linearization.h`, `Distributions/Roots.h`, `Gaussian.h`.
 
 ### execution-policies
 

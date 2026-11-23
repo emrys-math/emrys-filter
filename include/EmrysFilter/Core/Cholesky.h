@@ -4,7 +4,8 @@
  * The Cholesky factorization the library takes its gains, the quadratic forms of an inverse,
  * and log-determinants from: CholeskyFactorization, which factorizes a real matrix of a small
  * fixed size itself, a whole column at a time and without square roots, and any other matrix by
- * `Eigen::LLT` (decisions.md [own-cholesky]). Everything here is in `internal`. Read Solve.h next.
+ * `Eigen::LLT` (decisions.md [own-cholesky]). The constants and traits beside it are in `internal`.
+ * Read Solve.h next.
  */
 
 #include <Eigen/Cholesky>
@@ -48,10 +49,20 @@ inline constexpr bool factorizesByColumns =
     Matrix::RowsAtCompileTime != Eigen::Dynamic && Matrix::RowsAtCompileTime >= 1
     && Matrix::RowsAtCompileTime <= columnCholeskySize && !Eigen::NumTraits<typename Matrix::Scalar>::IsComplex;
 
-/** The Cholesky factorization of a symmetric positive definite \a Matrix \f$ A \f$, of which only
- * the lower triangle's values are used (decisions.md [own-cholesky]).
+}  // namespace Emrys::internal
+
+namespace Emrys
+{
+
+/** \ingroup Core
+ * \brief The Cholesky factorization of a symmetric positive definite \a Matrix \f$ A \f$, of which
+ * only the lower triangle's values are used (decisions.md [own-cholesky]).
  *
- * A real matrix of a fixed size of at most columnCholeskySize (factorizesByColumns) is factorized
+ * It is what a %Gaussian keeps of its covariance (Gaussian::cholesky()) and what an update takes
+ * its gain from.
+ *
+ * A real matrix of a fixed size of at most internal::columnCholeskySize
+ * (internal::factorizesByColumns) is factorized
  * here, in the form without square roots, \f$ A = \tilde L D \tilde L^T \f$ with
  * \f$ \tilde L \f$ unit lower triangular and \f$ D \f$ the diagonal matrix of the pivots, so that
  * the Cholesky factor is \f$ L = \tilde L D^{1/2} \f$
@@ -69,7 +80,8 @@ inline constexpr bool factorizesByColumns =
  *   square roots a column waits on a root and then a division; here it waits on one division.
  *   The substitutions then scale nothing inside a pass: transposedSolve() divides by the pivots
  *   once, between its forward and its backward pass.
- * - Every operation is on a whole column, padded with zeros to a multiple of smallestPacketSize,
+ * - Every operation is on a whole column, padded with zeros to a multiple of
+ *   internal::smallestPacketSize,
  *   so the elements above the diagonal are loaded and computed with too. Nothing reads what that
  *   leaves there, so the upper triangle of the matrix given may hold any values, but it must be
  *   initialized.
@@ -243,7 +255,7 @@ public:
      * a backward substitution through \f$ \tilde L^T \f$, every right-hand side together: column
      * \f$ r \f$ of the result holds unknown \f$ r \f$ of each right-hand side, so each step is one
      * operation on whole columns. Where the number of right-hand sides is fixed, the columns are
-     * padded with zeros to a multiple of smallestPacketSize: Eigen vectorizes a column that is
+     * padded with zeros to a multiple of internal::smallestPacketSize: Eigen vectorizes a column that is
      * not, six `float`s say, from wherever its address lets a packet start, so one column's
      * stores are not the next operation's loads, and the processor waits on each [benchmarks].
      * Otherwise it is Eigen's solve.
@@ -262,8 +274,8 @@ public:
         {
             constexpr int size = Matrix::RowsAtCompileTime;
             constexpr int count = Result::RowsAtCompileTime;
-            using Column = Eigen::Matrix<Scalar, paddedSize<Scalar, count>, 1>;
-            auto work = Eigen::Matrix<Scalar, paddedSize<Scalar, count>, size>{};
+            using Column = Eigen::Matrix<Scalar, internal::paddedSize<Scalar, count>, 1>;
+            auto work = Eigen::Matrix<Scalar, internal::paddedSize<Scalar, count>, size>{};
             // L~ Y = B: unknown r of every right-hand side from those before it.
             for (int r = 0; r < size; ++r)
             {
@@ -355,10 +367,53 @@ public:
         return result;
     }
 
+    /** Overwrites \a matrix, \f$ B \f$, with \f$ L^{-1} B \f$, whose columns are those of
+     * \f$ B \f$ whitened: \f$ (L^{-1} B)^T (L^{-1} B) = B^T A^{-1} B \f$. Where the matrix was
+     * factorized here, each column is substituted through \f$ \tilde L \f$ and divided by the
+     * square roots of the pivots, which are taken at each call; inverseQuadraticForm() gives the
+     * squared length of one whitened vector without them. It divides by the roots that lower()
+     * multiplies by, so whitening lower() gives the identity exactly, and a divergence of a
+     * %Gaussian from itself is exactly zero.
+     */
+    template <typename Derived>
+    void
+    whitenInPlace(Eigen::MatrixBase<Derived> & matrix) const
+    {
+        EMRYS_FILTER_ASSERT(m_positiveDefinite && "the matrix was not positive definite, or none was factorized");
+        EMRYS_FILTER_ASSERT(matrix.rows() == rows());
+        if constexpr (ByColumns)
+        {
+            constexpr int size = Matrix::RowsAtCompileTime;
+            Eigen::Matrix<Scalar, size, 1> const root = m_storage.pivot.cwiseSqrt();
+            auto & whitened = matrix.derived();
+            for (Eigen::Index j = 0; j < whitened.cols(); ++j)
+            {
+                // L~ y = b in place, then y over the roots of D.
+                for (int r = 1; r < size; ++r)
+                {
+                    Scalar unknown = whitened(r, j);
+                    for (int c = 0; c < r; ++c)
+                    {
+                        unknown -= m_storage.unit(r, c) * whitened(c, j);
+                    }
+                    whitened(r, j) = unknown;
+                }
+                for (int r = 0; r < size; ++r)
+                {
+                    whitened(r, j) /= root(r);
+                }
+            }
+        }
+        else
+        {
+            m_storage.matrixL().solveInPlace(matrix);
+        }
+    }
+
 private:
 
     /// whether this factorizes the matrix itself
-    static constexpr bool ByColumns = factorizesByColumns<Matrix>;
+    static constexpr bool ByColumns = internal::factorizesByColumns<Matrix>;
 
     /** What a factorization made here keeps. */
     struct Columns
@@ -369,7 +424,7 @@ private:
         /// \f$ \tilde L \f$ below its diagonal, in the padded columns the factorization wrote, so
         /// that the substitutions, which a filter's step waits on, wait on no copy of it; the rest
         /// is unspecified
-        Eigen::Matrix<Scalar, paddedSize<Scalar, Matrix::RowsAtCompileTime>, Matrix::RowsAtCompileTime> unit;
+        Eigen::Matrix<Scalar, internal::paddedSize<Scalar, Matrix::RowsAtCompileTime>, Matrix::RowsAtCompileTime> unit;
 
         Diagonal pivot;       ///< the pivots, the diagonal of \f$ D \f$
         Diagonal reciprocal;  ///< the reciprocals of the pivots
@@ -381,9 +436,9 @@ private:
     factorize(Derived const & matrix)
     {
         constexpr int size = Matrix::RowsAtCompileTime;
-        using Column = Eigen::Matrix<Scalar, paddedSize<Scalar, size>, 1>;
+        using Column = Eigen::Matrix<Scalar, internal::paddedSize<Scalar, size>, 1>;
         // The columns of L~ D, which the columns after them are reduced by.
-        auto unscaled = Eigen::Matrix<Scalar, paddedSize<Scalar, size>, size>{};
+        auto unscaled = Eigen::Matrix<Scalar, internal::paddedSize<Scalar, size>, size>{};
         m_positiveDefinite = false;
         for (int k = 0; k < size; ++k)
         {
@@ -414,4 +469,4 @@ private:
     bool m_positiveDefinite = false;  ///< whether a positive definite matrix was factorized
 };
 
-}  // namespace Emrys::internal
+}  // namespace Emrys

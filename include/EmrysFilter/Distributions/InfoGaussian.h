@@ -14,6 +14,7 @@
 
 #include <Eigen/Cholesky>
 
+#include <EmrysFilter/Core/Cholesky.h>
 #include <EmrysFilter/Core/Forwarding.h>
 #include <EmrysFilter/Core/Macros.h>
 #include <EmrysFilter/Core/Math.h>
@@ -151,11 +152,12 @@ public:
         , m_infoMatrix{other.m_infoMatrix}
         , m_infoVector{other.m_infoVector}
         , m_space{other.m_space}
-        , m_llt{other.m_factorValid ? other.m_llt : std::nullopt}
+        , m_cholesky{other.m_factorValid ? other.m_cholesky : std::nullopt}
         , m_factorValid{other.m_factorValid}
     {
         if (m_factorValid)
         {
+            m_root = other.m_root;
             m_logDeterminant = other.m_logDeterminant;
         }
     }
@@ -166,11 +168,12 @@ public:
         , m_infoMatrix{std::move(other.m_infoMatrix)}
         , m_infoVector{std::move(other.m_infoVector)}
         , m_space{std::move(other.m_space)}
-        , m_llt{other.m_factorValid ? std::move(other.m_llt) : std::nullopt}
+        , m_cholesky{other.m_factorValid ? std::move(other.m_cholesky) : std::nullopt}
         , m_factorValid{other.m_factorValid}
     {
         if (m_factorValid)
         {
+            m_root = std::move(other.m_root);
             m_logDeterminant = other.m_logDeterminant;
         }
         other.m_stamp.touchShape();
@@ -190,7 +193,8 @@ public:
         m_space = other.m_space;
         if (other.m_factorValid)
         {
-            m_llt = other.m_llt;
+            m_cholesky = other.m_cholesky;
+            m_root = other.m_root;
             m_logDeterminant = other.m_logDeterminant;
         }
         m_factorValid = other.m_factorValid;
@@ -211,7 +215,8 @@ public:
         m_space = std::move(other.m_space);
         if (other.m_factorValid)
         {
-            m_llt = std::move(other.m_llt);
+            m_cholesky = std::move(other.m_cholesky);
+            m_root = std::move(other.m_root);
             m_logDeterminant = other.m_logDeterminant;
         }
         m_factorValid = other.m_factorValid;
@@ -368,7 +373,7 @@ public:
             return std::unexpected{factorized.error()};
         }
         MatrixType result = MatrixType::Identity(differenceDimension(), differenceDimension());
-        internal::solveInPlace(*m_llt, result);
+        m_cholesky->solveInPlace(result);
         return result;
     }
 
@@ -391,7 +396,7 @@ public:
             return std::unexpected{factorized.error()};
         }
         MatrixType result = MatrixType::Identity(differenceDimension(), differenceDimension());
-        internal::solveInPlace(m_llt->matrixU(), result);
+        internal::solveInPlace(m_root.template triangularView<Eigen::Upper>(), result);
         return result;
     }
 
@@ -405,8 +410,7 @@ public:
         {
             return std::unexpected{factorized.error()};
         }
-        MatrixType result = m_llt->matrixU();
-        return result;
+        return m_root;
     }
 
     /** Factorizes the precision if it has changed since the last factorization.
@@ -427,22 +431,27 @@ public:
         {
             return {};
         }
-        if (!m_llt)
+        if (!m_cholesky)
         {
-            m_llt.emplace(differenceDimension());
+            m_cholesky.emplace();
         }
-        m_llt->compute(m_infoMatrix);
-        if (m_llt->info() != Eigen::Success)
+        m_cholesky->compute(m_infoMatrix);
+        if (!m_cholesky->isPositiveDefinite())
         {
-            return std::unexpected{GaussianError::Singular};
+            // As in GaussianParams::factorize(): a NaN fails the factorization, and is told apart
+            // here, where the failure is already known.
+            return std::unexpected{
+                internal::lowerFinite(m_infoMatrix) ? GaussianError::Singular : GaussianError::NonFinite
+            };
         }
-        // As in GaussianParams::factorize(): NaN passes LLT's test but reaches the factor's
-        // diagonal.
-        Scalar const logDeterminant = Scalar(-2) * m_llt->matrixLLT().diagonal().array().log().sum();
+        // An infinity can pass every pivot's test, and reaches the log-determinant.
+        Scalar const logDeterminant = -m_cholesky->logDeterminant();
         if (!isFinite(logDeterminant))
         {
             return std::unexpected{GaussianError::NonFinite};
         }
+        MatrixType const lower = m_cholesky->lower();
+        m_root = lower.transpose();
         m_logDeterminant = logDeterminant;
         m_factorValid = true;
         return {};
@@ -597,19 +606,21 @@ private:
         {
             if (rest.size() > 0 && kept.differences.size() > 0)
             {
-                auto const llt =
-                    Eigen::LLT<RestMatrix>{RestMatrix{internal::lowerSymmetricBlock(m_infoMatrix, rest, rest)}};
-                if (llt.info() != Eigen::Success)
+                RestMatrix const restInfo = internal::lowerSymmetricBlock(m_infoMatrix, rest, rest);
+                auto const cholesky = CholeskyFactorization<RestMatrix>{restInfo};
+                if (!cholesky.isPositiveDefinite())
                 {
-                    return Expected{std::unexpected{GaussianError::Singular}};
+                    return Expected{std::unexpected{
+                        internal::lowerFinite(restInfo) ? GaussianError::Singular : GaussianError::NonFinite
+                    }};
                 }
-                if (!allFinite(llt.matrixLLT().diagonal()))
+                if (!isFinite(cholesky.logDeterminant()))
                 {
                     return Expected{std::unexpected{GaussianError::NonFinite}};
                 }
                 CrossMatrix const cross = internal::lowerSymmetricBlock(m_infoMatrix, rest, kept.differences);
                 CrossMatrix solved = cross;
-                internal::solveInPlace(llt, solved);
+                cholesky.solveInPlace(solved);
                 RestVector const restVector = m_infoVector(rest);
                 matrix.noalias() -= internal::multiply(cross.transpose(), solved);
                 vector.noalias() -= internal::multiply(solved.transpose(), restVector);
@@ -638,9 +649,9 @@ private:
             internal::resolveIndices<D, DMax>(n, internal::complementIndices<D, DMax>(n, kept.differences));
         Eigen::Index const r = rest.size();
 
-        MatrixType const factor = m_llt->matrixU();
+        MatrixType const & factor = m_root;
         DifferenceVectorType whitened = m_infoVector;
-        internal::solveInPlace(m_llt->matrixL(), whitened);
+        m_cholesky->whitenInPlace(whitened);
         AugmentedType stacked(n, n + 1);
         stacked.leftCols(r) = factor(Eigen::placeholders::all, rest);
         stacked.middleCols(r, k) = factor(Eigen::placeholders::all, kept.differences);
@@ -689,7 +700,7 @@ private:
     [[nodiscard]] VectorType
     solvedMean() const
     {
-        DifferenceVectorType const offset = m_llt->solve(m_infoVector);
+        DifferenceVectorType const offset = m_cholesky->solve(m_infoVector);
         VectorType result = Emrys::plus(m_space, m_reference, offset);
         return result;
     }
@@ -705,8 +716,7 @@ private:
     void
     whitenInPlace(DifferenceVectorType & residual) const
     {
-        residual =
-            internal::multiply(internal::asTriangular<Eigen::Lower>(m_llt->matrixLLT()).transpose(), residual).eval();
+        residual = internal::multiply(m_root, residual).eval();
     }
 
     /** Colors the standard normals in the columns of \a normals in place: \f$ R^{-1} z \f$, whose
@@ -716,7 +726,7 @@ private:
     colorInto(auto & colored, auto const & normals) const
     {
         colored = normals;
-        internal::solveInPlace(m_llt->matrixU(), colored);
+        internal::solveInPlace(m_root.template triangularView<Eigen::Upper>(), colored);
     }
 
     /** Resizes a space with one resizable block to the reference, checks the sizes, and normalizes
@@ -740,8 +750,12 @@ private:
     EMRYS_FILTER_NO_UNIQUE_ADDRESS Space_ m_space;  ///< the space, kept in step with the reference's size
 
     // Factorization cache, filled lazily by factorize().
-    /// the Cholesky factorization \f$ \Lambda = L L^T \f$, \f$ R = L^T \f$, absent until one is made
-    mutable std::optional<Eigen::LLT<MatrixType>> m_llt;
+    /// the Cholesky factorization \f$ \Lambda = L L^T \f$, absent until one is made
+    mutable std::optional<CholeskyFactorization<MatrixType>> m_cholesky;
+
+    /// the upper factor \f$ R = L^T \f$ from that factorization, which whitening multiplies by and
+    /// coloring solves by; read only while the factorization is valid
+    mutable MatrixType m_root;
 
     mutable Scalar m_logDeterminant{};  ///< \f$ \log|\Sigma| = -\log|\Lambda| \f$ from the factorization
     mutable bool m_factorValid{false};  ///< whether the cache matches the precision

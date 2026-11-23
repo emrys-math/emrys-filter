@@ -135,13 +135,12 @@ pinnedLogDensity(
     constexpr int PinnedRows = Moments<typename Split::PinnedSpace, Scalar>::DifferenceDimensionAtCompileTime;
     BlockRows const rows = split.pinnedDifferenceRows();
     PinnedMatrix const pinned = blockOf<PinnedRows, PinnedRows>(cov, rows.start, rows.start, rows.size, rows.size);
-    auto const llt = Eigen::LLT<PinnedMatrix>{pinned};
-    if (llt.info() != Eigen::Success)
+    auto const cholesky = CholeskyFactorization<PinnedMatrix>{pinned};
+    if (!cholesky.isPositiveDefinite())
     {
         return std::unexpected{NumericError::NotPositiveDefinite};
     }
-    auto const whitened = llt.matrixL().solve(offset.derived()).eval();
-    return Scalar(-0.5) * whitened.squaredNorm() - llt.matrixLLT().diagonal().array().log().sum();
+    return Scalar(-0.5) * (cholesky.inverseQuadraticForm(offset.derived()) + cholesky.logDeterminant());
 }
 
 }  // namespace internal

@@ -904,23 +904,29 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       hand code with it; the library's step in double went from 167 to 114 ns at 2D with 4
       anchors and from 547 to 225 at 2D with 8, and every count and Linux time on the page
       is taken again. The factorization followed (2026-11-23, [own-cholesky]):
-      `internal::CholeskyFactorization` factorizes a real matrix of a fixed size up to 24
+      `CholeskyFactorization` factorizes a real matrix of a fixed size up to 24
       itself, without square roots, since a filter's steps wait on each other and a column
       then waits on one division, and the innovation covariance's gain, NIS, and
       log-determinant come from it; the step in double went from 114 to 70 ns at 2D with 4
       anchors and from 225 to 155 at 2D with 8, and the page is measured again at that commit.
-      Claim 9 now holds for the EKF against all three libraries at every size, and fails for
-      the UKF at 2D with 4 anchors (1.10 times mherb/kalman's in double), the square-root EKF
-      at 3D with 24 and 2D with 16, and the square-root UKF in double from 2D with 16 on.
       `roots::cholesky()`, which the default sigma points are spread by, takes its root by the
-      same type since the commit after, and two runs then had the UKF at 2D with 4 anchors at
-      0.90 and 0.93 of mherb/kalman's time in double and 1.03 and 1.04 in float; the page is
-      not measured again for it.
-      Next: move the library's other Cholesky factorizations to the type (the Gaussian's
-      `llt()`, which is public, the information forms, the
-      divergences, the fitting, the Cramér-Rao bound, the conditionals), which needs a
-      whitening and the factor $L$ from it, and then drop `solvesBySubstitution` and
-      `substituteTransposed()`, which serve only an `Eigen::LLT`; the same substitution in
+      same type since the commit after. The type is public since the commit after that (the
+      user's decision, 2026-11-23), and the Gaussian's own: `Gaussian::cholesky()` replaces
+      `llt()`, and `covarianceRoot()` gives the factor $L$ kept with it, which the samplers
+      multiply by; the page is measured again at that commit. Claim 9 now holds for the EKF
+      against all three libraries at every size and for the UKF in double, and fails for the
+      UKF in float at 2D with 4 anchors (1.03 times mherb/kalman's), the square-root EKF in
+      double at 3D with 24 (1.06), and the square-root UKF in double at every 3D size (up to
+      1.29).
+      The information forms' cached factorization and the local ones of the form steps, the
+      fitting, the particle sets, the Rao-Blackwellized particle filter, and the conditional
+      with its evidence followed, in the commit after the page's. The posterior Cramér-Rao
+      bound stays on `Eigen::LLT`: from no information its recursion cancels to exact zeros
+      with Eigen's arithmetic and leaves 1e-14 with the library's, which then factorizes as
+      information (benchmarks.md, claim 9).
+      `Core/Solve.h` no longer substitutes through an `Eigen::LLT`, which nothing called.
+      Next: give the Cramér-Rao recursion one consistent way to form its terms, then move it;
+      the same substitution in
       `solveInPlace()` and `inverseFrom()`, which still solve a column at a time through
       Eigen; find where the 16 ns and 320 instructions go that the library adds to the hand
       code's step at 2D with 4 anchors (candidates read from the code: the calls left out of
@@ -929,9 +935,10 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       since 3D with 6 anchors is still slower in float than in double on both sides, and the
       library's float step there is 1.47 times the hand code's;
       take the Windows times, and the
-      attitude and particle times, again; GCC and MSVC builds of the pairs; the Cortex-M half of
-      TinyEKF joins claim 6's footprint benchmark. The whole test suite passes with Clang 21 in
-      WSL but `Allocation.ParticleFilterUnderAUsersPolicyStaysOffTheHeap`, which throws
+      attitude and particle times, again; MSVC builds of the pairs; the Cortex-M half of
+      TinyEKF joins claim 6's footprint benchmark. The whole test suite passes with Clang 21
+      and with GCC 15 in WSL (2026-11-23, both with warnings as errors) but
+      `Allocation.ParticleFilterUnderAUsersPolicyStaysOffTheHeap`, which throws
       `std::bad_alloc` there (libstdc++ 15) before this branch's changes too, and is not looked
       into.
 - [ ] GitHub Discussions turned on, so questions have somewhere to go besides issues. The

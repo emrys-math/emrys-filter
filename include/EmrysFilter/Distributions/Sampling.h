@@ -155,11 +155,9 @@ drawSamples(Gaussian<Space, Scalar> const & gaussian, Eigen::Index n, G & rng)
     EMRYS_FILTER_ASSERT(n >= 0);
     using Normals = SampleSet<DifferenceSpace<Space>, Scalar>;
     Normals const z = internal::standardNormal<Normals>(gaussian.differenceDimension(), n, rng);
-    return SampleSet<Space, Scalar>{Emrys::plus(
-        gaussian.space(),
-        gaussian.mean(),
-        internal::multiply(internal::asTriangular<Eigen::Lower>(gaussian.llt().matrixLLT()), z)
-    )};
+    return SampleSet<Space, Scalar>{
+        Emrys::plus(gaussian.space(), gaussian.mean(), internal::multiply(gaussian.covarianceRoot(), z))
+    };
 }
 
 /** \ingroup Distributions
@@ -178,11 +176,9 @@ drawSample(Gaussian<Space, Scalar> const & gaussian, G & rng)
 {
     using Difference = DifferenceVector<Space, Scalar>;
     Difference const z = internal::standardNormalVector<Difference>(gaussian.differenceDimension(), rng);
-    return typename Moments<Space, Scalar>::VectorType{Emrys::plus(
-        gaussian.space(),
-        gaussian.mean(),
-        Difference{internal::multiply(internal::asTriangular<Eigen::Lower>(gaussian.llt().matrixLLT()), z)}
-    )};
+    return typename Moments<Space, Scalar>::VectorType{
+        Emrys::plus(gaussian.space(), gaussian.mean(), Difference{internal::multiply(gaussian.covarianceRoot(), z)})
+    };
 }
 
 /** \ingroup Distributions
@@ -204,11 +200,7 @@ drawSamplesWithLogDensity(Gaussian<Space, Scalar> const & gaussian, Eigen::Index
     using Normals = SampleSet<DifferenceSpace<Space>, Scalar>;
     Normals const z = internal::standardNormal<Normals>(gaussian.differenceDimension(), n, rng);
     auto result = SamplesWithLogDensity<Space, Scalar>{
-        Emrys::plus(
-            gaussian.space(),
-            gaussian.mean(),
-            internal::multiply(internal::asTriangular<Eigen::Lower>(gaussian.llt().matrixLLT()), z)
-        ),
+        Emrys::plus(gaussian.space(), gaussian.mean(), internal::multiply(gaussian.covarianceRoot(), z)),
         {}
     };
     if constexpr (isLinear<Space>)
@@ -244,11 +236,9 @@ drawSampleWithLogDensity(Gaussian<Space, Scalar> const & gaussian, G & rng)
     using Difference = DifferenceVector<Space, Scalar>;
     Difference const z = internal::standardNormalVector<Difference>(gaussian.differenceDimension(), rng);
     auto result = SampleWithLogDensity<Space, Scalar>{
-        typename Moments<Space, Scalar>::VectorType{Emrys::plus(
-            gaussian.space(),
-            gaussian.mean(),
-            Difference{internal::multiply(internal::asTriangular<Eigen::Lower>(gaussian.llt().matrixLLT()), z)}
-        )},
+        typename Moments<Space, Scalar>::VectorType{
+            Emrys::plus(gaussian.space(), gaussian.mean(), Difference{internal::multiply(gaussian.covarianceRoot(), z)})
+        },
         0
     };
     if constexpr (isLinear<Space>)
