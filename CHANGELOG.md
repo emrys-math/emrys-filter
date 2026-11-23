@@ -149,6 +149,8 @@ instead.
 
 ### Fixed
 
+- A program that includes `Models/Methods.h` builds with `-Wunused-parameter -Werror` and
+  `NDEBUG` again: the sigma-point axes given a root read their argument only in an assertion.
 - `ParticleFilter::predict()` under a parallel policy no longer races: each particle's move
   recorded the change in the set's stamp, a write from every thread. It moves them through the
   set's `forEach()`, which records it once. Found by a ThreadSanitizer run of the parallel tests.

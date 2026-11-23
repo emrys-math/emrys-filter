@@ -859,7 +859,7 @@ struct GivenRoot
     /** \returns the root, which must have \a cov's size */
     template <typename Derived>
     [[nodiscard]] SquareMatrixOf<Derived>
-    root(Eigen::MatrixBase<Derived> const & cov) const
+    root([[maybe_unused]] Eigen::MatrixBase<Derived> const & cov) const
     {
         EMRYS_FILTER_ASSERT(given->rows() == cov.rows() && "a given root must have the covariance's size");
         return SquareMatrixOf<Derived>{*given};
@@ -868,7 +868,7 @@ struct GivenRoot
     /** \returns the root, which must have \a factor's rows */
     template <typename Derived>
     [[nodiscard]] SquareMatrixOf<Derived>
-    rootFromFactor(Eigen::MatrixBase<Derived> const & factor) const
+    rootFromFactor([[maybe_unused]] Eigen::MatrixBase<Derived> const & factor) const
     {
         EMRYS_FILTER_ASSERT(given->rows() == factor.rows() && "a given root must have the factor's rows");
         return SquareMatrixOf<Derived>{*given};
