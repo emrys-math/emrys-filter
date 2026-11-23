@@ -1115,30 +1115,33 @@ RbPointMassFilter(Chain, Motion, Grid_, Conditional, Covariance_, Method_, Upkee
     Method_,
     Upkeep_>;
 
+// The whole-state guides take PointMassFilter's parameters first, in its order, so that MSVC
+// 19.52 deduces through the alias; the model and the method follow, since MSVC 19.50 deduces
+// through it only a guide that names them as parameters.
 template <
     typename Grid_,
-    typename Model_ = NoProcessModel,
     typename Covariance_ = SharedCovariance,
-    typename Method_ = methods::Linearized,
-    typename Upkeep_ = upkeep::None>
+    typename Upkeep_ = upkeep::None,
+    typename Model_ = NoProcessModel,
+    typename Method_ = methods::Linearized>
     requires(!internal::GridUpkeepArgument<Covariance_>)
 RbPointMassFilter(Grid_, Covariance_ = {}) -> RbPointMassFilter<Grid_, Model_, Covariance_, Method_, Upkeep_>;
 
 template <
     typename Grid_,
-    typename Model_ = NoProcessModel,
     typename Covariance_ = SharedCovariance,
-    typename Method_ = methods::Linearized,
-    typename Upkeep_>
+    typename Upkeep_ = upkeep::None,
+    typename Model_ = NoProcessModel,
+    typename Method_ = methods::Linearized>
     requires internal::GridUpkeepArgument<Upkeep_>
 RbPointMassFilter(Grid_, Upkeep_) -> RbPointMassFilter<Grid_, Model_, Covariance_, Method_, Upkeep_>;
 
 template <
     typename Grid_,
-    typename Model_ = NoProcessModel,
     typename Covariance_,
-    typename Method_ = methods::Linearized,
-    typename Upkeep_>
+    typename Upkeep_,
+    typename Model_ = NoProcessModel,
+    typename Method_ = methods::Linearized>
     requires(!internal::GridUpkeepArgument<Covariance_> && internal::GridUpkeepArgument<Upkeep_>)
 RbPointMassFilter(Grid_, Covariance_, Upkeep_) -> RbPointMassFilter<Grid_, Model_, Covariance_, Method_, Upkeep_>;
 /// \endcond

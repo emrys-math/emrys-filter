@@ -150,6 +150,8 @@ instead.
   `RbParticleFilter`'s prediction of each particle's Gaussian by one, read only the lower triangle
   of the covariance, as every other step does; they multiplied the whole stored matrix, whose
   upper triangle need not hold the covariance.
+- `PointMassFilter{grid}` and its other whole-state forms deduce under MSVC 19.52, which deduced
+  the model's type as the covariance form too through the alias's deduction guides.
 - `UpdateBranch::component` and `FilterBranch::component` are 0 in a default-constructed branch,
   not indeterminate.
 
