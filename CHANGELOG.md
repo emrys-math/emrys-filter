@@ -19,6 +19,10 @@ instead.
   agreement and allocation tests: timed in `double`, compared for accuracy in `float`. Building
   the tests or the benchmarks now fetches TinyEKF; configure with
   `-DEMRYS_FILTER_BENCHMARK_TINYEKF=OFF` to build without it.
+- The ranging EKF benchmarked against OpenCV's `cv::KalmanFilter` (`emrys_filter_opencv_benchmark`),
+  with its agreement and allocation tests, built with `-DEMRYS_FILTER_BENCHMARK_OPENCV=ON` against
+  an installed OpenCV 4 or 5: timed over runs of 300 steps, over which the two agree, beside how
+  far OpenCV's estimate drifts over 3000.
 - `KalmanFilter<...>::UpdateType<M>` and `ResultType<M>`, what `update()` with a measurement of
   type `M` returns and fills, as the other filters name them; it was
   `decltype(filter)::RecursionType::UpdateType<M>`.

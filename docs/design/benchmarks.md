@@ -93,7 +93,7 @@ might doubt, published with its method and machine, and never one per feature."
 | 6 | It fits and runs on a microcontroller | Footprint and cycles on Cortex-M4F and M7 | `.text`, `.data`, stack per function, DWT cycles per step | hand-rolled EKF and TinyEKF on the same target | after [embedded-builds]'s Cortex-M job |
 | 7 | A template library's compile cost is tolerable | Compile cost of each benchmark translation unit | seconds and peak memory per compiler | the hand-rolled translation unit | built and measured on three compilers (section 7), not in CI, not published |
 | 8 | A GPU pays above some particle count | Device path against host `par` | crossover particle count | the library's own host path | step 19, not planned here |
-| 9 | It is no slower than the C++ Kalman library a user would otherwise pick | mherb/kalman's EKF, UKF, square-root EKF, and square-root UKF, and TinyEKF's EKF, on the ranging problem | instructions and ns per step, at the ranging sizes and scalars | each library, as its users write it | started on branch `mherb-benchmark` |
+| 9 | It is no slower than the C++ Kalman library a user would otherwise pick | mherb/kalman's EKF, UKF, square-root EKF, and square-root UKF, TinyEKF's EKF, and OpenCV's `cv::KalmanFilter` run as an EKF, on the ranging problem | instructions and ns per step, at the ranging sizes and scalars | each library, as its users write it | started on branch `mherb-benchmark` |
 
 **1. Ranging.** What exists, plus the two axes [benchmarks] names and the ranging benchmark lacks: a
 constant-acceleration case (state dimension 6 and 9 beside 4 and 6), and the scaling curves over
@@ -486,6 +486,35 @@ mirroring alone, or the inverse computed in double do not suffice. So the float 
 for accuracy, and the runner prints both libraries' float error as it does for mherb/kalman. For
 claim 6 this is a finding before any cycle is counted: on the scalar of the target TinyEKF is
 written for, its estimate is the less accurate.
+
+**OpenCV.** The Kalman filter of OpenCV, the computer-vision library (Apache 2.0 license), is
+`cv::KalmanFilter` in its video module, a linear filter whose matrices are `cv::Mat`s sized at run
+time. Its users run an EKF through it by setting its measurement matrix to the Jacobian at the
+predicted mean after each prediction and passing `correct()` the pseudo-measurement
+$z - h(x) + H x$, whose innovation is the EKF's; the motion here is linear, so its transition
+matrix is set once. Its arithmetic is kept as its users get it: `predict()` forms $A x$ and
+$A P A^T + Q$ and copies them into the posterior, and `correct()` solves $S K^T = H P$ by a singular
+value decomposition of $S$ and updates the covariance as $P - K (H P)$, with no triangle mirrored.
+OpenCV is too large to fetch and build for a benchmark, and its users install it, so it is found
+rather than fetched, behind `EMRYS_FILTER_BENCHMARK_OPENCV`, off by default. The numbers here are
+from OpenCV 4.14.0, built from source with its core, imgproc, and video modules; its `kalman.cpp`
+is the same in 5.1.0.
+
+The pair is `benchmarks/ranging/opencv_ranging.h`, against `emrys_ranging_kinds.h`'s EKF, with
+`opencv_agreement.cpp`, `opencv_allocation.cpp`, and the runner `opencv_benchmark.cpp`. In double
+the two agree to 1e-9 relative until they first part, between steps 400 and 504 of each case:
+the asymmetry that rounding leaves in OpenCV's covariance grows, from 5e-13 to 1e-11 of its size at
+step 100 to 2e-8 to 2e-7 at step 500 and 1e-3 to 7e-3 at step 1000. By step 2000 its spatial estimates
+have diverged (in 3D with 6 anchors, a covariance of norm 7e7 where EmrysFilter's is near 0.2), and
+its planar covariances are 7 to 40 percent off. Through 3000 steps EmrysFilter's double EKF stays
+within 2e-15 of its own estimate in long double, and so does a copy of the OpenCV pair whose
+covariance is mirrored after each update, so the drift is OpenCV's unmirrored covariance. The pair
+is therefore timed over runs of 300 steps, each timed filter starting over from the initial
+estimate, untimed, at the end of one, so that every timed step is one over which the pair agrees;
+the runner prints the long run beside the timing. With 8 anchors or more OpenCV's steps make one
+heap allocation each, and none with 4 or 6, which `opencv_allocation.cpp` records without
+requiring, since the OpenCV it builds against is whichever is installed; the timings of those cases
+include its allocator, as its users' do.
 
 ## How the numbers are measured
 

@@ -131,6 +131,12 @@ Debug).
 - Against TinyEKF: its EKF on the ranging problem. The runner is built
   (`emrys_filter_tinyekf_benchmark`) and times it in `double`. In `float`, TinyEKF loses
   accuracy while the prior is wide, so it is compared for accuracy but not timed.
+- Against OpenCV: `cv::KalmanFilter`, run as an EKF on the ranging problem. The runner is built
+  with `-DEMRYS_FILTER_BENCHMARK_OPENCV=ON` against an installed OpenCV
+  (`emrys_filter_opencv_benchmark`). OpenCV's covariance is never made symmetric again, and its
+  asymmetry grows until the filter diverges, by step 2000 in 3D. So it is timed over runs of 300
+  steps, over which the two filters agree, and the runner also prints how far apart they are over
+  3000 steps.
 - The particle filter's scaling with threads under `std::execution::par`.
 - Code size, stack, and cycles per step on Cortex-M4F and Cortex-M7.
 - The price of each option (update form, Gaussian form, sigma points) relative to the plain EKF.

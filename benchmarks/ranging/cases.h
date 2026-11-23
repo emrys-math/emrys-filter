@@ -92,4 +92,19 @@ using TinyEkfCases = ::testing::Types<
 /// (tinyekf_benchmark.cpp prints both).
 using TinyEkfAgreementCases = ::testing::Types<KindCase<2, 4, FilterKind::Ekf>, KindCase<3, 6, FilterKind::Ekf>>;
 
+/// The cases of the benchmark against OpenCV, which has only the linear filter, run as an EKF: the
+/// planar and spatial cases, and the planar case with 8 anchors, from which OpenCV's steps allocate,
+/// each in double and in float.
+using OpenCvCases = ::testing::Types<
+    KindCase<2, 4, FilterKind::Ekf>,
+    KindCase<2, 8, FilterKind::Ekf>,
+    KindCase<3, 6, FilterKind::Ekf>,
+    KindCase<2, 4, FilterKind::Ekf, float>,
+    KindCase<2, 8, FilterKind::Ekf, float>,
+    KindCase<3, 6, FilterKind::Ekf, float>>;
+
+/// The cases in which OpenCV's EKF agrees with EmrysFilter's over the timed run, and so is timed:
+/// those in double (opencv_benchmark.cpp prints the float distances and the long run).
+using OpenCvAgreementCases = ::testing::Types<KindCase<2, 4, FilterKind::Ekf>, KindCase<3, 6, FilterKind::Ekf>>;
+
 }  // namespace Ranging

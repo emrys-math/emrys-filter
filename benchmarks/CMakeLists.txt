@@ -40,6 +40,19 @@ if(EMRYS_FILTER_BENCHMARK_TINYEKF)
   target_include_directories(emrys_filter_tinyekf SYSTEM INTERFACE "${tinyekf_SOURCE_DIR}/src")
 endif()
 
+# OpenCV's cv::KalmanFilter, the Kalman filter of the computer-vision library, another
+# implementation of the ranging EKF (claim 9). OpenCV is too large to fetch and build for a
+# benchmark, and its users install it, so it is found rather than fetched: the option is off by
+# default, and turning it on needs an OpenCV 4 or 5 with its core and video modules where
+# find_package() looks (OpenCV_DIR). Its kalman.cpp is the same in 4.14.0 and 5.1.0.
+option(EMRYS_FILTER_BENCHMARK_OPENCV "Build the ranging benchmark against OpenCV, which must be installed" OFF)
+if(EMRYS_FILTER_BENCHMARK_OPENCV)
+  find_package(OpenCV REQUIRED COMPONENTS core video)
+  add_library(emrys_filter_opencv INTERFACE)
+  target_include_directories(emrys_filter_opencv SYSTEM INTERFACE ${OpenCV_INCLUDE_DIRS})
+  target_link_libraries(emrys_filter_opencv INTERFACE opencv_core opencv_video)
+endif()
+
 if(EMRYS_FILTER_BUILD_TESTS)
   add_executable(emrys_filter_benchmark_tests
     heap_counter.cpp
@@ -67,6 +80,13 @@ if(EMRYS_FILTER_BUILD_TESTS)
       ranging/tinyekf_allocation.cpp
     )
     target_link_libraries(emrys_filter_benchmark_tests PRIVATE emrys_filter_tinyekf)
+  endif()
+  if(EMRYS_FILTER_BENCHMARK_OPENCV)
+    target_sources(emrys_filter_benchmark_tests PRIVATE
+      ranging/opencv_agreement.cpp
+      ranging/opencv_allocation.cpp
+    )
+    target_link_libraries(emrys_filter_benchmark_tests PRIVATE emrys_filter_opencv)
   endif()
   target_compile_options(emrys_filter_benchmark_tests PRIVATE ${EMRYS_FILTER_WARNINGS})
   target_compile_definitions(emrys_filter_benchmark_tests PRIVATE EIGEN_RUNTIME_NO_MALLOC)
@@ -102,11 +122,18 @@ if(EMRYS_FILTER_BUILD_BENCHMARKS)
     target_compile_options(emrys_filter_tinyekf_benchmark PRIVATE ${EMRYS_FILTER_WARNINGS})
     list(APPEND benchmark_commands COMMAND emrys_filter_tinyekf_benchmark)
   endif()
+  # The ranging EKF against OpenCV's.
+  if(EMRYS_FILTER_BENCHMARK_OPENCV)
+    add_executable(emrys_filter_opencv_benchmark ranging/opencv_benchmark.cpp)
+    target_link_libraries(emrys_filter_opencv_benchmark PRIVATE EmrysFilter::EmrysFilter emrys_filter_opencv)
+    target_compile_options(emrys_filter_opencv_benchmark PRIVATE ${EMRYS_FILTER_WARNINGS})
+    list(APPEND benchmark_commands COMMAND emrys_filter_opencv_benchmark)
+  endif()
 
   add_custom_target(benchmark
     ${benchmark_commands}
     USES_TERMINAL
-    COMMENT "Timing each problem, EmrysFilter against plain Eigen, mherb/kalman, and TinyEKF"
+    COMMENT "Timing each problem, EmrysFilter against plain Eigen, mherb/kalman, TinyEKF, and OpenCV"
   )
 endif()
 
