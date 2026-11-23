@@ -32,17 +32,50 @@ using Cases = ::testing::Types<
     Case<3, 6, Jacobian::Analytic, float>,
     Case<3, 6, Jacobian::AutoDiff, float>>;
 
-/// The cases against mherb/kalman, which has no automatic differentiation: the planar and spatial
-/// cases with the analytic Jacobian, in double and in float.
-using MherbCases = ::testing::Types<
-    Case<2, 4, Jacobian::Analytic>,
-    Case<3, 6, Jacobian::Analytic>,
-    Case<2, 4, Jacobian::Analytic, float>,
-    Case<3, 6, Jacobian::Analytic, float>>;
+/// A case of the benchmark against mherb/kalman: a dimension, an anchor count, which of the four
+/// filters, and a scalar. mherb/kalman has no automatic differentiation, so the Jacobian is
+/// analytic.
+template <int Dimension_, int AnchorCount_, FilterKind Kind_, typename Scalar_ = double>
+struct KindCase
+{
+    static constexpr int Dimension = Dimension_;
+    static constexpr int AnchorCount = AnchorCount_;
+    static constexpr FilterKind Kind{Kind_};
+    using Scalar = Scalar_;
+};
 
-/// The cases in which mherb/kalman agrees with EmrysFilter: double only. In float its explicit
-/// inverse of S loses up to a third of a meter of the mean in 2D with 4 anchors, where EmrysFilter's
-/// float filter stays within 1e-4 of its double one (mherb_benchmark.cpp prints both).
-using MherbAgreementCases = ::testing::Types<Case<2, 4, Jacobian::Analytic>, Case<3, 6, Jacobian::Analytic>>;
+/// Every filter of both libraries in the planar and spatial cases, in double and in float.
+using MherbCases = ::testing::Types<
+    KindCase<2, 4, FilterKind::Ekf>,
+    KindCase<3, 6, FilterKind::Ekf>,
+    KindCase<2, 4, FilterKind::Ekf, float>,
+    KindCase<3, 6, FilterKind::Ekf, float>,
+    KindCase<2, 4, FilterKind::Ukf>,
+    KindCase<3, 6, FilterKind::Ukf>,
+    KindCase<2, 4, FilterKind::Ukf, float>,
+    KindCase<3, 6, FilterKind::Ukf, float>,
+    KindCase<2, 4, FilterKind::SqrtEkf>,
+    KindCase<3, 6, FilterKind::SqrtEkf>,
+    KindCase<2, 4, FilterKind::SqrtEkf, float>,
+    KindCase<3, 6, FilterKind::SqrtEkf, float>,
+    KindCase<2, 4, FilterKind::SqrtUkf>,
+    KindCase<3, 6, FilterKind::SqrtUkf>,
+    KindCase<2, 4, FilterKind::SqrtUkf, float>,
+    KindCase<3, 6, FilterKind::SqrtUkf, float>>;
+
+/// The cases in which mherb/kalman's filter agrees with EmrysFilter's, and so is timed: the EKF in
+/// double, and the square-root EKF in double and in float. The EKF in float does not agree: its
+/// explicit inverse of S loses up to a third of a meter of the mean in 2D with 4 anchors, where
+/// EmrysFilter's float filter stays within 1e-4 of its double one (mherb_benchmark.cpp prints both).
+/// Neither UKF agrees in either scalar: mherb/kalman's updates with the sigma points its prediction
+/// moved, which leave out the process noise, rather than with points drawn from the predicted
+/// covariance, a difference of 7 to 13 mm in the mean.
+using MherbAgreementCases = ::testing::Types<
+    KindCase<2, 4, FilterKind::Ekf>,
+    KindCase<3, 6, FilterKind::Ekf>,
+    KindCase<2, 4, FilterKind::SqrtEkf>,
+    KindCase<3, 6, FilterKind::SqrtEkf>,
+    KindCase<2, 4, FilterKind::SqrtEkf, float>,
+    KindCase<3, 6, FilterKind::SqrtEkf, float>>;
 
 }  // namespace Ranging

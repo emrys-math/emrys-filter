@@ -124,7 +124,10 @@ Debug).
 ## Not measured yet
 
 - Against mherb/kalman: its EKF, UKF, square-root EKF, and square-root UKF on the ranging problem.
-  The EKF runner is built (`emrys_filter_mherb_benchmark`); the others are not yet.
+  The runner is built (`emrys_filter_mherb_benchmark`). It times the EKF in `double` and the
+  square-root EKF in both scalars. In `float`, mherb/kalman's EKF loses accuracy, and its two UKFs
+  compute a different update from the standard one, so those are compared for accuracy but not
+  timed.
 - The particle filter's scaling with threads under `std::execution::par`.
 - Code size, stack, and cycles per step on Cortex-M4F and Cortex-M7.
 - The price of each option (update form, Gaussian form, sigma points) relative to the plain EKF.

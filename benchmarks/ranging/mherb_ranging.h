@@ -1,29 +1,45 @@
 #pragma once
 
 // The ranging problem solved with mherb/kalman (https://github.com/mherb/kalman), the third
-// implementation of [benchmarks]: its ExtendedKalmanFilter with a system model and a measurement
-// model written as its own examples write them. Unlike eigen_ranging.h, it keeps the library's own
-// arithmetic, which is what its users run: the prediction F P F^T + W Q W^T with W the identity,
-// the gain P H^T S^-1 through an explicit inverse of S, and the covariance update P - K H P, with
-// no triangle mirrored afterward. Its models compute the Jacobians in updateJacobians() and the
-// ranges again in h(), since the filter calls them separately. It has no automatic
-// differentiation, so its Jacobian is analytic only. Compare emrys_ranging.h.
+// implementation of [benchmarks]: each of its four filters, ExtendedKalmanFilter,
+// UnscentedKalmanFilter, SquareRootExtendedKalmanFilter, and SquareRootUnscentedKalmanFilter, with
+// a system model and a measurement model written as its own examples write them. Unlike
+// eigen_ranging.h, it keeps the library's own arithmetic, which is what its users run:
+//
+// - the EKF predicts F P F^T + W Q W^T with W the identity, forms the gain P H^T S^-1 through an
+//   explicit inverse of S, and updates the covariance by P - K H P, with no triangle mirrored;
+// - the square-root EKF predicts the factor by a QR decomposition, and updates by forming
+//   P - K H P from the factor and factorizing it again;
+// - both UKFs spread 2n + 1 sigma points over the whole state with alpha = 1, beta = 2, kappa = 0,
+//   the defaults of both libraries, and update with the points the prediction moved, drawn
+//   before the process noise was added, rather than with points drawn from the predicted
+//   covariance; the covariance form inverts S explicitly, and the square-root form downdates its
+//   factor one column of K S_y at a time.
+//
+// The models compute the Jacobians in updateJacobians() and the ranges again in h(), since the
+// filter calls them separately; the UKFs never call updateJacobians(). There is no automatic
+// differentiation, so the Jacobian is analytic only. Compare emrys_ranging.h and
+// emrys_ranging_kinds.h.
 
 #include "scenario.h"
 
 #include <Eigen/Core>
 
+#include <type_traits>
 #include <vector>
 
 #include <kalman/ExtendedKalmanFilter.hpp>
 #include <kalman/LinearizedMeasurementModel.hpp>
 #include <kalman/LinearizedSystemModel.hpp>
+#include <kalman/SquareRootExtendedKalmanFilter.hpp>
+#include <kalman/SquareRootUnscentedKalmanFilter.hpp>
+#include <kalman/UnscentedKalmanFilter.hpp>
 
 namespace Ranging
 {
 
-/// The ranging EKF with mherb/kalman in \a Scalar, with the analytic Jacobian.
-template <int Dimension, int AnchorCount, typename Scalar = double>
+/// The ranging filter \a Kind with mherb/kalman in \a Scalar, with the analytic Jacobian.
+template <int Dimension, int AnchorCount, FilterKind Kind = FilterKind::Ekf, typename Scalar = double>
 class MherbRanging
 {
 public:
@@ -36,6 +52,7 @@ public:
     explicit MherbRanging(ScenarioType const & scenario)
         : m_system{Scalar(scenario.timeStep), Scalar(scenario.accelDensity)}
         , m_measurement{scenario.anchors.template cast<Scalar>(), Scalar(scenario.rangeStdDev)}
+        , m_filter{makeFilter()}
     {
         m_filter.init(State{scenario.initialMean.template cast<Scalar>()});
         m_filter.setCovariance(Kalman::Covariance<State>{scenario.initialCov.template cast<Scalar>()});
@@ -76,8 +93,9 @@ public:
         return m_filter.getState();
     }
 
-    /// The current covariance, whose two triangles can differ by rounding.
-    [[nodiscard]] Kalman::Covariance<State> const &
+    /// The current covariance, formed from the factor in a square-root filter; in the covariance
+    /// form its two triangles can differ by rounding.
+    [[nodiscard]] Kalman::Covariance<State>
     covariance() const
     {
         return m_filter.getCovariance();
@@ -88,12 +106,14 @@ private:
     using Control = Kalman::Vector<Scalar, 1>;
 
     /// The constant-velocity model. Its step is fixed, so F, W, and Q are set once here, and
-    /// updateJacobians(), which the filter calls before every prediction, has nothing to do.
-    class System : public Kalman::LinearizedSystemModel<State, Control>
+    /// updateJacobians(), which the extended filters call before every prediction, has nothing to
+    /// do.
+    template <template <class> class Base>
+    class SystemOver : public Kalman::LinearizedSystemModel<State, Control, Base>
     {
     public:
 
-        System(Scalar dt, Scalar accelDensity)
+        SystemOver(Scalar dt, Scalar accelDensity)
             : m_timeStep{dt}
         {
             using PositionMatrix = Eigen::Matrix<Scalar, Dimension, Dimension>;
@@ -124,11 +144,12 @@ private:
     };
 
     /// The ranges to the anchors, with their Jacobian in position.
-    class Measurement : public Kalman::LinearizedMeasurementModel<State, Ranges>
+    template <template <class> class Base>
+    class MeasurementOver : public Kalman::LinearizedMeasurementModel<State, Ranges, Base>
     {
     public:
 
-        Measurement(Eigen::Matrix<Scalar, Dimension, AnchorCount> const & anchors, Scalar rangeStdDev)
+        MeasurementOver(Eigen::Matrix<Scalar, Dimension, AnchorCount> const & anchors, Scalar rangeStdDev)
             : m_anchors{anchors}
         {
             this->H.setZero();
@@ -159,9 +180,38 @@ private:
         Eigen::Matrix<Scalar, Dimension, AnchorCount> m_anchors;  ///< one anchor per column
     };
 
-    System m_system;                                 ///< the process model
-    Measurement m_measurement;                       ///< the measurement model
-    Kalman::ExtendedKalmanFilter<State> m_filter{};  ///< the filter
+    using System =
+        std::conditional_t<isSqrt(Kind), SystemOver<Kalman::SquareRootBase>, SystemOver<Kalman::StandardBase>>;
+    using Measurement = std::
+        conditional_t<isSqrt(Kind), MeasurementOver<Kalman::SquareRootBase>, MeasurementOver<Kalman::StandardBase>>;
+    using Filter = std::conditional_t<
+        Kind == FilterKind::Ekf,
+        Kalman::ExtendedKalmanFilter<State>,
+        std::conditional_t<
+            Kind == FilterKind::Ukf,
+            Kalman::UnscentedKalmanFilter<State>,
+            std::conditional_t<
+                Kind == FilterKind::SqrtEkf,
+                Kalman::SquareRootExtendedKalmanFilter<State>,
+                Kalman::SquareRootUnscentedKalmanFilter<State>>>>;
+
+    /// The filter, the unscented ones with alpha = 1, beta = 2, and kappa = 0 written out.
+    [[nodiscard]] static Filter
+    makeFilter()
+    {
+        if constexpr (isUnscented(Kind))
+        {
+            return Filter{Scalar(1), Scalar(2), Scalar(0)};
+        }
+        else
+        {
+            return Filter{};
+        }
+    }
+
+    System m_system;            ///< the process model
+    Measurement m_measurement;  ///< the measurement model
+    Filter m_filter;            ///< the filter
 };
 
 }  // namespace Ranging

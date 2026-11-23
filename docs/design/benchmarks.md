@@ -425,17 +425,39 @@ differentiation, so its side has analytic Jacobians only and the library's autod
 without a counterpart. It is fetched at a pinned commit (MIT license) for the benchmarks alone and
 never becomes a dependency of the library.
 
-The EKF pair is `benchmarks/ranging/mherb_ranging.h`, `mherb_agreement.cpp`,
-`mherb_allocation.cpp`, and the runner `mherb_benchmark.cpp`. In double the two agree to 9e-10 m
-over 500 steps and neither allocates. In float they cannot agree: mherb/kalman's float EKF strays up
+The pairs are `benchmarks/ranging/mherb_ranging.h`, which takes mherb/kalman's filter as a
+template argument, `emrys_ranging_kinds.h`, EmrysFilter's counterpart of each, `mherb_agreement.cpp`,
+`mherb_allocation.cpp`, and the runner `mherb_benchmark.cpp`. No filter of either library allocates
+in its steps. The unscented counterparts read the whole state, so that their sigma points spread
+over it as mherb/kalman's do, where `emrys_ranging.h` reads only the position.
+
+*The EKF.* In double the two agree to 9e-10 m over 500 steps. In float they cannot agree: mherb/kalman's float EKF strays up
 to 0.30 m from the double EmrysFilter EKF in 2D with 4 anchors (0.007 to 0.10 m in the other
 cases), where EmrysFilter's float EKF stays within 9e-5 m. In that case $S$ has eigenvalues near 50
 and 0.09, so the explicit inverse loses about 3e-5 of its accuracy in float, and $K = P H^T S^{-1}$
 multiplies that loss by the prior variance of 25. So the timing is in double only, as the rule
 requires, and the runner prints instead each float filter's largest distance from the double
 EmrysFilter EKF over the run, which backs a claim of its own: in float, EmrysFilter stays accurate
-where mherb/kalman does not. The UKF and the two square-root pairs are still to write; the
-library's side of each needs a variant of `emrys_ranging.h` with `Unscented` or `SqrtKalmanFilter`.
+where mherb/kalman does not.
+
+*The square-root EKF.* mherb/kalman's predicts its factor by a QR decomposition and updates by
+forming $P - K H P$ from the factor and factorizing it again, solving for the gain with the
+innovation's factor rather than an inverse. The two agree to 1e-13 in double and to 6e-5 m in
+float over 500 steps, so this pair is timed in both scalars.
+
+*The UKFs.* Neither pair agrees, in either form or either scalar: the means differ by 7 to 13 mm
+over 500 steps, which is not rounding, since float and double differ alike. mherb/kalman's update
+does not draw sigma points from the predicted covariance. It reuses the points its prediction moved
+through the model, which were drawn before the process noise was added, so its $P_{yy}$ and
+$P_{xy}$ leave out $Q$ while its $P$ includes it. Without process noise the difference falls to
+1e-6 m, and `mherb_agreement.cpp` checks that it stays under 1e-5 relative, which shows the pairs
+spread the same points with the same weights; what is left is the other half of the same choice,
+since the moved points are $F$ times a Cholesky factor of the previous covariance, a different
+square root of the predicted covariance than its Cholesky factor. Both libraries' UKFs pass the
+NEES test on this problem, whose process noise is small beside the prior. Under [benchmarks] the
+UKF pairs are not timed; the runner prints the largest distance between the libraries' UKFs
+instead, and the results page says why. Timing them would take a precondition other than
+agreement, which is a change to [benchmarks] and the maintainer's to make.
 
 ## How the numbers are measured
 

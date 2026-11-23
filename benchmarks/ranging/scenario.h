@@ -25,6 +25,30 @@ enum class Jacobian
     AutoDiff
 };
 
+/// Which Kalman filter an implementation runs, for the pairs against mherb/kalman, which has these
+/// four: the extended and the unscented, each in the covariance form or the square-root form.
+enum class FilterKind
+{
+    Ekf,
+    Ukf,
+    SqrtEkf,
+    SqrtUkf
+};
+
+/// Whether \a kind keeps a square root of the covariance rather than the covariance.
+[[nodiscard]] constexpr bool
+isSqrt(FilterKind kind)
+{
+    return kind == FilterKind::SqrtEkf || kind == FilterKind::SqrtUkf;
+}
+
+/// Whether \a kind linearizes by sigma points rather than by a Jacobian.
+[[nodiscard]] constexpr bool
+isUnscented(FilterKind kind)
+{
+    return kind == FilterKind::Ukf || kind == FilterKind::SqrtUkf;
+}
+
 /// How far the two implementations in \a Scalar may differ, relative to the size of the state and
 /// of the covariance, for the difference to be rounding: 1e-9 in double, 1e-4 in float. Either is
 /// far below a modeling difference, which is of order one.

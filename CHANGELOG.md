@@ -11,8 +11,9 @@ instead.
 - [docs/benchmarks.md](docs/benchmarks.md), the benchmark results: each problem's instructions and
   time per step against the same filter written by hand in Eigen, the compile times, the method,
   and how to run the benchmarks yourself.
-- The ranging EKF benchmarked against mherb/kalman's (`emrys_filter_mherb_benchmark`), with its
-  agreement and allocation tests. Building the tests or the benchmarks now fetches mherb/kalman;
+- The ranging Kalman filters benchmarked against mherb/kalman's four (`emrys_filter_mherb_benchmark`),
+  with their agreement and allocation tests: the EKF and the square-root EKF timed, the EKF in
+  `float` and both UKFs compared for accuracy. Building the tests or the benchmarks now fetches mherb/kalman;
   configure with `-DEMRYS_FILTER_BENCHMARK_MHERB=OFF` to build without it.
 - `KalmanFilter<...>::UpdateType<M>` and `ResultType<M>`, what `update()` with a measurement of
   type `M` returns and fills, as the other filters name them; it was
