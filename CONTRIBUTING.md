@@ -55,3 +55,15 @@ parameter order, allocation, `std::expected` errors, no exceptions, and the cita
 [AGENTS.md](AGENTS.md) holds the workflow, for people and coding agents alike. A change to the
 architecture changes `docs/design/decisions.md` in the same commit, and a step's progress is
 recorded in `docs/design/roadmap.md`.
+
+A test build is heavy. Measured with `tools/compile_cost.py --match` on 2026-11-22 (Debug, one
+compile at a time), the 117 test, example, and benchmark sources take 25
+CPU-minutes to compile with Clang 21 and 37 with MSVC 19.50. A test file's median peak memory is
+1.5 GiB with Clang and 1.9 GiB with MSVC, and the largest, `tests/Filters/sqrt_filters.cpp`, takes
+5.4 GiB and 49 seconds with Clang, 8.0 GiB and 103 seconds with MSVC. The presets compile at most
+`EMRYS_FILTER_TEST_COMPILE_JOBS` (12) test files at once, which needs about 2 GiB a job on
+average and more when the largest files compile together: their 12 largest come to 38 GiB with
+Clang and 55 GiB with MSVC. With less than 32 GiB of memory, configure with a smaller value, about
+one job per 2.5 GiB, for example `-DEMRYS_FILTER_TEST_COMPILE_JOBS=6` with 16 GiB; past that the
+compilers swap or are killed. Under Clang, 64% of the time is the front end, most of it
+template instantiation, and the rest code generation.

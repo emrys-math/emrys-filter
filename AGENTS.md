@@ -55,7 +55,7 @@ cmake --workflow --preset clang   # or gcc, msvc
 Every preset uses Ninja, so `msvc` runs from an x64 developer environment. MSVC and GCC/Clang
 disagree on heavy template code, so check both families before calling template-heavy work done.
 Run the compiler workflows one after another, never in parallel. A test translation unit takes
-one to four gigabytes, so Ninja compiles at most `EMRYS_FILTER_TEST_COMPILE_JOBS` (12) of them at
+about one to eight GiB, so Ninja compiles at most `EMRYS_FILTER_TEST_COMPILE_JOBS` (12) of them at
 once, and GCC and Clang Debug test builds use `-Og` with line tables only; configure with
 `-DEMRYS_FILTER_TEST_FULL_DEBUG_INFO=ON` to step through a test in a debugger.
 

@@ -242,7 +242,7 @@ Including everything costs about three seconds and 300 MB of compiler memory, an
 size of the examples compiles in 5 to 25 seconds in under a gigabyte, so one file builds without a
 CMake project: `clang++ -std=c++23 -O2 -I <checkout>/include -isystem <eigen> estimator.cpp`.
 Build and test the library itself with `cmake --workflow --preset clang` (or `gcc`, or `msvc`
-from an x64 developer prompt); a test translation unit takes one to four gigabytes, so the
+from an x64 developer prompt); a test translation unit takes about one to eight GiB, so the
 presets limit how many compile at once. [CONTRIBUTING.md](CONTRIBUTING.md) says how a change
 is checked.
 

@@ -818,9 +818,10 @@ The front door:
       write themselves, and range, bearing, and range-bearing sensors. Nothing is taken from
       navigation's scope to fill this library.
 - [ ] The library on Compiler Explorer, so that a thread can link a snippet that compiles.
-- [ ] Build cost for contributors: time and memory per workflow preset and the `-j` warning, with
-      `-ftime-trace` numbers per header (`tools/compile_cost.py --match` times any compile
-      command, and `--time-trace` adds Clang's totals).
+- [ ] Build cost for contributors: CONTRIBUTING.md has each file's compile time and memory under
+      Clang and MSVC and the jobs a machine's memory allows (measured 2026-11-22). Left: a clean
+      build's wall time per workflow preset, GCC's numbers, and `-ftime-trace` numbers per
+      header, which needs the trace files read, not only `tools/compile_cost.py`'s totals.
 - [ ] Shorter test builds: `-ftime-trace` on the slowest test files (`tools/compile_cost.py
       --match tests/ --time-trace` on a test build finds them), then explicit instantiation of
       the setups the tests repeat (`extern template` in a support header, instantiations in their
