@@ -260,10 +260,6 @@ takes an integer repetition today, that argument takes a sequence or a list too.
 - [ ] **`writes()`, the rest.** A process model writes a selection ([selected-writes],
       `tests/Models/selected_writes.cpp`), through compositions, `on<Path>()`, and the filters
       (`tests/Filters/selected_filters.cpp`). Left: a batched function that writes a list.
-- [ ] **Placing a model, the rest.** `on(path<Fleet>[k], model)` and
-      `onEach(path<Fleet>[repetitions], model)` are built ([placed-repetitions],
-      `tests/Models/placed_repetitions.cpp`). Left: a test of `on(path<Fleet, Body>[k], model)`, a
-      block inside the repetition.
 - [ ] **Placing a matrix, a factor, and noise, the rest.** Built ([placed-selected-values]):
       factors, `Columns`, additive noise, and continuous noise on selections, and selected
       `Columns` under every Gaussian form (`tests/Models/linear_measurement.cpp`). Left: a test of

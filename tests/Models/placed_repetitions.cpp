@@ -385,3 +385,88 @@ TEST(PlacedRepetitions, AMeasurementOnOneRepetitionIsOnItsTaggedBlock)
     expectSamePosterior(methods::linearized());
     expectSamePosterior(methods::unscented());
 }
+
+namespace
+{
+
+/// a rover: a body that moves, and a clock beside it, three of them, and the same with a tag each
+struct Body : Composite<Position, Velocity>
+{};
+
+struct Clock : Linear<1>
+{};
+
+struct Rover : Composite<Body, Clock>
+{};
+
+struct Rovers : Repeated<Rover, 4>
+{
+    using Repeated::Repeated;
+};
+
+struct FirstRover : Rover
+{};
+
+struct SecondRover : Rover
+{};
+
+struct ThirdRover : Rover
+{};
+
+using TaggedRovers = Composite<FirstRover, SecondRover, ThirdRover>;
+
+}  // namespace
+
+// A model placed on a block inside one repetition, on(path<Rovers, Body>[1], model), reads and writes
+// that block of the repetition, as the model placed on the tagged rover's body does, beside a clock
+// placed on the repetition and the other rovers held.
+TEST(PlacedRepetitions, OnABlockInsideOneRepetitionIsOnTheTaggedBlock)
+{
+    Eigen::Matrix<double, 15, 15> a;
+    for (Eigen::Index i = 0; i < 15; ++i)
+    {
+        for (Eigen::Index j = 0; j < 15; ++j)
+        {
+            a(i, j) = 0.3 * std::sin(1.0 + 3.0 * double(i) + 7.0 * double(j));
+        }
+    }
+    Eigen::Matrix<double, 15, 15> const covariance =
+        a * a.transpose() + 0.5 * Eigen::Matrix<double, 15, 15>::Identity();
+    Eigen::Matrix<double, 15, 1> const mean = Eigen::Matrix<double, 15, 1>::LinSpaced(15, -2.0, 3.0);
+    auto const prior = GaussianParams<Rovers>{Rovers{Rover{}, 3}, mean, covariance};
+    auto const taggedPrior = GaussianParams<TaggedRovers>{mean, covariance};
+    auto const held = processModel(
+        []<typename T>(auto const & x, double) {
+            return Eigen::Matrix<T, Eigen::Dynamic, 1, Eigen::ColMajor, 20, 1>{x};
+        },
+        reads(path<Rovers>[std::array{0, 2}]),
+        writes(path<Rovers>[std::array{0, 2}]),
+        continuousNoise(0.02)
+    );
+    auto const taggedHeld = processModel(
+        []<typename T>(auto const & x, double) {
+            return Eigen::Matrix<T, Eigen::Dynamic, 1, Eigen::ColMajor, 20, 1>{x};
+        },
+        reads(path<FirstRover>, path<ThirdRover>),
+        writes(path<FirstRover>, path<ThirdRover>),
+        continuousNoise(0.02)
+    );
+    auto const selected =
+        compose(on(path<Rovers, Body>[1], turning()), on(path<Rovers>[1], Emrys::RandomWalk<Clock>{0.1}), held);
+    auto const byTag = compose(
+        on<Emrys::TagPath<SecondRover, Body>>(turning()),
+        on<SecondRover>(Emrys::RandomWalk<Clock>{0.1}),
+        taggedHeld
+    );
+    auto const expectSame = [&](auto const & method) {
+        auto const x = Emrys::predict(method, prior, selected, 0.5);
+        auto const y = Emrys::predict(method, taggedPrior, byTag, 0.5);
+        EXPECT_LT((x.mean() - y.mean()).norm(), 1e-12);
+        Eigen::MatrixXd const lowerA = x.covarianceLower().template triangularView<Eigen::Lower>();
+        Eigen::MatrixXd const lowerB = y.covarianceLower().template triangularView<Eigen::Lower>();
+        EXPECT_LT((lowerA - lowerB).norm(), 1e-12);
+        EXPECT_GT((x.mean() - mean).norm(), 1e-3);
+    };
+    expectSame(methods::linearized());
+    expectSame(methods::unscented());
+}
