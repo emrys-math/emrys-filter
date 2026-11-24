@@ -21,6 +21,7 @@ using Emrys::GaussianParams;
 using Emrys::Linear;
 using Emrys::OrnsteinUhlenbeck;
 using Emrys::RadiansPi;
+using Emrys::RevertingTo;
 using Emrys::StationaryVariance;
 using Emrys::TimeConstant;
 
@@ -299,4 +300,50 @@ TEST(FixedStepModel, ACachedTransitionWrapsAPeriodicBlock)
     EXPECT_NEAR(fixed.mean()(0), 3.3 - 2 * std::numbers::pi, 1e-14);
     EXPECT_LT((fixed.mean() - expected.mean()).norm(), 1e-14);
     EXPECT_LT((fixed.covarianceLower() - expected.covarianceLower()).norm(), 1e-14);
+}
+
+namespace
+{
+
+// A bias that reverts to an offset, held by a Constant block or given as an input of the call.
+struct BiasOffset : Linear<1>
+{};
+
+}  // namespace
+
+// An Ornstein-Uhlenbeck block about a mean predicts over a fixed step as over the same step given
+// to predict(), under every method, with the mean a block of the state and with it a sure input.
+TYPED_TEST(FixedStepMethodTest, OrnsteinUhlenbeckAboutAMeanPredictsAsTheContinuousModel)
+{
+    using Biased = Composite<Bias, BiasOffset>;
+    auto const reverting =
+        OrnsteinUhlenbeck<Bias, RevertingTo<BiasOffset>>{TimeConstant{tau}, StationaryVariance{biasVar}};
+    auto const x =
+        GaussianParams<Biased>{Biased{}, Eigen::Vector2d{0.3, -0.5}, Eigen::Matrix2d{{0.2, 0.05}, {0.05, 0.1}}};
+    auto const continuous = compose(reverting, Emrys::Constant<BiasOffset>{});
+    auto const model = FixedStepModel{continuous, Biased{}, timeStep, TypeParam{}};
+    auto expected = Emrys::predict(TypeParam{}, x, continuous, timeStep);
+    for (int k = 0; k < 3; ++k)
+    {
+        expected = Emrys::predict(TypeParam{}, expected, continuous, timeStep);
+    }
+    auto fixed = Emrys::predict(x, model);
+    for (int k = 0; k < 3; ++k)
+    {
+        fixed = Emrys::predict(fixed, model);
+    }
+    EXPECT_LT((fixed.mean() - expected.mean()).norm(), 1e-12);
+    EXPECT_LT((fixed.covarianceLower() - expected.covarianceLower()).norm(), 1e-12);
+
+    using Alone = Composite<Bias>;
+    auto const lone =
+        GaussianParams<Alone>{Alone{}, Eigen::Matrix<double, 1, 1>{0.3}, Eigen::Matrix<double, 1, 1>{0.2}};
+    auto const offset = Emrys::sure<BiasOffset>(Eigen::Matrix<double, 1, 1>{-0.5});
+    auto const step = FixedStepModel{reverting, Alone{}, timeStep, TypeParam{}};
+    auto const fixedInput = Emrys::predict(lone, step, offset);
+    auto const expectedInput = Emrys::predict(TypeParam{}, lone, reverting, timeStep, offset);
+    double const phi = std::exp(-timeStep / tau);
+    EXPECT_LT(std::abs(fixedInput.mean()(0) - (phi * 0.3 - (1 - phi) * 0.5)), 1e-12);
+    EXPECT_LT((fixedInput.mean() - expectedInput.mean()).norm(), 1e-12);
+    EXPECT_LT((fixedInput.covarianceLower() - expectedInput.covarianceLower()).norm(), 1e-12);
 }

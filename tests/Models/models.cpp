@@ -4,11 +4,13 @@
 // method's prediction and hand-driven predict/update match the closed form, a Zero block resets whatever the step, a
 // partial measurement updates the full state, noise through the function matches additive noise where it adds,
 // range-bearing on a tagged subspace, mixture noise gives one branch per component and favors the outlier component for
-// an outlier, the point-wise log-likelihood, and a square-root prior.
+// an outlier, the point-wise log-likelihood, a square-root prior, and an Ornstein-Uhlenbeck block about a mean that is
+// a sure input, a block of the state, an uncertain input, or a block outside the one it is placed on.
 
 #include <EmrysFilter/Distributions/Mixture.h>
 #include <EmrysFilter/Distributions/SqrtGaussian.h>
 #include <EmrysFilter/Models/Measurement.h>
+#include <EmrysFilter/Models/Placement.h>
 #include <EmrysFilter/Models/ProcessModel.h>
 #include <EmrysFilter/Spaces/UnitQuaternion.h>
 
@@ -36,12 +38,14 @@ using Emrys::Linear;
 using Emrys::logLikelihood;
 using Emrys::measurementModel;
 using Emrys::observe;
+using Emrys::on;
 using Emrys::OrnsteinUhlenbeck;
 using Emrys::outputSpace;
 using Emrys::path;
 using Emrys::RadiansPi;
 using Emrys::RandomWalk;
 using Emrys::reads;
+using Emrys::RevertingTo;
 using Emrys::ScalarOf;
 using Emrys::StationaryVariance;
 using Emrys::TagPath;
@@ -988,4 +992,161 @@ TYPED_TEST(ModelMethodTest, PredictTakesUncertainAndKnownInputs)
             .norm(),
         1e-12
     );
+}
+
+namespace
+{
+
+// A drift that reverts to an offset, each two-dimensional.
+struct Drift : Linear<2>
+{};
+
+struct DriftOffset : Linear<2>
+{};
+
+constexpr double driftTau = 4.0;  // the drift's time constant, short beside the step so that the mean matters
+constexpr double driftVar = 0.3;  // its stationary variance about the offset
+
+auto
+driftAboutOffset()
+{
+    return OrnsteinUhlenbeck<Drift, RevertingTo<DriftOffset>>{TimeConstant{driftTau}, StationaryVariance{driftVar}};
+}
+
+using DriftState = Composite<Drift>;
+
+GaussianParams<DriftState>
+makeDrift()
+{
+    return {DriftState{}, Eigen::Vector2d{1.5, -0.4}, Eigen::Matrix2d{{0.5, 0.1}, {0.1, 0.3}}};
+}
+
+}  // namespace
+
+// The scalar of the form about zero is still its second argument, and the form about a mean takes it third.
+static_assert(std::is_same_v<OrnsteinUhlenbeck<Bias, float>::Scalar, float>);
+static_assert(std::is_same_v<OrnsteinUhlenbeck<Drift, RevertingTo<DriftOffset>>::Scalar, double>);
+static_assert(std::is_same_v<OrnsteinUhlenbeck<Drift, RevertingTo<DriftOffset>, float>::Scalar, float>);
+
+// About a sure mean m, the prediction is the zero-mean model's on x - m, moved back by m, under each method.
+TYPED_TEST(ModelMethodTest, OrnsteinUhlenbeckAboutASureMeanIsTheZeroMeanOneShifted)
+{
+    auto const x = makeDrift();
+    Eigen::Vector2d const m{-2.0, 3.0};
+    auto const shifted = GaussianParams<DriftState>{DriftState{}, x.mean() - m, x.covarianceLower()};
+    auto const zeroMean = OrnsteinUhlenbeck<Drift>{TimeConstant{driftTau}, StationaryVariance{driftVar}};
+
+    auto const predicted = Emrys::predict(TypeParam{}, x, driftAboutOffset(), timeStep, Emrys::sure<DriftOffset>(m));
+    auto const expected = Emrys::predict(TypeParam{}, shifted, zeroMean, timeStep);
+
+    EXPECT_LT((predicted.mean() - (expected.mean() + m)).norm(), 1e-12);
+    EXPECT_LT((predicted.covarianceLower() - expected.covarianceLower()).norm(), 1e-12);
+    EXPECT_GT((predicted.mean() - x.mean()).norm(), 0.1);
+    EXPECT_EQ(driftAboutOffset().timeConstant(), driftTau);
+    EXPECT_EQ(driftAboutOffset().variance(), driftVar);
+}
+
+// About a mean that a Constant block of the state holds, the joint prediction is the closed form:
+// x' = phi x + (1 - phi) m, P_xm' = phi P_xm + (1 - phi) P_mm, P_mm' = P_mm, and
+// P_xx' = phi^2 P_xx + phi (1 - phi) (P_xm + P_mx) + (1 - phi)^2 P_mm + sigma^2 (1 - phi^2).
+TYPED_TEST(ModelMethodTest, OrnsteinUhlenbeckAboutABlockOfTheStateIsTheClosedForm)
+{
+    using Joint = Composite<Drift, DriftOffset>;
+    using Matrix4 = Eigen::Matrix4d;
+    Matrix4 a;
+    for (int i = 0; i < 4; ++i)
+    {
+        for (int j = 0; j < 4; ++j)
+        {
+            a(i, j) = 0.2 * std::sin(1.0 + 2.0 * i + 5.0 * j);
+        }
+    }
+    Matrix4 const p = a * a.transpose() + 0.2 * Matrix4::Identity();
+    auto const x = GaussianParams<Joint>{Joint{}, Eigen::Vector4d{1.5, -0.4, -2.0, 3.0}, p};
+    auto const model = compose(driftAboutOffset(), Constant<DriftOffset>{});
+
+    auto const predicted = Emrys::predict(TypeParam{}, x, model, timeStep);
+
+    double const phi = std::exp(-timeStep / driftTau);
+    Eigen::Matrix2d const i2 = Eigen::Matrix2d::Identity();
+    Eigen::Matrix2d const pxx = p.topLeftCorner<2, 2>();
+    Eigen::Matrix2d const pxm = p.topRightCorner<2, 2>();
+    Eigen::Matrix2d const pmm = p.bottomRightCorner<2, 2>();
+    Matrix4 expected;
+    expected.topLeftCorner<2, 2>() = phi * phi * pxx + phi * (1 - phi) * (pxm + pxm.transpose())
+                                   + (1 - phi) * (1 - phi) * pmm + driftVar * (1 - phi * phi) * i2;
+    expected.topRightCorner<2, 2>() = phi * pxm + (1 - phi) * pmm;
+    expected.bottomLeftCorner<2, 2>() = expected.topRightCorner<2, 2>().transpose();
+    expected.bottomRightCorner<2, 2>() = pmm;
+    Matrix4 const cov = predicted.covarianceLower().template selfadjointView<Eigen::Lower>();
+    Eigen::Vector4d const mean = predicted.mean();
+    EXPECT_LT((mean.head<2>() - (phi * x.mean().head<2>() + (1 - phi) * x.mean().tail<2>())).norm(), 1e-12);
+    EXPECT_LT((mean.tail<2>() - x.mean().tail<2>()).norm(), 1e-12);
+    EXPECT_LT((cov - expected).norm(), 1e-12);
+}
+
+// About an uncertain mean, an input of the call, the mean's variance S reaches the block by (1 - phi)^2:
+// P' = phi^2 P + (1 - phi)^2 S + sigma^2 (1 - phi^2).
+TYPED_TEST(ModelMethodTest, OrnsteinUhlenbeckAboutAnUncertainInputTakesItsVariance)
+{
+    auto const x = makeDrift();
+    auto const offset =
+        GaussianParams<DriftOffset>{Eigen::Vector2d{-2.0, 3.0}, Eigen::Matrix2d{{0.8, -0.2}, {-0.2, 0.6}}};
+
+    auto const predicted = Emrys::predict(TypeParam{}, x, driftAboutOffset(), timeStep, offset);
+
+    double const phi = std::exp(-timeStep / driftTau);
+    Eigen::Matrix2d const expected =
+        phi * phi * Eigen::Matrix2d{x.covarianceLower().template selfadjointView<Eigen::Lower>()}
+        + (1 - phi) * (1 - phi) * Eigen::Matrix2d{offset.covarianceLower().template selfadjointView<Eigen::Lower>()}
+        + driftVar * (1 - phi * phi) * Eigen::Matrix2d::Identity();
+    Eigen::Matrix2d const cov = predicted.covarianceLower().template selfadjointView<Eigen::Lower>();
+    EXPECT_LT((predicted.mean() - (phi * x.mean() + (1 - phi) * offset.mean())).norm(), 1e-12);
+    EXPECT_LT((cov - expected).norm(), 1e-12);
+}
+
+namespace
+{
+
+// A sensor whose drift reverts to an offset that the sensor's block does not hold.
+struct Sensor : Composite<Drift>
+{};
+
+}  // namespace
+
+// Placed on the sensor, the model reads its mean from the state outside the block it is placed on
+// ([model-placement]), and predicts as the model written with the drift's whole path, under each method.
+TYPED_TEST(ModelMethodTest, OrnsteinUhlenbeckPlacedOnABlockReadsItsMeanOutsideIt)
+{
+    using Rig = Composite<Sensor, DriftOffset>;
+    Eigen::Matrix4d a;
+    for (int i = 0; i < 4; ++i)
+    {
+        for (int j = 0; j < 4; ++j)
+        {
+            a(i, j) = 0.2 * std::cos(1.0 + 3.0 * i + 2.0 * j);
+        }
+    }
+    auto const x = GaussianParams<Rig>{
+        Rig{},
+        Eigen::Vector4d{1.5, -0.4, -2.0, 3.0},
+        Eigen::Matrix4d{a * a.transpose() + 0.2 * Eigen::Matrix4d::Identity()}
+    };
+    auto const placed = compose(on<Sensor>(driftAboutOffset()), Constant<DriftOffset>{});
+    auto const whole = compose(
+        OrnsteinUhlenbeck<TagPath<Sensor, Drift>, RevertingTo<DriftOffset>>{
+            TimeConstant{driftTau},
+            StationaryVariance{driftVar}
+        },
+        Constant<DriftOffset>{}
+    );
+
+    auto const predicted = Emrys::predict(TypeParam{}, x, placed, timeStep);
+    auto const expected = Emrys::predict(TypeParam{}, x, whole, timeStep);
+
+    EXPECT_LT((predicted.mean() - expected.mean()).norm(), 1e-12);
+    EXPECT_LT((predicted.covarianceLower() - expected.covarianceLower()).norm(), 1e-12);
+    double const phi = std::exp(-timeStep / driftTau);
+    Eigen::Vector4d const mean = predicted.mean();
+    EXPECT_LT((mean.head<2>() - (phi * x.mean().head<2>() + (1 - phi) * x.mean().tail<2>())).norm(), 1e-12);
 }

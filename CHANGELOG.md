@@ -10,6 +10,13 @@ instead.
 
 - An example of `PosteriorCramerRaoBound` on the Models page of the reference: the bound stepped
   along true states that `simulate()` draws, a column per Monte Carlo run.
+- `OrnsteinUhlenbeck<B, RevertingTo<M>>{TimeConstant{tau}, StationaryVariance{s}}`, an
+  Ornstein-Uhlenbeck block that reverts to the mean `M` instead of zero: `x' = phi x + (1 - phi) m`
+  with the noise of the form about zero, so that `s` is the stationary variance about `M`. The mean
+  is read from the state where the state has it, such as a `Constant<M>` or `RandomWalk<M>` block,
+  and is otherwise an input of the call, `sure<M>(m)` or a Gaussian. Both blocks are linear, of one
+  size, under different tags. `OrnsteinUhlenbeck<B, Scalar>` is unchanged; the form about a mean
+  takes its scalar third.
 - [docs/benchmarks.md](docs/benchmarks.md), the benchmark results: each problem's instructions and
   time per step against the same filter written by hand in Eigen, the compile times, the method,
   and how to run the benchmarks yourself.

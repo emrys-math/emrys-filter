@@ -1777,7 +1777,8 @@ resets its block [unused-blocks], takes the variance it resets to, the same over
 user's own gives `continuousNoise()`, spectral densities by block of its output discretized as
 $Q_c \, \Delta t$, or `additiveNoise()`, a fixed discrete $Q$, or neither; never both, and never a
 mixture. `OrnsteinUhlenbeck` takes one $\tau$ and $\sigma^2$, by name, for every coordinate of its
-block, so coordinates that differ are blocks of their own. `RandomWalk` is a model of its own, which
+block, so coordinates that differ are blocks of their own; `RevertingTo<M>` reverts it to $m$ by
+$x' = \phi x + (1 - \phi) m$, $m$ read from the state or the call. `RandomWalk` is a model of its own, which
 takes a block whose differences have another size than its values, such as a `UnitQuaternion`; a
 `Kinematic` chain has two blocks at least, of one fixed size whose differences are its values'. The models of a composition write every coordinate of the state once, which `predict()`
 checks: at compile time where the space is fixed-size, and otherwise in a debug assertion.
@@ -1787,10 +1788,12 @@ asynchronous sensors. A filter at a fixed rate shouldn't pay to discretize the s
 [fixed-step-models] caches it. A user's noise is declared, not computed in a member, so that a
 composition can place each part's on the blocks it writes without calling anything. A chain adds a
 value to a value, which a quaternion cannot take, and a random walk adds only noise on the
-differences, which it can. Named parameters cannot swap, as two numbers of one type would.
+differences, which it can. Named parameters cannot swap, as two numbers of one type would;
+`RevertingTo` names the mean because the second argument is the scalar.
 
 **Rejected.** A diagonal or a vector of time constants for `OrnsteinUhlenbeck`, which can be added
-later without breaking anything; a one-block chain as the random walk.
+later without breaking anything; a one-block chain as the random walk; reverting where values do not
+add, $m \boxplus \phi (x \boxminus m)$, whose noise is not exact off a line, a user's function.
 
 **Where.** `Models/ProcessModel.h`.
 
