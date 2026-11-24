@@ -566,6 +566,12 @@ namespace internal
 struct WholeSpace
 {};
 
+/** What a path that names a whole block has in place of a selection of repetitions, in an item of
+ * reads() or writes() and in a value placed by on() or onEach().
+ */
+struct NoSelection
+{};
+
 /** What on() and onEach() hold of \a X: a matrix expression evaluated to its plain matrix, so that
  * nothing it refers to need outlive it, and anything else as it is.
  */
@@ -592,18 +598,39 @@ struct HeldOf<X>
     using type = typename X::DenseMatrixType;
 };
 
-/** \a value placed on the block that the path \a Path names, in a space not yet known (see on()). */
-template <typename X, typename Path>
+/** \a value placed on the repetitions that \a Selection selects of the repeated block the path
+ * \a Path runs through, in a space not yet known (see on()): one repetition, or a sequence or a list
+ * of them, placed as one block.
+ */
+template <typename X, typename Path, typename Selection = NoSelection>
 struct OnPath
 {
+    X value;              ///< the factor or matrix placed
+    Selection selection;  ///< the repetitions it is placed on
+};
+
+/** \a value placed on the block that the path \a Path names, in a space not yet known (see on()). */
+template <typename X, typename Path>
+struct OnPath<X, Path, NoSelection>
+{
     X value;  ///< the factor or matrix placed
+};
+
+/** \a value placed on each repetition that \a Selection, a sequence or a list, selects of the
+ * repeated block the path \a Path names, in a space not yet known (see onEach()).
+ */
+template <typename X, typename Path, typename Selection = NoSelection>
+struct OnEach
+{
+    X value;              ///< the factor or matrix of one repetition
+    Selection selection;  ///< the repetitions it is placed on
 };
 
 /** \a value placed on every repetition of the repeated block that the path \a Path names, or of
  * the whole space if \a Path is WholeSpace, in a space not yet known (see onEach()).
  */
 template <typename X, typename Path>
-struct OnEach
+struct OnEach<X, Path, NoSelection>
 {
     X value;  ///< the factor or matrix of one repetition
 };
@@ -619,11 +646,11 @@ template <typename T>
 inline constexpr bool isPlacedByPath = false;
 
 /// \cond INTERNAL_SPECIALIZATIONS
-template <typename X, typename Path>
-inline constexpr bool isPlacedByPath<OnPath<X, Path>>{true};
+template <typename X, typename Path, typename Selection>
+inline constexpr bool isPlacedByPath<OnPath<X, Path, Selection>>{true};
 
-template <typename X, typename Path>
-inline constexpr bool isPlacedByPath<OnEach<X, Path>>{true};
+template <typename X, typename Path, typename Selection>
+inline constexpr bool isPlacedByPath<OnEach<X, Path, Selection>>{true};
 /// \endcond
 
 }  // namespace internal
@@ -660,6 +687,61 @@ template <typename Path = internal::WholeSpace, typename X>
 onEach(X x)
 {
     return {std::move(x)};
+}
+
+namespace internal
+{
+
+/** Whether the TagPath \a Path ends at a repeated block: its last tag is one. */
+template <typename Path>
+inline constexpr bool endsAtRepeated = false;
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename... Tags>
+inline constexpr bool endsAtRepeated<TagPath<Tags...>> =
+    IsRepeated<std::tuple_element_t<sizeof...(Tags) - 1, std::tuple<Tags...>>>;
+/// \endcond
+
+}  // namespace internal
+
+/** \ingroup Spaces
+ * \returns \a x placed on the repetitions that \a where selects, in a space that is given later
+ * (decisions.md [placed-repetitions]): on one repetition, <tt>on(path<Landmarks>[k], factor)</tt>,
+ * whose space is the block that is repeated, or on several as one block, a repeated block of their
+ * count. A factor of Factors, or a sensor's matrix columns in Columns. A matrix expression is
+ * evaluated here.
+ */
+template <typename Path, typename Selection, typename X>
+    requires(!internal::PlacesModel<X>)
+[[nodiscard]] internal::OnPath<typename internal::HeldOf<X>::type, Path, Selection>
+on(SelectedPath<Path, Selection> const & where, X x)
+{
+    return {std::move(x), where.selection};
+}
+
+/** \ingroup Spaces
+ * \returns \a x, given for one repetition, placed on each repetition that \a where selects of a
+ * repeated block, a sequence or a list, <tt>onEach(path<Landmarks>[seen], factor)</tt>, in a space
+ * that is given later (decisions.md [placed-repetitions]): a factor of Factors on each repetition
+ * listed, or a sensor's matrix in Columns, which reads each repetition listed into a repetition of
+ * the measurement, in the list's order.
+ */
+template <typename Path, typename Selection, typename X>
+    requires(!internal::PlacesModel<X>)
+[[nodiscard]] internal::OnEach<typename internal::HeldOf<X>::type, Path, Selection>
+onEach(SelectedPath<Path, Selection> const & where, X x)
+{
+    static_assert(
+        !internal::RepetitionIndex<Selection>,
+        "onEach(path<Block>[repetitions], x) places x on each of several repetitions, a sequence or a list; "
+        "on(path<Block>[k], x) places it on one"
+    );
+    static_assert(
+        internal::endsAtRepeated<Path>,
+        "onEach(path<Block>[repetitions], x) places x on repetitions of the repeated block the path names, so the "
+        "path ends at it"
+    );
+    return {std::move(x), where.selection};
 }
 
 namespace internal

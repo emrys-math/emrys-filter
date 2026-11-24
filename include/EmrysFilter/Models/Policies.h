@@ -26,6 +26,7 @@
 #include <EmrysFilter/Models/ByMode.h>
 #include <EmrysFilter/Spaces/Composite.h>
 #include <EmrysFilter/Spaces/Coordinates.h>
+#include <EmrysFilter/Spaces/Selection.h>
 #include <EmrysFilter/Spaces/Space.h>
 #include <EmrysFilter/Spaces/Subspace.h>
 #include <EmrysFilter/Spaces/TagPath.h>
@@ -35,10 +36,6 @@ namespace Emrys
 
 namespace internal
 {
-
-/** What an item of reads() that reads its whole block has in place of a selection of repetitions. */
-struct NoSelection
-{};
 
 /** One item of reads(): the block that the path \a Path (a TagPath) names, or the repetitions
  * \a Selection selects of the repeated block it runs through (decisions.md [repetition-selections]),
@@ -621,11 +618,11 @@ template <typename T>
 inline constexpr bool placesCovariance = false;
 
 /// \cond INTERNAL_SPECIALIZATIONS
-template <typename X, typename Path>
-inline constexpr bool placesCovariance<OnPath<X, Path>> = isNoiseCovariance<X>;
+template <typename X, typename Path, typename Selection>
+inline constexpr bool placesCovariance<OnPath<X, Path, Selection>> = isNoiseCovariance<X>;
 
-template <typename X, typename Path>
-inline constexpr bool placesCovariance<OnEach<X, Path>> = isNoiseCovariance<X>;
+template <typename X, typename Path, typename Selection>
+inline constexpr bool placesCovariance<OnEach<X, Path, Selection>> = isNoiseCovariance<X>;
 /// \endcond
 
 /** Whether \a T, a part of additiveNoise(), is placed by tag path with on() or onEach(): a
@@ -642,11 +639,11 @@ template <typename T>
 inline constexpr bool placesMixture = false;
 
 /// \cond INTERNAL_SPECIALIZATIONS
-template <typename X, typename Path>
-inline constexpr bool placesMixture<OnPath<X, Path>> = isGaussianMixture<std::remove_cvref_t<X>>;
+template <typename X, typename Path, typename Selection>
+inline constexpr bool placesMixture<OnPath<X, Path, Selection>> = isGaussianMixture<std::remove_cvref_t<X>>;
 
-template <typename X, typename Path>
-inline constexpr bool placesMixture<OnEach<X, Path>> = isGaussianMixture<std::remove_cvref_t<X>>;
+template <typename X, typename Path, typename Selection>
+inline constexpr bool placesMixture<OnEach<X, Path, Selection>> = isGaussianMixture<std::remove_cvref_t<X>>;
 /// \endcond
 
 }  // namespace internal
@@ -1269,6 +1266,33 @@ noiseFactor(Space const & space, OnPath<X, Path> const & part)
     auto block = pathSubspace<Path>(space);
     using Noise = GaussianParams<decltype(block), typename X::Scalar>;
     return OnPath<Noise, Path>{Noise{std::move(block), ZeroMeanOf<X>::Zero(part.value.rows()), part.value}};
+}
+
+/** \returns the covariance \a part placed on the repetitions it selects as a zero-mean %Gaussian in
+ * their space: the block that is repeated for one, or a repeated block of their count for several
+ */
+template <typename Space, MatrixExpression X, typename Path, typename Selection>
+[[nodiscard]] auto
+noiseFactor(Space const & space, OnPath<X, Path, Selection> const & part)
+{
+    auto block = pathChoiceSubspace<Path>(space, part.selection);
+    using Noise = GaussianParams<decltype(block), typename X::Scalar>;
+    return OnPath<Noise, Path, Selection>{
+        Noise{std::move(block), ZeroMeanOf<X>::Zero(part.value.rows()), part.value},
+        part.selection
+    };
+}
+
+/** \returns the covariance \a part placed on each repetition it selects as a zero-mean %Gaussian in
+ * one repetition's space
+ */
+template <typename Space, MatrixExpression X, typename Path, typename Selection>
+[[nodiscard]] auto
+noiseFactor(Space const &, OnEach<X, Path, Selection> const & part)
+{
+    using Block = decltype(pathRepetitionsSubspace<Path>(std::declval<Space const &>(), Eigen::Index{}));
+    using Noise = GaussianParams<typename Block::BlockType, typename X::Scalar>;
+    return OnEach<Noise, Path, Selection>{Noise{ZeroMeanOf<X>::Zero(part.value.rows()), part.value}, part.selection};
 }
 
 /** \returns the covariance \a part placed on each repetition of a block as a zero-mean %Gaussian in

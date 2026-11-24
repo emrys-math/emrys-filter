@@ -37,6 +37,7 @@
 #include <EmrysFilter/Models/ResolvedReads.h>
 #include <EmrysFilter/Models/Transform.h>
 #include <EmrysFilter/Spaces/Composite.h>
+#include <EmrysFilter/Spaces/Selection.h>
 #include <EmrysFilter/Spaces/Space.h>
 #include <EmrysFilter/Spaces/Subspace.h>
 #include <EmrysFilter/Spaces/TagPath.h>
@@ -418,8 +419,8 @@ template <typename T>
 inline constexpr bool isOnPath = false;
 
 /// \cond INTERNAL_SPECIALIZATIONS
-template <typename X, typename Path>
-inline constexpr bool isOnPath<OnPath<X, Path>>{true};
+template <typename X, typename Path, typename Selection>
+inline constexpr bool isOnPath<OnPath<X, Path, Selection>>{true};
 
 /// \endcond
 
@@ -454,9 +455,36 @@ addContinuousPart(Out const & out, Matrix & q, Part const & part, Scalar dt)
 {
     if constexpr (isOnPath<Part>)
     {
-        [&]<typename X, typename Path>(OnPath<X, Path> const *) {
-            addSpectralDensity(q, differenceBlockRows<Path>(out), part.value, dt);
-        }(static_cast<Part const *>(nullptr));
+        [&]<typename X, typename Path, typename Selection>(OnPath<X, Path, Selection> const & placed) {
+            if constexpr (std::is_same_v<Selection, NoSelection>)
+            {
+                addSpectralDensity(q, differenceBlockRows<Path>(out), placed.value, dt);
+            }
+            else if constexpr (RepetitionIndex<Selection>)
+            {
+                addSpectralDensity(q, repetitionBlockRows<true, Path>(out, placed.selection), placed.value, dt);
+            }
+            else
+            {
+                // The repetitions selected need not be one run: the density goes on their coordinates.
+                auto const rows = selectionCoordinates<true, Path>(out, placed.selection);
+                if constexpr (MatrixExpression<X>)
+                {
+                    EMRYS_FILTER_ASSERT(
+                        placed.value.rows() == rows.size() && placed.value.cols() == rows.size()
+                        && "a spectral density matrix is over the block's differences"
+                    );
+                    q(rows, rows) += dt * placed.value.template cast<Scalar>();
+                }
+                else
+                {
+                    for (Eigen::Index i = 0; i < rows.size(); ++i)
+                    {
+                        q(rows(i), rows(i)) += dt * Scalar(placed.value);
+                    }
+                }
+            }
+        }(part);
     }
     else if constexpr (isPlacedByPath<Part>)
     {

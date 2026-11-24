@@ -4,7 +4,8 @@
 // its factors in any order and by value, takes every form of the Gaussian [form-densities], and has marginals
 // and conditionals that are the factors' own. A factor placed by onEach() covers every repetition of a
 // repeated block, and Factors, the factors placed by path in no space, is placed in each space it is given
-// ([product-factors]).
+// ([product-factors]); factors placed on selected repetitions, one, several as one block, or each of a list,
+// cover those ([placed-repetitions]).
 
 #include <EmrysFilter/Distributions/Gamma.h>
 #include <EmrysFilter/Distributions/Gaussian.h>
@@ -20,6 +21,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
 #include <expected>
 #include <numbers>
@@ -34,6 +36,7 @@ using Emrys::GaussianParams;
 using Emrys::Linear;
 using Emrys::MomentsError;
 using Emrys::on;
+using Emrys::path;
 using Emrys::Product;
 using Emrys::RadiansPi;
 using Emrys::TagPath;
@@ -541,6 +544,126 @@ TEST(Product, FactorsArePlacedInEachSpace)
     EXPECT_EQ(five.valueDimension(), 12);
     EXPECT_EQ(five.moments().mean().tail<2>(), (Eigen::Vector2d{3.0, 1.0}));
 }
+
+namespace
+{
+
+GaussianParams<Landmark>
+makeNear()
+{
+    return GaussianParams<Landmark>{Eigen::Vector2d{-1.0, 4.0}, Eigen::Matrix2d{{0.5, 0.1}, {0.1, 0.3}}};
+}
+
+/// the mean and the covariance of a map of three landmarks
+struct MapMoments
+{
+    Eigen::Matrix<double, 8, 1> mean;
+    Eigen::Matrix<double, 8, 8> covariance;
+};
+
+// The moments of a map of three landmarks whose factors are \a first, \a second, and \a third, in
+// the space's order, with the position's factor first.
+MapMoments
+mapMoments(
+    GaussianParams<Landmark> const & first,
+    GaussianParams<Landmark> const & second,
+    GaussianParams<Landmark> const & third
+)
+{
+    Eigen::Matrix<double, 8, 1> mean;
+    mean << makePosition().mean(), first.mean(), second.mean(), third.mean();
+    Eigen::Matrix<double, 8, 8> covariance = Eigen::Matrix<double, 8, 8>::Zero();
+    covariance.topLeftCorner<2, 2>() = makePosition().covarianceLower().selfadjointView<Eigen::Lower>();
+    covariance.block<2, 2>(2, 2) = first.covarianceLower().selfadjointView<Eigen::Lower>();
+    covariance.block<2, 2>(4, 4) = second.covarianceLower().selfadjointView<Eigen::Lower>();
+    covariance.block<2, 2>(6, 6) = third.covarianceLower().selfadjointView<Eigen::Lower>();
+    return {mean, covariance};
+}
+
+}  // namespace
+
+// A factor placed on one repetition covers it, and a factor placed on each repetition of a list or
+// a sequence covers each of those: the moments put each factor on the landmarks it was placed on.
+TEST(Product, FactorsArePlacedOnSelectedRepetitions)
+{
+    auto const space = Map{Position{}, Landmarks{Landmark{}, 3}};
+    auto const listed = Product{
+        space,
+        Emrys::Factors{
+            on<Position>(makePosition()),
+            on(path<Landmarks>[1], makeNear()),
+            Emrys::onEach(path<Landmarks>[std::array{2, 0}], makeLandmark())
+        }
+    };
+    auto const expected = mapMoments(makeLandmark(), makeNear(), makeLandmark());
+    EXPECT_TRUE(listed.moments().mean().isApprox(expected.mean));
+    EXPECT_TRUE(listed.moments().covarianceLower().isApprox(expected.covariance));
+
+    auto const sequence = Product{
+        space,
+        on<Position>(makePosition()),
+        Emrys::onEach(path<Landmarks>[Eigen::seqN(1, 2)], makeLandmark()),
+        on(path<Landmarks>[0], makeNear())
+    };
+    auto const expectedSequence = mapMoments(makeNear(), makeLandmark(), makeLandmark());
+    EXPECT_TRUE(sequence.moments().mean().isApprox(expectedSequence.mean));
+    EXPECT_TRUE(sequence.moments().covarianceLower().isApprox(expectedSequence.covariance));
+
+    auto const landmarkParams = makeLandmark();
+    auto const nearParams = makeNear();
+    auto const landmark = landmarkParams.toDensity();
+    auto const near = nearParams.toDensity();
+    auto const positionParams = makePosition();
+    auto const position = positionParams.toDensity();
+    ASSERT_TRUE(landmark.has_value() && near.has_value() && position.has_value());
+    Eigen::Matrix<double, 8, 1> x;
+    x << 11.0, -4.0, 2.0, 1.5, 4.0, 0.0, 3.5, 2.0;
+    EXPECT_NEAR(
+        listed.logDensity(x),
+        position->logDensity(x.head<2>()) + landmark->logDensity(x.segment<2>(2)) + near->logDensity(x.segment<2>(4))
+            + landmark->logDensity(x.segment<2>(6)),
+        1e-12
+    );
+}
+
+// A factor placed on several repetitions as one block covers them jointly, its space a repeated
+// block of their count.
+TEST(Product, AFactorCoversSeveralRepetitionsAsOneBlock)
+{
+    Eigen::Vector4d const pairMean{3.0, 1.0, -2.0, 0.5};
+    Eigen::Matrix4d pairCovariance;
+    pairCovariance << 2.0, 0.5, 0.3, 0.1, 0.5, 1.0, 0.2, 0.0, 0.3, 0.2, 1.5, 0.4, 0.1, 0.0, 0.4, 0.8;
+    auto const pair = GaussianParams<Landmarks>{Landmarks{Landmark{}, 2}, pairMean, pairCovariance};
+    auto const product = Product{
+        Map{Position{}, Landmarks{Landmark{}, 3}},
+        on<Position>(makePosition()),
+        on(path<Landmarks>[std::array{2, 0}], pair),
+        on(path<Landmarks>[1], makeNear())
+    };
+    auto const moments = product.moments();
+    EXPECT_TRUE(moments.mean().segment<2>(6).isApprox(pairMean.head<2>()));
+    EXPECT_TRUE(moments.mean().segment<2>(2).isApprox(pairMean.tail<2>()));
+    Eigen::MatrixXd const covariance = moments.covarianceLower().selfadjointView<Eigen::Lower>();
+    EXPECT_TRUE((covariance.block<2, 2>(6, 2).isApprox(pairCovariance.block<2, 2>(0, 2))));
+    Eigen::Matrix2d const near = makeNear().covarianceLower().selfadjointView<Eigen::Lower>();
+    EXPECT_TRUE((covariance.block<2, 2>(4, 4).isApprox(near)));
+}
+
+#if GTEST_HAS_DEATH_TEST && !defined(NDEBUG) && !defined(EIGEN_NO_DEBUG)
+// Selections that place two factors on one repetition do not partition the space.
+TEST(ProductDeathTest, SelectionsMustPartitionTheSpace)
+{
+    EXPECT_DEATH(
+        (Product{
+            Map{Position{}, Landmarks{Landmark{}, 3}},
+            on<Position>(makePosition()),
+            on(path<Landmarks>[1], makeNear()),
+            Emrys::onEach(path<Landmarks>[Eigen::seqN(1, 2)], makeLandmark())
+        }),
+        "partition"
+    );
+}
+#endif
 
 // A path may name the whole space, so a repeated space is one onEach() factor.
 TEST(Product, OnEachMayCoverTheWholeSpace)

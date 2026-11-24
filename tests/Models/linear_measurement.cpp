@@ -21,10 +21,13 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
 #include <numbers>
 #include <random>
 #include <type_traits>
+#include <utility>
+#include <vector>
 
 using Emrys::additiveNoise;
 using Emrys::block;
@@ -442,6 +445,125 @@ TEST(LinearMeasurement, RepeatsWithTheBlockItReadsEachOf)
         Eigen::MatrixXd const lower = posterior.covarianceLower().template triangularView<Eigen::Lower>();
         EXPECT_LT((lower - Eigen::MatrixXd{expected.triangularView<Eigen::Lower>()}).norm(), 1e-12);
     }
+}
+
+namespace
+{
+
+// The landmarks \a seen, in that order, relative to the vehicle's position, by Columns that read
+// each landmark listed into a repetition of the measurement.
+template <typename Seen>
+auto
+makeRelativeTo(Seen const & seen)
+{
+    return measurementModel(
+        Columns{onEach(path<Landmarks>[seen], Eigen::Matrix2d::Identity()), on<Position>(-Eigen::Matrix2d::Identity())},
+        additiveNoise(onEach<>(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), offsetNoise}))
+    );
+}
+
+// The update of \a prior by \a model on \a observed is the hand Kalman update with the matrix
+// \a full over the state and the noise covariance \a r.
+template <typename Model>
+void
+expectHandUpdate(
+    GaussianParams<Map> const & prior,
+    Model const & model,
+    Eigen::MatrixXd const & full,
+    Eigen::MatrixXd const & r,
+    Eigen::VectorXd const & observed
+)
+{
+    Eigen::MatrixXd const p = prior.covarianceLower().selfadjointView<Eigen::Lower>();
+    Eigen::MatrixXd const s = full * p * full.transpose() + r;
+    Eigen::MatrixXd const k = p * full.transpose() * s.inverse();
+    auto const updated = Emrys::update(prior, observe(methods::linearized(), model, observed));
+    ASSERT_TRUE(updated);
+    auto const & posterior = updated->branches[0].posterior;
+    EXPECT_LT((posterior.mean() - (prior.mean() + k * (observed - full * prior.mean()))).norm(), 1e-12);
+    Eigen::MatrixXd const expected = p - k * full * p;
+    Eigen::MatrixXd const lower = posterior.covarianceLower().template triangularView<Eigen::Lower>();
+    EXPECT_LT((lower - Eigen::MatrixXd{expected.triangularView<Eigen::Lower>()}).norm(), 1e-12);
+}
+
+// The matrix over a map of \a count landmarks of the offsets of the landmarks \a seen, in that
+// order, from the position, and the noise covariance of the offsets.
+std::pair<Eigen::MatrixXd, Eigen::MatrixXd>
+handRelativeTo(Eigen::Index count, std::vector<Eigen::Index> const & seen)
+{
+    auto const rows = Eigen::Index(2 * seen.size());
+    Eigen::MatrixXd full = Eigen::MatrixXd::Zero(rows, 2 + 2 * count);
+    Eigen::MatrixXd r = Eigen::MatrixXd::Zero(rows, rows);
+    for (std::size_t i = 0; i < seen.size(); ++i)
+    {
+        auto const row = Eigen::Index(2 * i);
+        full.block<2, 2>(row, 0) = -Eigen::Matrix2d::Identity();
+        full.block<2, 2>(row, 2 + 2 * seen[i]) = Eigen::Matrix2d::Identity();
+        r.block<2, 2>(row, row) = offsetNoise;
+    }
+    return {full, r};
+}
+
+}  // namespace
+
+// Columns that read each landmark of a list, or of a sequence, measure those landmarks in that
+// order, and the measurement space they infer has the selection's count ([placed-repetitions]).
+TEST(LinearMeasurement, RepeatsOverTheRepetitionsSelected)
+{
+    auto const prior = makeMap(4);
+    {
+        auto const [full, r] = handRelativeTo(4, {3, 1});
+        expectHandUpdate(prior, makeRelativeTo(std::array{3, 1}), full, r, Eigen::Vector4d{0.5, -0.2, 1.1, 0.4});
+    }
+    {
+        auto const [full, r] = handRelativeTo(4, {1, 2, 3});
+        expectHandUpdate(prior, makeRelativeTo(Eigen::seqN(1, 3)), full, r, Eigen::VectorXd::LinSpaced(6, 0.5, -1.5));
+    }
+}
+
+// Columns placed on one landmark measure it alone, in a measurement space of one repetition's
+// rows.
+TEST(LinearMeasurement, ColumnsOnOneRepetitionReadIt)
+{
+    auto const relative = measurementModel(
+        Columns{on(path<Landmarks>[2], Eigen::Matrix2d::Identity()), on<Position>(-Eigen::Matrix2d::Identity())},
+        additiveNoise(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), offsetNoise})
+    );
+    auto const [full, r] = handRelativeTo(3, {2});
+    expectHandUpdate(makeMap(3), relative, full, r, Eigen::Vector2d{0.5, -0.2});
+}
+
+// Additive noise placed on one repetition of the measurement and on each of a sequence of the
+// others gives the hand Kalman update with those blocks of R ([placed-repetitions]).
+TEST(LinearMeasurement, NoiseIsPlacedOnSelectedRepetitions)
+{
+    Eigen::Matrix2d const nearNoise{{0.05, 0.01}, {0.01, 0.04}};
+    auto const relative = measurementModel(
+        []<typename T>(auto const & in, auto const & out, auto const & x) {
+            auto const landmarks = block<Landmarks>(in, x);
+            auto const position = block<Position>(in, x);
+            auto result = Emrys::zeros<T>(out);
+            for (Eigen::Index i = 0; i < out.count(); ++i)
+            {
+                result.template segment<2>(2 * i) = landmarks.template segment<2>(2 * i) - position;
+            }
+            return result;
+        },
+        reads(path<Landmarks>, path<Position>),
+        outputSpace(Emrys::CountFrom<Landmarks, Offsets>{}),
+        additiveNoise(
+            on(path<Offsets>[0], nearNoise),
+            onEach(
+                path<Offsets>[Eigen::seqN(1, 2)],
+                GaussianParams<Offset> {
+                    Eigen::Vector2d::Zero(), offsetNoise
+                }
+            )
+        )
+    );
+    auto [full, r] = handRelativeTo(3, {0, 1, 2});
+    r.topLeftCorner<2, 2>() = nearNoise;
+    expectHandUpdate(makeMap(3), relative, full, r, Eigen::VectorXd::LinSpaced(6, 1.0, -1.0));
 }
 
 // Columns that repeat update, weigh points, and simulate as the function does in the space that

@@ -50,6 +50,10 @@ instead.
   repeated block, and `onEach(path<Fleet>[repetitions], model)` places a process model on each
   repetition of a sequence or a list, an input renamed to a `Repeated` tag having a value per
   repetition selected.
+- `on(path<Landmarks>[k], x)` and `onEach(path<Landmarks>[repetitions], x)` place a factor of
+  `Factors` or `Product`, a block of `Columns`, or a part of `additiveNoise()` on selected
+  repetitions, and `on()` a part of `continuousNoise()`. `Columns{onEach(path<Landmarks>[seen], h),
+  on<Position>(-h)}` measures the landmarks listed, in a space of their count.
 - `compose()` and `on<Path>()` take a model whose `reads()` selects repetitions. A composition reads
   each name once, with the selection of the first part that reads it; parts that read a block
   under one name select the same repetitions, which is asserted when the composition meets a

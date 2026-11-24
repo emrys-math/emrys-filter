@@ -27,6 +27,7 @@
 #include <EmrysFilter/Models/TransformArgs.h>
 #include <EmrysFilter/Spaces/Composite.h>
 #include <EmrysFilter/Spaces/Coordinates.h>
+#include <EmrysFilter/Spaces/Selection.h>
 #include <EmrysFilter/Spaces/Space.h>
 #include <EmrysFilter/Spaces/Subspace.h>
 #include <EmrysFilter/Spaces/TagPath.h>
@@ -296,6 +297,12 @@ private:
     Matrix m_matrix;  ///< \f$ H \f$
 };
 
+/** The argument of reads() of a block of columns on the path \a Path with the selection \a S: the
+ * path, or the path with the selection.
+ */
+template <typename Path, typename S>
+using ColumnsItem = std::conditional_t<std::is_same_v<S, NoSelection>, Path, SelectedPath<Path, S>>;
+
 /** What a block of a model's Columns says of itself, given as \a T: nothing, for anything but a
  * matrix placed by on() or onEach() on a block of the state.
  */
@@ -304,30 +311,57 @@ struct ColumnsOf
 {
     static constexpr bool IsPlaced = false;      ///< whether \a T is a block of columns
     static constexpr bool Each = false;          ///< whether it is read per repetition
+    static constexpr bool Selected = false;      ///< whether it reads selected repetitions
     static constexpr int Rows = Eigen::Dynamic;  ///< the rows of its matrix, or Eigen::Dynamic
     using Path = void;                           ///< the path to the block read
 };
 
-/** A matrix read from the block that \a P names. */
-template <MatrixExpression M, typename P>
-struct ColumnsOf<OnPath<M, P>>
+/** A matrix read from the block that \a P names, or from the repetitions \a S selects of the
+ * repeated block it runs through, read as reads() reads <tt>path<P>[selection]</tt>.
+ */
+template <MatrixExpression M, typename P, typename S>
+struct ColumnsOf<OnPath<M, P, S>>
 {
-    static constexpr bool IsPlaced = true;             ///< a block of columns
-    static constexpr bool Each = false;                ///< read whole
-    static constexpr int Rows = M::RowsAtCompileTime;  ///< the rows of its matrix
-    using Path = P;                                    ///< the path to the block read
+    static constexpr bool IsPlaced = true;                                 ///< a block of columns
+    static constexpr bool Each = false;                                    ///< read whole
+    static constexpr bool Selected = !std::is_same_v<S, NoSelection>;      ///< whether it reads selected repetitions
+    static constexpr int Rows = M::RowsAtCompileTime;                      ///< the rows of its matrix
+    using Path = P;                                                        ///< the path to the block read
+    using Item = typename ReadItemOf<ColumnsItem<AsTagPath<P>, S>>::type;  ///< the item of reads() it is
 };
 
-/** A matrix read from each repetition of the repeated block that \a P names. */
-template <MatrixExpression M, typename P>
+/** A matrix read from each repetition of the repeated block that \a P names, or from each that
+ * \a S, a sequence or a list, selects.
+ */
+template <MatrixExpression M, typename P, typename S>
     requires(!std::is_same_v<P, WholeSpace>)
-struct ColumnsOf<OnEach<M, P>>
+struct ColumnsOf<OnEach<M, P, S>>
 {
-    static constexpr bool IsPlaced = true;             ///< a block of columns
-    static constexpr bool Each = true;                 ///< read per repetition
-    static constexpr int Rows = M::RowsAtCompileTime;  ///< the rows of its matrix
-    using Path = P;                                    ///< the path to the block read
+    static constexpr bool IsPlaced = true;                                 ///< a block of columns
+    static constexpr bool Each = true;                                     ///< read per repetition
+    static constexpr bool Selected = !std::is_same_v<S, NoSelection>;      ///< whether it reads selected repetitions
+    static constexpr int Rows = M::RowsAtCompileTime;                      ///< the rows of its matrix
+    using Path = P;                                                        ///< the path to the block read
+    using Item = typename ReadItemOf<ColumnsItem<AsTagPath<P>, S>>::type;  ///< the item of reads() it is
 };
+
+/** \returns the argument of reads() that the block of columns \a placed reads: its path, or its
+ * path with the repetitions it selects
+ */
+template <typename Placed>
+[[nodiscard]] auto
+columnsItem(Placed const & placed)
+{
+    using Path = AsTagPath<typename ColumnsOf<Placed>::Path>;
+    if constexpr (ColumnsOf<Placed>::Selected)
+    {
+        return SelectedPath<Path, std::remove_cvref_t<decltype(placed.selection)>>{placed.selection};
+    }
+    else
+    {
+        return Path{};
+    }
+}
 
 /** The fixed one of \a Rows, Eigen::Dynamic if none is, or 0 if two fixed ones differ. */
 template <int... Rows>
@@ -492,6 +526,57 @@ struct LinearPerRepetition
     }
 };
 
+/** The measurement space function of a linear model whose Columns repeat over the repetitions
+ * \a selection selects of the state's block \a Path, a sequence or a list, and that was given no
+ * space: a Repeated block of \a Rows Linear coordinates per repetition selected, in the selection's
+ * order.
+ */
+template <typename Path, int Rows, typename Selection>
+struct LinearPerSelection
+{
+    Selection selection;  ///< the repetitions the first repeating block of columns reads
+
+    /** \returns the measurement space in the state's space \a space */
+    template <typename StateSpace>
+    [[nodiscard]] auto
+    operator()(StateSpace const & space) const
+    {
+        using Block = PathSubspaceType<StateSpace, Path>;
+        return Repeated<Linear<Rows>, maxCountOf<Block>>{Linear<Rows>{}, selectedCount<Path>(space, selection)};
+    }
+};
+
+/** \returns the measurement space function of a linear model whose Columns \a columns repeat and
+ * that was given no space: one repetition of the measurement per repetition its first repeating block
+ * of columns reads
+ */
+template <typename... Placed>
+[[nodiscard]] auto
+repeatedColumnsSpace(Columns<Placed...> const & columns)
+{
+    constexpr std::size_t first = [] {
+        constexpr std::array<bool, sizeof...(Placed)> each{ColumnsOf<Placed>::Each...};
+        std::size_t k = 0;
+        while (!each[k])
+        {
+            ++k;
+        }
+        return k;
+    }();
+    using First = std::tuple_element_t<first, std::tuple<Placed...>>;
+    using Path = AsTagPath<typename ColumnsOf<First>::Path>;
+    constexpr int Rows = Columns<Placed...>::Rows;
+    if constexpr (ColumnsOf<First>::Selected)
+    {
+        auto const & selection = std::get<first>(columns.placed()).selection;
+        return LinearPerSelection<Path, Rows, std::remove_cvref_t<decltype(selection)>>{selection};
+    }
+    else
+    {
+        return LinearPerRepetition<typename ColumnsOf<First>::Path, Rows>{};
+    }
+}
+
 /** The function of a linear measurement model given its matrix by Columns (decisions.md
  * [linear-sensors]): \f$ \sum_k H_k x_k \f$ over the blocks read, which are the blocks of its input
  * in the columns' order, with \f$ H \f$ over the whole input beside it as its Jacobian: the
@@ -596,7 +681,7 @@ private:
     place(P const & placed, In const & in, Eigen::Index count, Eigen::Index & column, Jacobian & jacobian)
     {
         using C = ColumnsOf<P>;
-        using Name = PathTag<typename C::Path>;
+        using Name = typename C::Item::NameType;
         auto const & matrix = placed.value;
         Eigen::Index const rows = matrix.rows();
         Eigen::Index const width = valueDimension(pathSubspace<Name>(in));
@@ -642,12 +727,19 @@ private:
 template <PolicyKind K, typename... Policies>
 inline constexpr bool hasPolicy = ((policyKind<std::remove_cvref_t<Policies>> == K) || ...);
 
-/** \returns the reads() policy of the paths \a Paths, a TagPaths: what a Columns reads */
-template <typename... Paths>
+/** \returns the reads() policy of \a columns: the blocks its matrices are placed on, with the
+ * repetitions each selects, in order
+ */
+template <typename... Placed>
 [[nodiscard]] auto
-readsOf(TagPaths<Paths...> *)
+columnsReads(Columns<Placed...> const & columns)
 {
-    return reads(path<Paths>...);
+    return std::apply(
+        [](auto const &... placed) {
+            return reads(columnsItem(placed)...);
+        },
+        columns.placed()
+    );
 }
 
 /** Checks the policies \a Set of a measurement model: no continuousNoise(), which is a process
@@ -812,6 +904,31 @@ noisePartFits(OnPath<X, Path> const *)
     return noiseRowsFit(noiseRowsAtCompileTime<std::remove_cvref_t<X>>(), differencesAtCompileTime<Block>);
 }
 
+/** \returns whether \a X, placed on the repetitions \a Selection selects of the block of \a Out
+ * that \a Path runs through, covers them
+ */
+template <typename Out, typename X, typename Path, typename Selection>
+[[nodiscard]] consteval bool
+noisePartFits(OnPath<X, Path, Selection> const *)
+{
+    using Block = decltype(pathChoiceSubspace<Path>(std::declval<Out const &>(), std::declval<Selection const &>()));
+    return noiseRowsFit(noiseRowsAtCompileTime<std::remove_cvref_t<X>>(), differencesAtCompileTime<Block>);
+}
+
+/** \returns whether \a X, placed on each repetition \a Selection selects of the block of \a Out
+ * that \a Path names, covers one repetition
+ */
+template <typename Out, typename X, typename Path, typename Selection>
+[[nodiscard]] consteval bool
+noisePartFits(OnEach<X, Path, Selection> const *)
+{
+    using Block = decltype(pathRepetitionsSubspace<Path>(std::declval<Out const &>(), Eigen::Index{}));
+    return noiseRowsFit(
+        noiseRowsAtCompileTime<std::remove_cvref_t<X>>(),
+        differencesAtCompileTime<typename Block::BlockType>
+    );
+}
+
 /** \returns whether \a X, placed on each repetition of the block of \a Out that \a Path names,
  * covers one repetition
  */
@@ -968,7 +1085,7 @@ measurementModel(Columns<Placed...> columns, Policies &&... policies)
         !internal::hasPolicy<internal::PolicyKind::reads, Policies...>,
         "a model given Columns reads the blocks its columns are placed on, so it takes no reads()"
     );
-    auto const read = internal::readsOf(static_cast<typename ColumnsType::Paths *>(nullptr));
+    auto const read = internal::columnsReads(columns);
     using Function = internal::ColumnsFunction<Placed...>;
     if constexpr (ColumnsType::Repeats && !internal::hasPolicy<internal::PolicyKind::outputSpace, Policies...>)
     {
@@ -977,8 +1094,7 @@ measurementModel(Columns<Placed...> columns, Policies &&... policies)
             "a model whose columns repeat infers its measurement space from its matrices' rows, so fix them at "
             "compile time, or give it outputSpace() with a function such as CountFrom"
         );
-        auto const space =
-            outputSpace(internal::LinearPerRepetition<typename ColumnsType::FirstEachPath, ColumnsType::Rows>{});
+        auto const space = outputSpace(internal::repeatedColumnsSpace(columns));
         using Set = internal::PolicySet<decltype(read), decltype(space), std::remove_cvref_t<Policies>...>;
         static_assert(internal::checkMeasurementFunction<Function, Set>());
         return MeasurementFunction<Function, decltype(read), decltype(space), std::remove_cvref_t<Policies>...>{

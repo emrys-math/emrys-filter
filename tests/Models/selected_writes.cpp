@@ -307,6 +307,47 @@ TEST(SelectedWrites, AReturnedJacobianIsWrittenToTheSelection)
     );
 }
 
+// Continuous noise placed on one repetition and on a list of the others, as a density or as a
+// matrix over the repetitions listed, is the noise placed on the tagged blocks ([placed-repetitions]).
+TEST(SelectedWrites, NoiseIsPlacedOnSelectedRepetitions)
+{
+    auto const fleet = [](auto const &... noise) {
+        return processModel(turnAll, reads(path<Fleet>), writes(path<Fleet>), continuousNoise(noise...));
+    };
+    auto const tagged = [](auto const &... noise) {
+        return processModel(
+            turnAll,
+            reads(path<First>, path<Second>, path<Third>),
+            writes(path<First>, path<Second>, path<Third>),
+            continuousNoise(noise...)
+        );
+    };
+    expectSamePredictions(
+        fleet(on(path<Fleet>[1], 0.3), on(path<Fleet>[std::array{2, 0}], 0.05)),
+        tagged(on<Second>(0.3), on<First>(0.05), on<Third>(0.05))
+    );
+    Eigen::Vector4d const first{0.1, 0.2, 0.3, 0.4};
+    Eigen::Vector4d const third{0.5, 0.6, 0.7, 0.8};
+    Eigen::Matrix<double, 8, 1> listed;
+    listed << third, first;
+    expectSamePredictions(
+        fleet(
+            on(
+                path<Fleet>[std::array{2, 0}],
+                Eigen::Matrix<double, 8, 8> {
+                    listed.asDiagonal()
+                }
+            ),
+            on(path<Fleet>[1], 0.3)
+        ),
+        tagged(
+            on<First>(Eigen::Matrix4d{first.asDiagonal()}),
+            on<Second>(0.3),
+            on<Third>(Eigen::Matrix4d{third.asDiagonal()})
+        )
+    );
+}
+
 // A composition that writes selections, placed on a block of a larger state, predicts as the
 // tagged composition placed on the tagged block.
 TEST(SelectedWrites, APlacedCompositionWritesItsSelections)

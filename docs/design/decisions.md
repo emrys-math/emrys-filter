@@ -94,6 +94,7 @@ Read the index, then the decisions your change touches.
 | [function-scalars](#function-scalars) | A function the library calls with a vector may take the vector's scalar as its one template parameter, which the call supplies |
 | [model-placement](#model-placement) | A model is placed on a block by prefixing its paths, on every repetition by onEach, and models compose side by side |
 | [selected-reads](#selected-reads) | A model reads selected repetitions under the tag of their space, and holds the selection |
+| [placed-selected-values](#placed-selected-values) | A factor, a sensor's matrix, or noise is placed on selected repetitions by a selected path |
 | [placed-repetitions](#placed-repetitions) | A model is placed on one repetition, or on each of several, by a selected path |
 | [selected-writes](#selected-writes) | A process model writes selected repetitions under the tag of their space, and holds the selection |
 | [composed-selections](#composed-selections) | A composition reads each name with one selection, and a placement keeps its model's selections |
@@ -1962,6 +1963,31 @@ with one tag per repetition, and writes that do not partition assert.
 **Where.** `Models/Policies.h` (`WritesItems`), `Models/ProcessModel.h` (`outputOf()`,
 `writesPartition()`, `ResolvedProcess`), `Models/Placement.h` (`placedWrites()`).
 
+### placed-selected-values
+
+*A factor, a sensor's matrix, or noise is placed on selected repetitions by a selected path.*
+
+**Rule.** `on(path<Landmarks>[k], x)` places a value on one repetition, in the space of the block
+that is repeated, and `on(path<Landmarks>[repetitions], x)` on several as one block, a repeated block
+of their count; `onEach(path<Landmarks>[repetitions], x)` places a value given for one repetition on
+each repetition of a sequence or a list. They stand where `on<Path>(x)` and `onEach<Path>(x)` do
+[product-factors], [linear-sensors]: a factor of `Factors` or `Product`, a block of `Columns`, a part
+of `additiveNoise()`, and, `on()` alone, a part of `continuousNoise()`. `Columns` read what each
+block's path value names, so an `onEach()` of a list measures the repetitions listed in its order,
+and the measurement space it infers has the list's count.
+
+**Why.** One spelling places a model and a value on repetitions [placed-repetitions]. A product's
+factors partition its space, which its constructor asserts, so selections that place two factors on
+one repetition, or leave one uncovered, assert there when the space is known. Continuous noise is a
+sum of its parts, as it is for blocks.
+
+**Evidence.** `tests/Distributions/product.cpp`, `tests/Models/linear_measurement.cpp`, and
+`tests/Models/selected_writes.cpp`: each equals its form on the blocks or the hand-built matrices.
+
+**Where.** `Spaces/TagPath.h` (`OnPath`, `OnEach` with a selection), `Distributions/Product.h`
+(`PlacedFactor`), `Models/MeasurementModel.h` (`ColumnsOf`, `repeatedColumnsSpace()`),
+`Models/Policies.h` (`noiseFactor()`), `Models/ProcessModel.h` (`addContinuousPart()`).
+
 ### placed-repetitions
 
 *A model is placed on one repetition, or on each of several, by a selected path.*
@@ -1974,7 +2000,8 @@ same placed name, and the rest are inputs of the call. A path that goes on insid
 renames...)` places a process model on each repetition of a sequence or a list, read and written
 as a repeated block of their count under the block's tag, so an input renamed to a `Repeated` tag
 has a value per repetition selected, in their order. A repetition holds no repeated block, so the
-model's own `reads()` and `writes()` select no repetitions, and the forms that take a type, `on<Path>()` and `onEach<Path>()`, stay.
+model's own `reads()` and `writes()` select no repetitions, and the forms that take a type,
+`on<Path>()` and `onEach<Path>()`, stay. A value is placed the same way [placed-selected-values].
 
 **Why.** The path value is what `reads()` takes [selected-reads], so a placement takes it too, and a
 part that moves vehicle `k` stands beside `onEach()` of the others, which carries them. The name a

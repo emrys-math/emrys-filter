@@ -321,7 +321,10 @@ the model it places. The parts of one composition read no coordinate twice, so a
 writes a selection as it reads one, `writes(path<Fleet>[k])`, so a part that moves vehicle `k`
 stands beside one that carries the rest, `writes(path<Fleet>[others])`. A model written for one
 vehicle is placed on vehicle `k` by the same path value, `on(path<Fleet>[k], steered)`, and on each
-of the others by `onEach(path<Fleet>[others], cruising)`.
+of the others by `onEach(path<Fleet>[others], cruising)`. Values are placed the same way: a sensor
+that reads the landmarks seen, in their order, is `Columns{onEach(path<Landmarks>[seen], h),
+on<Position>(-h)}`, and a prior with its own factor for one landmark is `Factors{...,
+on(path<Landmarks>[k], factor), onEach(path<Landmarks>[others], prior)}`.
 
 A model built once covers a measurement that follows the state's counts:
 `outputSpace(CountFrom<Landmarks, RangeBearings>{})` sizes it, a matrix's `Columns` repeat with a

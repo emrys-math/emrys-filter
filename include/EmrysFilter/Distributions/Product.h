@@ -25,6 +25,7 @@
 #include <EmrysFilter/Distributions/SampleSet.h>
 #include <EmrysFilter/Distributions/Sampling.h>
 #include <EmrysFilter/Spaces/Indexing.h>
+#include <EmrysFilter/Spaces/Selection.h>
 #include <EmrysFilter/Spaces/Space.h>
 #include <EmrysFilter/Spaces/Subspace.h>
 #include <EmrysFilter/Spaces/TagPath.h>
@@ -125,6 +126,39 @@ struct PlacedFactor<OnPath<F, Path>>
     /** Whether the factor's space is the space of the block \a Path names in \a Space. */
     template <typename Space>
     static constexpr bool fitsIn = factorFits<typename F::SpaceType, PathSubspaceType<Space, Path>>;
+};
+
+/** A factor on the repetitions that \a Selection selects of the repeated block the path \a Path
+ * runs through: one repetition, or several as one block.
+ */
+template <ProductFactor F, typename Path, typename Selection>
+struct PlacedFactor<OnPath<F, Path, Selection>>
+{
+    /** The factor's type in a product over \a Space: the factor's own. */
+    template <typename Space>
+    using TypeIn = F;
+
+    /** \returns the factor of \a placed, as a product over \a Space holds it */
+    template <typename Space>
+    [[nodiscard]] static F
+    factorIn(OnPath<F, Path, Selection> && placed, Space const &)
+    {
+        return std::move(placed.value);
+    }
+
+    /** \returns the coordinates of \a space of the repetitions \a placed selects, as an index set */
+    template <typename Space>
+    [[nodiscard]] static auto
+    indicesIn(OnPath<F, Path, Selection> const & placed, Space const & space)
+    {
+        return asIndexSet(marginalIdx<false, Path>(space, placed.selection));
+    }
+
+    /** Whether the factor's space is the space of the repetitions selected in \a Space. */
+    template <typename Space>
+    static constexpr bool fitsIn = factorFits<
+        typename F::SpaceType,
+        decltype(pathChoiceSubspace<Path>(std::declval<Space const &>(), std::declval<Selection const &>()))>;
 };
 
 /** A factor for a Product on the coordinates \a indices, which it is known to fit: a
@@ -656,16 +690,53 @@ struct PlacedFactor<OnEach<F, Path>>
     }();
 };
 
+/** A factor on each repetition that \a Selection, a sequence or a list, selects of the repeated
+ * block the path \a Path names: an EachRepetition of it over a repeated block of their count, on
+ * their coordinates in the order selected.
+ */
+template <ProductFactor F, typename Path, typename Selection>
+struct PlacedFactor<OnEach<F, Path, Selection>>
+{
+    /** The repeated block of the repetitions selected, in \a Space. */
+    template <typename Space>
+    using Block = decltype(pathRepetitionsSubspace<Path>(std::declval<Space const &>(), Eigen::Index{}));
+
+    /** The factor's type in a product over \a Space: an EachRepetition over the repetitions selected. */
+    template <typename Space>
+    using TypeIn = EachRepetition<F, Block<Space>>;
+
+    /** \returns the factor of \a placed on each repetition it selects in \a space */
+    template <typename Space>
+    [[nodiscard]] static TypeIn<Space>
+    factorIn(OnEach<F, Path, Selection> && placed, Space const & space)
+    {
+        Eigen::Index const count = selectedCount<Path>(space, placed.selection);
+        return {std::move(placed.value), pathRepetitionsSubspace<Path>(space, count)};
+    }
+
+    /** \returns the coordinates of \a space of the repetitions \a placed selects, as an index set */
+    template <typename Space>
+    [[nodiscard]] static auto
+    indicesIn(OnEach<F, Path, Selection> const & placed, Space const & space)
+    {
+        return asIndexSet(marginalIdx<false, Path>(space, placed.selection));
+    }
+
+    /** Whether one repetition's space is the factor's. */
+    template <typename Space>
+    static constexpr bool fitsIn = factorFits<typename F::SpaceType, typename Block<Space>::BlockType>;
+};
+
 /** Whether \a T places a factor by tag path: on() or onEach() of a ProductFactor. */
 template <typename T>
 inline constexpr bool isPlacedFactor = false;
 
 /// \cond INTERNAL_SPECIALIZATIONS
-template <ProductFactor F, typename Path>
-inline constexpr bool isPlacedFactor<OnPath<F, Path>>{true};
+template <ProductFactor F, typename Path, typename Selection>
+inline constexpr bool isPlacedFactor<OnPath<F, Path, Selection>>{true};
 
-template <ProductFactor F, typename Path>
-inline constexpr bool isPlacedFactor<OnEach<F, Path>>{true};
+template <ProductFactor F, typename Path, typename Selection>
+inline constexpr bool isPlacedFactor<OnEach<F, Path, Selection>>{true};
 /// \endcond
 
 }  // namespace internal

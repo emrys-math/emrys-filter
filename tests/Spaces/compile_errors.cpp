@@ -293,6 +293,15 @@ diffBlockColumns()
 [[maybe_unused]] auto const index = Emrys::idx<Emrys::Composite<Position, Fleet>, Fleet>(Eigen::placeholders::lastN(1));
 #endif
 
+#if defined(ON_EACH_VALUE_OF_ONE_REPETITION)  // static_assert: TagPath.h: places x on each of several repetitions
+[[maybe_unused]] auto const placed = Emrys::onEach(Emrys::path<Fleet>[1], Eigen::Matrix2d::Identity());
+#endif
+
+#if defined(ON_EACH_VALUE_INSIDE_A_REPETITION)  // static_assert: TagPath.h: places x on repetitions of the repeated
+[[maybe_unused]] auto const placed =
+    Emrys::onEach(Emrys::path<Fleet, Position>[Eigen::seqN(0, 2)], Eigen::Matrix2d::Identity());
+#endif
+
 #if defined(MAP_NOT_A_MATRIX)  // static_assert: UnitQuaternion.h: map() takes an Eigen vector of four coordinates
 [[maybe_unused]] void
 mapNumber()
