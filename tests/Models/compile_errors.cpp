@@ -542,6 +542,138 @@ struct Landmarks : Emrys::Linear<Eigen::Dynamic, 8>
 }();
 #endif
 
+// Whether an update of makeInitial() by \a model, a model of the position, succeeds: what calls its function.
+template <typename Model>
+[[maybe_unused]] bool
+updatedBy(Model const & model)
+{
+    return bool(Emrys::update(makeInitial(), Emrys::observe(methods::linearized(), model, Eigen::Vector2d::Zero())));
+}
+
+#if defined(AFFINE_CONSTANT_BATCHED)  // static_assert: AffineConstants.h: a batched function takes no constant items
+[[maybe_unused]] auto const model = Emrys::measurementModel(
+    Emrys::batched([](auto const &, auto const &, auto const &, auto &) {}),
+    Emrys::reads(Emrys::path<Position>),
+    Emrys::affineIn(Emrys::on<Velocity>(Eigen::Matrix2d::Identity())),
+    Emrys::additiveNoise(makeNoise())
+);
+#endif
+
+#if defined(AFFINE_CONSTANT_READ_TOO)  // static_assert: AffineConstants.h: so reads() does not name it too
+[[maybe_unused]] auto const model = Emrys::measurementModel(
+    positionOf,
+    Emrys::reads(Emrys::path<Position>, Emrys::path<Velocity>),
+    Emrys::affineIn(Emrys::on<Velocity>(Eigen::Matrix2d::Identity())),
+    Emrys::additiveNoise(makeNoise())
+);
+#endif
+
+#if defined(AFFINE_CONSTANT_NO_READS)  // static_assert: AffineConstants.h: names what its function reads with reads()
+[[maybe_unused]] auto const model = Emrys::measurementModel(
+    [](auto const & x) {
+        return x.template head<2>().eval();
+    },
+    Emrys::affineIn(Emrys::on<Velocity>(Eigen::Matrix2d::Identity())),
+    Emrys::additiveNoise(makeNoise())
+);
+#endif
+
+#if defined(AFFINE_CONSTANT_TUPLE_JACOBIAN)  // static_assert: AffineConstants.h: returns its Jacobian as one matrix
+[[maybe_unused]] auto const constantUpdate = updatedBy(
+    Emrys::measurementModel(
+        []<typename T>(auto const & in, auto const &, auto const & x) {
+            return Emrys::withJacobian(
+                Eigen::Matrix<T, 2, 1>{Emrys::block<Position>(in, x)},
+                std::tuple{Eigen::Matrix2d{Eigen::Matrix2d::Identity()}}
+            );
+        },
+        Emrys::reads(Emrys::path<Position>),
+        Emrys::affineIn(Emrys::on<Velocity>(Eigen::Matrix2d::Identity())),
+        Emrys::additiveNoise(makeNoise())
+    )
+);
+#endif
+
+#if defined(AFFINE_CONSTANT_ON_A_MANIFOLD)  // static_assert: AffineConstants.h: its output's plus() is the plain one
+[[maybe_unused]] auto const constantUpdate = [] {
+    auto const model = Emrys::measurementModel(
+        []<typename T>(auto const &, auto const &, auto const &) {
+            return Eigen::Matrix<T, 4, 1>{T(1), T(0), T(0), T(0)};
+        },
+        Emrys::reads(Emrys::path<Position>),
+        Emrys::affineIn(Emrys::on<Velocity>(Eigen::Matrix<double, 3, 2>::Zero())),
+        Emrys::outputSpace(Attitude{}),
+        Emrys::additiveNoise(
+            Emrys::GaussianParams<Emrys::Linear<3>>{Eigen::Vector3d::Zero(), Eigen::Matrix3d::Identity()}
+        )
+    );
+    return bool(
+        Emrys::update(makeInitial(), Emrys::observe(methods::linearized(), model, Eigen::Vector4d{1.0, 0.0, 0.0, 0.0}))
+    );
+}();
+#endif
+
+#if defined(AFFINE_CONSTANT_SIZE)  // static_assert: AffineConstants.h: has a row per difference of the output
+[[maybe_unused]] auto const constantUpdate = updatedBy(
+    Emrys::measurementModel(
+        positionOf,
+        Emrys::reads(Emrys::path<Position>),
+        Emrys::affineIn(Emrys::on<Velocity>(Eigen::Matrix<double, 3, 2>::Zero())),
+        Emrys::additiveNoise(makeNoise())
+    )
+);
+#endif
+
+#if defined(AFFINE_CONSTANT_NAMED_TWICE)  // static_assert: Policies.h: gives each input one item
+[[maybe_unused]] auto const affine =
+    Emrys::affineIn(Emrys::path<Velocity>, Emrys::on<Velocity>(Eigen::Matrix2d::Identity()));
+#endif
+
+#if defined(OFFSET_OFF_THE_OUTPUT)  // static_assert: AffineConstants.h: so the output names Block
+[[maybe_unused]] auto const constantUpdate = updatedBy(
+    Emrys::measurementModel(
+        positionOf,
+        Emrys::reads(Emrys::path<Position>),
+        Emrys::affineIn(Emrys::offset(Emrys::on<Offset>(Eigen::Vector2d::Zero()))),
+        Emrys::outputSpace(Emrys::Composite<Fix>{}),
+        Emrys::additiveNoise(makeNoise())
+    )
+);
+#endif
+
+#if defined(OFFSET_TWO)  // static_assert: Policies.h: affineIn() takes one offset()
+[[maybe_unused]] auto const affine =
+    Emrys::affineIn(Emrys::offset(Eigen::Vector2d::Zero()), Emrys::offset(Eigen::Vector2d::Zero()));
+#endif
+
+#if defined(OFFSET_BLOCK_TWICE)  // static_assert: Policies.h: offset() gives each block of the output one part
+[[maybe_unused]] auto const parts =
+    Emrys::offset(Emrys::on<Fix>(Eigen::Vector2d::Zero()), Emrys::on<Fix>(Eigen::Vector2d::Zero()));
+#endif
+
+#if defined(OFFSET_BY_PATH)  // static_assert: Policies.h: on a block of the output by its one tag, on<Block>(c)
+[[maybe_unused]] auto const parts = Emrys::offset(Emrys::on<Emrys::TagPath<Position, Fix>>(Eigen::Vector2d::Zero()));
+#endif
+
+#if defined(PREDICT_CONSTANT_ITEM)  // static_assert: ProcessModel.h: only fixedStep(model, dt) predicts it
+[[maybe_unused]] auto const predicted = Emrys::predict(
+    methods::linearized(),
+    makeInitial(),
+    Emrys::compose(
+        Emrys::Constant<Velocity>{},
+        Emrys::processModel(
+            []<typename T>(auto const & in, auto const &, auto const & x, auto) {
+                return Eigen::Matrix<T, 2, 1>{Emrys::block<Position>(in, x)};
+            },
+            Emrys::reads(Emrys::path<Position>),
+            Emrys::writes(Emrys::path<Position>),
+            Emrys::affineIn(Emrys::on<Velocity>(Eigen::Matrix2d::Identity()))
+        )
+    ),
+    1.0
+);
+#endif
+
 #if defined(OU_MEAN_SIZE)  // static_assert: ProcessModel.h: must have the size of its block
 [[maybe_unused]] constexpr auto size = sizeof(Emrys::OrnsteinUhlenbeck<Speed, Emrys::RevertingTo<Offset>>);
 #endif

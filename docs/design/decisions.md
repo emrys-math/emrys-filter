@@ -2132,8 +2132,8 @@ $y = g(x_n) + H(x_n) \, x_a$. A sigma-point method spreads its points over $x_n$
 point $x_a$ given $x_n$ is Gaussian and goes through $f$ exactly, adding $H P_{a|n} H^T$, with $H$
 from the returned Jacobian or automatic differentiation in the affine coordinates, one call per
 point. A coordinate is factored out where it is a linear block of the state or an uncertain input;
-a `sure` input is skipped, and a block that is not linear is treated as nonlinear. A
-composition's affine set is the names every part reading them declares. `Linearized`, `Iterated`,
+a `sure` input is skipped, and a block that is not linear is treated as nonlinear. `on<Name>(H)` and
+`offset(...)` give a constant part $H x + c$ the function leaves out, read as affine and added by `plus()`, which holds a process model to one step [fixed-step-models]; a composition's affine set is the names every part reading them declares. `Linearized`, `Iterated`,
 the square-root and information steps, the update given a block, and the Rao-Blackwellized
 prediction ignore the declaration.
 
@@ -2152,7 +2152,7 @@ root: $(2n + 1)(a + 1)$ calls, more than the full transform's $2(n + a) + 1$. A 
 of affinity by second differences: calls and a tolerance beyond the method's work. An opt-out: a
 model declared affine in nothing gets the full transform.
 
-**Where.** `Models/Policies.h` (`affineIn()`), `Models/ResolvedReads.h` (the coordinates),
+**Where.** `Models/Policies.h` (`affineIn()`, `offset()`), `Models/AffineConstants.h`, `Models/ResolvedReads.h` (the coordinates),
 `Models/Transform.h` (the factored transform), `Models/ProcessModel.h`, `Models/MeasurementReads.h`.
 
 ### covariance-update-forms

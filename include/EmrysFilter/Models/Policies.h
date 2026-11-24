@@ -595,6 +595,265 @@ affineIn(Names const &...)
     return AffineIn<internal::PathTag<internal::PathOf<Names>>...>{};
 }
 
+/** \ingroup Models
+ * \brief The constant term \f$ c \f$ of a whole output, given to offset() as a vector: a difference
+ * of the output, added to its function's value, or a point of it where the model has no function.
+ */
+template <typename Value>
+struct WholeOffset
+{
+    Value value;  ///< \f$ c \f$
+};
+
+/** \ingroup Models
+ * \brief The constant term \f$ c \f$ of a model's output that affineIn() takes, offset(), by block
+ * of the output, each <tt>on<Block>(c)</tt>, or for the whole output, a WholeOffset; an output
+ * block without a part has none (decisions.md [affine-coordinates]).
+ *
+ * \tparam Parts  the parts, each an OnPath of a vector on one block of the output, or one WholeOffset
+ */
+template <typename... Parts>
+struct AffineOffset
+{
+    std::tuple<Parts...> parts;  ///< the parts
+};
+
+namespace internal
+{
+
+template <typename F, typename InnerIn, typename Offset, typename... Constants>
+class ConstantAffineFunction;
+
+/** The value and the path of the OnPath \a T, a value placed on one block. */
+template <typename T>
+struct OnPathParts
+{};
+
+/** An OnPath of no selection. */
+template <typename X, typename Path>
+struct OnPathParts<OnPath<X, Path, NoSelection>>
+{
+    using Value = X;        ///< the value placed
+    using PathType = Path;  ///< the path it is placed on, a TagPath
+};
+
+/** Whether \a T is a constant item of affineIn(), <tt>on<Name>(H)</tt>: a matrix on one tag. */
+template <typename T>
+inline constexpr bool isConstantItem = false;
+
+/** An OnPath of a matrix on one tag is one. */
+template <typename X, typename Path>
+inline constexpr bool isConstantItem<OnPath<X, Path, NoSelection>> = MatrixExpression<X>;
+
+/** Whether \a T is an offset() part of a block, <tt>on<Block>(c)</tt>. */
+template <typename T>
+inline constexpr bool isOffsetPart = isConstantItem<T>;
+
+/** Whether \a T is an AffineOffset. */
+template <typename T>
+inline constexpr bool isAffineOffset = false;
+
+/** An AffineOffset is one. */
+template <typename... Parts>
+inline constexpr bool isAffineOffset<AffineOffset<Parts...>> = true;
+
+/** \returns \a item as the tuple of the names it gives affineIn() at each point: its tag for a
+ * path value, and nothing for a constant item or an offset
+ */
+template <typename Item>
+[[nodiscard]] auto
+pointNameOf(Item const *)
+{
+    if constexpr (PathValue<Item>)
+    {
+        return std::tuple<PathTag<PathOf<Item>>>{};
+    }
+    else
+    {
+        return std::tuple<>{};
+    }
+}
+
+/** \returns \a item as the tuple of the constant items it gives affineIn() */
+template <typename Item>
+[[nodiscard]] auto
+constantOf(Item const & item)
+{
+    if constexpr (isConstantItem<Item>)
+    {
+        return std::tuple<Item>{item};
+    }
+    else
+    {
+        return std::tuple<>{};
+    }
+}
+
+/** \returns \a item as the tuple of the offsets it gives affineIn() */
+template <typename Item>
+[[nodiscard]] auto
+offsetOf(Item const & item)
+{
+    if constexpr (isAffineOffset<Item>)
+    {
+        return std::tuple<Item>{item};
+    }
+    else
+    {
+        return std::tuple<>{};
+    }
+}
+
+/** Whether the item \a Item of affineIn() names its input by one tag: a path value of one tag, or a
+ * constant item or an offset part placed on one tag.
+ */
+template <typename Item>
+[[nodiscard]] consteval bool
+namedByOneTag()
+{
+    if constexpr (PathValue<Item>)
+    {
+        return std::is_same_v<PathOf<Item>, TagPath<PathTag<PathOf<Item>>>>;
+    }
+    else if constexpr (isConstantItem<Item>)
+    {
+        using Path = typename OnPathParts<Item>::PathType;
+        return std::is_same_v<AsTagPath<Path>, TagPath<PathTag<Path>>>;
+    }
+    else
+    {
+        return true;
+    }
+}
+
+/** The AffineIn of the names in the tuple \a Names. */
+template <typename Names>
+struct AffineInOf;
+
+/** Of a tuple of names. */
+template <typename... Names>
+struct AffineInOf<std::tuple<Names...>>
+{
+    using type = AffineIn<Names...>;  ///< the policy
+};
+
+}  // namespace internal
+
+/** \ingroup Models
+ * \brief affineIn() with constant items (decisions.md [affine-coordinates]): the names \a Points,
+ * whose coefficient the function gives at each point, and the constant items \a Constants, each
+ * <tt>on<Name>(H)</tt>, a matrix over every row of the output for the input \a Name, which the
+ * function does not read, with the offset \a Offset. measurementModel() and processModel() read
+ * each constant item's input as an affine one and add \f$ \sum_k H_k x_k + c \f$ to the function's
+ * value (internal::ConstantAffineFunction).
+ */
+template <typename Points, typename Offset, typename... Constants>
+struct AffineConstants;
+
+/** Of the names \a Points. */
+template <typename... Points, typename Offset, typename... Constants>
+struct AffineConstants<AffineIn<Points...>, Offset, Constants...>
+{
+    /// the constant items' names, as a tuple
+    using ConstantNames = std::tuple<internal::PathTag<typename internal::OnPathParts<Constants>::PathType>...>;
+
+    /// the affineIn() of the model the factories make: every name, the constant ones last
+    using AllNames = AffineIn<Points..., internal::PathTag<typename internal::OnPathParts<Constants>::PathType>...>;
+
+    /// the function the factories make of \a F, which reads \a InnerIn
+    template <typename F, typename InnerIn>
+    using FunctionOf = internal::ConstantAffineFunction<F, InnerIn, Offset, Constants...>;
+
+    std::tuple<Constants...> constants;  ///< the constant items
+    Offset offset;                       ///< the offset
+};
+
+/** \ingroup Models
+ * \returns the offset() of affineIn(): the constant term \f$ c \f$ by block of the output, each part
+ * <tt>on<Block>(c)</tt> a vector over the block's differences
+ */
+template <typename... Parts>
+    requires(sizeof...(Parts) > 0 && (internal::isOffsetPart<Parts> && ...))
+[[nodiscard]] AffineOffset<Parts...>
+offset(Parts const &... parts)
+{
+    static_assert(
+        (internal::namedByOneTag<Parts>() && ...),
+        "offset() places each part on a block of the output by its one tag, on<Block>(c)"
+    );
+    static_assert(
+        internal::distinctTypes<internal::PathTag<typename internal::OnPathParts<Parts>::PathType>...>(),
+        "offset() gives each block of the output one part"
+    );
+    return {{parts...}};
+}
+
+/** \ingroup Models
+ * \returns the offset() of affineIn() for the whole output: the vector \a c over its differences
+ */
+template <MatrixExpression C>
+[[nodiscard]] AffineOffset<WholeOffset<typename C::PlainObject>>
+offset(C const & c)
+{
+    return {{WholeOffset<typename C::PlainObject>{c}}};
+}
+
+/** \ingroup Models
+ * \returns the affineIn() policy of \a items with constant items among them (decisions.md
+ * [affine-coordinates]): each path value <tt>path<Name></tt> an input whose coefficient the function
+ * gives at each point, each <tt>on<Name>(H)</tt> an input the function does not read, whose columns
+ * are the matrix \f$ H \f$ over every row of the output, and at most one offset(), the constant term.
+ *
+ * \code
+ * affineIn(path<Velocity>, on<Bias>(Hb), offset(on<Range>(cr), on<Bearing>(cb)))
+ * \endcode
+ */
+template <typename... Items>
+    requires(
+        !(PathValue<Items> && ...)
+        && ((PathValue<Items> || internal::isConstantItem<Items> || internal::isAffineOffset<Items>) && ...)
+    )
+[[nodiscard]] auto
+affineIn(Items const &... items)
+{
+    using PointNames = decltype(std::tuple_cat(internal::pointNameOf(static_cast<Items const *>(nullptr))...));
+    auto constants = std::tuple_cat(internal::constantOf(items)...);
+    auto offsets = std::tuple_cat(internal::offsetOf(items)...);
+    static_assert(std::tuple_size_v<decltype(offsets)> <= 1, "affineIn() takes one offset()");
+    static_assert(
+        (internal::namedByOneTag<Items>() && ...),
+        "affineIn() names an input of the model by the one tag it is read under in reads(), never by a path into the "
+        "state"
+    );
+    static_assert(
+        []<typename... Points, typename... Constants>(std::tuple<Points...> *, std::tuple<Constants...> *) {
+            return internal::
+                distinctTypes<Points..., internal::PathTag<typename internal::OnPathParts<Constants>::PathType>...>();
+        }(static_cast<PointNames *>(nullptr), static_cast<decltype(constants) *>(nullptr)),
+        "affineIn() gives each input one item, path<Name> or on<Name>(H)"
+    );
+    using Points = typename internal::AffineInOf<PointNames>::type;
+    auto offset = [&] {
+        if constexpr (std::tuple_size_v<decltype(offsets)> == 0)
+        {
+            return AffineOffset<>{};
+        }
+        else
+        {
+            return std::get<0>(offsets);
+        }
+    }();
+    return std::apply(
+        [&](auto &... c) {
+            return AffineConstants<Points, decltype(offset), std::remove_cvref_t<decltype(c)>...>{
+                {std::move(c)...},
+                std::move(offset)
+            };
+        },
+        constants
+    );
+}
+
 namespace internal
 {
 
@@ -1103,6 +1362,11 @@ inline constexpr bool isWritesItems<WritesItems<Items...>> = true;
 
 template <typename... Names>
 inline constexpr std::optional<PolicyKind> policyKind<AffineIn<Names...>>{PolicyKind::affineIn};
+
+template <typename Points, typename Offset, typename... Constants>
+inline constexpr std::optional<PolicyKind> policyKind<AffineConstants<Points, Offset, Constants...>>{
+    PolicyKind::affineIn
+};
 
 template <typename... Parts>
 inline constexpr std::optional<PolicyKind> policyKind<AdditiveNoise<Parts...>>{PolicyKind::additiveNoise};

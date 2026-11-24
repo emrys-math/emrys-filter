@@ -158,6 +158,7 @@
  * Read \ref Filters next.
  */
 
+#include <EmrysFilter/Models/AffineConstants.h>
 #include <EmrysFilter/Models/Batched.h>
 #include <EmrysFilter/Models/ByMode.h>
 #include <EmrysFilter/Models/Condition.h>

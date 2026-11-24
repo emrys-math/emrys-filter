@@ -3,7 +3,9 @@
 // Gaussian given the rest, with the function's Jacobian in them from what it returns, from a composition's parts, or
 // by automatic differentiation, which agree at the same number of calls. A bilinear model and noise scaled by the
 // state get Isserlis' moments from every sigma-point method; a sure input is not factored; Linearized ignores the
-// declaration.
+// declaration. Constant items of affineIn(), on<Name>(H) and offset(), give the same result under every method as the
+// model written as one function, in a measurement model, a process model, and transform(), with the function called as
+// often and never given the constant input.
 
 #include <cmath>
 #include <tuple>
@@ -25,6 +27,9 @@ using Emrys::GaussianParams;
 using Emrys::Linear;
 using Emrys::measurementModel;
 using Emrys::observe;
+using Emrys::offset;
+using Emrys::on;
+using Emrys::outputSpace;
 using Emrys::path;
 using Emrys::processModel;
 using Emrys::reads;
@@ -391,4 +396,283 @@ TEST(AffineCoordinates, AnAffineNoiseInputMatchesAdditiveNoise)
         (a->branches.front().posterior.covarianceLower() - b->branches.front().posterior.covarianceLower()).norm(),
         1e-12
     );
+}
+
+namespace
+{
+
+// A place, read by a nonlinear function, a lean, which enters only by a constant matrix, and a drift,
+// which moves the place.
+struct Place : Linear<2>
+{};
+
+struct Lean : Linear<2>
+{};
+
+struct Drift : Linear<2>
+{};
+
+// A reading of the place: a sighting and a level, each with a constant offset.
+struct Seen : Linear<2>
+{};
+
+struct Level : Linear<1>
+{};
+
+using Reading = Composite<Seen, Level>;
+
+using Surveyed = Composite<Place, Lean, Drift>;
+
+// The constant part: the lean's columns over the reading's three rows, and the offsets of its blocks.
+Eigen::Matrix<double, 3, 2>
+leanColumns()
+{
+    return Eigen::Matrix<double, 3, 2>{{0.7, -0.2}, {0.1, 0.5}, {-0.3, 0.4}};
+}
+
+Eigen::Vector2d const seenOffset{0.25, -0.5};
+Eigen::Matrix<double, 1, 1> const levelOffset{0.75};
+
+// g(place), the part that depends on the place alone, in T.
+template <typename T, typename X>
+Eigen::Vector<T, 3>
+reading(X const & place)
+{
+    using std::cos;
+    using std::sin;
+    return Eigen::Vector<T, 3>{
+        T(0.1) * place(0) * place(0) + sin(place(1)),
+        T(0.2) * place(0) * place(1),
+        cos(place(0))
+    };
+}
+
+// Its Jacobian over the place.
+template <typename T, typename X>
+Eigen::Matrix<T, 3, 2>
+readingJacobian(X const & place)
+{
+    using std::cos;
+    using std::sin;
+    return Eigen::Matrix<T, 3, 2>{
+        {T(0.2) * place(0), cos(place(1))},
+        {T(0.2) * place(1), T(0.2) * place(0)},
+        {-sin(place(0)), T(0)}
+    };
+}
+
+GaussianParams<Surveyed>
+surveyed()
+{
+    Eigen::Matrix<double, 6, 6> a;
+    for (int i = 0; i < 6; ++i)
+    {
+        for (int j = 0; j < 6; ++j)
+        {
+            a(i, j) = 0.15 * std::sin(1.0 + 2.0 * i + 3.0 * j);
+        }
+    }
+    Eigen::Matrix<double, 6, 1> mean;
+    mean << 0.8, -0.3, 0.4, 0.6, -0.2, 0.1;
+    return {
+        Surveyed{},
+        mean,
+        Eigen::Matrix<double, 6, 6>{a * a.transpose() + 0.1 * Eigen::Matrix<double, 6, 6>::Identity()}
+    };
+}
+
+GaussianParams<Reading>
+readingNoise()
+{
+    return {Reading{}, Eigen::Vector3d::Zero(), Eigen::Vector3d{0.04, 0.09, 0.01}.asDiagonal()};
+}
+
+template <typename Method>
+class ConstantItemsTest : public ::testing::Test
+{};
+
+using ConstantMethods =
+    ::testing::Types<methods::Linearized, methods::Unscented<>, methods::Cubature, methods::GaussHermite<3>>;
+
+}  // namespace
+
+TYPED_TEST_SUITE(ConstantItemsTest, ConstantMethods);
+
+// A measurement model with on<Lean>(H) and offset() in affineIn() updates as the model whose function
+// adds H lean + c itself, reading the lean with path<Lean> affine, under every method, with the
+// function called as often and given the place alone; with a function that returns its Jacobian and
+// with one that a method differentiates.
+TYPED_TEST(ConstantItemsTest, AMeasurementModelUpdatesAsTheWholeFunction)
+{
+    auto const prior = surveyed();
+    Eigen::Vector3d const z{0.9, -0.4, 1.3};
+    int constantCalls = 0;
+    int wholeCalls = 0;
+    auto const constant = measurementModel(
+        [&]<typename T>(auto const & in, auto const &, auto const & x) {
+            static_assert(std::is_same_v<std::remove_cvref_t<decltype(in)>, Composite<Place>>);
+            ++constantCalls;
+            return reading<T>(block<Place>(in, x));
+        },
+        reads(path<Place>),
+        affineIn(on<Lean>(leanColumns()), offset(on<Seen>(seenOffset), on<Level>(levelOffset))),
+        outputSpace(Reading{}),
+        additiveNoise(readingNoise())
+    );
+    auto const whole = measurementModel(
+        [&]<typename T>(auto const & in, auto const &, auto const & x) {
+            ++wholeCalls;
+            Eigen::Vector<T, 3> y = reading<T>(block<Place>(in, x)) + leanColumns().cast<T>() * block<Lean>(in, x);
+            y.template head<2>() += seenOffset.cast<T>();
+            y.template tail<1>() += levelOffset.cast<T>();
+            return y;
+        },
+        reads(path<Place>, path<Lean>),
+        affineIn(path<Lean>),
+        outputSpace(Reading{}),
+        additiveNoise(readingNoise())
+    );
+    auto const expectSame = [&](auto const & a, auto const & b) {
+        auto const x = update(prior, observe(TypeParam{}, a, z));
+        auto const y = update(prior, observe(TypeParam{}, b, z));
+        ASSERT_TRUE(x && y);
+        auto const & p = x->branches.front().posterior;
+        auto const & q = y->branches.front().posterior;
+        EXPECT_LT((p.mean() - q.mean()).norm(), 1e-10);
+        EXPECT_LT((p.covarianceLower() - q.covarianceLower()).norm(), 1e-10);
+        EXPECT_GT((p.mean() - prior.mean()).norm(), 1e-3);
+    };
+    expectSame(constant, whole);
+    EXPECT_EQ(constantCalls, wholeCalls);
+    EXPECT_GT(constantCalls, 0);
+
+    // The function returns its Jacobian over the place; the model adds H in the lean's columns.
+    auto const returning = measurementModel(
+        []<typename T>(auto const & in, auto const &, auto const & x) {
+            return withJacobian(reading<T>(block<Place>(in, x)), readingJacobian<double>(block<Place>(in, x)));
+        },
+        reads(path<Place>),
+        affineIn(on<Lean>(leanColumns()), offset(on<Seen>(seenOffset), on<Level>(levelOffset))),
+        outputSpace(Reading{}),
+        additiveNoise(readingNoise())
+    );
+    expectSame(returning, whole);
+}
+
+// offset(c) of the whole output gives the same model as the offset by block.
+TEST(ConstantItems, AWholeOffsetIsTheOffsetByBlock)
+{
+    auto const f = []<typename T>(auto const & in, auto const &, auto const & x) {
+        return reading<T>(block<Place>(in, x));
+    };
+    Eigen::Vector3d const c{seenOffset(0), seenOffset(1), levelOffset(0)};
+    auto const byBlock = measurementModel(
+        f,
+        reads(path<Place>),
+        affineIn(on<Lean>(leanColumns()), offset(on<Seen>(seenOffset), on<Level>(levelOffset))),
+        outputSpace(Reading{}),
+        additiveNoise(readingNoise())
+    );
+    auto const whole = measurementModel(
+        f,
+        reads(path<Place>),
+        affineIn(offset(c), on<Lean>(leanColumns())),
+        outputSpace(Reading{}),
+        additiveNoise(readingNoise())
+    );
+    auto const z = Eigen::Vector3d{0.9, -0.4, 1.3};
+    auto const x = update(surveyed(), observe(methods::unscented(), byBlock, z));
+    auto const y = update(surveyed(), observe(methods::unscented(), whole, z));
+    ASSERT_TRUE(x && y);
+    EXPECT_LT((x->branches.front().posterior.mean() - y->branches.front().posterior.mean()).norm(), 1e-14);
+}
+
+// A process model with on<Drift>(H) in affineIn() holds one step, so it predicts over fixedStep(), and
+// does as the model whose function adds H drift itself, under every method, with the function called
+// as often.
+TYPED_TEST(ConstantItemsTest, AProcessModelPredictsAsTheWholeFunctionOverItsStep)
+{
+    constexpr double dt = 0.5;
+    Eigen::Matrix2d const driftColumns{{dt, 0.1}, {0.0, dt}};
+    int constantCalls = 0;
+    int wholeCalls = 0;
+    auto const constant = Emrys::compose(
+        processModel(
+            [&]<typename T>(auto const & in, auto const & out, auto const & x, double) {
+                ++constantCalls;
+                auto y = zeros<T>(out);
+                auto const place = block<Place>(in, x);
+                block<Place>(out, y) = place + T(0.05) * place.cwiseProduct(place);
+                return y;
+            },
+            reads(path<Place>),
+            writes(path<Place>),
+            affineIn(on<Drift>(driftColumns)),
+            Emrys::continuousNoise(on<Place>(0.2))
+        ),
+        Constant<Lean>{},
+        Constant<Drift>{}
+    );
+    auto const whole = Emrys::compose(
+        processModel(
+            [&]<typename T>(auto const & in, auto const & out, auto const & x, double) {
+                ++wholeCalls;
+                auto y = zeros<T>(out);
+                auto const place = block<Place>(in, x);
+                block<Place>(out, y) =
+                    place + T(0.05) * place.cwiseProduct(place) + driftColumns.cast<T>() * block<Drift>(in, x);
+                return y;
+            },
+            reads(path<Place>, path<Drift>),
+            writes(path<Place>),
+            affineIn(path<Drift>),
+            Emrys::continuousNoise(on<Place>(0.2))
+        ),
+        Constant<Lean>{},
+        Constant<Drift>{}
+    );
+    static_assert(Emrys::internal::holdsOneStep<std::remove_cvref_t<decltype(constant)>>);
+    static_assert(!Emrys::internal::holdsOneStep<std::remove_cvref_t<decltype(whole)>>);
+    auto const prior = surveyed();
+    auto const p = Emrys::predict(prior, Emrys::fixedStep(constant, dt, TypeParam{}));
+    auto const q = Emrys::predict(prior, Emrys::fixedStep(whole, dt, TypeParam{}));
+    EXPECT_LT((p.mean() - q.mean()).norm(), 1e-10);
+    EXPECT_LT((p.covarianceLower() - q.covarianceLower()).norm(), 1e-10);
+    EXPECT_EQ(constantCalls, wholeCalls);
+    EXPECT_GT((p.mean() - prior.mean()).norm(), 1e-3);
+}
+
+// transform() with on<Lean>(H) and offset(c) in affineIn() gives the output's moments as the function
+// written whole, under every method, with the lean an input of the call.
+TYPED_TEST(ConstantItemsTest, TransformGivesTheMomentsOfTheWholeFunction)
+{
+    auto const place = GaussianParams<Place>{Eigen::Vector2d{0.8, -0.3}, Eigen::Matrix2d{{0.2, 0.03}, {0.03, 0.1}}};
+    auto const lean = GaussianParams<Lean>{Eigen::Vector2d{0.4, 0.6}, Eigen::Matrix2d{{0.3, -0.05}, {-0.05, 0.2}}};
+    Eigen::Vector3d const c{seenOffset(0), seenOffset(1), levelOffset(0)};
+    auto const constant = Emrys::transform(
+        TypeParam{},
+        []<typename T>(auto const & in, auto const &, auto const & x) {
+            return reading<T>(block<Place>(in, x));
+        },
+        reads(path<Place>),
+        affineIn(on<Lean>(leanColumns()), offset(c)),
+        outputSpace(Reading{}),
+        place,
+        lean
+    );
+    auto const whole = Emrys::transform(
+        TypeParam{},
+        [c]<typename T>(auto const & in, auto const &, auto const & x) {
+            return Eigen::Vector<T, 3>{
+                reading<T>(block<Place>(in, x)) + leanColumns().cast<T>() * block<Lean>(in, x) + c.cast<T>()
+            };
+        },
+        reads(path<Place>, path<Lean>),
+        affineIn(path<Lean>),
+        outputSpace(Reading{}),
+        place,
+        lean
+    );
+    EXPECT_LT((constant.mean() - whole.mean()).norm(), 1e-10);
+    EXPECT_LT((constant.covarianceLower() - whole.covarianceLower()).norm(), 1e-10);
 }

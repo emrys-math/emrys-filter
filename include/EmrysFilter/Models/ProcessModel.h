@@ -30,6 +30,7 @@
 #include <EmrysFilter/Distributions/Gaussian.h>
 #include <EmrysFilter/Distributions/Moments.h>
 #include <EmrysFilter/Distributions/Sampling.h>
+#include <EmrysFilter/Models/AffineConstants.h>
 #include <EmrysFilter/Models/Batched.h>
 #include <EmrysFilter/Models/MeasurementModel.h>
 #include <EmrysFilter/Models/Methods.h>
@@ -857,12 +858,30 @@ template <typename F, typename... Policies>
 [[nodiscard]] auto
 processModel(F && function, Policies &&... policies)
 {
-    using Set = internal::PolicySet<std::remove_cvref_t<Policies>...>;
-    static_assert(internal::checkProcessPolicies<Set>());
-    return ProcessFunction<std::decay_t<F>, std::remove_cvref_t<Policies>...>{
-        std::forward<F>(function),
-        std::forward<Policies>(policies)...
-    };
+    if constexpr (internal::hasAffineConstants<Policies...>)
+    {
+        // Constant items of affineIn() become inputs read and factored as any affine one, and the
+        // function adds their term (Models/AffineConstants.h); the model then holds one step.
+        return internal::withAffineConstants(
+            [](auto && made, auto &&... rewritten) {
+                return processModel(
+                    std::forward<decltype(made)>(made),
+                    std::forward<decltype(rewritten)>(rewritten)...
+                );
+            },
+            std::forward<F>(function),
+            policies...
+        );
+    }
+    else
+    {
+        using Set = internal::PolicySet<std::remove_cvref_t<Policies>...>;
+        static_assert(internal::checkProcessPolicies<Set>());
+        return ProcessFunction<std::decay_t<F>, std::remove_cvref_t<Policies>...>{
+            std::forward<F>(function),
+            std::forward<Policies>(policies)...
+        };
+    }
 }
 
 /** \ingroup Models
@@ -2989,8 +3008,9 @@ public:
     {
         static_assert(
             !holdsOneStep<std::remove_cvref_t<decltype(model())>>,
-            "a process model with additiveNoise() holds the Q of one step, so only fixedStep(model, dt) predicts it; "
-            "give continuousNoise() for a step that varies"
+            "a process model with additiveNoise(), the Q of one step, or a constant item in affineIn(), whose "
+            "coefficient follows no step, holds one step, so only fixedStep(model, dt) predicts it; give "
+            "continuousNoise() and a function of the step for a step that varies"
         );
         using Matrix = typename Moments<Space, Scalar>::MatrixType;
         auto const partial = model().template noiseOver<Scalar>(m_out, dt);

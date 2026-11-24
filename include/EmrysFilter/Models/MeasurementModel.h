@@ -21,6 +21,7 @@
 #include <EmrysFilter/Core/Macros.h>
 #include <EmrysFilter/Distributions/Gaussian.h>
 #include <EmrysFilter/Distributions/Roots.h>
+#include <EmrysFilter/Models/AffineConstants.h>
 #include <EmrysFilter/Models/Condition.h>
 #include <EmrysFilter/Models/Methods.h>
 #include <EmrysFilter/Models/Policies.h>
@@ -1034,13 +1035,31 @@ template <typename F, typename... Policies>
 [[nodiscard]] auto
 measurementModel(F && function, Policies &&... policies)
 {
-    using Set = internal::PolicySet<std::remove_cvref_t<Policies>...>;
-    static_assert(internal::checkMeasurementPolicies<Set>());
-    static_assert(internal::checkMeasurementFunction<std::decay_t<F>, Set>());
-    return MeasurementFunction<std::decay_t<F>, std::remove_cvref_t<Policies>...>{
-        std::forward<F>(function),
-        std::forward<Policies>(policies)...
-    };
+    if constexpr (internal::hasAffineConstants<Policies...>)
+    {
+        // Constant items of affineIn() become inputs read and factored as any affine one, and the
+        // function adds their term (Models/AffineConstants.h).
+        return internal::withAffineConstants(
+            [](auto && made, auto &&... rewritten) {
+                return measurementModel(
+                    std::forward<decltype(made)>(made),
+                    std::forward<decltype(rewritten)>(rewritten)...
+                );
+            },
+            std::forward<F>(function),
+            policies...
+        );
+    }
+    else
+    {
+        using Set = internal::PolicySet<std::remove_cvref_t<Policies>...>;
+        static_assert(internal::checkMeasurementPolicies<Set>());
+        static_assert(internal::checkMeasurementFunction<std::decay_t<F>, Set>());
+        return MeasurementFunction<std::decay_t<F>, std::remove_cvref_t<Policies>...>{
+            std::forward<F>(function),
+            std::forward<Policies>(policies)...
+        };
+    }
 }
 
 /** \ingroup Models

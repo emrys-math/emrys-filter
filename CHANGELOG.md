@@ -10,6 +10,13 @@ instead.
 
 - An example of `PosteriorCramerRaoBound` on the Models page of the reference: the bound stepped
   along true states that `simulate()` draws, a column per Monte Carlo run.
+- Constant items in `affineIn()`: `on<Name>(H)`, a matrix over every row of the output for an input
+  that the function then does not read, and `offset(on<Block>(c)...)` or `offset(c)`, the constant
+  term by block of the output or for all of it: `affineIn(path<Velocity>, on<Bias>(Hb),
+  offset(on<Range>(cr)))`. The model reads each such input as an affine one and adds `H x + c` to
+  the function's value by `plus()`, and `H` to its Jacobian, in `measurementModel()`,
+  `processModel()`, and `transform()` alike. A process model with one holds one step, so only
+  `fixedStep()` predicts it. A batched function takes none yet.
 - `OrnsteinUhlenbeck<B, RevertingTo<M>>{TimeConstant{tau}, StationaryVariance{s}}`, an
   Ornstein-Uhlenbeck block that reverts to the mean `M` instead of zero: `x' = phi x + (1 - phi) m`
   with the noise of the form about zero, so that `s` is the stationary variance about `M`. The mean

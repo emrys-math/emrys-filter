@@ -511,7 +511,11 @@ by block of the output, discretized over the step, or `additiveNoise()` the $Q$ 
 only `fixedStep(model, dt)` takes: `predict(dt)` refuses a model with it, or with a part that has it. A function
 that knows its Jacobian over its input's differences returns `withJacobian(y, J)` and is never
 differentiated. `affineIn(path<...>)` names the inputs the function is affine in given the rest,
-which every sigma-point method then carries exactly rather than spreading points over them.
+which every sigma-point method then carries exactly rather than spreading points over them;
+`affineIn(on<Bias>(H), offset(on<Range>(c)))` gives a constant part the function leaves out, `H`
+over every row of the output for the input `Bias`, which the function then does not read, and the
+term `c` by block of the output, or `offset(c)` for all of it. A process model with one predicts
+only over `fixedStep()`.
 [unicycle.cpp](../examples/unicycle.cpp) and [attitude.cpp](../examples/attitude.cpp) each write
 one, and `processModel()` in `Models/ProcessModel.h` documents the policies.
 

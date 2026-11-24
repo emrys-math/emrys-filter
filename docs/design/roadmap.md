@@ -708,7 +708,14 @@ Decided (2026-11-23), not built:
   the same rule: `predict(dt)` refuses a process model with it, and `continuousNoise()` is the
   noise of a variable step. A measurement model's `additiveNoise()` is not touched. Built as stage
   1 (2026-11-24): `ResolvedProcess::noise(dt)`, which every prediction over a given step takes,
-  refuses `internal::holdsOneStep`; a constant item of stage 2 joins that trait.
+  refuses `internal::holdsOneStep`.
+- Built as stage 2 (2026-11-24), the constant items beside a function: `affineIn()` returns
+  `AffineConstants`, and `measurementModel()` and `processModel()` rewrite it into an ordinary
+  model, each constant name added to `reads()` and `AffineIn<...>`, and the function wrapped in
+  `internal::ConstantAffineFunction` (`Models/AffineConstants.h`), which calls it on its own items
+  and adds $H x + c$ by `plus()` and $H$ to a returned Jacobian. The factored transform then carries
+  the constant columns exactly at each point; it does not yet add them once in closed form, which
+  stage 3's model without a function will need. A batched function takes no constant items.
 
 The Jacobian a function writes, decided (2026-11-23), not built:
 
@@ -753,16 +760,6 @@ The Jacobian a function writes, decided (2026-11-23), not built:
 In order, each a commit that passes the `land` checks, with its decisions, `usage.md`, and
 `CHANGELOG.md` in it.
 
-2. **Constant items beside a function.** `affineIn()` takes `on<Name>(H)` and `offset(...)`;
-   `Policies.h` holds them, `ResolvedReads.h` adds their inputs to what the model reads, and the
-   model's function becomes $g$ with the constant part added: its value by `plus()` on the output,
-   its columns in the Jacobian `Linearized` takes, and its moments in closed form in the factored
-   transform of `Transform.h`, where its coordinates are affine ones whose $H$ no call gives.
-   In `measurementModel()`, `transform()`, and `processModel()`, the last refused by `predict(dt)`
-   as stage 1's is. `tests/Models/affine_coordinates.cpp`: each method against the same model
-   written as a function, with the function's calls counted; negative cases for a name given
-   twice, a name the function also reads, an offset on a block the model does not write, and a
-   matrix of the wrong size.
 3. **Models without a function.** `measurementModel(affineIn(...), [outputSpace(...),] noise)`,
    `processModel(affineIn(...), [writes(...),] noise)`, and `transform(method, affineIn(...),
    inputs...)`; `onEach<Block>(H)` as an item, which repeats the measurement with the block as
