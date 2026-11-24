@@ -224,10 +224,9 @@ takes an integer repetition today, that argument takes a sequence or a list too.
 - [ ] **`reads()`, the rest.** A plain model reads a selection ([selected-reads],
       `tests/Models/selected_reads.cpp`), with a returned Jacobian and for the likelihoods of
       sampled states, and through each Gaussian form of the Kalman filter, `GaussianMixtureFilter`,
-      `ParticleFilter`, and `RbParticleFilter` (`tests/Filters/selected_filters.cpp`). Left: the
-      same through `RbPointMassFilter`, and an update that reads an integer selection of a
-      resizable state allocates nothing where the same model on a fixed-size state allocates
-      nothing. A
+      `ParticleFilter`, and both Rao-Blackwellized filters (`tests/Filters/selected_filters.cpp`).
+      Left: an update that reads an integer selection of a resizable state allocates nothing
+      where the same model on a fixed-size state allocates nothing. A
       `SelectedPath` (`Spaces/TagPath.h`) is not a `PathValue`, so that no policy takes one and
       drops its selection: each item here makes its policy take it. `on<Path>()` and `compose()`
       carry the selections of the models they take ([composed-selections],

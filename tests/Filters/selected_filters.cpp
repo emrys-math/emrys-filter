@@ -16,6 +16,8 @@
 #include <EmrysFilter/Filters/MixtureFilter.h>
 #include <EmrysFilter/Filters/ParticleFilter.h>
 #include <EmrysFilter/Filters/RbParticleFilter.h>
+#include <EmrysFilter/Filters/RbPointMassFilter.h>
+#include <EmrysFilter/Distributions/GridGaussian.h>
 #include <EmrysFilter/Filters/SqrtInfoFilter.h>
 #include <EmrysFilter/Filters/SqrtKalmanFilter.h>
 #include <EmrysFilter/Models/Measurement.h>
@@ -336,4 +338,39 @@ TEST(SelectedFilters, AParticleFilterMovesParticlesByABatchedFunctionThatWritesA
     batched.predict(second, 0.5);
     EXPECT_LT((batched.state().states() - byPoint.state().states()).cwiseAbs().maxCoeff(), 1e-12);
     EXPECT_GT((batched.state().states() - states).cwiseAbs().maxCoeff(), 1e-3);
+}
+
+// The Rao-Blackwellized point-mass filter, its grid over the vehicle's position, predicts each cell's
+// Gaussian over the rest through the selected writes, and updates it and the cells' weights through a
+// sighting of one landmark, as through the tagged blocks.
+TEST(SelectedFilters, ARaoBlackwellizedPointMassFilterStepsAsTheTaggedBlocks)
+{
+    auto const still = [](auto const & landmark, auto const &... others) {
+        return compose(RandomWalk<Heading>{0.01}, driftOf(landmark), driftOf(others...));
+    };
+    auto const restMean = Eigen::Matrix<double, 7, 1>{mapMean().tail<7>()};
+    auto const restCovariance = Eigen::Matrix<double, 7, 7>{mapCovariance().bottomRightCorner<7, 7>()};
+    auto const space = mapPrior().space();
+    auto selected = Emrys::RbPointMassFilter{
+        still(path<Landmarks>[1], path<Landmarks>[std::array{0, 2}]),
+        Emrys::regularGrid<Position>(space, Eigen::Vector2d{0.0, 1.0}, Eigen::Vector2d{1.0, 1.0}, {3, 3}),
+        GaussianParams<Composite<Heading, Landmarks>>{
+            Composite<Heading, Landmarks>{Heading{}, Landmarks{Landmark{}, 3}},
+            restMean,
+            restCovariance
+        }
+    };
+    auto byTag = Emrys::RbPointMassFilter{
+        still(on<Landmark>(path<Second>), path<First>, path<Third>),
+        Emrys::regularGrid<Position>(Tagged{}, Eigen::Vector2d{0.0, 1.0}, Eigen::Vector2d{1.0, 1.0}, {3, 3}),
+        GaussianParams<Composite<Heading, First, Second, Third>>{restMean, restCovariance}
+    };
+    selected.predict(0.5);
+    byTag.predict(0.5);
+    ASSERT_TRUE(selected.update(observe(methods::unscented(), selectedSighting(), observed)));
+    ASSERT_TRUE(byTag.update(observe(methods::unscented(), taggedSighting(), observed)));
+    auto const & a = selected.state();
+    auto const & b = byTag.state();
+    EXPECT_LT((a.toCategorical().logWeights() - b.toCategorical().logWeights()).matrix().norm(), 1e-10);
+    EXPECT_LT((a.conditional(4).mean() - b.conditional(4).mean()).norm(), 1e-10);
 }
