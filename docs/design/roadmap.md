@@ -256,13 +256,6 @@ takes an integer repetition today, that argument takes a sequence or a list too.
       keeps such an item as it is, path and selection, read from the state the placed model
       meets. It was not built, since an item without a selection would then still become an
       input by name while one with a selection kept its path.
-- [ ] **`consider()` and `given()`, the rest.** Both take selections
-      ([placed-selected-values], `tests/Models/consider.cpp`). Left: `ImmRecursion::update(state,
-      measurement, given)` takes a `GivenBlock` of a whole block, so a selected one is no match
-      there; give it a `static_assert` that refuses one, with its negative case, or carry the
-      selection through `PinnedMeasurement` as `update(prior, measurement, given)` does. The
-      Rao-Blackwellized filters' blocks refuse a path into the repetitions (the audit), so they
-      never give a selection.
 Done when: every item's test and every negative compile case passes on all three compilers, and the
 audit's list has no function without a test or a refusal.
 

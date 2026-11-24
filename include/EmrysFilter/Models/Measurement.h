@@ -1184,6 +1184,21 @@ inline constexpr bool isGivenBlock = false;
 template <typename Space, typename P, typename Value, typename Selection>
 inline constexpr bool isGivenBlock<GivenBlock<Space, P, Value, Selection>> = true;
 
+/** \returns the repetitions \a pinned gives, or NoSelection where it gives a whole block */
+template <typename Space, typename P, typename Value, typename Selection>
+[[nodiscard]] Selection
+givenSelection(GivenBlock<Space, P, Value, Selection> const & pinned)
+{
+    if constexpr (std::is_same_v<Selection, NoSelection>)
+    {
+        return {};
+    }
+    else
+    {
+        return pinned.selection;
+    }
+}
+
 /** A measurement with a block of the state given, as a step that updates several Gaussians, each
  * given the same value, passes it on (an IMM's modes, given a cell's center): \a F, a
  * PinnedMeasurement or a reference to one, and the block's value.
@@ -1207,15 +1222,6 @@ concept GivenMeasurementLike = requires(G const & given) {
 /** update(prior, measurement, pinned), with each branch's NIS and log-likelihood computed with
  * the gain when \a Statistics, for a caller that will read them (decisions.md [innovation-statistics]).
  */
-template <bool Statistics, UncertainInput Prior, Measurement M, typename Space, typename P, typename Value>
-[[nodiscard]] auto
-updateBranches(Prior const & prior, M const & measurement, GivenBlock<Space, P, Value> const & pinned)
-{
-    auto const f = PinnedMeasurement<Space, P, M>{pinned.space, measurement};
-    return updateBranchesWith<Statistics>(prior, f, pinned.value);
-}
-
-/** update(prior, measurement, pinned) for repetitions given, as for a block. */
 template <
     bool Statistics,
     UncertainInput Prior,
@@ -1227,7 +1233,7 @@ template <
 [[nodiscard]] auto
 updateBranches(Prior const & prior, M const & measurement, GivenBlock<Space, P, Value, Selection> const & pinned)
 {
-    auto const f = PinnedMeasurement<Space, P, M, Selection>{pinned.space, measurement, pinned.selection};
+    auto const f = PinnedMeasurement<Space, P, M, Selection>{pinned.space, measurement, givenSelection(pinned)};
     return updateBranchesWith<Statistics>(prior, f, pinned.value);
 }
 

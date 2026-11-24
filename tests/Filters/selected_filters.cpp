@@ -4,13 +4,17 @@
 // Landmarks> with three landmarks, in the same order, so each filter's step through a model that reads or
 // writes path<Landmarks>[k] must equal its step through the model that reads or writes the tagged block:
 // the Kalman filter in each of its four forms, the Gaussian mixture filter, the particle filter, drawn from
-// the same generator, and the Rao-Blackwellized particle filter. The two differ only in the sizes Eigen
-// fixes at compile time, hence the tolerance.
+// the same generator, the Rao-Blackwellized particle filter, and the IMM's update of a hybrid over the
+// rest given a landmark. The two differ only in the sizes Eigen fixes at compile time, hence the tolerance.
 
+#include <EmrysFilter/Distributions/Categorical.h>
+#include <EmrysFilter/Distributions/ContinuousTimeMarkovChain.h>
 #include <EmrysFilter/Distributions/Gaussian.h>
+#include <EmrysFilter/Distributions/Hybrid.h>
 #include <EmrysFilter/Distributions/Mixture.h>
 #include <EmrysFilter/Distributions/ParticleGaussian.h>
 #include <EmrysFilter/Distributions/Sampling.h>
+#include <EmrysFilter/Filters/ImmFilter.h>
 #include <EmrysFilter/Filters/InfoFilter.h>
 #include <EmrysFilter/Filters/KalmanFilter.h>
 #include <EmrysFilter/Filters/MixtureFilter.h>
@@ -22,6 +26,8 @@
 #include <EmrysFilter/Filters/SqrtKalmanFilter.h>
 #include <EmrysFilter/Models/Measurement.h>
 #include <EmrysFilter/Models/ProcessModel.h>
+#include <EmrysFilter/Models/SwitchingModel.h>
+#include <EmrysFilter/Spaces/Discrete.h>
 
 #include <gtest/gtest.h>
 
@@ -29,9 +35,11 @@
 #include <cmath>
 #include <random>
 #include <utility>
+#include <vector>
 
 using Emrys::additiveNoise;
 using Emrys::block;
+using Emrys::byMode;
 using Emrys::compose;
 using Emrys::Composite;
 using Emrys::continuousNoise;
@@ -46,6 +54,7 @@ using Emrys::RadiansPi;
 using Emrys::RandomWalk;
 using Emrys::reads;
 using Emrys::Repeated;
+using Emrys::when;
 using Emrys::writes;
 
 namespace methods = Emrys::methods;
@@ -120,10 +129,18 @@ taggedPrior()
     return {mapMean(), mapCovariance()};
 }
 
-// The range and the bearing from the vehicle to the landmark that \a item reads under Landmark.
-template <typename Item>
+/// the noise of a sighting, 0.2 m in range and 0.05 rad in bearing, scaled in variance by \a scale
 auto
-sightingOf(Item const & item)
+sightingNoise(double scale = 1.0)
+{
+    return GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), scale * Eigen::Vector2d{0.04, 0.0025}.asDiagonal()};
+}
+
+// The range and the bearing from the vehicle to the landmark that \a item reads under Landmark, with
+// noise \a noise.
+template <typename Item, typename Noise = decltype(additiveNoise(sightingNoise()))>
+auto
+sightingOf(Item const & item, Noise const & noise = additiveNoise(sightingNoise()))
 {
     return measurementModel(
         []<typename T>(auto const & in, auto const & x) {
@@ -134,7 +151,7 @@ sightingOf(Item const & item)
             };
         },
         reads(path<Position>, path<Heading>, item),
-        additiveNoise(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), Eigen::Vector2d{0.04, 0.0025}.asDiagonal()})
+        noise
     );
 }
 
@@ -186,6 +203,16 @@ taggedMotion()
         driftOf(path<First>, path<Third>)
     );
 }
+
+struct Cruise
+{};
+
+struct Maneuvering
+{};
+
+/// a target that cruises or maneuvers, for the IMM's modes
+struct Maneuver : Emrys::Named<Cruise, Maneuvering>
+{};
 
 // Two Gaussian states agree in their means and covariances, and the step moved the state.
 template <typename A, typename B>
@@ -373,4 +400,73 @@ TEST(SelectedFilters, ARaoBlackwellizedPointMassFilterStepsAsTheTaggedBlocks)
     auto const & b = byTag.state();
     EXPECT_LT((a.toCategorical().logWeights() - b.toCategorical().logWeights()).matrix().norm(), 1e-10);
     EXPECT_LT((a.conditional(4).mean() - b.conditional(4).mean()).norm(), 1e-10);
+}
+
+// The IMM's update of a hybrid over the rest of the map given landmark 1 separately, as a
+// Rao-Blackwellized filter's point gives it (decisions.md [placed-selected-values]), is the update
+// given the tagged block Second: for a sighting the same in every mode, a sighting per mode, and a
+// sighting with noise by mode.
+TEST(SelectedFilters, AnImmUpdateGivenARepetitionIsGivenItsTaggedBlock)
+{
+    using Rest = Composite<Position, Heading, First, Third>;
+    auto const rows = std::vector<Eigen::Index>{0, 1, 2, 3, 4, 7, 8};
+    Eigen::VectorXd const mean = mapMean()(rows);
+    Eigen::MatrixXd const covariance = mapCovariance()(rows, rows);
+    Eigen::VectorXd shifted = mean;
+    shifted.head<2>() += Eigen::Vector2d{0.5, -0.4};
+    auto const initial = Emrys::HybridParams{
+        Emrys::CategoricalParams<Maneuver>::fromWeights(0.7, 0.3),
+        std::vector{GaussianParams<Rest>{mean, covariance}, GaussianParams<Rest>{shifted, 2.0 * covariance}}
+    };
+    auto const chain = Emrys::ContinuousTimeMarkovChain<Maneuver>::persistent(0.1);
+    auto selected =
+        Emrys::ImmRecursion<Emrys::Gaussian<Rest>, decltype(Emrys::SwitchingModel{chain, selectedMotion()})>{
+            Emrys::SwitchingModel{chain, selectedMotion()}
+        };
+    auto byTag = Emrys::ImmRecursion<Emrys::Gaussian<Rest>, decltype(Emrys::SwitchingModel{chain, taggedMotion()})>{
+        Emrys::SwitchingModel{chain, taggedMotion()}
+    };
+    Eigen::Vector2d const landmark{-2.8, 8.3};
+    auto const space = mapPrior().space();
+    auto const expectSame = [&](auto const & throughSelection, auto const & throughTag) {
+        auto a = initial;
+        auto b = initial;
+        auto const updatedA = selected.update(a, throughSelection, Emrys::given<Landmarks>(space, landmark, 1));
+        auto const updatedB = byTag.update(b, throughTag, Emrys::given<Second>(Tagged{}, landmark));
+        ASSERT_TRUE(updatedA && updatedB);
+        EXPECT_NEAR(updatedA->logLikelihood(), updatedB->logLikelihood(), 1e-10);
+        EXPECT_LT((a.modes().logWeights() - b.modes().logWeights()).matrix().norm(), 1e-10);
+        for (Eigen::Index m = 0; m < 2; ++m)
+        {
+            EXPECT_LT((a.conditional(m).mean() - b.conditional(m).mean()).norm(), 1e-10) << m;
+            Eigen::MatrixXd const lowerA = a.conditional(m).covarianceLower().template triangularView<Eigen::Lower>();
+            Eigen::MatrixXd const lowerB = b.conditional(m).covarianceLower().template triangularView<Eigen::Lower>();
+            EXPECT_LT((lowerA - lowerB).norm(), 1e-10) << m;
+        }
+        EXPECT_GT((a.conditional(0).mean() - mean).norm(), 1e-3);
+    };
+    auto const byManeuver = [](auto const & item) {
+        return byMode<Maneuver>(
+            when<Cruise>(sightingOf(item)),
+            when<Maneuvering>(sightingOf(item, additiveNoise(sightingNoise(4.0))))
+        );
+    };
+    auto const noiseByManeuver = [](auto const & item) {
+        return sightingOf(
+            item,
+            additiveNoise(byMode<Maneuver>(when<Cruise>(sightingNoise()), when<Maneuvering>(sightingNoise(4.0))))
+        );
+    };
+    expectSame(
+        observe(methods::unscented(), selectedSighting(), observed),
+        observe(methods::unscented(), taggedSighting(), observed)
+    );
+    expectSame(
+        observe(methods::unscented(), byManeuver(path<Landmarks>[1]), observed),
+        observe(methods::unscented(), byManeuver(on<Landmark>(path<Second>)), observed)
+    );
+    expectSame(
+        observe(methods::unscented(), noiseByManeuver(path<Landmarks>[1]), observed),
+        observe(methods::unscented(), noiseByManeuver(on<Landmark>(path<Second>)), observed)
+    );
 }

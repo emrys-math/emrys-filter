@@ -55,7 +55,8 @@ instead.
   repetitions, and `on()` a part of `continuousNoise()`. `Columns{onEach(path<Landmarks>[seen], h),
   on<Position>(-h)}` measures the landmarks listed, in a space of their count.
 - `consider()` takes a selected path, `consider(path<Landmarks>[k])`, and
-  `given<Path>(space, value, selection)` gives selected repetitions to `update()` as one block.
+  `given<Path>(space, value, selection)` gives selected repetitions to `update()` as one block, and
+  to `ImmRecursion::update()`, which updates each mode given them.
 - `conditional<Path>(values, repetitions)` conditions a distribution on selected repetitions of a
   repeated block, and its result is the space with them erased. `conditional<Path>(values)` of a
   block inside each repetition, `conditional<TagPath<Fleet, Heading>>()`, is now a compile error,

@@ -208,8 +208,8 @@ struct UnlessGivenBlock
 };
 
 /// \cond INTERNAL_SPECIALIZATIONS
-template <typename Lazy, typename Space, typename P, typename Value>
-struct UnlessGivenBlock<Lazy, GivenBlock<Space, P, Value>>
+template <typename Lazy, typename Space, typename P, typename Value, typename Selection>
+struct UnlessGivenBlock<Lazy, GivenBlock<Space, P, Value, Selection>>
 {};
 
 /// \endcond
@@ -336,30 +336,35 @@ choosesEachAxisOnce()
     }
 }
 
-/** One mode's measurement in an update by mode axis given a block (see GivenMeasurement): \a One,
- * the measurement with the mode's noise component, and the model over the rest and the block
- * resolved against it, which refers to it and to the space held here, so a copy resolves its own.
+/** One mode's measurement in an update by mode axis given a block, or the repetitions \a Selection
+ * selects of the repeated block \a P runs through (see GivenMeasurement): \a One, the measurement
+ * with the mode's noise component, and the model over the rest and the block resolved against it,
+ * which refers to it and to the space held here, so a copy resolves its own.
  */
-template <typename Space, typename P, typename One, typename Value>
+template <typename Space, typename P, typename One, typename Value, typename Selection = NoSelection>
 struct GivenComponent
 {
-    /** \a one, resolved against \a whole, the state space, with the block named by \a P given as \a given. */
-    GivenComponent(One one, Space whole, Value const & given)
+    /** \a one, resolved against \a whole, the state space, with the block named by \a P, or the
+     * repetitions \a selected selects, given as \a given.
+     */
+    GivenComponent(One one, Space whole, Value const & given, Selection selected = {})
         : measurement{std::move(one)}
         , space{std::move(whole)}
-        , pinned{space, measurement}
+        , selection{std::move(selected)}
+        , pinned{space, measurement, selection}
         , value{given}
     {}
 
     /** A copy of \a other, resolved against its own measurement and space. */
     GivenComponent(GivenComponent const & other)
-        : GivenComponent{other.measurement, other.space, other.value}
+        : GivenComponent{other.measurement, other.space, other.value, other.selection}
     {}
 
-    One measurement;                          ///< the measurement with the mode's noise component
-    Space space;                              ///< the whole state space
-    PinnedMeasurement<Space, P, One> pinned;  ///< the measurement, over the rest and the given block
-    Value const & value;                      ///< the given block's value
+    One measurement;                                     ///< the measurement with the mode's noise component
+    Space space;                                         ///< the whole state space
+    Selection selection;                                 ///< the repetitions given
+    PinnedMeasurement<Space, P, One, Selection> pinned;  ///< the measurement, over the rest and the given block
+    Value const & value;                                 ///< the given block's value
 };
 
 }  // namespace internal
@@ -476,33 +481,35 @@ public:
     };
 
     /** The MeasurementUpdate on one mode's %Gaussian of the measurement it is updated by for \a M,
-     * with the block named by the path \a P of a state in \a Space given (see update(state,
-     * measurement, pinned, policy)).
+     * with the block named by the path \a P of a state in \a Space given, or the repetitions
+     * \a Selection selects of the repeated block it runs through (see update(state, measurement,
+     * pinned, policy)).
      */
-    template <typename M, typename Space, typename P>
+    template <typename M, typename Space, typename P, typename Selection = internal::NoSelection>
     using GivenMeasuredType = typename decltype(internal::updateBranchesWith<true>(
         std::declval<ComponentType const &>(),
-        std::declval<internal::PinnedMeasurement<Space, P, internal::ModeResolved<M>> const &>(),
-        std::declval<typename Moments<internal::PathTag<P>, Scalar>::VectorType const &>()
+        std::declval<internal::PinnedMeasurement<Space, P, internal::ModeResolved<M>, Selection> const &>(),
+        std::declval<
+            typename Moments<typename internal::GivenSpaceOf<Space, P, Selection>::type, Scalar>::VectorType const &>()
     ))::value_type;
 
     /** What update(state, measurement, pinned, policy) with \a M fills when given a result, as
      * ResultType has it.
      */
-    template <typename M, typename Space, typename P>
+    template <typename M, typename Space, typename P, typename Selection = internal::NoSelection>
     using GivenResultType = ImmFilterUpdate<
         internal::FilterUpdateWithScratch<
             SpaceType,
-            typename GivenMeasuredType<M, Space, P>::MeasurementSpaceType,
-            GivenMeasuredType<M, Space, P>::BranchCount,
+            typename GivenMeasuredType<M, Space, P, Selection>::MeasurementSpaceType,
+            GivenMeasuredType<M, Space, P, Selection>::BranchCount,
             Scalar,
             Allocator_>,
         Scalar,
         Allocator_>;
 
     /** What update(state, measurement, pinned, policy) with \a M returns. */
-    template <typename M, typename Space, typename P>
-    using GivenUpdateType = std::expected<GivenResultType<M, Space, P>, NumericError>;
+    template <typename M, typename Space, typename P, typename Selection = internal::NoSelection>
+    using GivenUpdateType = std::expected<GivenResultType<M, Space, P, Selection>, NumericError>;
 
     /** The recursion with switching model \a model and prediction method \a method, which the
      * modes whose models carry none of their own predict by, with scratch for every mode from
@@ -751,10 +758,11 @@ public:
     }
 
     /** As update(state, measurement, policy), but with \a state a hybrid over the rest of a state
-     * and the block that \a pinned names given separately, as given() makes it: each mode's
-     * %Gaussian is conditioned as update(prior, measurement, given) conditions one, by the
-     * measurement it is updated by. This is the step of a Rao-Blackwellized filter whose points
-     * each hold a hybrid (RbPointMassFilter, RbParticleFilter), each point's block given.
+     * and the block that \a pinned names, or the repetitions it selects of a repeated block, given
+     * separately, as given() makes it: each mode's %Gaussian is conditioned as update(prior,
+     * measurement, given) conditions one, by the measurement it is updated by. This is the step of
+     * a Rao-Blackwellized filter whose points each hold a hybrid (RbPointMassFilter,
+     * RbParticleFilter), each point's block given.
      *
      * \returns as update(state, measurement, policy) does
      */
@@ -763,17 +771,18 @@ public:
         typename Space,
         typename P,
         typename Value,
+        typename Selection,
         typename Policy = reductions::Collapse>
         requires(!IsForm)
-    [[nodiscard]] GivenUpdateType<M, Space, P>
+    [[nodiscard]] GivenUpdateType<M, Space, P, Selection>
     update(
         StateType & state,
         M const & measurement,
-        GivenBlock<Space, P, Value> const & pinned,
+        GivenBlock<Space, P, Value, Selection> const & pinned,
         Policy const & policy = {}
     )
     {
-        auto result = emptyGivenUpdate<M, Space, P>(get_allocator(), state.size());
+        auto result = emptyGivenUpdate<M, Space, P, Selection>(get_allocator(), state.size());
         auto const updated = update(state, measurement, pinned, policy, result);
         if (!updated)
         {
@@ -791,6 +800,7 @@ public:
         typename Space,
         typename P,
         typename Value,
+        typename Selection,
         typename Policy,
         typename ModeUpdate,
         typename ResultAllocator>
@@ -799,12 +809,12 @@ public:
     update(
         StateType & state,
         M const & measurement,
-        GivenBlock<Space, P, Value> const & pinned,
+        GivenBlock<Space, P, Value, Selection> const & pinned,
         Policy const & policy,
         ImmFilterUpdate<ModeUpdate, Scalar, ResultAllocator> & result
     )
     {
-        static_assert(checkModeMeasurement<M>());
+        static_assert(checkModeMeasurement<M, Space, P, Selection>());
         if constexpr (internal::dependsOnMode<M>)
         {
             return updateModes(state, policy, result, [&](Eigen::Index m, auto const & updateMode) {
@@ -813,18 +823,21 @@ public:
                     {
                         // The mode's measurement holds its own noise component, so it resolves its own.
                         return updateMode(
-                            internal::GivenComponent<Space, P, R, Value>{resolved, pinned.space, pinned.value},
+                            internal::GivenComponent<Space, P, R, Value, Selection>{
+                                resolved,
+                                pinned.space,
+                                pinned.value,
+                                internal::givenSelection(pinned)
+                            },
                             component
                         );
                     }
                     else
                     {
-                        auto const f = internal::PinnedMeasurement<Space, P, R>{pinned.space, resolved};
+                        using Pinned = internal::PinnedMeasurement<Space, P, R, Selection>;
+                        auto const f = Pinned{pinned.space, resolved, internal::givenSelection(pinned)};
                         return updateMode(
-                            internal::GivenMeasurement<internal::PinnedMeasurement<Space, P, R> const &, Value>{
-                                f,
-                                pinned.value
-                            },
+                            internal::GivenMeasurement<Pinned const &, Value>{f, pinned.value},
                             component
                         );
                     }
@@ -833,7 +846,11 @@ public:
         }
         else
         {
-            auto const f = internal::PinnedMeasurement<Space, P, M>{pinned.space, measurement};
+            auto const f = internal::PinnedMeasurement<Space, P, M, Selection>{
+                pinned.space,
+                measurement,
+                internal::givenSelection(pinned)
+            };
             return updateGiven(state, f, pinned.value, policy, result);
         }
     }
@@ -848,6 +865,7 @@ public:
         typename Space,
         typename P,
         typename M,
+        typename Selection,
         typename Value,
         typename Policy,
         typename ModeUpdate,
@@ -856,13 +874,13 @@ public:
     [[nodiscard]] std::expected<void, NumericError>
     updateGiven(
         StateType & state,
-        internal::PinnedMeasurement<Space, P, M> const & f,
+        internal::PinnedMeasurement<Space, P, M, Selection> const & f,
         Value const & value,
         Policy const & policy,
         ImmFilterUpdate<ModeUpdate, Scalar, ResultAllocator> & result
     )
     {
-        using Given = internal::GivenMeasurement<internal::PinnedMeasurement<Space, P, M> const &, Value>;
+        using Given = internal::GivenMeasurement<internal::PinnedMeasurement<Space, P, M, Selection> const &, Value>;
         return updateModes(state, policy, result, [&](Eigen::Index, auto const & updateMode) {
             return updateMode(Given{f, value}, Eigen::Index{-1});
         });
@@ -884,11 +902,11 @@ public:
     /** \returns an empty GivenResultType with room for \a modes modes, from \a allocator, for
      * update(state, measurement, pinned, policy, result) to fill
      */
-    template <internal::ModeMeasurement M, typename Space, typename P>
-    [[nodiscard]] GivenResultType<M, Space, P>
+    template <internal::ModeMeasurement M, typename Space, typename P, typename Selection = internal::NoSelection>
+    [[nodiscard]] GivenResultType<M, Space, P, Selection>
     emptyGivenUpdate(Allocator_ const & allocator, Eigen::Index modes) const
     {
-        auto result = GivenResultType<M, Space, P>{allocator};
+        auto result = GivenResultType<M, Space, P, Selection>{allocator};
         result.modes.reserve(std::size_t(modes));
         return result;
     }
@@ -915,34 +933,60 @@ private:
     using ComponentAllocator = typename ConditionalsType::allocator_type;  ///< allocates them
 
     /** \returns true, after checking at compile time that the measurement \a M chooses by each mode
-     * axis once along a nesting and that every mode's update has one type
+     * axis once along a nesting and that every mode's update has one type: the update's of the whole
+     * state, or with \a Space, \a P, and \a Selection those of a given block, the update's given it
      */
-    template <typename M>
+    template <typename M, typename Space = void, typename P = void, typename Selection = internal::NoSelection>
     [[nodiscard]] static consteval bool
     checkModeMeasurement()
     {
         static_assert(internal::choosesEachAxisOnce<std::remove_cvref_t<M>>());
         static_assert(
-            sharesOneUpdateType<std::remove_cvref_t<M>>(),
+            sharesOneUpdateType<std::remove_cvref_t<M>, Space, P, Selection>(),
             "the alternatives of a measurement by mode axis update a mode into one type: give them one measurement "
             "space, and noise that is Gaussian or by mode axis in all of them, or a mixture in all of them"
         );
         return true;
     }
 
-    /** \returns whether every alternative of \a M, a ByMode, nested ones included, updates a mode into
-     * ResultType<M>; true for a Measurement
+    /** ResultType<M> where \a Space is void, and otherwise GivenResultType<M, Space, P, Selection>,
+     * the update's given the block of \a Space that \a P and \a Selection name, as \c type.
      */
-    template <typename M>
+    template <typename M, typename Space, typename P, typename Selection>
+    [[nodiscard]] static consteval auto
+    resultOf()
+    {
+        if constexpr (std::is_void_v<Space>)
+        {
+            return std::type_identity<ResultType<M>>{};
+        }
+        else
+        {
+            return std::type_identity<GivenResultType<M, Space, P, Selection>>{};
+        }
+    }
+
+    /** \returns whether every alternative of \a M, a ByMode, nested ones included, updates a mode into
+     * the type that \a M does, given the block that \a Space, \a P, and \a Selection name unless
+     * \a Space is void (see resultOf()); true for a Measurement
+     */
+    template <typename M, typename Space, typename P, typename Selection>
     [[nodiscard]] static consteval bool
     sharesOneUpdateType()
     {
         if constexpr (internal::isByModePart<M>)
         {
+            using Result = typename decltype(resultOf<M, Space, P, Selection>())::type;
             return []<std::size_t... I>(std::index_sequence<I...>) {
                 return (
-                    (std::is_same_v<ResultType<typename M::template PartType<I>>, ResultType<M>>
-                     && sharesOneUpdateType<std::remove_cvref_t<typename M::template PartType<I>>>())
+                    (std::is_same_v<
+                         typename decltype(resultOf<typename M::template PartType<I>, Space, P, Selection>())::type,
+                         Result>
+                     && sharesOneUpdateType<
+                         std::remove_cvref_t<typename M::template PartType<I>>,
+                         Space,
+                         P,
+                         Selection>())
                     && ...
                 );
             }(std::make_index_sequence<M::Count>{});
