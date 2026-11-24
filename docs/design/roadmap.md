@@ -232,12 +232,35 @@ takes an integer repetition today, that argument takes a sequence or a list too.
       placing item below carries the values through and removes the refusal. A `SelectedPath`
       (`Spaces/TagPath.h`) is not a `PathValue`, so that no policy takes one and drops its
       selection: each item here makes its policy take it.
+- [ ] **Selections through a placement and a composition.** Build this before `writes()`: a
+      model that writes part of a block is of use only as a part of a composition, since a filter's
+      model writes every coordinate once. `on()`, `onEach()`, and `compose()` make their `reads()`
+      from the parts' types (`Placement.h`: `placedPolicy()` returns `ReadsPolicy{}`, and
+      `OuterItemOf` drops an item's selection type; `ProcessModel.h`: `Composition::policy()`
+      returns a static default, and `ReadUnion` compares paths only), so they refuse a model with
+      a selection (`internal::SelectionRefusal`). Carry each selection's value: a placed `Reads`
+      built from the inner one's `selection<I>()`, and a composition that holds its union `Reads`,
+      each item's selection from the first part that reads its name. Parts that share a name hold
+      equal selections, asserted when the composition meets a state, where both resolve against
+      the block's count (a sequence that counts from the end cannot be compared sooner). Then
+      remove the refusal and its three negative cases. Test: `compose()` of two sightings under
+      two names equals the composition on the state with one tag per repetition.
 - [ ] **`writes()` of a process model.** The same path values, and `on<Name>(...)`, which
-      `writes()` does not take today. A repetition not written is carried as a block not written
-      is. Noise is placed by the output space's names, as now. The written rows become a list of
-      runs. Test: a prediction that writes `path<Fleet>[1]`, a sequence, and a list equals the
-      prediction on the state with one tag per repetition, under each method; two parts of a
-      composition write two repetitions of one block.
+      `writes()` does not take today, named as `reads()` names them (`internal::ReadItemOf`). Keep
+      `Writes<Paths...>` for whole blocks, so that every model there is keeps its type, and add a
+      policy of items that holds the selections and has the same `PathList` and `OutputSpace`.
+      What must know the selection, all in `ProcessModel.h`: `outputOf()`, which builds the output
+      space and so takes the model; the written rows in `ResolvedProcess` and in
+      `processNoiseOfBlocks()`; `writesPartition()`; and `staticPartitionOfWrites()`, which must
+      answer "unknown" when a write is selected, since the path then names more than is written.
+      One repetition and whole repetitions of a sequence whose increment is one are one run of
+      rows, which the code that takes a `BlockRows` handles. A list is not: the noise's placement,
+      `scatterBlocks()`, `expand()`, and `inputBlock()` then go through the written rows' indices,
+      on a path compiled only for a model whose `writes()` has a list, so that every other model
+      keeps its block code. A repetition not written is carried as a block not written is. Test: a
+      prediction that writes `path<Fleet>[1]`, a sequence, and a list equals the prediction on the
+      state with one tag per repetition, under each method; two parts of a composition write two
+      repetitions of one block; a process model that reads a selection.
 - [ ] **Placing a model.** `on(path<Fleet>[k], model, renames...)` places it on one repetition, and
       `onEach(path<Fleet>[moving], model, renames...)` on each repetition of a sequence or a list;
       an input renamed to a `Repeated` tag has a value per repetition placed. This value form
