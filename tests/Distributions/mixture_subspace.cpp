@@ -11,6 +11,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
 #include <expected>
 #include <memory_resource>
@@ -192,6 +193,20 @@ TEST(GaussianMixtureMarginal, DensityMarginalMatchesParams)
     EXPECT_EQ(second.differenceDimension(), 1);
     EXPECT_EQ(Eigen::Index(second.differenceIndices().size()), 1);
 
+    // And of a list of repetitions, in its order.
+    auto const listed = convoyDensity->marginal<Fleet>(std::array{3, 1});
+    auto const listedOfParams = convoy.marginal<Fleet>(std::array{3, 1});
+    ASSERT_EQ(listed.size(), 2);
+    EXPECT_EQ(listed.differenceDimension(), 2);
+    for (Eigen::Index i = 0; i < 2; ++i)
+    {
+        EXPECT_EQ(listed[i].component.moments().mean(), listedOfParams[i].component.moments().mean());
+        EXPECT_EQ(
+            listedOfParams[i].component.moments().mean(),
+            (Eigen::Vector2d{convoy.begin()[i].component.mean()(3), convoy.begin()[i].component.mean()(1)})
+        );
+    }
+
     using Pmr = std::pmr::polymorphic_allocator<>;
     auto resource = std::pmr::monotonic_buffer_resource{};
     auto const conditionals = std::vector{
@@ -204,6 +219,9 @@ TEST(GaussianMixtureMarginal, DensityMarginalMatchesParams)
     auto const third = hybrid.marginal<Fleet>(2);
     ASSERT_EQ(third.size(), 2);
     EXPECT_EQ(third[1].component.mean()(0), conditionals[1].mean()(2));
+    auto const firstTwo = hybrid.marginal<Fleet>(Eigen::seqN(0, 2));
+    ASSERT_EQ(firstTwo.size(), 2);
+    EXPECT_EQ(firstTwo[1].component.mean(), Eigen::Vector2d{conditionals[1].mean().head<2>()});
 }
 
 // A hybrid's marginal ranges over its modes: each element holds the mode's log-probability and the

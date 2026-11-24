@@ -521,7 +521,8 @@ TEST(StudentT, TagConditionalReturnsTheRemainingBlock)
 
 // marginal<Repeated>(i) of a uniform, a gamma, and a Student-t over a Repeated space is over the
 // element space, and a path into a repetition gives the leaf's distribution; a uniform's box
-// repeats the element's intervals.
+// repeats the element's intervals. A sequence or a list of repetitions gives the distribution over
+// a repeated block of their count, in the order named ([repetition-selections]).
 TEST(Densities, MarginalOfOneRepetitionIsInTheBlockSpace)
 {
     // The box repeats one cell's intervals: the whole heading, and speeds from 2 to 5.
@@ -544,6 +545,9 @@ TEST(Densities, MarginalOfOneRepetitionIsInTheBlockSpace)
     static_assert(std::is_same_v<decltype(speed), Uniform<Speed> const>);
     EXPECT_EQ(speed.lower()(0), 2.0);
     EXPECT_EQ(speed.width()(0), 3.0);
+    auto const speeds = cells.marginal<TagPath<Cells, Speed>>(std::array{2, 0});
+    EXPECT_EQ(speeds.valueDimension(), 2);
+    EXPECT_EQ(speeds.lower(), (Eigen::Vector2d{2.0, 2.0}));
 
     struct Ranges : Repeated<Range, 4>
     {
@@ -554,6 +558,10 @@ TEST(Densities, MarginalOfOneRepetitionIsInTheBlockSpace)
     auto const second = ranges.marginal<Ranges>(1);
     static_assert(std::is_same_v<decltype(second), Gamma<Range> const>);
     EXPECT_EQ(second.shape()(0), 3.0);
+    auto const lastTwo = ranges.marginal<Ranges>(Eigen::seqN(1, 2));
+    EXPECT_EQ(lastTwo.shape(), (Eigen::Vector2d{3.0, 4.0}));
+    auto const listed = ranges.marginal<Ranges>(std::array{2, 0});
+    EXPECT_EQ(listed.shape(), (Eigen::Vector2d{4.0, 2.0}));
 
     struct Headings : Repeated<Heading, 4>
     {
@@ -566,6 +574,8 @@ TEST(Densities, MarginalOfOneRepetitionIsInTheBlockSpace)
     auto const last = t->marginal<Headings>(1);
     static_assert(std::is_same_v<decltype(last), StudentT<Heading> const>);
     EXPECT_EQ(last.location()(0), 1.5);
+    auto const swapped = t->marginal<Headings>(std::array{1, 0});
+    EXPECT_EQ(swapped.location(), (Eigen::Vector2d{1.5, 0.5}));
 }
 
 // Single draws, one drawSample() at a time, from each distribution here have its moments: 40,000

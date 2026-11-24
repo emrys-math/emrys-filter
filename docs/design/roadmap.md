@@ -272,17 +272,6 @@ takes an integer repetition today, that argument takes a sequence or a list too.
 - [ ] **`consider()` and `given()`, the rest.** Both take selections
       ([placed-selected-values], `tests/Models/consider.cpp`). Left: a selected `given()` through
       the Rao-Blackwellized filters and the IMM filter, which take a `GivenBlock` of a whole block.
-- [ ] **Distributions, the rest.** `marginal<Path>(k)`, `mean<Path>(k)`, and `covariance<Path>(k)`
-      take a sequence or a list on every distribution that took an integer, through
-      `internal::marginalOverElement()` (`Spaces/Selection.h`) and `internal::elementMarginal()`,
-      tested on `GaussianParams` and its view (`tests/Distributions/gaussian_space.cpp`). Left: a
-      test of each on the other distributions (the Gaussian forms, `StudentT`, `Uniform`, `Gamma`,
-      mixtures, hybrids, and `ParticleSet`). Also built: a Gaussian's `covariance<RowPath,
-      ColPath>(selections...)`, `nees<Path>(truth, estimate, repetitions)`, and
-      `erase<Path>(elements)` on `GaussianParams`, a mixture's parameters, and `ParticleSet`
-      (`internal::forEachErasedRun()`). Left of those: `NeesMonitor::add<Path>()` with a selection,
-      and a test of erasing a list from a `ParticleSet`. `insert<Path>()` is unchanged: it takes a
-      position, not a selection.
 - [ ] **Audit.** List every public function that takes a path, among them `pointGrid()`,
       `regularGrid()`, the Rao-Blackwellized filters' blocks, `CountFrom`, and `byMode()`, and a
       path through a repeated block with no subscript (`path<Fleet, Heading>`), and give each a

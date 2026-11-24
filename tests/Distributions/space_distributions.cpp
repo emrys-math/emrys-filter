@@ -226,7 +226,8 @@ TEST(SpaceFitting, ReducesAMixtureAcrossTheSeam)
 }
 
 // marginal<Fleet>(i) of a mixture or a particle set over a Repeated space is over the element
-// space, and a path into one repetition gives the leaf space.
+// space, and a path into one repetition gives the leaf space. A list of repetitions gives the
+// repeated block of their count, in the list's order.
 TEST(SpaceDistributions, MarginalOfOneRepetitionIsInTheBlockSpace)
 {
     struct Vehicle : Composite<Position, Heading>
@@ -253,4 +254,10 @@ TEST(SpaceDistributions, MarginalOfOneRepetitionIsInTheBlockSpace)
     auto const headings = particles.marginal<TagPath<Fleet, Heading>>(1).copy();
     static_assert(std::is_same_v<decltype(headings), ParticleSet<Heading> const>);
     EXPECT_EQ(headings.states(), (Eigen::Matrix<double, 1, 2>{0.1, 0.2}));
+
+    auto const swapped = particles.marginal<Fleet>(std::array{1, 0}).copy();
+    EXPECT_EQ(swapped.space().count(), 2);
+    EXPECT_EQ(swapped.states(), (Eigen::Matrix<double, 4, 2>{{3.0, 4.0}, {0.1, 0.2}, {1.0, 2.0}, {0.5, 0.6}}));
+    auto const swappedMixture = mixture.marginal<Fleet>(std::array{1, 0}).copy();
+    EXPECT_EQ(swappedMixture.begin()->component.mean(), Eigen::Vector4d(2.0, pi - 0.1, 1.0, 0.5));
 }

@@ -171,7 +171,8 @@ TEST(ResizableSpace, GaussianInsertAndErase)
 // erase<Landmarks>(elements) takes a sequence or a list as it takes one element (roadmap step 17zu,
 // [repetition-selections]). The indices are those before the call, so erasing landmarks 0 and 2 of
 // four, named in either order, is erasing 2 and then 0; a sequence is its elements from the highest
-// down; and a sequence may count from the block's end. A mixture's components erase the same.
+// down; and a sequence may count from the block's end. A mixture's components and a particle set's
+// states erase the same.
 TEST(ResizableSpace, EraseTakesASequenceOrAList)
 {
     Eigen::VectorXd const mean = iota(15);
@@ -219,6 +220,15 @@ TEST(ResizableSpace, EraseTakesASequenceOrAList)
         EXPECT_EQ(component.component.space(), mixture.space());
         EXPECT_EQ(component.component.mean(), oneByOne.mean());
     }
+
+    Eigen::MatrixXd const states = Eigen::MatrixXd::Random(15, 10);
+    auto particles = ParticleSet<Map>{makeMap(4), states};
+    auto particlesByOne = particles;
+    particlesByOne.erase<Landmarks>(2);
+    particlesByOne.erase<Landmarks>(0);
+    particles.erase<Landmarks>(std::array{2, 0});
+    EXPECT_EQ(particles.space(), makeMap(2));
+    EXPECT_EQ(particles.states(), particlesByOne.states());
 }
 
 // Marginals of the repeated block and of a path into it carry the current count, and a conditional

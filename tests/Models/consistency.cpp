@@ -396,6 +396,14 @@ TEST(Nees, OfSelectedRepetitionsReadsTheTruthByThePath)
         byHand(listed),
         1e-11
     );
+
+    // A monitor adds the selection's NEES with its difference dimension as the degrees of freedom.
+    auto monitor = Emrys::NeesMonitor<10>{};
+    monitor.add<Tracks>(truth, estimate, lastAndFirst);
+    monitor.add<Tracks>(truth, estimate, 1);
+    EXPECT_EQ(monitor.count(), 2);
+    EXPECT_EQ(monitor.degreesOfFreedom(), 6);
+    EXPECT_NEAR(monitor.sum(), byHand(listed) + byHand(one), 1e-11);
 }
 
 // nees<Path>() of a block is the Mahalanobis distance over that block's entries alone, d^T P_bb^-1 d,

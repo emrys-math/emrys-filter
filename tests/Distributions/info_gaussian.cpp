@@ -17,6 +17,7 @@
 
 #include <Eigen/LU>
 
+#include <array>
 #include <limits>
 #include <utility>
 
@@ -326,6 +327,21 @@ TEST(InfoGaussianParams, MarginalMatchesTheCovarianceForm)
     EXPECT_TRUE(second->covariance()->isApprox(expectedSecond.covarianceLower(), 1e-12));
     EXPECT_TRUE(rootSecond->mean()->isApprox(expectedSecond.mean(), 1e-12));
     EXPECT_TRUE(rootSecond->covariance()->isApprox(expectedSecond.covarianceLower(), 1e-12));
+
+    // A list of repetitions, in its order, and a sequence, as the covariance form's marginals.
+    auto const check = [&](auto const & selection) {
+        auto const info = Emrys::toInfo(fleet)->marginal<Fleet>(selection);
+        auto const rootInfo = Emrys::toSqrtInfo(fleet)->marginal<Fleet>(selection);
+        ASSERT_TRUE(info && rootInfo);
+        auto const expected = fleet.marginal<Fleet>(selection).copy();
+        Eigen::MatrixXd const expectedCov = expected.covarianceLower().template selfadjointView<Eigen::Lower>();
+        EXPECT_TRUE(info->mean()->isApprox(expected.mean(), 1e-12));
+        EXPECT_TRUE(info->covariance()->isApprox(expectedCov, 1e-12));
+        EXPECT_TRUE(rootInfo->mean()->isApprox(expected.mean(), 1e-12));
+        EXPECT_TRUE(rootInfo->covariance()->isApprox(expectedCov, 1e-12));
+    };
+    check(std::array{2, 0});
+    check(Eigen::seqN(1, 2));
 }
 
 // Marginalizing out a block with no information is Singular in both information forms: the Schur

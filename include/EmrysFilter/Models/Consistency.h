@@ -694,6 +694,23 @@ public:
         add(value ? Scalar(*value) : std::numeric_limits<Scalar>::quiet_NaN(),
             internal::differenceBlockRows<Path>(estimate.space()).size);
     }
+
+    /** Adds the repetitions  repetitions of the repeated block that  Path runs through, as
+     * add<Path>(truth, estimate) adds a block: their nees<Path>(truth, estimate, repetitions), with
+     * the difference dimension of what is selected as the degrees of freedom (decisions.md
+     * [repetition-selections]).
+     */
+    template <typename Path, typename Derived, typename Estimate, internal::RepetitionChoice Choice>
+        requires requires(Estimate const & estimate, Eigen::MatrixBase<Derived> const & truth, Choice const & choice) {
+            nees<Path>(truth, estimate, choice);
+        }
+    void
+    add(Eigen::MatrixBase<Derived> const & truth, Estimate const & estimate, Choice const & repetitions)
+    {
+        auto const value = nees<Path>(truth, estimate, repetitions);
+        add(value ? Scalar(*value) : std::numeric_limits<Scalar>::quiet_NaN(),
+            differenceDimension(internal::pathChoiceSubspace<Path>(estimate.space(), repetitions)));
+    }
 };
 
 }  // namespace Emrys

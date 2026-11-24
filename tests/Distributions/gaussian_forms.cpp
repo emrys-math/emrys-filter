@@ -19,6 +19,7 @@
 
 #include <Eigen/LU>
 
+#include <array>
 #include <cmath>
 #include <expected>
 #include <limits>
@@ -457,6 +458,13 @@ TEST(GaussianForms, SqrtMarginalMatchesGaussian)
     EXPECT_TRUE(second.covariance()->isApprox(makeCov(), 1e-13));
     auto const secondHeading = Emrys::toSqrt(fleet)->marginal<TagPath<Fleet, Heading>>(1);
     EXPECT_NEAR(secondHeading.mean()(0), fleet.mean()(5), 1e-15);
+
+    // A list of repetitions, in its order, as the covariance form's marginal of it.
+    auto const swapped = Emrys::toSqrt(fleet)->marginal<Fleet>(std::array{1, 0});
+    auto const expectedSwapped = fleet.marginal<Fleet>(std::array{1, 0}).copy();
+    EXPECT_EQ(swapped.mean(), expectedSwapped.mean());
+    Eigen::MatrixXd const swappedCov = expectedSwapped.covarianceLower().selfadjointView<Eigen::Lower>();
+    EXPECT_TRUE(swapped.covariance()->isApprox(swappedCov, 1e-13));
 }
 
 // The information form's accessors: the covariance, mean, and moments by solves, the precision as
@@ -701,6 +709,9 @@ TEST(GaussianForms, InfoDensityMarginalIsTheSchurComplement)
     ASSERT_TRUE(second);
     EXPECT_TRUE(second->mean().isApprox(fleet.marginal<Fleet>(1).copy().mean(), 1e-13));
     EXPECT_TRUE(second->covarianceLower().isApprox(makeCov(), 1e-13));
+    auto const swapped = Emrys::toGaussian(fleetDensity->marginal<Fleet>(std::array{1, 0}));
+    ASSERT_TRUE(swapped);
+    EXPECT_TRUE(swapped->mean().isApprox(fleet.marginal<Fleet>(std::array{1, 0}).copy().mean(), 1e-13));
 
     auto const linear = Emrys::toInfo(GaussianParams<Linear<3>>{mean3, makeCov()});
     ASSERT_TRUE(linear);
