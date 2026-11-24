@@ -1977,6 +1977,8 @@ block's path value names, so an `onEach()` of a list measures the repetitions li
 and the measurement space it infers has the list's count. `consider()` takes a selected path
 [consider-states], each repetition considered one run of rows, and `given<Path>(space, value,
 selection)` gives the repetitions selected as one block, in the order selected.
+`conditional<Path>(values, repetitions)` conditions on whole repetitions, its result in the space
+with them erased; a block inside each repetition is refused, which would leave each a part.
 
 **Why.** One spelling places a model and a value on repetitions [placed-repetitions]. A product's
 factors partition its space, which its constructor asserts, so selections that place two factors on

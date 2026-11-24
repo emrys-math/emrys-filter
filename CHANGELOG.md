@@ -56,6 +56,10 @@ instead.
   on<Position>(-h)}` measures the landmarks listed, in a space of their count.
 - `consider()` takes a selected path, `consider(path<Landmarks>[k])`, and
   `given<Path>(space, value, selection)` gives selected repetitions to `update()` as one block.
+- `conditional<Path>(values, repetitions)` conditions a distribution on selected repetitions of a
+  repeated block, and its result is the space with them erased. `conditional<Path>(values)` of a
+  block inside each repetition, `conditional<TagPath<Fleet, Heading>>()`, is now a compile error,
+  where it failed in Eigen before.
 - `compose()` and `on<Path>()` take a model whose `reads()` selects repetitions. A composition reads
   each name once, with the selection of the first part that reads it; parts that read a block
   under one name select the same repetitions, which is asserted when the composition meets a

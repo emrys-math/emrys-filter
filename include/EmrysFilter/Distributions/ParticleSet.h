@@ -207,19 +207,21 @@ conditionalParticlesIn(
 }
 
 /** Shared implementation of conditional<GivenPath>(); see tagConditional(). */
-template <typename GivenPath, typename Source, typename BandwidthDerived, typename Derived>
+template <typename GivenPath, typename Source, typename BandwidthDerived, typename Derived, typename... Repetitions>
 [[nodiscard]] auto
 tagConditionalParticles(
     Source const & source,
     Eigen::MatrixBase<BandwidthDerived> const & bandwidth,
-    Eigen::MatrixBase<Derived> const & values
+    Eigen::MatrixBase<Derived> const & values,
+    Repetitions const &... repetitions
 )
 {
     return tagConditional<GivenPath>(
         source.space(),
         [&](auto const & target, auto const & given, auto const & targetSpace, auto const & givenSpace) {
             return conditionalParticlesIn(source, bandwidth, target, given, values, targetSpace, givenSpace);
-        }
+        },
+        repetitions...
     );
 }
 
@@ -1380,17 +1382,19 @@ public:
      *          given block (decisions.md [innovation-cholesky]), or GaussianError::NonFinite if
      *          no bandwidth is stored and the weights cannot be normalized
      */
-    template <typename GivenPath, typename Derived>
+    template <typename GivenPath, typename Derived, internal::RepetitionChoice... Repetitions>
+        requires(sizeof...(Repetitions) <= 1)
     [[nodiscard]] auto
-    conditional(Eigen::MatrixBase<Derived> const & values) const
+    conditional(Eigen::MatrixBase<Derived> const & values, Repetitions const &... repetitions) const
     {
         auto const bandwidth = kdeBandwidth();
-        using Result = decltype(internal::tagConditionalParticles<GivenPath>(*this, *bandwidth, values));
+        using Result =
+            decltype(internal::tagConditionalParticles<GivenPath>(*this, *bandwidth, values, repetitions...));
         if (!bandwidth)
         {
             return Result{std::unexpected{GaussianError::NonFinite}};
         }
-        return internal::tagConditionalParticles<GivenPath>(*this, *bandwidth, values);
+        return internal::tagConditionalParticles<GivenPath>(*this, *bandwidth, values, repetitions...);
     }
 
     /** Validates the weights and builds a kernel density estimate with kdeBandwidth():

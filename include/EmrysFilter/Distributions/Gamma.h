@@ -354,16 +354,18 @@ public:
      * Negative values have zero density, so strictly the conditional is undefined there; this
      * returns the marginal anyway.
      */
-    template <typename GivenPath, typename Derived>
+    template <typename GivenPath, typename Derived, internal::RepetitionChoice... Repetitions>
+        requires(sizeof...(Repetitions) <= 1)
     [[nodiscard]] auto
-    conditional(Eigen::MatrixBase<Derived> const & values) const
+    conditional(Eigen::MatrixBase<Derived> const & values, Repetitions const &... repetitions) const
     {
         return internal::tagConditional<GivenPath>(
             m_space,
             [&](auto const & t, auto const & g, auto space, auto const &) {
                 EMRYS_FILTER_ASSERT(values.size() == g.values.size());
                 return restricted(t.values, std::move(space));
-            }
+            },
+            repetitions...
         );
     }
 

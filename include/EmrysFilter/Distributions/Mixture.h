@@ -516,15 +516,20 @@ conditionalMixtureIn(
 }
 
 /** Shared implementation of conditional<GivenPath>(); see tagConditional(). */
-template <typename GivenPath, typename Source, typename Derived>
+template <typename GivenPath, typename Source, typename Derived, typename... Repetitions>
 [[nodiscard]] auto
-tagConditionalMixture(Source const & source, Eigen::MatrixBase<Derived> const & values)
+tagConditionalMixture(
+    Source const & source,
+    Eigen::MatrixBase<Derived> const & values,
+    Repetitions const &... repetitions
+)
 {
     return tagConditional<GivenPath>(
         source.space(),
         [&](auto const & target, auto const & given, auto const & targetSpace, auto const & givenSpace) {
             return conditionalMixtureIn(source, target, given, values, targetSpace, givenSpace);
-        }
+        },
+        repetitions...
     );
 }
 
@@ -1640,12 +1645,12 @@ public:
      *          covariance of the given block is not positive definite, since that component's
      *          weight would need the density of a block known exactly (decisions.md [innovation-cholesky])
      */
-    template <typename GivenPath, typename Derived>
-        requires(isGaussian<ComponentType>)
+    template <typename GivenPath, typename Derived, internal::RepetitionChoice... Repetitions>
+        requires(isGaussian<ComponentType> && sizeof...(Repetitions) <= 1)
     [[nodiscard]] auto
-    conditional(Eigen::MatrixBase<Derived> const & values) const
+    conditional(Eigen::MatrixBase<Derived> const & values, Repetitions const &... repetitions) const
     {
-        return internal::tagConditionalMixture<GivenPath>(*this, values);
+        return internal::tagConditionalMixture<GivenPath>(*this, values, repetitions...);
     }
 
     /** Validates the weights and factorizes every component that has changed.
@@ -2293,12 +2298,12 @@ public:
     }
 
     /** \returns a copy of the conditional distribution; see MixtureParams::conditional(). */
-    template <typename GivenPath, typename Derived>
-        requires(isGaussian<ComponentType>)
+    template <typename GivenPath, typename Derived, internal::RepetitionChoice... Repetitions>
+        requires(isGaussian<ComponentType> && sizeof...(Repetitions) <= 1)
     [[nodiscard]] auto
-    conditional(Eigen::MatrixBase<Derived> const & values) const
+    conditional(Eigen::MatrixBase<Derived> const & values, Repetitions const &... repetitions) const
     {
-        return internal::tagConditionalMixture<GivenPath>(*this, values);
+        return internal::tagConditionalMixture<GivenPath>(*this, values, repetitions...);
     }
 
 private:

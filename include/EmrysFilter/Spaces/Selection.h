@@ -512,6 +512,45 @@ marginalOverElement(Space const & space, Choice const & repetitions, Make make)
     );
 }
 
+/** Shared implementation of conditional<GivenPath>(values, repetitions): conditions a source in
+ * \a space on the repetitions that \a repetitions selects of the repeated block \a GivenPath names,
+ * one repetition or a sequence or a list of them, with every other coordinate as the target.
+ *
+ * The given values are those of the repetitions in the order selected, and the target is in \a space
+ * with those repetitions erased, as erase<GivenPath>(repetitions) leaves it.
+ *
+ * \returns \a condition(target, given, targetSpace, givenSpace), with target and given resolved
+ * Coordinates
+ */
+template <typename GivenPath, typename Space, typename Condition, typename Choice>
+[[nodiscard]] auto
+tagConditional(Space const & space, Condition condition, Choice const & repetitions)
+{
+    static_assert(
+        IsRepeated<PathTag<GivenPath>>,
+        "conditional<Path>(values, repetitions) conditions on whole repetitions of the repeated block the path names, "
+        "so the path ends at it"
+    );
+    constexpr int N = valueDimensionAtCompileTime<Space>;
+    constexpr int NMax = maxValueDimensionAtCompileTime<Space>;
+    constexpr int D = valueDimensionAtCompileTime<DifferenceSpace<Space>>;
+    constexpr int DMax = maxValueDimensionAtCompileTime<DifferenceSpace<Space>>;
+    auto const given = resolveCoordinates(
+        space,
+        marginalIdx<false, GivenPath>(space, repetitions),
+        marginalIdx<true, GivenPath>(space, repetitions)
+    );
+    auto const target = Coordinates{
+        complementIndices<N, NMax>(valueDimension(space), given.values),
+        complementIndices<D, DMax>(differenceDimension(space), given.differences)
+    };
+    Space rest = space;
+    forEachErasedRun<GivenPath>(rest, repetitions, [&](Eigen::Index element, Eigen::Index count) {
+        [[maybe_unused]] auto const rows = shrinkBlock<GivenPath>(rest, element, count);
+    });
+    return condition(target, given, rest, pathChoiceSubspace<GivenPath>(space, repetitions));
+}
+
 /** Whether the path \a P (a tag or a TagPath) runs through a repeated block: one of its tags is one. */
 template <typename P>
 inline constexpr bool runsThroughRepeated = withPathTags<P>([]<typename... Tags>() {

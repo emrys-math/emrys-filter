@@ -213,6 +213,33 @@ roughen()
 }
 #endif
 
+// Conditioning on a block inside the repetitions of a repeated block, which would leave each repetition a part.
+struct Wheel : Emrys::Linear<1>
+{};
+
+struct Car : Emrys::Composite<Position, Wheel>
+{};
+
+struct Cars : Emrys::Repeated<Car, 4>
+{
+    using Repeated::Repeated;
+};
+
+[[maybe_unused]] Emrys::GaussianParams<Cars>
+makeCars()
+{
+    return {Cars{Car{}, 2}, Eigen::VectorXd::Zero(6), Eigen::MatrixXd::Identity(6, 6)};
+}
+
+#if defined(CONDITIONAL_INSIDE_REPETITIONS)  // static_assert: Indexing.h: of a block inside the repetitions of a
+[[maybe_unused]] auto const conditioned = makeCars().conditional<Emrys::TagPath<Cars, Wheel>>(Eigen::Vector2d::Zero());
+#endif
+
+#if defined(CONDITIONAL_ON_REPETITIONS_INSIDE)  // static_assert: Selection.h: so the path ends at it
+[[maybe_unused]] auto const conditioned =
+    makeCars().conditional<Emrys::TagPath<Cars, Wheel>>(Eigen::Matrix<double, 1, 1>::Zero(), 1);
+#endif
+
 // A view of a temporary would dangle, so marginal() and toDensity() of an rvalue are deleted.
 
 #if defined(GAUSSIAN_MARGINAL_OF_TEMPORARY)  // deleted: Gaussian.h: marginal() const &&

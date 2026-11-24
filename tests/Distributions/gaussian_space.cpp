@@ -4,15 +4,18 @@
 // and fixed-capacity storage.
 
 #include <EmrysFilter/Distributions/Gaussian.h>
+#include <EmrysFilter/Distributions/InfoGaussian.h>
 #include <EmrysFilter/Distributions/Sampling.h>
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <numbers>
 #include <random>
 #include <type_traits>
+#include <vector>
 
 #include "Distributions/draw_stream.h"
 
@@ -278,6 +281,77 @@ TEST(GaussianSpace, MarginalOfSeveralRepetitionsIsARepeatedBlock)
     EXPECT_EQ(viewedMean, expectedMean);
     Eigen::MatrixXd const viewedCross = density->covariance<Fleet, Fleet>(2, 0);
     EXPECT_EQ(viewedCross, lastWithFirst);
+}
+
+// conditional<Fleet>(values, repetitions) conditions on the repetitions selected, one or a list in its order,
+// whose values are theirs in that order, and the result is the space with them erased ([placed-selected-values]):
+// the conditional mean and covariance over the rows that remain, against mu_a + K (v - mu_b) and
+// P_aa - K P_ba with K = P_ab P_bb^-1 over the rows counted by hand. The information form's agrees.
+TEST(GaussianSpace, ConditionalOnRepetitionsErasesThem)
+{
+    struct Vehicle : Composite<Linear<2>, Linear<1>>
+    {};
+
+    struct Fleet : Repeated<Vehicle, 4>
+    {
+        using Repeated::Repeated;
+    };
+
+    using World = Composite<Linear<1>, Fleet>;
+    Eigen::MatrixXd a(10, 10);
+    for (Eigen::Index i = 0; i < 10; ++i)
+    {
+        for (Eigen::Index j = 0; j < 10; ++j)
+        {
+            a(i, j) = 0.2 * std::sin(1.0 + 3.0 * double(i) + 5.0 * double(j));
+        }
+    }
+    Eigen::MatrixXd const cov = a * a.transpose() + Eigen::MatrixXd::Identity(10, 10);
+    Eigen::VectorXd const mean = Eigen::VectorXd::LinSpaced(10, 0.0, 0.9);
+    auto const g = GaussianParams<World>{World{Linear<1>{}, Fleet{Vehicle{}, 3}}, mean, cov};
+    auto const expect = [&](auto const & conditioned, std::vector<Eigen::Index> const & givenRows) {
+        std::vector<Eigen::Index> rest;
+        for (Eigen::Index i = 0; i < 10; ++i)
+        {
+            if (std::find(givenRows.begin(), givenRows.end(), i) == givenRows.end())
+            {
+                rest.push_back(i);
+            }
+        }
+        Eigen::VectorXd const values = Eigen::VectorXd::LinSpaced(Eigen::Index(givenRows.size()), 1.0, -1.0);
+        auto const result = conditioned(values);
+        Eigen::MatrixXd const gain = cov(rest, givenRows) * Eigen::MatrixXd{cov(givenRows, givenRows)}.inverse();
+        Eigen::VectorXd const expectedMean = mean(rest) + gain * (values - mean(givenRows));
+        Eigen::MatrixXd const expectedCov = cov(rest, rest) - gain * cov(givenRows, rest);
+        EXPECT_EQ(result.space().template block<1>().count(), 3 - Eigen::Index(givenRows.size()) / 3);
+        EXPECT_LT((result.mean() - expectedMean).norm(), 1e-12);
+        Eigen::MatrixXd const lower = result.covarianceLower().template selfadjointView<Eigen::Lower>();
+        EXPECT_LT((lower - expectedCov).norm(), 1e-12);
+    };
+    expect(
+        [&](auto const & values) {
+            return g.conditional<Fleet>(values, 1);
+        },
+        {4, 5, 6}
+    );
+    expect(
+        [&](auto const & values) {
+            return g.conditional<Fleet>(values, std::array{2, 0});
+        },
+        {7, 8, 9, 1, 2, 3}
+    );
+    expect(
+        [&](auto const & values) {
+            return g.conditional<Fleet>(values, Eigen::seqN(1, 2));
+        },
+        {4, 5, 6, 7, 8, 9}
+    );
+
+    // The information form's conditional on a list is the covariance form's.
+    Eigen::VectorXd const values = Eigen::VectorXd::LinSpaced(6, 1.0, -1.0);
+    auto const listed = g.conditional<Fleet>(values, std::array{2, 0});
+    auto const info = Emrys::toInfo(g)->conditional<Fleet>(values, std::array{2, 0});
+    EXPECT_TRUE(info.mean()->isApprox(listed.mean(), 1e-10));
 }
 
 // mean<Path>() and covariance<Path>() select blocks with compile-time sizes, covariance<A, B>() reads the lower

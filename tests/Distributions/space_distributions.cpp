@@ -227,7 +227,7 @@ TEST(SpaceFitting, ReducesAMixtureAcrossTheSeam)
 
 // marginal<Fleet>(i) of a mixture or a particle set over a Repeated space is over the element
 // space, and a path into one repetition gives the leaf space. A list of repetitions gives the
-// repeated block of their count, in the list's order.
+// repeated block of their count, in the list's order, and conditioning on repetitions leaves the others.
 TEST(SpaceDistributions, MarginalOfOneRepetitionIsInTheBlockSpace)
 {
     struct Vehicle : Composite<Position, Heading>
@@ -260,4 +260,13 @@ TEST(SpaceDistributions, MarginalOfOneRepetitionIsInTheBlockSpace)
     EXPECT_EQ(swapped.states(), (Eigen::Matrix<double, 4, 2>{{3.0, 4.0}, {0.1, 0.2}, {1.0, 2.0}, {0.5, 0.6}}));
     auto const swappedMixture = mixture.marginal<Fleet>(std::array{1, 0}).copy();
     EXPECT_EQ(swappedMixture.begin()->component.mean(), Eigen::Vector4d(2.0, pi - 0.1, 1.0, 0.5));
+
+    // Conditioned on one vehicle, a mixture and a particle set keep the other, in a fleet of one.
+    auto const givenFirst = mixture.conditional<Fleet>(Eigen::Vector2d{1.0, 0.5}, 0);
+    ASSERT_TRUE(givenFirst.has_value());
+    EXPECT_EQ(givenFirst->space().count(), 1);
+    EXPECT_TRUE(givenFirst->begin()->component.mean().isApprox(Eigen::Vector2d(2.0, pi - 0.1), 1e-12));
+    auto const conditionedParticles = particles.conditional<Fleet>(Eigen::Vector2d{3.5, 0.15}, 1);
+    ASSERT_TRUE(conditionedParticles.has_value());
+    EXPECT_EQ(conditionedParticles->space().count(), 1);
 }

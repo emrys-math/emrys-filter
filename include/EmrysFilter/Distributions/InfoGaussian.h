@@ -524,9 +524,10 @@ public:
      * the evidence needs the given block's marginal covariance, which this form does not hold
      * (decisions.md [conditional-evidence]).
      */
-    template <typename GivenPath, typename Derived>
+    template <typename GivenPath, typename Derived, internal::RepetitionChoice... Repetitions>
+        requires(sizeof...(Repetitions) <= 1)
     [[nodiscard]] auto
-    conditional(Eigen::MatrixBase<Derived> const & values) const
+    conditional(Eigen::MatrixBase<Derived> const & values, Repetitions const &... repetitions) const
     {
         return internal::tagConditional<GivenPath>(
             m_space,
@@ -554,7 +555,8 @@ public:
                     vector.noalias() -= internal::multiply(cross, offset);
                 }
                 return Result{targetSpace, std::move(reference), std::move(matrix), std::move(vector)};
-            }
+            },
+            repetitions...
         );
     }
 

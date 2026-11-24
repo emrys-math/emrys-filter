@@ -203,15 +203,20 @@ conditionalGaussianIn(
 /** Shared implementation of conditional<GivenPath>() and conditionalWithEvidence<GivenPath>();
  * see tagConditional().
  */
-template <bool WithEvidence, typename GivenPath, typename Source, typename Derived>
+template <bool WithEvidence, typename GivenPath, typename Source, typename Derived, typename... Repetitions>
 [[nodiscard]] auto
-tagConditionalGaussian(Source const & source, Eigen::MatrixBase<Derived> const & values)
+tagConditionalGaussian(
+    Source const & source,
+    Eigen::MatrixBase<Derived> const & values,
+    Repetitions const &... repetitions
+)
 {
     return tagConditional<GivenPath>(
         source.space(),
         [&](auto const & target, auto const & given, auto const & targetSpace, auto const & givenSpace) {
             return conditionalGaussianIn<WithEvidence>(source, target, given, values, targetSpace, givenSpace);
-        }
+        },
+        repetitions...
     );
 }
 
@@ -798,12 +803,17 @@ public:
      * produces a result, exact for values on the support when the given block is known exactly
      * (decisions.md [innovation-cholesky]); for a numerically singular source the result may fail toDensity().
      * conditionalWithEvidence() also returns the log-density of \a values.
+     *
+     * Given \a repetitions, one repetition's index or a sequence or a list of them, of the repeated
+     * block \a GivenPath names, it conditions on those repetitions, \a values theirs in the order
+     * selected, and the result is in this space with them erased (decisions.md [placed-selected-values]).
      */
-    template <typename GivenPath, typename Derived>
+    template <typename GivenPath, typename Derived, internal::RepetitionChoice... Repetitions>
+        requires(sizeof...(Repetitions) <= 1)
     [[nodiscard]] auto
-    conditional(Eigen::MatrixBase<Derived> const & values) const
+    conditional(Eigen::MatrixBase<Derived> const & values, Repetitions const &... repetitions) const
     {
-        return internal::tagConditionalGaussian<false, GivenPath>(*this, values);
+        return internal::tagConditionalGaussian<false, GivenPath>(*this, values, repetitions...);
     }
 
     /** \returns conditional() and the log-evidence of \a values, as a GaussianConditional.
@@ -818,11 +828,12 @@ public:
      *          given block's covariance \f$ \Sigma_{bb} \f$ is not positive definite: a block
      *          known exactly has no density, so its values have no evidence (decisions.md [innovation-cholesky])
      */
-    template <typename GivenPath, typename Derived>
+    template <typename GivenPath, typename Derived, internal::RepetitionChoice... Repetitions>
+        requires(sizeof...(Repetitions) <= 1)
     [[nodiscard]] auto
-    conditionalWithEvidence(Eigen::MatrixBase<Derived> const & values) const
+    conditionalWithEvidence(Eigen::MatrixBase<Derived> const & values, Repetitions const &... repetitions) const
     {
-        return internal::tagConditionalGaussian<true, GivenPath>(*this, values);
+        return internal::tagConditionalGaussian<true, GivenPath>(*this, values, repetitions...);
     }
 
     /** Factorizes the covariance if it has changed since the last factorization.
@@ -1318,21 +1329,23 @@ public:
     /** \returns a copy of the conditional distribution given the subspace named by the path
      * \a GivenPath; see GaussianParams::conditional().
      */
-    template <typename GivenPath, typename Derived>
+    template <typename GivenPath, typename Derived, internal::RepetitionChoice... Repetitions>
+        requires(sizeof...(Repetitions) <= 1)
     [[nodiscard]] auto
-    conditional(Eigen::MatrixBase<Derived> const & values) const
+    conditional(Eigen::MatrixBase<Derived> const & values, Repetitions const &... repetitions) const
     {
-        return internal::tagConditionalGaussian<false, GivenPath>(*this, values);
+        return internal::tagConditionalGaussian<false, GivenPath>(*this, values, repetitions...);
     }
 
     /** \returns conditional() and the log-evidence of \a values; see
      * GaussianParams::conditionalWithEvidence().
      */
-    template <typename GivenPath, typename Derived>
+    template <typename GivenPath, typename Derived, internal::RepetitionChoice... Repetitions>
+        requires(sizeof...(Repetitions) <= 1)
     [[nodiscard]] auto
-    conditionalWithEvidence(Eigen::MatrixBase<Derived> const & values) const
+    conditionalWithEvidence(Eigen::MatrixBase<Derived> const & values, Repetitions const &... repetitions) const
     {
-        return internal::tagConditionalGaussian<true, GivenPath>(*this, values);
+        return internal::tagConditionalGaussian<true, GivenPath>(*this, values, repetitions...);
     }
 
 private:

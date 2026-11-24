@@ -306,6 +306,21 @@ template <typename GivenPath, typename Space, typename Condition>
 [[nodiscard]] auto
 tagConditional(Space const & space, Condition condition)
 {
+    static_assert(
+        withPathTags<GivenPath>([]<typename... Tags>() {
+            constexpr std::array<bool, sizeof...(Tags)> repeated{IsRepeated<Tags>...};
+            for (std::size_t i = 0; i + 1 < repeated.size(); ++i)
+            {
+                if (repeated[i])
+                {
+                    return false;
+                }
+            }
+            return true;
+        }),
+        "conditional<Path>(values) of a block inside the repetitions of a repeated block would leave each repetition "
+        "a part of its block; condition on whole repetitions with conditional<Path>(values, repetitions)"
+    );
     constexpr int N = valueDimensionAtCompileTime<Space>;
     constexpr int NMax = maxValueDimensionAtCompileTime<Space>;
     constexpr int D = valueDimensionAtCompileTime<DifferenceSpace<Space>>;
