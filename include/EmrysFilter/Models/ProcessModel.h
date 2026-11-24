@@ -192,15 +192,6 @@ staticPartitionOfWrites()
     }
 }
 
-/** \returns whether the blocks of \a Paths, a TagPaths, cover every coordinate of \a space once */
-template <typename Space, typename... Paths>
-[[nodiscard]] bool
-writesPartition(Space const & space, TagPaths<Paths...> *)
-{
-    auto coverage = RowCoverage<Space>{space};
-    (coverage.push_back(blockRows<Paths>(space)), ...);
-    return coverage.partitioned();
-}
 
 /** The paths of the TagPaths \a P as a tuple type. */
 template <typename P>
@@ -243,6 +234,123 @@ using WriteNameAt = std::tuple_element_t<K, CompositeBlocks<OutputSpaceOf<Model>
 template <typename Model>
 inline constexpr std::size_t writeCount = std::tuple_size_v<typename PathsOf<WritePathsOf<Model>>::type>;
 
+/** The items of the writes() policy \a W as a tuple type of ReadItem, each a path, the name it is
+ * written under, and the type of its selection of repetitions: a Writes, whose blocks are whole and
+ * named by their paths' last tags; a WritesAs, whose blocks are whole under the names of its output
+ * space; or a WritesItems, which holds its items.
+ */
+template <typename W>
+struct WriteItemsOf;
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename... Paths>
+struct WriteItemsOf<Writes<Paths...>>
+{
+    using type = std::tuple<ReadItem<Paths, PathTag<Paths>>...>;
+};
+
+template <typename... Paths, typename Out>
+struct WriteItemsOf<WritesAs<TagPaths<Paths...>, Out>>
+{
+    using type = decltype([]<typename... Names>(std::tuple<Names...> *) {
+        return std::tuple<ReadItem<Paths, Names>...>{};
+    }(static_cast<CompositeBlocks<Out> *>(nullptr)));
+};
+
+template <typename... Items>
+struct WriteItemsOf<WritesItems<Items...>>
+{
+    using type = std::tuple<Items...>;
+};
+
+/// \endcond
+
+/** The item written at position \a K by \a Model: its path, its name, and its selection's type. */
+template <typename Model, std::size_t K>
+using WriteItemAt =
+    std::tuple_element_t<K, typename WriteItemsOf<typename Model::template Policy<PolicyKind::writes>>::type>;
+
+/** Whether an item of the writes() of \a Model selects repetitions of a repeated block, so that its
+ * path names more than it writes; false for a whole-state model.
+ */
+template <typename Model>
+inline constexpr bool writesSelected = requires { requires Model::template Policy<PolicyKind::writes>::Selected; };
+
+/** \returns the selection that the writes() policy \a policy holds for its item at position \a K,
+ * or NoSelection for a policy of whole blocks
+ */
+template <std::size_t K, typename W>
+[[nodiscard]] decltype(auto)
+writeSelection([[maybe_unused]] W const & policy)
+{
+    if constexpr (requires { policy.template selection<K>(); })
+    {
+        return (policy.template selection<K>());
+    }
+    else
+    {
+        return NoSelection{};
+    }
+}
+
+/** Whether the rows of a state that \a Model writes are one run for each item of its writes()
+ * (readsOneRun): no item writes a list of repetitions, whose rows are written through their indices.
+ */
+template <typename Model>
+inline constexpr bool writesRuns = []<std::size_t... K>(std::index_sequence<K...>) {
+    return (readsOneRun<WriteItemAt<Model, K>> && ... && true);
+}(std::make_index_sequence<writeCount<Model>>{});
+
+/** \returns whether the blocks that \a model writes, with the repetitions its writes() selects,
+ * cover every coordinate of \a space once
+ */
+template <typename Model, typename Space>
+[[nodiscard]] bool
+writesPartition(Model const & model, Space const & space)
+{
+    auto coverage = RowCoverage<Space>{space};
+    auto const & writes = model.template policy<PolicyKind::writes>();
+    [&]<std::size_t... K>(std::index_sequence<K...>) {
+        (
+            [&] {
+                using Item = WriteItemAt<Model, K>;
+                if constexpr (readsOneRun<Item>)
+                {
+                    coverage.push_back(itemRun<Item, false>(space, writeSelection<K>(writes)));
+                }
+                else
+                {
+                    for (auto const row :
+                         selectionCoordinates<false, typename Item::PathType>(space, writeSelection<K>(writes)))
+                    {
+                        coverage.push_back(BlockRows{row, 1});
+                    }
+                }
+            }(),
+            ...
+        );
+    }(std::make_index_sequence<writeCount<Model>>{});
+    return coverage.partitioned();
+}
+
+/** \returns what the types say about whether \a Model, which writes blocks, writes every coordinate
+ * of \a Space once: nothing where its writes() selects repetitions, whose paths name more than is
+ * written
+ */
+template <typename Model, typename Space>
+consteval StaticPartition
+staticPartitionOfModel()
+{
+    if constexpr (writesSelected<Model>)
+    {
+        return StaticPartition::unknown;
+    }
+    else
+    {
+        return staticPartitionOfWrites<Space, WritePathsOf<Model>>();
+    }
+}
+
 /** The output space of the process model \a Model in the state space \a Space: the Composite of the
  * blocks written, or the state's space for a whole-state model.
  */
@@ -258,13 +366,13 @@ using OutputSpaceIn = typename decltype([] {
     }
 }())::type;
 
-/** The output space instance of the process model \a Model in the state space \a space: a block per
- * path written, each the state's block there under the output's name for it, or the state's space
- * itself for a whole-state model.
+/** The output space instance of the process model \a model in the state space \a space: a block per
+ * item written, each the state's block there, or the repetitions of it that the item selects, under
+ * the output's name for it, or the state's space itself for a whole-state model.
  */
 template <typename Model, typename Space>
 [[nodiscard]] OutputSpaceIn<Model, Space>
-outputOf(Space const & space)
+outputOf([[maybe_unused]] Model const & model, Space const & space)
 {
     if constexpr (writesWholeState<Model>)
     {
@@ -272,8 +380,11 @@ outputOf(Space const & space)
     }
     else
     {
+        auto const & writes = model.template policy<PolicyKind::writes>();
         return [&]<std::size_t... K>(std::index_sequence<K...>) {
-            return OutputSpaceOf<Model>{nameOf<WriteNameAt<Model, K>>(pathBlock<WritePathAt<Model, K>>(space))...};
+            return OutputSpaceOf<Model>{
+                nameOf<WriteNameAt<Model, K>>(itemSpace<WriteItemAt<Model, K>>(space, writeSelection<K>(writes)))...
+            };
         }(std::make_index_sequence<writeCount<Model>>{});
     }
 }
@@ -633,7 +744,7 @@ public:
         }
         else
         {
-            return internal::staticPartitionOfWrites<Space, WritePaths>();
+            return internal::staticPartitionOfModel<ProcessFunction, Space>();
         }
     }
 
@@ -650,7 +761,7 @@ public:
         }
         else
         {
-            return internal::writesPartition(space, static_cast<WritePaths *>(nullptr));
+            return internal::writesPartition(*this, space);
         }
     }
 
@@ -1492,6 +1603,65 @@ struct WritesOfTuple<std::tuple<Paths...>, std::tuple<Names...>>
 
 /// \endcond
 
+/** The writes of a composition whose parts' writes are the items in the tuple type \a Items, the
+ * paths in \a Paths, and the names in \a Names: a WritesAs where no item selects repetitions, and
+ * otherwise a WritesItems of the items, which holds their selections. Two items may then name one
+ * repeated block, each of its own repetitions, which the partition check asserts are distinct.
+ */
+template <bool Selected, typename Paths, typename Names, typename Items>
+struct CompositionWritesOf
+{
+    using type = typename WritesOfTuple<Paths, Names>::type;  ///< the parts' whole blocks
+};
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename Paths, typename Names, typename... Items>
+struct CompositionWritesOf<true, Paths, Names, std::tuple<Items...>>
+{
+    static_assert(wholeBlocksDistinct<Items...>(), "two parts of a composition write the same block");
+    static_assert(
+        distinctTypes<typename Items::NameType...>(),
+        "two parts of a composition write blocks under one name, their paths' last tag; place each model on its "
+        "block with on<Path>(model)"
+    );
+    using type = WritesItems<Items...>;
+};
+
+/// \endcond
+
+/** \returns the selections that the writes() of \a model holds, one per item in order, as a tuple */
+template <typename Model>
+[[nodiscard]] auto
+writeSelectionsOf(Model const & model)
+{
+    auto const & writes = model.template policy<PolicyKind::writes>();
+    return [&]<std::size_t... K>(std::index_sequence<K...>) {
+        return std::tuple{writeSelection<K>(writes)...};
+    }(std::make_index_sequence<writeCount<Model>>{});
+}
+
+/** \returns the writes() policy \a W of a composition of \a parts: one that holds nothing, or the
+ * WritesItems of the parts' items with their selections in order
+ */
+template <typename W, typename... Parts>
+[[nodiscard]] W
+compositionWrites([[maybe_unused]] Parts const &... parts)
+{
+    if constexpr (requires { requires W::Selected; })
+    {
+        return std::apply(
+            [](auto const &... selections) {
+                return W{std::in_place, selections...};
+            },
+            std::tuple_cat(writeSelectionsOf(parts)...)
+        );
+    }
+    else
+    {
+        return W{};
+    }
+}
+
 /** Whether one of the items in the tuple type \a Items reads under the name \a Name. */
 template <typename Items, typename Name>
 inline constexpr bool itemsName = false;
@@ -2108,7 +2278,14 @@ public:
     using ReadsPolicy = typename internal::ReadUnionOf<AllItems>::type;
 
     /** The writes() of the whole: the parts', in order. */
-    using WritesPolicy = typename internal::WritesOfTuple<AllPaths, AllNames>::type;
+    using WritesPolicy = typename internal::CompositionWritesOf<
+        (internal::writesSelected<Models> || ...),
+        AllPaths,
+        AllNames,
+        decltype(std::tuple_cat(
+            std::declval<typename internal::WriteItemsOf<
+                typename Models::template Policy<internal::PolicyKind::writes>>::type>()...
+        ))>::type;
 
     /** The affineIn() of the whole. */
     using AffinePolicy = typename internal::AffineOf<ReadsPolicy, std::tuple<Models...>>::type;
@@ -2143,6 +2320,12 @@ public:
               },
               m_parts
           )}
+        , m_writes{std::apply(
+              [](Models const &... parts) {
+                  return internal::compositionWrites<WritesPolicy>(parts...);
+              },
+              m_parts
+          )}
     {}
 
     /** \returns the function: the composition itself */
@@ -2164,6 +2347,10 @@ public:
         if constexpr (K == internal::PolicyKind::reads)
         {
             return m_reads;
+        }
+        else if constexpr (K == internal::PolicyKind::writes)
+        {
+            return m_writes;
         }
         else
         {
@@ -2242,7 +2429,7 @@ public:
     [[nodiscard]] static consteval internal::StaticPartition
     staticPartition()
     {
-        return internal::staticPartitionOfWrites<Space, WritePaths>();
+        return internal::staticPartitionOfModel<Composition, Space>();
     }
 
     /** \returns whether the whole writes every coordinate of \a space exactly once */
@@ -2250,7 +2437,7 @@ public:
     [[nodiscard]] bool
     partitions(Space const & space) const
     {
-        return internal::writesPartition(space, static_cast<WritePaths *>(nullptr));
+        return internal::writesPartition(*this, space);
     }
 
 private:
@@ -2282,8 +2469,9 @@ private:
         ((diffBlock<Row, Columns>(out, out, q) = diffBlock<Row, Columns>(pout, pout, partNoise)), ...);
     }
 
-    std::tuple<Models...> m_parts;                       ///< the parts, in order
-    EMRYS_FILTER_NO_UNIQUE_ADDRESS ReadsPolicy m_reads;  ///< the reads() of the whole, with its selections
+    std::tuple<Models...> m_parts;                         ///< the parts, in order
+    EMRYS_FILTER_NO_UNIQUE_ADDRESS ReadsPolicy m_reads;    ///< the reads() of the whole, with its selections
+    EMRYS_FILTER_NO_UNIQUE_ADDRESS WritesPolicy m_writes;  ///< the writes() of the whole, with its selections
 };
 
 namespace internal
@@ -2384,25 +2572,58 @@ readsOnlyState()
     }
 }
 
-/** processNoise() of a model that writes blocks: its noise over its output, placed on them. */
+/** The difference coordinates of a state in \a Space that a model writes, in the order of its
+ * output's differences, for a model whose writes() selects a list of repetitions (writesRuns).
+ */
+template <typename Space>
+using WrittenIndices = IndexVector<Eigen::Dynamic, maxValueDimensionAtCompileTime<DifferenceSpace<Space>>>;
+
+/** processNoise() of a model that writes blocks: its noise over its output, placed on them, or on
+ * the coordinates of the repetitions its writes() selects.
+ */
 template <typename Scalar, ProcessModel Model, Space S>
 [[nodiscard]] typename Moments<S, Scalar>::MatrixType
 processNoiseOfBlocks(Model const & model, S const & space, Scalar dt)
 {
     using Matrix = typename Moments<S, Scalar>::MatrixType;
-    auto const out = outputOf<Model>(space);
+    auto const out = outputOf(model, space);
     auto const partial = model.template noiseOver<Scalar>(out, dt);
+    auto const & writes = model.template policy<PolicyKind::writes>();
     Eigen::Index const n = differenceDimension(space);
     Matrix q = Matrix::Zero(n, n);
     [&]<std::size_t... K>(std::index_sequence<K...>) {
-        std::array<BlockRows, sizeof...(K)> const rows{differenceBlockRows<WritePathAt<Model, K>>(space)...};
         std::array<BlockRows, sizeof...(K)> const outRows{differenceBlockRows<WriteNameAt<Model, K>>(out)...};
-        for (std::size_t k = 0; k < sizeof...(K); ++k)
+        if constexpr (writesRuns<Model>)
         {
-            for (std::size_t l = 0; l < sizeof...(K); ++l)
+            std::array<BlockRows, sizeof...(K)> const rows{
+                itemRun<WriteItemAt<Model, K>, true>(space, writeSelection<K>(writes))...
+            };
+            for (std::size_t k = 0; k < sizeof...(K); ++k)
             {
-                q.block(rows[k].start, rows[l].start, rows[k].size, rows[l].size) =
-                    partial.block(outRows[k].start, outRows[l].start, outRows[k].size, outRows[l].size);
+                for (std::size_t l = 0; l < sizeof...(K); ++l)
+                {
+                    q.block(rows[k].start, rows[l].start, rows[k].size, rows[l].size) =
+                        partial.block(outRows[k].start, outRows[l].start, outRows[k].size, outRows[l].size);
+                }
+            }
+        }
+        else
+        {
+            auto written = WrittenIndices<S>{};
+            written.resize(differenceDimension(out));
+            ((std::ignore = writeItemRows<WriteItemAt<Model, K>, true>(
+                  space,
+                  writeSelection<K>(writes),
+                  written,
+                  outRows[K].start
+              )),
+             ...);
+            for (Eigen::Index r = 0; r < written.size(); ++r)
+            {
+                for (Eigen::Index c = 0; c < written.size(); ++c)
+                {
+                    q(written(r), written(c)) = partial(r, c);
+                }
             }
         }
     }(std::make_index_sequence<writeCount<Model>>{});
@@ -2481,6 +2702,19 @@ public:
     /// whether the function returns its Jacobian with its value
     static constexpr bool ReturnsJacobian = returnsStepJacobianIn<Model, Space, double>;
 
+    /// whether the rows of the state each item of writes() names are one run (writesRuns), so that
+    /// they are written by block; a model that writes a list of repetitions writes through indices
+    static constexpr bool Runs = [] {
+        if constexpr (Whole)
+        {
+            return true;
+        }
+        else
+        {
+            return writesRuns<Model>;
+        }
+    }();
+
 private:
 
     using Base::argumentOf;
@@ -2498,7 +2732,7 @@ public:
     ResolvedProcess(Call const & call, Space const & space)
         : Base{call.arguments(), space, call.model()}
         , m_call{call}
-        , m_out{outputOf<Model>(space)}
+        , m_out{outputOf(call.model(), space)}
         , m_stateSize{valueDimension(space)}
     {
         if constexpr (Whole)
@@ -2508,12 +2742,36 @@ public:
         }
         else
         {
+            auto const & writes = call.model().template policy<PolicyKind::writes>();
             [&]<std::size_t... K>(std::index_sequence<K...>) {
-                ((m_writeRows[K] = blockRows<WritePathAt<Model, K>>(space),
-                  m_writeDifferenceRows[K] = differenceBlockRows<WritePathAt<Model, K>>(space),
-                  m_outRows[K] = blockRows<WriteNameAt<Model, K>>(m_out),
+                ((m_outRows[K] = blockRows<WriteNameAt<Model, K>>(m_out),
                   m_outDifferenceRows[K] = differenceBlockRows<WriteNameAt<Model, K>>(m_out)),
                  ...);
+                if constexpr (Runs)
+                {
+                    ((m_writeRows[K] = itemRun<WriteItemAt<Model, K>, false>(space, writeSelection<K>(writes)),
+                      m_writeDifferenceRows[K] =
+                          itemRun<WriteItemAt<Model, K>, true>(space, writeSelection<K>(writes))),
+                     ...);
+                }
+                else
+                {
+                    m_writeIndices.resize(valueDimension(m_out));
+                    m_writeDifferenceIndices.resize(differenceDimension(m_out));
+                    ((m_writeRows[K] = writeItemRows<WriteItemAt<Model, K>, false>(
+                          space,
+                          writeSelection<K>(writes),
+                          m_writeIndices,
+                          m_outRows[K].start
+                      ),
+                      m_writeDifferenceRows[K] = writeItemRows<WriteItemAt<Model, K>, true>(
+                          space,
+                          writeSelection<K>(writes),
+                          m_writeDifferenceIndices,
+                          m_outDifferenceRows[K].start
+                      )),
+                     ...);
+                }
             }(std::make_index_sequence<WriteCount>{});
         }
     }
@@ -2540,6 +2798,17 @@ public:
         using Matrix = typename Moments<Space, Scalar>::MatrixType;
         auto const partial = model().template noiseOver<Scalar>(m_out, dt);
         Matrix q = Matrix::Zero(m_stateDifferenceSize, m_stateDifferenceSize);
+        if constexpr (!Runs)
+        {
+            for (Eigen::Index r = 0; r < m_writeDifferenceIndices.size(); ++r)
+            {
+                for (Eigen::Index c = 0; c < m_writeDifferenceIndices.size(); ++c)
+                {
+                    q(m_writeDifferenceIndices(r), m_writeDifferenceIndices(c)) = partial(r, c);
+                }
+            }
+            return q;
+        }
         for (std::size_t k = 0; k < WriteCount; ++k)
         {
             for (std::size_t l = 0; l < WriteCount; ++l)
@@ -2716,11 +2985,21 @@ public:
                     ...
                 );
             }(std::make_index_sequence<ItemCount>{});
-            for (std::size_t k = 0; k < WriteCount; ++k)
+            if constexpr (Runs)
             {
-                BlockRows const & written = m_writeDifferenceRows[k];
-                BlockRows const & rows = m_outDifferenceRows[k];
-                jacobians.middleRows(written.start, written.size) = outJacobians.middleRows(rows.start, rows.size);
+                for (std::size_t k = 0; k < WriteCount; ++k)
+                {
+                    BlockRows const & written = m_writeDifferenceRows[k];
+                    BlockRows const & rows = m_outDifferenceRows[k];
+                    jacobians.middleRows(written.start, written.size) = outJacobians.middleRows(rows.start, rows.size);
+                }
+            }
+            else
+            {
+                for (Eigen::Index r = 0; r < m_writeDifferenceIndices.size(); ++r)
+                {
+                    jacobians.row(m_writeDifferenceIndices(r)) = outJacobians.row(r);
+                }
             }
         }
     }
@@ -2841,9 +3120,16 @@ private:
         {
             y = value;
         }
-        else
+        else if constexpr (Runs)
         {
             scatterBlocks(y, value);
+        }
+        else
+        {
+            for (Eigen::Index r = 0; r < m_writeIndices.size(); ++r)
+            {
+                y(m_writeIndices(r)) = value(r);
+            }
         }
     }
 
@@ -2853,14 +3139,12 @@ private:
     scatterBlocks(Y & y, Value const & value) const
     {
         [&]<std::size_t... K>(std::index_sequence<K...>) {
-            ((middleRowsOf<
-                  valueDimensionAtCompileTime<PathTag<std::tuple_element_t<K, typename PathsOf<WritePaths>::type>>>>(
+            ((middleRowsOf<valueDimensionAtCompileTime<WriteNameAt<Model, K>>>(
                   y,
                   m_writeRows[K].start,
                   m_writeRows[K].size
               ) =
-                  middleRowsOf<valueDimensionAtCompileTime<
-                      PathTag<std::tuple_element_t<K, typename PathsOf<WritePaths>::type>>>>(
+                  middleRowsOf<valueDimensionAtCompileTime<WriteNameAt<Model, K>>>(
                       value,
                       m_outRows[K].start,
                       m_outRows[K].size
@@ -2890,9 +3174,39 @@ private:
         using Scalar = typename J::Scalar;
         using StateMatrix = typename Moments<Space, Scalar>::MatrixType;
         StateMatrix f = StateMatrix::Identity(m_stateDifferenceSize, m_stateDifferenceSize);
-        [&]<std::size_t... K>(std::index_sequence<K...>) {
-            (expandRows<K>(f, jacobian), ...);
-        }(std::make_index_sequence<WriteCount>{});
+        if constexpr (Runs)
+        {
+            [&]<std::size_t... K>(std::index_sequence<K...>) {
+                (expandRows<K>(f, jacobian), ...);
+            }(std::make_index_sequence<WriteCount>{});
+        }
+        else
+        {
+            // A written list of repetitions: each row of the output's differences to its row of the
+            // state's, in the columns of each block read through the read indices. The loops are plain
+            // ones over the items of reads() behind the blocks read: MSVC 19.5x fails with an internal
+            // error on a lambda per block in a pack expansion here.
+            std::array<std::size_t, StateCount> const items = []<std::size_t... I>(std::index_sequence<I...>) {
+                return std::array<std::size_t, StateCount>{stateItems(I)...};
+            }(std::make_index_sequence<StateCount>{});
+            for (Eigen::Index r = 0; r < m_writeDifferenceIndices.size(); ++r)
+            {
+                f.row(m_writeDifferenceIndices(r)).setZero();
+            }
+            for (std::size_t i = 0; i < StateCount; ++i)
+            {
+                Eigen::Index const first = m_reads.jointDifferenceStart(i);
+                BlockRows const & columns = m_differenceRows[items[i]];
+                for (Eigen::Index c = 0; c < columns.size; ++c)
+                {
+                    for (Eigen::Index r = 0; r < m_writeDifferenceIndices.size(); ++r)
+                    {
+                        f(m_writeDifferenceIndices(r), m_reads.differenceIndices()(first + c)) =
+                            jacobian(r, columns.start + c);
+                    }
+                }
+            }
+        }
         if constexpr (InputCount == 0)
         {
             return f;
@@ -2916,7 +3230,7 @@ private:
         }
         else
         {
-            return rowsAtCompileTime<true, PathTag<std::tuple_element_t<K, typename PathsOf<WritePaths>::type>>>;
+            return rowsAtCompileTime<true, WriteNameAt<Model, K>>;
         }
     }
 
@@ -2981,10 +3295,21 @@ private:
             Input::MaxDifferenceDimensionAtCompileTime>;
         BlockRows const & columns = m_differenceRows[inputItems(P)];
         Block block = Block::Zero(m_stateDifferenceSize, columns.size);
-        for (std::size_t k = 0; k < WriteCount; ++k)
+        if constexpr (Runs)
         {
-            block.middleRows(m_writeDifferenceRows[k].start, m_writeDifferenceRows[k].size) =
-                jacobian.block(m_outDifferenceRows[k].start, columns.start, m_outDifferenceRows[k].size, columns.size);
+            for (std::size_t k = 0; k < WriteCount; ++k)
+            {
+                block.middleRows(m_writeDifferenceRows[k].start, m_writeDifferenceRows[k].size) =
+                    jacobian
+                        .block(m_outDifferenceRows[k].start, columns.start, m_outDifferenceRows[k].size, columns.size);
+            }
+        }
+        else
+        {
+            for (Eigen::Index r = 0; r < m_writeDifferenceIndices.size(); ++r)
+            {
+                block.row(m_writeDifferenceIndices(r)) = jacobian.block(r, columns.start, 1, columns.size);
+            }
         }
         return block;
     }
@@ -2996,6 +3321,18 @@ private:
     std::array<BlockRows, WriteCount> m_writeDifferenceRows{};  ///< and in its differences
     std::array<BlockRows, WriteCount> m_outRows{};              ///< each written block's rows in the output's values
     std::array<BlockRows, WriteCount> m_outDifferenceRows{};    ///< and in its differences
+
+    /** The state's coordinates written, in the order of the output's, where a written list of
+     * repetitions is not one run (Runs); nothing otherwise.
+     */
+    using WriteIndices =
+        std::conditional_t<Runs, NoSelection, IndexVector<Eigen::Dynamic, maxValueDimensionAtCompileTime<Space>>>;
+
+    /** The same in differences. */
+    using WriteDifferenceIndices = std::conditional_t<Runs, NoSelection, WrittenIndices<Space>>;
+
+    EMRYS_FILTER_NO_UNIQUE_ADDRESS WriteIndices m_writeIndices{};                      ///< values written
+    EMRYS_FILTER_NO_UNIQUE_ADDRESS WriteDifferenceIndices m_writeDifferenceIndices{};  ///< differences written
 };
 
 template <typename R, typename TimeScalar>

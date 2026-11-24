@@ -94,6 +94,7 @@ Read the index, then the decisions your change touches.
 | [function-scalars](#function-scalars) | A function the library calls with a vector may take the vector's scalar as its one template parameter, which the call supplies |
 | [model-placement](#model-placement) | A model is placed on a block by prefixing its paths, on every repetition by onEach, and models compose side by side |
 | [selected-reads](#selected-reads) | A model reads selected repetitions under the tag of their space, and holds the selection |
+| [selected-writes](#selected-writes) | A process model writes selected repetitions under the tag of their space, and holds the selection |
 | [composed-selections](#composed-selections) | A composition reads each name with one selection, and a placement keeps its model's selections |
 | [whole-state-models](#whole-state-models) | A model given without `reads()` and `writes()` reads and writes the whole state, and is neither placed nor composed |
 | [transform-policies](#transform-policies) | `transform()` takes a measurement model's policies before its inputs, matches its inputs by tag, and takes no process model |
@@ -1934,6 +1935,31 @@ selection: a count is never inferred from what a model reads [several-resizable-
 with one tag per repetition, which has the same coordinates.
 
 **Where.** `Models/Policies.h` (`ReadItem`, `Reads`), `Models/ResolvedReads.h` (`ReadBlocks`).
+
+### selected-writes
+
+*A process model writes selected repetitions under the tag of their space, and holds the selection.*
+
+**Rule.** A process model's `writes()` takes what `reads()` takes [selected-reads]: a path, a
+selected path, and `on<Name>(...)` of either, each named as `reads()` names it. `writes()` of whole
+blocks under their own tags stays a `Writes`, which holds nothing; any other is a `WritesItems`,
+which holds the selections. The coordinates not written are carried, as a block not written is,
+and the parts of a composition may write different repetitions of one block, so long as the
+writes partition the state, which is then known only when the model meets it. A measurement
+model's `writes()` names blocks of its measurement space and takes neither form.
+
+**Why.** A composition must write every coordinate once, so a part that moves one landmark needs a
+part that carries the others; a part that writes the whole block would write that landmark twice,
+and one that reads it beside the first reads it twice [composed-selections]. One repetition and a
+sequence whose increment is one are one run of rows, which the block code writes as it is. A list
+is written through the indices of its coordinates, in code compiled only for a model that writes
+one.
+
+**Evidence.** `tests/Models/selected_writes.cpp`: each prediction equals the one on a state written
+with one tag per repetition, and writes that do not partition assert.
+
+**Where.** `Models/Policies.h` (`WritesItems`), `Models/ProcessModel.h` (`outputOf()`,
+`writesPartition()`, `ResolvedProcess`), `Models/Placement.h` (`placedWrites()`).
 
 ### composed-selections
 

@@ -668,6 +668,11 @@ checkMeasurementPolicies()
         !Set::template has<PolicyKind::affineIn> || Set::template has<PolicyKind::reads>,
         "affineIn() names items of reads(), and a model without reads() reads the whole state under no names"
     );
+    static_assert(
+        !Set::template has<PolicyKind::writes> || !isWritesItems<typename Set::template Type<PolicyKind::writes>>,
+        "a measurement model's writes() names blocks of its measurement space, each written whole under its own tag, "
+        "so it takes no selection of repetitions and no on<Name>()"
+    );
     return true;
 }
 

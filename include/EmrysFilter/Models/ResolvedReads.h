@@ -46,6 +46,91 @@ template <typename Item>
 inline constexpr bool readsOneRun = !Item::Selected || RepetitionIndex<typename Item::SelectionType>
                                  || selectsOneRun<typename Item::PathType, typename Item::SelectionType>;
 
+/** \returns the space of what the item \a Item, of a reads() or a writes(), names in \a space with
+ * \a selection: the block its path names, the block that is repeated for one repetition, or a
+ * repeated block of the count selected
+ */
+template <typename Item, typename Space>
+[[nodiscard]] ReadSpace<Space, Item>
+itemSpace(Space const & space, [[maybe_unused]] typename Item::SelectionType const & selection)
+{
+    using Path = typename Item::PathType;
+    if constexpr (!Item::Selected)
+    {
+        return pathBlock<Path>(space);
+    }
+    else if constexpr (RepetitionIndex<typename Item::SelectionType>)
+    {
+        return pathElementSubspace<Path>(space);
+    }
+    else
+    {
+        return pathRepetitionsSubspace<Path>(space, selectedCount<Path>(space, selection));
+    }
+}
+
+/** \returns the rows of \a space that the item \a Item names with \a selection where they are one
+ * run (readsOneRun), in values, or in differences if \a Difference
+ */
+template <typename Item, bool Difference, typename Space>
+[[nodiscard]] BlockRows
+itemRun(Space const & space, [[maybe_unused]] typename Item::SelectionType const & selection)
+{
+    static_assert(readsOneRun<Item>);
+    using Path = typename Item::PathType;
+    if constexpr (!Item::Selected)
+    {
+        if constexpr (Difference)
+        {
+            return differenceBlockRows<Path>(space);
+        }
+        else
+        {
+            return blockRows<Path>(space);
+        }
+    }
+    else if constexpr (RepetitionIndex<typename Item::SelectionType>)
+    {
+        return repetitionBlockRows<Difference, Path>(space, selection);
+    }
+    else
+    {
+        auto const coordinates = selectionCoordinates<Difference, Path>(space, selection);
+        return BlockRows{coordinates.size() > 0 ? coordinates(0) : Eigen::Index{0}, coordinates.size()};
+    }
+}
+
+/** Writes the rows of \a space that the item \a Item names with \a selection into \a rows from row
+ * \a at on, in values, or in differences if \a Difference.
+ *
+ * \returns their number, after their first, which is where they start when they are one run
+ */
+template <typename Item, bool Difference, typename Space, typename Rows>
+[[nodiscard]] BlockRows
+writeItemRows(
+    Space const & space,
+    [[maybe_unused]] typename Item::SelectionType const & selection,
+    Rows & rows,
+    Eigen::Index at
+)
+{
+    if constexpr (Item::Selected && !RepetitionIndex<typename Item::SelectionType>)
+    {
+        auto const coordinates = selectionCoordinates<Difference, typename Item::PathType>(space, selection);
+        rows.segment(at, coordinates.size()) = coordinates;
+        return BlockRows{coordinates.size() > 0 ? coordinates(0) : Eigen::Index{0}, coordinates.size()};
+    }
+    else
+    {
+        BlockRows const block = itemRun<Item, Difference>(space, selection);
+        for (Eigen::Index j = 0; j < block.size; ++j)
+        {
+            rows(at + j) = block.start + j;
+        }
+        return block;
+    }
+}
+
 /** The blocks that the items \a Items read, resolved in \a Space: their rows in the state, in values
  * and in differences, and the joint space they form, in the order given.
  */
@@ -93,8 +178,9 @@ public:
         std::size_t k = 0;
         (
             [&] {
-                m_rows[k] = writeRows<Items, false>(space, selections, m_indices, offset);
-                m_differenceRows[k] = writeRows<Items, true>(space, selections, m_differenceIndices, differenceOffset);
+                m_rows[k] = writeItemRows<Items, false>(space, selections, m_indices, offset);
+                m_differenceRows[k] =
+                    writeItemRows<Items, true>(space, selections, m_differenceIndices, differenceOffset);
                 m_jointStarts[k] = offset;
                 m_jointDifferenceStarts[k] = differenceOffset;
                 offset += m_rows[k].size;
@@ -182,82 +268,17 @@ public:
 
 private:
 
-    /** \returns the space of what \a Item reads from \a space with \a selection */
-    template <typename Item>
-    [[nodiscard]] static ReadSpace<Space, Item>
-    readSpace(Space const & space, [[maybe_unused]] typename Item::SelectionType const & selection)
-    {
-        using Path = typename Item::PathType;
-        if constexpr (!Item::Selected)
-        {
-            return pathBlock<Path>(space);
-        }
-        else if constexpr (RepetitionIndex<typename Item::SelectionType>)
-        {
-            return pathElementSubspace<Path>(space);
-        }
-        else
-        {
-            return pathRepetitionsSubspace<Path>(space, selectedCount<Path>(space, selection));
-        }
-    }
-
     /** \returns the blocks' spaces from \a space, as one block or their Composite */
     [[nodiscard]] static JointSpace
     makeSpace(Space const & space, typename Items::SelectionType const &... selections)
     {
         if constexpr (Count == 1)
         {
-            return readSpace<First>(space, selections...);
+            return itemSpace<First>(space, selections...);
         }
         else
         {
-            return JointSpace{readSpace<Items>(space, selections)...};
-        }
-    }
-
-    /** Writes the rows of \a space that \a Item reads with \a selection into \a rows from row \a at
-     * on, in values, or in differences if \a Difference.
-     *
-     * \returns their number, after their first, which is where they start when they are one run
-     */
-    template <typename Item, bool Difference, typename Rows>
-    [[nodiscard]] static BlockRows
-    writeRows(
-        Space const & space,
-        [[maybe_unused]] typename Item::SelectionType const & selection,
-        Rows & rows,
-        Eigen::Index at
-    )
-    {
-        using Path = typename Item::PathType;
-        if constexpr (Item::Selected && !RepetitionIndex<typename Item::SelectionType>)
-        {
-            auto const coordinates = selectionCoordinates<Difference, Path>(space, selection);
-            rows.segment(at, coordinates.size()) = coordinates;
-            return BlockRows{coordinates.size() > 0 ? coordinates(0) : Eigen::Index{0}, coordinates.size()};
-        }
-        else
-        {
-            BlockRows const block = [&] {
-                if constexpr (Item::Selected)
-                {
-                    return repetitionBlockRows<Difference, Path>(space, selection);
-                }
-                else if constexpr (Difference)
-                {
-                    return differenceBlockRows<Path>(space);
-                }
-                else
-                {
-                    return blockRows<Path>(space);
-                }
-            }();
-            for (Eigen::Index j = 0; j < block.size; ++j)
-            {
-                rows(at + j) = block.start + j;
-            }
-            return block;
+            return JointSpace{itemSpace<Items>(space, selections)...};
         }
     }
 

@@ -337,7 +337,7 @@ private:
 };
 
 /** The placed writes() of the process model \a Model on the block that \a Prefix names: each path
- * prefixed, each name a PlacedName.
+ * prefixed, each name a PlacedName, and each selection of repetitions the model's.
  */
 template <typename Prefix, typename Model>
 using PlacedWrites = typename decltype([]<std::size_t... K>(std::index_sequence<K...>) {
@@ -345,10 +345,42 @@ using PlacedWrites = typename decltype([]<std::size_t... K>(std::index_sequence<
         (startsIn<WritePathAt<Model, K>, PathTag<Prefix>> && ...),
         "on<Path>(model) places a model whose writes() are blocks of the block Path names"
     );
-    return std::type_identity<WritesAs<
-        TagPaths<JoinPaths<Prefix, WritePathAt<Model, K>>...>,
-        Composite<PlacedName<Prefix, WriteNameAt<Model, K>>...>>>{};
+    if constexpr (writesSelected<Model>)
+    {
+        return std::type_identity<WritesItems<ReadItem<
+            JoinPaths<Prefix, WritePathAt<Model, K>>,
+            PlacedName<Prefix, WriteNameAt<Model, K>>,
+            typename WriteItemAt<Model, K>::SelectionType>...>>{};
+    }
+    else
+    {
+        return std::type_identity<WritesAs<
+            TagPaths<JoinPaths<Prefix, WritePathAt<Model, K>>...>,
+            Composite<PlacedName<Prefix, WriteNameAt<Model, K>>...>>>{};
+    }
 }(std::make_index_sequence<writeCount<Model>>{}))::type;
+
+/** \returns the placed writes() of \a model on the block that \a Prefix names (PlacedWrites), with
+ * the selections that the model's writes() holds
+ */
+template <typename Prefix, typename Model>
+[[nodiscard]] PlacedWrites<Prefix, Model>
+placedWrites(Model const & model)
+{
+    if constexpr (writesSelected<Model>)
+    {
+        return std::apply(
+            [](auto const &... selections) {
+                return PlacedWrites<Prefix, Model>{std::in_place, selections...};
+            },
+            writeSelectionsOf(model)
+        );
+    }
+    else
+    {
+        return {};
+    }
+}
 
 /** The kinds of item of a process model placed on every repetition of a repeated block. */
 enum class EachKind
@@ -389,9 +421,9 @@ struct EachPlacement
         "block of one repetition of the block Path names"
     );
     static_assert(
-        !InnerReads::Selected,
+        !InnerReads::Selected && !writesSelected<Model>,
         "onEach<Path>(model) places a model on one repetition of a repeated block, which holds no repeated block, so "
-        "the model's reads() selects no repetitions"
+        "the model's reads() and writes() select no repetitions"
     );
     static_assert(
         FixedSizeSpace<InnerIn> && FixedSizeSpace<InnerOut>,
@@ -1128,7 +1160,7 @@ on(Model const & model, Renames const &...)
         internal::readsWithSelectionsOf<typename Placement::ReadsPolicy>(
             model.template policy<internal::PolicyKind::reads>()
         ),
-        internal::PlacedWrites<Prefix, Model>{},
+        internal::placedWrites<Prefix>(model),
         typename Placement::AffinePolicy{}
     };
 }

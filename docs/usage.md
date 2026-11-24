@@ -317,8 +317,9 @@ own, or two selections of one block, are read under names: `on<From>(path<Fleet>
 read them under two names, and two parts that read a landmark under one name must select the same
 one, which is asserted when the composition meets a state. `on<Path>(model)` keeps the selections of
 the model it places. The parts of one composition read no coordinate twice, so a part that reads
-`path<Landmarks>[k]` cannot stand beside one that reads all of `path<Landmarks>`, and `writes()`
-does not yet take a selection.
+`path<Landmarks>[k]` cannot stand beside one that reads all of `path<Landmarks>`. A process model
+writes a selection as it reads one, `writes(path<Fleet>[k])`, so a part that moves vehicle `k`
+stands beside one that carries the rest, `writes(path<Fleet>[others])`.
 
 A model built once covers a measurement that follows the state's counts:
 `outputSpace(CountFrom<Landmarks, RangeBearings>{})` sizes it, a matrix's `Columns` repeat with a

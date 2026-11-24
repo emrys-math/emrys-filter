@@ -82,6 +82,7 @@ add_executable(emrys_filter_tests
   Models/per_measurement.cpp
   Models/selected_reads.cpp
   Models/selected_placement.cpp
+  Models/selected_writes.cpp
   Models/fixed_step_model.cpp
   Models/consistency.cpp
   Models/cramer_rao.cpp

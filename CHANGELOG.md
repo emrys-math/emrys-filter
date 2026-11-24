@@ -42,7 +42,10 @@ instead.
   A sequence or a list is read as the repeated block with their count, so a function written for
   the whole block runs on part of it, and `on<Name>(path<Landmarks>[seen])` reads it under a name
   that may bound the count more tightly. The model holds the selection, so it is built for each
-  measurement whose selection differs. `writes()` does not take a selected path yet.
+  measurement whose selection differs.
+- A process model's `writes()` takes a selected path and `on<Name>(path)`, as `reads()` does:
+  `writes(path<Fleet>[k])` writes vehicle `k`, and the parts of a composition may write different
+  repetitions of one block. A measurement model's `writes()` takes neither.
 - `compose()` and `on<Path>()` take a model whose `reads()` selects repetitions. A composition reads
   each name once, with the selection of the first part that reads it; parts that read a block
   under one name select the same repetitions, which is asserted when the composition meets a

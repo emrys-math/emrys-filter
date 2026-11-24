@@ -1569,6 +1569,26 @@ struct Untagged : Emrys::Repeated<Emrys::Linear<2>, 4>
 [[maybe_unused]] auto const w = Emrys::writes(Emrys::path<Position>, Position{});
 #endif
 
+#if defined(WRITES_SOMETHING_ELSE)  // static_assert: Policies.h: writes() takes paths, path<Tags...> or a tag's value
+[[maybe_unused]] auto const w = Emrys::writes(Emrys::path<Position>, 3);
+#endif
+
+#if defined(WRITES_SELECTION_WITHOUT_A_TAG)  // static_assert: Policies.h: this item of writes() selects have a space
+struct Bare : Emrys::Repeated<Emrys::Linear<2>, 4>
+{};
+
+[[maybe_unused]] auto const w = Emrys::writes(Emrys::path<Bare>[1]);
+#endif
+
+#if defined(WRITES_TWO_ITEMS_UNDER_ONE_NAME)  // static_assert: Policies.h: two items of writes() share a name
+[[maybe_unused]] auto const w = Emrys::writes(Emrys::path<Fixes>[0], Emrys::path<Fixes>[1]);
+#endif
+
+#if defined(MEASUREMENT_WRITES_A_SELECTION)  // static_assert: MeasurementModel.h: a measurement model's writes() names
+[[maybe_unused]] auto const m =
+    Emrys::measurementModel(positionOf, Emrys::reads(Emrys::path<Position>), Emrys::writes(Emrys::path<Fixes>[1]));
+#endif
+
 #if defined(AFFINE_IN_A_PATH)  // static_assert: Policies.h: affineIn() names an input of the model by the one tag
 [[maybe_unused]] auto const a = Emrys::affineIn(Emrys::path<Ownship, Position>);
 #endif

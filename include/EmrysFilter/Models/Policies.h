@@ -377,7 +377,7 @@ reads(Items const &... items)
  *
  * \tparam Paths  the paths, each a TagPath
  *
- * \sa writes(), reads()
+ * \sa writes(), reads(), WritesItems
  */
 template <typename... Paths>
 struct Writes
@@ -416,15 +416,153 @@ struct WritesAs
 }  // namespace internal
 
 /** \ingroup Models
- * \returns the writes() policy of \a paths, each a path value, distinct
+ * \brief What a process model writes where an item of its writes() selects repetitions of a repeated
+ * block, or is written under a name of its own (decisions.md [selected-writes]): the items, each a
+ * path into the state under a name, with the selections held by value as Reads holds those of what
+ * a model reads.
+ *
+ * The output space is the Composite of the items' names, in the order given, and the function
+ * fills its result with <tt>block<Name>(out, y)</tt>. One repetition, <tt>path<Fleet>[k]</tt>, is
+ * written under the repetition's tag, as the block that is repeated, and a sequence or a list of
+ * them under the repeated block's own tag, as that block with their count. writes() of whole blocks
+ * under their own tags is a Writes, which holds nothing.
+ *
+ * \tparam Items  the items, as internal::ReadItem
+ *
+ * \sa writes(), Writes
  */
-template <PathValue... Paths>
-[[nodiscard]] auto
-writes(Paths const &...)
+template <typename... Items>
+struct WritesItems : internal::ReadSelections<std::index_sequence_for<Items...>, Items...>
 {
-    static_assert(sizeof...(Paths) > 0, "writes() names at least one block");
-    static_assert(internal::distinctTypes<internal::PathOf<Paths>...>(), "writes() names each block once");
-    return Writes<internal::PathOf<Paths>...>{};
+    static constexpr std::size_t Count = sizeof...(Items);  ///< the number of blocks written
+
+    /// whether an item writes selected repetitions of a repeated block
+    static constexpr bool Selected = (Items::Selected || ... || false);
+
+    /** The output space: the Composite of the names, in order. */
+    using OutputSpace = Composite<typename Items::NameType...>;
+
+    /** The paths, as a TagPaths; a path that an item selects repetitions of names more than is written. */
+    using PathList = TagPaths<typename Items::PathType...>;
+
+    /** The item at position \a I. */
+    template <std::size_t I>
+    using Item = std::tuple_element_t<I, std::tuple<Items...>>;
+
+    /** The policy whose items hold \a selections, one for each in order, internal::NoSelection for
+     * an item that writes its whole block.
+     */
+    explicit WritesItems(std::in_place_t, typename Items::SelectionType const &... selections)
+        : internal::ReadSelections<std::index_sequence_for<Items...>, Items...>{std::in_place, selections...}
+    {}
+
+    /** \returns the selection of the item at position \a I, or internal::NoSelection */
+    template <std::size_t I>
+    [[nodiscard]] auto const &
+    selection() const
+    {
+        return static_cast<internal::ItemSelection<I, typename Item<I>::SelectionType> const &>(*this).value;
+    }
+};
+
+namespace internal
+{
+
+/** \returns the position of the first of the types \a Ts that is \a T, or their count if none is */
+template <typename T, typename... Ts>
+[[nodiscard]] consteval std::size_t
+typePosition()
+{
+    constexpr std::array<bool, sizeof...(Ts) + 1> same{std::is_same_v<Ts, T>..., true};
+    std::size_t i = 0;
+    while (!same[i])
+    {
+        ++i;
+    }
+    return i;
+}
+
+/** \returns whether no two of the items \a Items that name whole blocks name one path. Two items
+ * that select repetitions of one block may select different ones, which is known only where the
+ * model meets a state.
+ */
+template <typename... Items>
+[[nodiscard]] consteval bool
+wholeBlocksDistinct()
+{
+    constexpr std::size_t count = sizeof...(Items);
+    constexpr std::array<bool, count + 1> selected{Items::Selected..., false};
+    // For each item, the position of the first item with its path.
+    constexpr std::array<std::size_t, count + 1> first{
+        typePosition<typename Items::PathType, typename Items::PathType...>()...,
+        0
+    };
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        for (std::size_t j = 0; j < i; ++j)
+        {
+            if (!selected[i] && !selected[j] && first[i] == first[j])
+            {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+}  // namespace internal
+
+/** \ingroup Models
+ * \returns the writes() policy of \a items, the blocks of the state that a process model's function
+ * fills, or the blocks of its measurement space for a measurement model: each a path value,
+ * <tt>path<Tags...></tt> or a tag's value, written under its last tag. For a process model an item
+ * may also be a selected path, <tt>path<Fleet>[k]</tt>, written under the tag of the repetitions'
+ * space, or <tt>on<Name>(path)</tt> of either, written under \a Name (decisions.md
+ * [selected-writes]). A block named twice is refused, and so are two items that would share a name
+ * and a selection whose space has no tag.
+ *
+ * \code
+ * writes(path<Position>, path<Velocity>)
+ * writes(path<Fleet>[k])
+ * writes(on<Lead>(path<Fleet>[0]), on<Wing>(path<Fleet>[1]))
+ * \endcode
+ */
+template <typename... Items>
+[[nodiscard]] auto
+writes(Items const &... items)
+{
+    static_assert(sizeof...(Items) > 0, "writes() names at least one block");
+    static_assert(
+        (internal::ReadItemOf<std::remove_cvref_t<Items>>::valid && ...),
+        "writes() takes paths, path<Tags...> or a tag's value, and on<Name>(path) for a path written under another "
+        "name"
+    );
+    if constexpr ((PathValue<Items> && ...))
+    {
+        static_assert(internal::distinctTypes<internal::PathOf<Items>...>(), "writes() names each block once");
+        return Writes<internal::PathOf<Items>...>{};
+    }
+    else
+    {
+        using Result = WritesItems<typename internal::ReadItemOf<std::remove_cvref_t<Items>>::type...>;
+        static_assert(
+            internal::wholeBlocksDistinct<typename internal::ReadItemOf<std::remove_cvref_t<Items>>::type...>(),
+            "writes() names each block once"
+        );
+        static_assert(
+            (!std::
+                 is_same_v<typename internal::ReadItemOf<std::remove_cvref_t<Items>>::type::NameType, internal::NoName>
+             && ...),
+            "the repetitions this item of writes() selects have a space without a tag, so name it: "
+            "on<Name>(path<...>[...])"
+        );
+        static_assert(
+            internal::distinctTypes<typename internal::ReadItemOf<std::remove_cvref_t<Items>>::type::NameType...>(),
+            "two items of writes() share a name, their paths' last tag; write one under another name with "
+            "on<Name>(path)"
+        );
+        return Result{std::in_place, internal::readSelection(items)...};
+    }
 }
 
 /** \ingroup Models
@@ -953,6 +1091,18 @@ inline constexpr std::optional<PolicyKind> policyKind<Writes<Paths...>>{PolicyKi
 
 template <typename Paths, typename Out>
 inline constexpr std::optional<PolicyKind> policyKind<WritesAs<Paths, Out>>{PolicyKind::writes};
+
+template <typename... Items>
+inline constexpr std::optional<PolicyKind> policyKind<WritesItems<Items...>>{PolicyKind::writes};
+/// \endcond
+
+/** Whether \a T is a WritesItems, the writes() of a process model with a selection or a name of its own. */
+template <typename T>
+inline constexpr bool isWritesItems = false;
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename... Items>
+inline constexpr bool isWritesItems<WritesItems<Items...>> = true;
 
 template <typename... Names>
 inline constexpr std::optional<PolicyKind> policyKind<AffineIn<Names...>>{PolicyKind::affineIn};

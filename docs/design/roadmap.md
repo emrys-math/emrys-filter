@@ -239,9 +239,9 @@ takes an integer repetition today, that argument takes a sequence or a list too.
       `compose(steerToward, Constant<Landmarks>{})`, where `steerToward` reads
       `path<Landmarks>[k]` under `Landmark` and `Constant` reads all of `path<Landmarks>`, reads
       landmark `k` twice and asserts. So does any part that reads one repetition beside a part
-      that carries the whole block, which every process model of a state with a repeated block
-      has until `writes()` takes a selection. Two selections of one block that overlap do the
-      same. To allow them, the joint would hold each coordinate once and an item's rows of the
+      that carries the whole block; a process model can instead carry the other repetitions with
+      a part that writes their list (`tests/Models/selected_writes.cpp`). Two selections of one
+      block that overlap assert too. To allow them, the joint would hold each coordinate once and an item's rows of the
       input would be gathered from it, the input then having more coordinates than the joint,
       and a Jacobian's columns would be summed into the joint's. Decide whether this step builds
       that or the rule stays, with `writes()` of a selection as the way to split the block.
@@ -252,22 +252,10 @@ takes an integer repetition today, that argument takes a sequence or a list too.
       keeps such an item as it is, path and selection, read from the state the placed model
       meets. It was not built, since an item without a selection would then still become an
       input by name while one with a selection kept its path.
-- [ ] **`writes()` of a process model.** The same path values, and `on<Name>(...)`, which
-      `writes()` does not take today, named as `reads()` names them (`internal::ReadItemOf`). Keep
-      `Writes<Paths...>` for whole blocks, so that every model there is keeps its type, and add a
-      policy of items that holds the selections and has the same `PathList` and `OutputSpace`.
-      What must know the selection, all in `ProcessModel.h`: `outputOf()`, which builds the output
-      space and so takes the model; the written rows in `ResolvedProcess` and in
-      `processNoiseOfBlocks()`; `writesPartition()`; and `staticPartitionOfWrites()`, which must
-      answer "unknown" when a write is selected, since the path then names more than is written.
-      One repetition and whole repetitions of a sequence whose increment is one are one run of
-      rows, which the code that takes a `BlockRows` handles. A list is not: the noise's placement,
-      `scatterBlocks()`, `expand()`, and `inputBlock()` then go through the written rows' indices,
-      on a path compiled only for a model whose `writes()` has a list, so that every other model
-      keeps its block code. A repetition not written is carried as a block not written is. Test: a
-      prediction that writes `path<Fleet>[1]`, a sequence, and a list equals the prediction on the
-      state with one tag per repetition, under each method; two parts of a composition write two
-      repetitions of one block; a process model that reads a selection.
+- [ ] **`writes()`, the rest.** A process model writes a selection ([selected-writes],
+      `tests/Models/selected_writes.cpp`), through compositions and `on<Path>()`. Left: the same
+      equality through `ParticleFilter` and the Rao-Blackwellized filters, whose prediction moves
+      sampled states, and a batched function that writes a list.
 - [ ] **Placing a model.** `on(path<Fleet>[k], model, renames...)` places it on one repetition, and
       `onEach(path<Fleet>[moving], model, renames...)` on each repetition of a sequence or a list;
       an input renamed to a `Repeated` tag has a value per repetition placed. This value form
