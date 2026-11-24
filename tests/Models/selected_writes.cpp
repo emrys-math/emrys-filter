@@ -380,3 +380,25 @@ TEST(SelectedWrites, WritesThatDoNotPartitionAssert)
     auto const missing = compose(partOf(turnAll, 0.3, path<Fleet>[1]), partOf(hold, 0.05, on<First>(path<Fleet>[0])));
     EXPECT_DEATH(std::ignore = Emrys::predict(methods::linearized(), fleetPrior(), missing, 0.5), "partitions");
 }
+
+// A batched function that writes a list of repetitions, a column per point, predicts as its
+// per-point form under a sigma-point method (tests/Filters/selected_filters.cpp moves particles by one).
+TEST(SelectedWrites, ABatchedFunctionWritesAList)
+{
+    auto const shrink = []<typename T>(auto const & x, double dt) {
+        Eigen::Matrix<T, Eigen::Dynamic, 1, Eigen::ColMajor, 20, 1> y = (1.0 - 0.1 * dt) * x;
+        y += T(0.05) * x.cwiseProduct(x);
+        return y;
+    };
+    auto const batchedShrink = Emrys::batched([](auto const &, auto const &, auto const & x, double dt, auto & y) {
+        y.values() = (1.0 - 0.1 * dt) * x + 0.05 * x.cwiseProduct(x);
+    });
+    auto const list = path<Fleet>[std::array{2, 0}];
+    auto const byPoint = compose(partOf(shrink, 0.3, list), partOf(hold, 0.05, path<Fleet>[1]));
+    auto const byBatch = compose(partOf(batchedShrink, 0.3, list), partOf(hold, 0.05, path<Fleet>[1]));
+    expectSamePrediction(
+        Emrys::predict(methods::unscented(), fleetPrior(), byBatch, 0.5),
+        Emrys::predict(methods::unscented(), fleetPrior(), byPoint, 0.5),
+        fleetMean()
+    );
+}

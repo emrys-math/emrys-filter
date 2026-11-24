@@ -310,3 +310,30 @@ TEST(SelectedFilters, ARaoBlackwellizedFilterStepsAsTheTaggedBlocks)
         EXPECT_LT((a.conditional(i).mean() - b.conditional(i).mean()).norm(), 1e-10);
     }
 }
+
+// A batched function that writes a list of landmarks moves the particles as its per-point form does,
+// from the same draws.
+TEST(SelectedFilters, AParticleFilterMovesParticlesByABatchedFunctionThatWritesAList)
+{
+    auto const batchedDrift = processModel(
+        Emrys::batched([](auto const &, auto const &, auto const & x, double dt, auto & y) {
+            y.values() = (1.0 - 0.1 * dt) * x;
+        }),
+        reads(path<Landmarks>[std::array{0, 2}]),
+        writes(path<Landmarks>[std::array{0, 2}]),
+        continuousNoise(0.01)
+    );
+    auto const byBatch =
+        compose(RandomWalk<Position>{0.2}, RandomWalk<Heading>{0.01}, driftOf(path<Landmarks>[1]), batchedDrift);
+    auto draws = std::mt19937_64{5};
+    auto const prior = mapPrior();
+    Eigen::MatrixXd const states = Emrys::drawSamples(prior.toDensity().value(), 50, draws);
+    auto byPoint = Emrys::ParticleFilter{selectedMotion(), Emrys::ParticleSet<Map>{prior.space(), states}};
+    auto batched = Emrys::ParticleFilter{byBatch, Emrys::ParticleSet<Map>{prior.space(), states}};
+    auto first = std::mt19937_64{11};
+    auto second = std::mt19937_64{11};
+    byPoint.predict(first, 0.5);
+    batched.predict(second, 0.5);
+    EXPECT_LT((batched.state().states() - byPoint.state().states()).cwiseAbs().maxCoeff(), 1e-12);
+    EXPECT_GT((batched.state().states() - states).cwiseAbs().maxCoeff(), 1e-3);
+}
