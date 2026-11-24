@@ -95,7 +95,7 @@ might doubt, published with its method and machine, and never one per feature."
 | 6 | It fits and runs on a microcontroller | Footprint and cycles on Cortex-M4F and M7 | `.text`, `.data`, stack per function, DWT cycles per step | hand-rolled EKF and TinyEKF on the same target | after [embedded-builds]'s Cortex-M job |
 | 7 | A template library's compile cost is tolerable | Compile cost of each benchmark translation unit | seconds and peak memory per compiler | the hand-rolled translation unit | built and measured on three compilers (section 7), not in CI, not published |
 | 8 | A GPU pays above some particle count | Device path against host `par` | crossover particle count | the library's own host path | step 19, not planned here |
-| 9 | It is no slower than the C++ Kalman library a user would otherwise pick | mherb/kalman's EKF, UKF, square-root EKF, and square-root UKF, TinyEKF's EKF, and OpenCV's `cv::KalmanFilter` run as an EKF, on the ranging problem | instructions and ns per step, at the ranging sizes and scalars | each library, as its users write it | measured 2026-11-23 on branch `mherb-benchmark`; the EKF holds against all three at every size and the UKF in double; the claim fails in time for the UKF in float at 2D with 4 anchors (1.03), the square-root EKF in double at 3D with 24 (1.06), and the square-root UKF in double at every 3D size (up to 1.29); the pairs that do not agree are timed with a mark |
+| 9 | It is no slower than the C++ Kalman library a user would otherwise pick | mherb/kalman's EKF, UKF, square-root EKF, and square-root UKF, TinyEKF's EKF, FrancoisCarouge/Kalman's EKF, and OpenCV's `cv::KalmanFilter` run as an EKF, on the ranging problem | instructions and ns per step, at the ranging sizes and scalars | each library, as its users write it | measured 2026-11-23 on branch `mherb-benchmark`, and FrancoisCarouge/Kalman on 2026-11-24; the EKF holds against all four at every size and the UKF in double; the claim fails in time for the UKF in float at 2D with 4 anchors (1.03), the square-root EKF in double at 3D with 24 (1.06), and the square-root UKF in double at every 3D size (up to 1.29); the pairs that do not agree are timed with a mark |
 
 **1. Ranging.** What exists, plus the two axes [benchmarks] names and the ranging benchmark lacks: a
 constant-acceleration case (state dimension 6 and 9 beside 4 and 6), and the scaling curves over
@@ -550,10 +550,10 @@ measurements before it found). EmrysFilter's EKF takes less time than each libra
 and in either scalar: 2 to 6% of OpenCV's; 0.93 of mherb/kalman's at 2D with 4 anchors in double,
 0.76 in float, and 0.13 to 0.46 elsewhere; and 0.72 and 0.86 of TinyEKF's at 2D with 4 and 8
 anchors in double, 0.61 and 0.52 in float, TinyEKF's default, and 0.34 to 0.73 at the other four
-sizes. Its UKF takes 0.89 of mherb/kalman's time at 2D with 4 anchors in double and 1.03 in float,
+sizes; and, measured the next day, 0.12 to 0.32 of FrancoisCarouge/Kalman's (below). Its UKF takes 0.89 of mherb/kalman's time at 2D with 4 anchors in double and 1.03 in float,
 and 0.38 to 0.83 elsewhere. Its square-root EKF takes 0.51 to 0.98 but at 3D with 24 anchors in
 double (1.06), and its square-root UKF 0.78 to 0.93 in float and 0.83 to 1.29 in double. So claim
-9 holds for the EKF against all three, and for the UKF in double; it fails for the UKF in float at
+9 holds for the EKF against all four, and for the UKF in double; it fails for the UKF in float at
 2D with 4 anchors by 3%, the square-root EKF in double at 3D with 24 by 6%, and the square-root
 UKF in double at every 3D size. At 2D with 4 anchors the library takes 723 instructions and 67 ns,
 mherb/kalman 1,218 and 72 ns, and TinyEKF 1,575 and 103 ns, while the hand code takes 401 and
@@ -804,6 +804,48 @@ OpenCV's float EKF leaves the double estimate. With 8 anchors or more in double,
 float, OpenCV's steps make one heap allocation each, and none with 4 or 6, which `opencv_allocation.cpp` records without
 requiring, since the OpenCV it builds against is whichever is installed; the timings of those cases
 include its allocator, as its users' do.
+
+**FrancoisCarouge/Kalman.** The C++ Kalman library a user of C++23 and Eigen would otherwise pick
+is FrancoisCarouge/Kalman (Unlicense): header-only, its filter type deduced from the
+characteristics it is declared with, over a linear algebra backend its user supplies. Its README
+points an Eigen user to the backend in its `support/eigen`, an example rather than part of the
+library, which the pair uses unchanged. Its last release, 0.5.3 of 2026-03-16, has no extended
+filter with a fixed transition, so it is fetched at the commit of 2026-11-23 the pair was first
+built at (`cdd8a93`); its project builds as C++26, and its headers build as C++23. Declared with an
+output model and an observation and no transition function, its filter is its EKF with a fixed
+transition, set by `f()` after construction. Its arithmetic is kept as its users get it: the gain
+is $P H^T / S$, which the backend's `operator/` solves by a Householder QR decomposition of $S^T$
+with full pivoting, the covariance is updated by its default Joseph form,
+$(I - K H) P (I - K H)^T + K R K^T$, and no triangle is mirrored. It has no automatic
+differentiation, so its side has the analytic Jacobian only.
+
+Two of its choices shape the pair. It tells a matrix characteristic from a function of the state
+by whether the value can be called with the state, and an Eigen matrix can, by the `operator()`
+that indexes it by an array of indices, so a process noise given as an Eigen matrix matches no EKF
+without a transition function; the pair declares it by its rows, as the library's samples declare
+a matrix. And the backend declares, in namespace `Eigen`, an `operator/` for any two Eigen objects,
+which argument-dependent lookup then finds for every division of one Eigen array by another in a
+translation unit that includes it, Eigen's own `rowwise() /` included, so
+`emrys_ranging_kinds.h`'s Jacobian does not compile beside it. The pair therefore keeps the
+library's filter in a translation unit of its own, `benchmarks/ranging/carouge_ranging.cpp`,
+which instantiates the runner's six sizes in both scalars, behind the declarations of
+`carouge_ranging.h`, so each of its steps is two calls that are not inlined. Timed against the same filter held
+by value and stepped inline, in a program without EmrysFilter, the calls cost nothing measurable:
+the ratio was 1.00 to 1.02 at four sizes in `double` and two in `float`, the inline copy never the
+faster. The other files are `carouge_agreement.cpp`, `carouge_allocation.cpp`, and the runner
+`carouge_benchmark.cpp`; neither side allocates in its steps.
+
+The pair agrees in both scalars. In double the two agree to 9e-14 relative, over 3000 steps too,
+at every size, and the library's covariance stays symmetric to under 6e-16 of its size over those
+steps, so it does not drift as OpenCV's does.
+In float, over the runner's 1000 steps, the library's EKF stays within 1e-5 of the double
+EmrysFilter EKF in the mean and 3e-7 in the covariance, where EmrysFilter's float EKF stays within
+8e-6 and 5e-5: the Joseph form keeps its float covariance closer than EmrysFilter's
+$P - K P_{xy}^T$ does. EmrysFilter takes 0.09 to 0.23 of its instructions per step and 0.12 to 0.32
+of its time over three runs, at every size and in both scalars: at 2D with 4 anchors in double, 723
+instructions against 5,805, and 69 ns against 286. Where in its step the time goes is not
+measured; the Joseph form, a product of state-sized matrices, and the full-pivoting QR are the
+candidates read from its code.
 
 ## How the numbers are measured
 

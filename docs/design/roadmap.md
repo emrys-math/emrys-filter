@@ -870,9 +870,9 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       comparison table and the ones a user would otherwise pick, by the method of benchmarks.md
       (claim 9), since a reader's first question is "how fast against X", and the README's
       numbers are only against hand-written Eigen. That is mherb/kalman, all four of its filters
-      (EKF, UKF, square-root EKF, square-root UKF) on the ranging problem, and TinyEKF's EKF, the
-      C filter a microcontroller user would pick (claims 6 and 9), and OpenCV's `cv::KalmanFilter`
-      run as an EKF, with the results in
+      (EKF, UKF, square-root EKF, square-root UKF) on the ranging problem, TinyEKF's EKF, the
+      C filter a microcontroller user would pick (claims 6 and 9), FrancoisCarouge/Kalman's EKF,
+      and OpenCV's `cv::KalmanFilter` run as an EKF, with the results in
       `docs/benchmarks.md`. Started on branch `mherb-benchmark` (2026-11-22): the plan and the results page are written, and its four
       filters, at its last commit (`9f40c2f`, 2018-08-22), build and run unchanged against Eigen
       5.0.1 with Clang 21, warning once (`-Wdeprecated-enum-enum-conversion` in
@@ -889,7 +889,10 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       4.14.0 built in WSL under `~/opt/opencv-4.14.0`, and timed over runs of 300 steps, since
       in double its unmirrored covariance drifts from step 400 on and diverges by step 2000
       (benchmarks.md, claim 9); with 8 anchors or more it allocates once per step. No CI job
-      installs OpenCV.
+      installs OpenCV. FrancoisCarouge/Kalman's EKF joined on 2026-11-24 (benchmarks.md,
+      claim 9), fetched at `cdd8a93` with the Eigen backend of its `support/eigen` in a
+      translation unit of its own, since that backend's `operator/` takes over Eigen's array
+      division; the pair agrees in both scalars, and the library takes 0.12 to 0.32 of its time.
       Every pair is built and tested with Clang 21 in WSL (2026-11-22, the mherb/kalman EKF also
       with Clang on Windows), and measured there: instructions and time are in
       `docs/benchmarks.md`. The first measurement found the library taking about 1,500
@@ -914,7 +917,7 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       user's decision, 2026-11-23), and the Gaussian's own: `Gaussian::cholesky()` replaces
       `llt()`, and `covarianceRoot()` gives the factor $L$ kept with it, which the samplers
       multiply by; the page is measured again at that commit. Claim 9 now holds for the EKF
-      against all three libraries at every size and for the UKF in double, and fails for the
+      against all four libraries at every size and for the UKF in double, and fails for the
       UKF in float at 2D with 4 anchors (1.03 times mherb/kalman's), the square-root EKF in
       double at 3D with 24 (1.06), and the square-root UKF in double at every 3D size (up to
       1.29).
@@ -936,11 +939,12 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       library's float step there is 1.47 times the hand code's;
       take the Windows times, and the
       attitude and particle times, again; MSVC builds of the pairs; the Cortex-M half of
-      TinyEKF joins claim 6's footprint benchmark. The whole test suite passes with Clang 21
+      TinyEKF joins claim 6's footprint benchmark. The whole test suite passed with Clang 21
       and with GCC 15 in WSL (2026-11-23, both with warnings as errors) but
-      `Allocation.ParticleFilterUnderAUsersPolicyStaysOffTheHeap`, which throws
-      `std::bad_alloc` there (libstdc++ 15) before this branch's changes too, and is not looked
-      into.
+      `Allocation.ParticleFilterUnderAUsersPolicyStaysOffTheHeap`, whose scratch arena `next`
+      enlarged before the branch was rebased onto it (2026-11-24). SymForce and manif wait for
+      the Lie group spaces (the user's decision, 2026-11-24): a pair on the ranging problem alone
+      would compare Eigen with Eigen. Issue #15 tracks this item.
 - [ ] GitHub Discussions turned on, so questions have somewhere to go besides issues. The
       repository's 20 topics, GitHub's limit, were chosen on 2026-11-12 by how many public
       repositories use each, so that each has an audience browsing it; a filter named in the

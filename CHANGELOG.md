@@ -21,6 +21,11 @@ instead.
   two do not agree and the pair is marked, behind a test that only TinyEKF's estimate strays.
   Building the tests or the benchmarks now fetches TinyEKF; configure with
   `-DEMRYS_FILTER_BENCHMARK_TINYEKF=OFF` to build without it.
+- The ranging EKF benchmarked against FrancoisCarouge/Kalman's (`emrys_filter_carouge_benchmark`),
+  with its Eigen backend from the library's `support/eigen`, and with its agreement and allocation
+  tests: timed in `double` and in `float`, in both of which the two agree. Building the tests or the
+  benchmarks now fetches FrancoisCarouge/Kalman; configure with
+  `-DEMRYS_FILTER_BENCHMARK_CAROUGE=OFF` to build without it.
 - The ranging EKF benchmarked against OpenCV's `cv::KalmanFilter` (`emrys_filter_opencv_benchmark`),
   with its agreement and allocation tests, built with `-DEMRYS_FILTER_BENCHMARK_OPENCV=ON` against
   an installed OpenCV 4 or 5: timed over runs of 300 steps, over which the two agree in `double`,

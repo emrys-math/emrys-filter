@@ -230,14 +230,14 @@ Debug).
 
 ## Against other libraries
 
-The same ranging problem run by the Kalman filters of three other libraries, each written as its
+The same ranging problem run by the Kalman filters of four other libraries, each written as its
 users write it, with the analytic Jacobian, the only one they have. Here a ratio is EmrysFilter's
 cost divided by the other library's: below 1, EmrysFilter costs less.
 
 Each pair is checked before it is timed. Most agree, to 1e-9 in `double` and 1e-4 in `float` over
 the run that is timed. A pair marked \* does not agree: the other library's estimate differs from
 EmrysFilter's, and a test shows the difference to be that library's, either because EmrysFilter's
-estimate stays with the `double` estimate, on which all five implementations agree to 1e-9, or
+estimate stays with the `double` estimate, on which every implementation agrees to 1e-9, or
 because the other library's filter fails a check that involves no EmrysFilter code. A marked
 ratio therefore compares two steps that do not compute the same estimate;
 [the table after the ratios](#the-marked-pairs) gives how far apart they are, and the notes on
@@ -247,6 +247,8 @@ marked rows are the ones their users get by default.
 Measured on 2026-11-23 at the commit *Make the Cholesky factorization public and the Gaussian's own*, with Ubuntu 26.04 under WSL2 on an
 Intel Core i9-13900F, Clang 21.1.8 with `-march=x86-64-v3`, each runner pinned to one CPU by
 `taskset` at normal priority, the median of 2000 batches; instructions by Callgrind as above.
+FrancoisCarouge/Kalman's rows were measured the same way on 2026-11-24, at the commit *Benchmark
+the ranging EKF against FrancoisCarouge/Kalman*, which changes no header of the library.
 
 | EKF | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
 |---|---|---|---|---|---|---|
@@ -258,6 +260,10 @@ Intel Core i9-13900F, Clang 21.1.8 with `-march=x86-64-v3`, each runner pinned t
 | TinyEKF, `double`, time | 0.72 | 0.86 | 0.38 | 0.50 | 0.51 | 0.37 |
 | TinyEKF, `float` \*, instructions | 0.42 | 0.54 | 0.30 | 0.32 | 0.39 | 0.30 |
 | TinyEKF, `float` \*, time | 0.61 | 0.52 | 0.34 | 0.73 | 0.56 | 0.34 |
+| FrancoisCarouge/Kalman, `double`, instructions | 0.12 | 0.11 | 0.16 | 0.19 | 0.17 | 0.23 |
+| FrancoisCarouge/Kalman, `double`, time | 0.24 | 0.17 | 0.16 | 0.26 | 0.17 | 0.19 |
+| FrancoisCarouge/Kalman, `float`, instructions | 0.12 | 0.09 | 0.14 | 0.15 | 0.13 | 0.15 |
+| FrancoisCarouge/Kalman, `float`, time | 0.19 | 0.12 | 0.14 | 0.31 | 0.17 | 0.15 |
 | OpenCV, `double`, instructions | 0.02 | 0.03 | 0.04 | 0.04 | 0.05 | 0.05 |
 | OpenCV, `double`, time | 0.03 | 0.04 | 0.04 | 0.04 | 0.04 | 0.04 |
 | OpenCV, `float` \*, instructions | 0.02 | 0.02 | 0.03 | 0.03 | 0.04 | 0.03 |
@@ -283,14 +289,17 @@ Intel Core i9-13900F, Clang 21.1.8 with `-march=x86-64-v3`, each runner pinned t
 | EmrysFilter, `double` | 67 ns | 148 ns | 522 ns | 182 ns | 378 ns | 1,177 ns |
 | mherb/kalman, `double` | 72 ns | 804 ns | 3,361 ns | 567 ns | 1,807 ns | 6,442 ns |
 | TinyEKF, `double` | 103 ns | 183 ns | 1,169 ns | 348 ns | 726 ns | 3,411 ns |
+| FrancoisCarouge/Kalman, `double` | 286 ns | 871 ns | 2,622 ns | 642 ns | 2,036 ns | 6,022 ns |
 | OpenCV, `double` | 2,556 ns | 4,235 ns | 10,053 ns | 3,793 ns | 9,243 ns | 30,734 ns |
 | EmrysFilter, `float` | 51 ns | 102 ns | 379 ns | 239 ns | 380 ns | 952 ns |
 | mherb/kalman, `float` \* | 67 ns | 757 ns | 2,606 ns | 521 ns | 1,885 ns | 5,993 ns |
 | TinyEKF, `float` \* | 92 ns | 218 ns | 1,078 ns | 359 ns | 636 ns | 2,842 ns |
+| FrancoisCarouge/Kalman, `float` | 277 ns | 891 ns | 2,491 ns | 724 ns | 2,096 ns | 5,893 ns |
 | OpenCV, `float` \* | 2,544 ns | 4,379 ns | 10,681 ns | 4,065 ns | 9,697 ns | 34,794 ns |
 
 EmrysFilter's times are those of the run against mherb/kalman; they vary by up to 19% between the
-three runs. The other libraries' times, whose code and build do not change, moved by up to 23%
+three runs. FrancoisCarouge/Kalman's are those of the first of three runs of its own, whose ratios
+differ by at most 0.01. The other libraries' times, whose code and build do not change, moved by up to 23%
 between this measurement and the one two commits before it, so times of different runs compare
 only to about that; each ratio is of medians taken in interleaved batches of one run.
 
@@ -303,6 +312,8 @@ only to about that; each ratio is of medians taken in interleaved batches of one
   is faster at every size in `double`, by 11% at 2D with 4 anchors, and in `float` it is 3% slower
   there and faster elsewhere. The square-root UKF is slower in `double` at every 3D size, by up to
   29%, and faster in `float` at every size.
+- **Against FrancoisCarouge/Kalman** the EKF takes 0.12 to 0.31 of the time and 0.09 to 0.23 of
+  the instructions at every size, in both scalars.
 - **Against OpenCV** the EKF takes 2 to 6% of the time at every size.
 
 Before those commits EmrysFilter's EKF was slower than both small libraries at the small sizes:
@@ -402,6 +413,20 @@ the estimate it is measured from, as mean / covariance, over the six sizes.
     each call.
   - With 8 anchors or more in `double`, and 12 or more in `float`, it allocates once per step.
 
+### FrancoisCarouge/Kalman
+
+FrancoisCarouge/Kalman (`cdd8a93`, 2026-11-23; its last release, 0.5.3, has no extended filter
+with a fixed transition) runs with the Eigen backend of its `support/eigen`, unchanged. Its EKF
+solves for the gain by a Householder QR decomposition of $S$ with full pivoting and updates the
+covariance by the Joseph form, its default. The pair agrees in both scalars, so no row is marked:
+to 9e-14 in `double`, over 3000 steps too, and in `float` its estimate stays within 1e-5 of the
+`double` one in the mean and 3e-7 in the covariance, closer in the covariance than EmrysFilter's,
+which stays within 8e-6 and 5e-5. Its filter is compiled in a translation unit of its own, since
+its backend's `operator/` for any two Eigen objects takes over Eigen's division of one array by
+another, which EmrysFilter's side of the pair uses; each of its steps is then two calls that
+cannot be inlined, which cost nothing measurable against the same filter stepped inline
+([design/benchmarks.md](design/benchmarks.md), claim 9).
+
 ## Not measured yet
 
 - The particle filter's scaling with threads under `std::execution::par`.
@@ -415,7 +440,8 @@ release on, each table names its commit.
 
 - **Instructions:** 2026-11-23, Clang 21.1.8 with `-march=x86-64-v3`, Callgrind under Ubuntu 26.04
   in WSL2.
-- **Time, the ranging and attitude EKFs on Linux and the other libraries:** 2026-11-23, Intel Core i9-13900F,
+- **Time, the ranging and attitude EKFs on Linux and the other libraries:** 2026-11-23, and
+  FrancoisCarouge/Kalman 2026-11-24, Intel Core i9-13900F,
   Ubuntu 26.04 under WSL2 with Clang 21.1.8 and `-march=x86-64-v3`, pinned to one CPU at normal
   priority.
 - **Time, the rest:** 2026-11-08, Intel Core i9-13900F. Windows 11 with Clang 21.1.0 and no

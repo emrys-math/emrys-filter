@@ -124,4 +124,13 @@ using OpenCvAgreementCases = ::testing::Types<KindCase<2, 4, FilterKind::Ekf>, K
 using OpenCvDisagreementCases =
     ::testing::Types<KindCase<2, 4, FilterKind::Ekf, float>, KindCase<3, 6, FilterKind::Ekf, float>>;
 
+/// The cases of the benchmark against FrancoisCarouge/Kalman, whose extended filter is the one it
+/// has for this problem: the planar and spatial cases in double and in float. Its EKF agrees with
+/// EmrysFilter's in both scalars, so no case is marked (carouge_agreement.cpp).
+using CarougeCases = ::testing::Types<
+    KindCase<2, 4, FilterKind::Ekf>,
+    KindCase<3, 6, FilterKind::Ekf>,
+    KindCase<2, 4, FilterKind::Ekf, float>,
+    KindCase<3, 6, FilterKind::Ekf, float>>;
+
 }  // namespace Ranging

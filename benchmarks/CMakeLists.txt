@@ -40,6 +40,32 @@ if(EMRYS_FILTER_BENCHMARK_TINYEKF)
   target_include_directories(emrys_filter_tinyekf SYSTEM INTERFACE "${tinyekf_SOURCE_DIR}/src")
 endif()
 
+# FrancoisCarouge/Kalman, a C++ Kalman filter library over a linear algebra backend its user
+# supplies, another implementation of the ranging EKF (claim 9). It is fetched at the commit it was
+# first benchmarked at, for the benchmarks alone, like mherb/kalman; its last release, 0.5.3, has no
+# extended filter with a fixed transition. Only its headers are used: those of include/, the
+# library, and those of support/eigen/, the Eigen backend its README points an Eigen user to.
+# SOURCE_SUBDIR names a directory without a CMakeLists.txt, so none of its own build runs, and the
+# headers come in as system includes. Its project builds as C++26, but these headers build as C++23.
+option(EMRYS_FILTER_BENCHMARK_CAROUGE "Build the ranging benchmark against FrancoisCarouge/Kalman, which is fetched" ON)
+if(EMRYS_FILTER_BENCHMARK_CAROUGE)
+  FetchContent_Declare(carouge_kalman
+    URL https://github.com/FrancoisCarouge/Kalman/archive/cdd8a938794319d171faa89b71aa0bb858c622b6.tar.gz
+    URL_HASH SHA256=f30a5beb22b25c3788f0ca6043cd4ffa2a2dc23e278f884d38472a9833078cb1
+    SOURCE_SUBDIR headers-only
+  )
+  FetchContent_MakeAvailable(carouge_kalman)
+  add_library(emrys_filter_carouge_kalman INTERFACE)
+  target_include_directories(emrys_filter_carouge_kalman SYSTEM INTERFACE
+    "${carouge_kalman_SOURCE_DIR}/include"
+    "${carouge_kalman_SOURCE_DIR}/support/eigen"
+  )
+  target_link_libraries(emrys_filter_carouge_kalman INTERFACE Eigen3::Eigen)
+  # Its headers name types with letters outside ASCII, in UTF-8 with no byte-order mark, which MSVC
+  # reads in the code page unless told otherwise.
+  target_compile_options(emrys_filter_carouge_kalman INTERFACE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
+endif()
+
 # OpenCV's cv::KalmanFilter, the Kalman filter of the computer-vision library, another
 # implementation of the ranging EKF (claim 9). OpenCV is too large to fetch and build for a
 # benchmark, and its users install it, so it is found rather than fetched: the option is off by
@@ -80,6 +106,14 @@ if(EMRYS_FILTER_BUILD_TESTS)
       ranging/tinyekf_allocation.cpp
     )
     target_link_libraries(emrys_filter_benchmark_tests PRIVATE emrys_filter_tinyekf)
+  endif()
+  if(EMRYS_FILTER_BENCHMARK_CAROUGE)
+    target_sources(emrys_filter_benchmark_tests PRIVATE
+      ranging/carouge_agreement.cpp
+      ranging/carouge_allocation.cpp
+      ranging/carouge_ranging.cpp
+    )
+    target_link_libraries(emrys_filter_benchmark_tests PRIVATE emrys_filter_carouge_kalman)
   endif()
   if(EMRYS_FILTER_BENCHMARK_OPENCV)
     target_sources(emrys_filter_benchmark_tests PRIVATE
@@ -122,6 +156,14 @@ if(EMRYS_FILTER_BUILD_BENCHMARKS)
     target_compile_options(emrys_filter_tinyekf_benchmark PRIVATE ${EMRYS_FILTER_WARNINGS})
     list(APPEND benchmark_commands COMMAND emrys_filter_tinyekf_benchmark)
   endif()
+  # The ranging EKF against FrancoisCarouge/Kalman's, whose filter is in a translation unit of its
+  # own (ranging/carouge_ranging.h says why).
+  if(EMRYS_FILTER_BENCHMARK_CAROUGE)
+    add_executable(emrys_filter_carouge_benchmark ranging/carouge_benchmark.cpp ranging/carouge_ranging.cpp)
+    target_link_libraries(emrys_filter_carouge_benchmark PRIVATE EmrysFilter::EmrysFilter emrys_filter_carouge_kalman)
+    target_compile_options(emrys_filter_carouge_benchmark PRIVATE ${EMRYS_FILTER_WARNINGS})
+    list(APPEND benchmark_commands COMMAND emrys_filter_carouge_benchmark)
+  endif()
   # The ranging EKF against OpenCV's.
   if(EMRYS_FILTER_BENCHMARK_OPENCV)
     add_executable(emrys_filter_opencv_benchmark ranging/opencv_benchmark.cpp)
@@ -133,7 +175,7 @@ if(EMRYS_FILTER_BUILD_BENCHMARKS)
   add_custom_target(benchmark
     ${benchmark_commands}
     USES_TERMINAL
-    COMMENT "Timing each problem, EmrysFilter against plain Eigen, mherb/kalman, TinyEKF, and OpenCV"
+    COMMENT "Timing each problem, EmrysFilter against plain Eigen, mherb/kalman, TinyEKF, FrancoisCarouge/Kalman, and OpenCV"
   )
 endif()
 
