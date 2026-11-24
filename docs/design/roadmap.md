@@ -232,8 +232,9 @@ takes an integer repetition today, that argument takes a sequence or a list too.
       carry the selections of the models they take ([composed-selections],
       `tests/Models/selected_placement.cpp`, which also has process models that read a selection,
       as parts of a composition).
-- [ ] **Parts that read a block and one of its repetitions.** A question for the user, found
-      while testing compositions. The blocks a model reads are disjoint: `ReadBlocks` asserts "a
+- [ ] **Parts that read a block and one of its repetitions.** Decided by the user on
+      2026-11-23: the rule stays in this step, and overlapping reads may come later. The blocks a
+      model reads are disjoint: `ReadBlocks` asserts "a
       model must not read a coordinate twice", since the joint of what is read is a marginal of
       the state. A composition's reads are the union of its parts' by name, so
       `compose(steerToward, Constant<Landmarks>{})`, where `steerToward` reads
@@ -243,8 +244,11 @@ takes an integer repetition today, that argument takes a sequence or a list too.
       a part that writes their list (`tests/Models/selected_writes.cpp`). Two selections of one
       block that overlap assert too. To allow them, the joint would hold each coordinate once and an item's rows of the
       input would be gathered from it, the input then having more coordinates than the joint,
-      and a Jacobian's columns would be summed into the joint's. Decide whether this step builds
-      that or the rule stays, with `writes()` of a selection as the way to split the block.
+      and a Jacobian's columns would be summed into the joint's: every method that forms the
+      joint (`FormSteps.h`, `IteratedUpdate.h`, `Likelihood.h`, `Measurement.h`,
+      `MeasurementReads.h`, `ProcessModel.h`) would change. Until then `writes()` of a selection is
+      the way to split the block; writes must stay distinct in any case. The item closes when the
+      step does, with the assertion documented in usage.md.
 - [ ] **A selection outside the block a model is placed on.** A question for the user. In
       `on<Vehicle>(model)`, an item of the model's `reads()` that the block `Vehicle` lacks is an
       input of the call under its name, so `path<Landmarks>[k]` there would lose its selection,
