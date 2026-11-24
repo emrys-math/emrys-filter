@@ -63,8 +63,7 @@ main()
     // 4 m^2 variance on each axis.
     double const fixVariance = 4.0;
     auto const fix = Emrys::measurementModel(
-        Emrys::DifferenceMatrix<Position>::Identity(),
-        Emrys::reads(Emrys::path<Position>),
+        Emrys::affineIn(Emrys::on<Position>(Emrys::DifferenceMatrix<Position>::Identity())),
         Emrys::additiveNoise(fixVariance * Emrys::DifferenceMatrix<Position>::Identity())
     );
 

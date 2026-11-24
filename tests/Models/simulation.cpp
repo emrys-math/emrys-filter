@@ -22,6 +22,7 @@
 #include <random>
 
 using Emrys::additiveNoise;
+using Emrys::affineIn;
 using Emrys::block;
 using Emrys::compose;
 using Emrys::Composite;
@@ -31,6 +32,7 @@ using Emrys::FixedStepModel;
 using Emrys::GaussianParams;
 using Emrys::Linear;
 using Emrys::measurementModel;
+using Emrys::on;
 using Emrys::outputSpace;
 using Emrys::path;
 using Emrys::RadiansPi;
@@ -319,8 +321,7 @@ TEST(Simulate, AFixedSizeSpaceNeedsNoInstance)
     auto const model = ConstantVelocity<Position, Velocity>{0.1};
     auto const fixed = FixedStepModel{model, State{}, 0.1};
     auto const gps = measurementModel(
-        Eigen::Matrix2d::Identity(),
-        reads(path<Position>),
+        affineIn(on<Position>(Eigen::Matrix2d::Identity())),
         additiveNoise(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), Eigen::Matrix2d::Identity()})
     );
     auto given = std::mt19937_64{9};

@@ -776,14 +776,14 @@ TEST(ConstantItems, AMatrixIsTheWholeStatesMap)
     auto const prior = surveyed();
     auto const noise = GaussianParams<Linear<6>>{Eigen::Matrix<double, 6, 1>::Zero(), q};
     auto const p = Emrys::predict(prior, Emrys::fixedStep(processModel(affineIn(f), additiveNoise(noise)), 0.5));
-    auto const r = Emrys::predict(prior, Emrys::fixedStep(processModel(f, additiveNoise(noise)), 0.5));
+    auto const r = Emrys::predict(prior, Emrys::fixedStep(processModel(affineIn(f), additiveNoise(noise)), 0.5));
     EXPECT_LT((p.mean() - r.mean()).norm(), 1e-14);
     EXPECT_LT((p.covarianceLower() - r.covarianceLower()).norm(), 1e-14);
     auto const fixNoise =
         GaussianParams<Linear<3>>{Eigen::Vector3d::Zero(), Eigen::Matrix3d{0.05 * Eigen::Matrix3d::Identity()}};
     auto const z = Eigen::Vector3d{0.9, -0.4, 1.3};
     auto const x = update(prior, observe(measurementModel(affineIn(h), additiveNoise(fixNoise)), z));
-    auto const y = update(prior, observe(measurementModel(h, additiveNoise(fixNoise)), z));
+    auto const y = update(prior, observe(measurementModel(affineIn(h), additiveNoise(fixNoise)), z));
     ASSERT_TRUE(x && y);
     EXPECT_LT((x->branches.front().posterior.mean() - y->branches.front().posterior.mean()).norm(), 1e-14);
 }

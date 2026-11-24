@@ -325,8 +325,12 @@ TEST(SelectedReads, AMatrixModelReadsOneRepetition)
     h << -Eigen::Matrix2d::Identity(), Eigen::Matrix2d::Identity();
     Eigen::Matrix2d const noise = 0.01 * Eigen::Matrix2d::Identity();
     Eigen::Vector2d const observed{4.5, -9.5};
-    auto const selected = measurementModel(h, reads(path<Position>, path<Landmarks>[2]), additiveNoise(noise));
-    auto const byTag = measurementModel(h, reads(path<Position>, path<Third>), additiveNoise(noise));
+    auto const selected = measurementModel(
+        affineIn(on<Position>(h.leftCols<2>()), on(path<Landmarks>[2], h.rightCols<2>())),
+        additiveNoise(noise)
+    );
+    auto const byTag =
+        measurementModel(affineIn(on<Position>(h.leftCols<2>()), on<Third>(h.rightCols<2>())), additiveNoise(noise));
     expectSamePosterior(
         Emrys::update(mapPrior(), observe(selected, observed)),
         Emrys::update(taggedPrior(), observe(byTag, observed))

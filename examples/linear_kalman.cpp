@@ -41,13 +41,13 @@ main()
 
     // The fixes arrive at a fixed rate, so the motion is taken over that one step. A filter given it
     // computes its transition, F, and its noise once, in the state's space.
-    auto const motion = Emrys::fixedStep(Emrys::processModel(F, Emrys::additiveNoise(Q)), dt);
+    auto const motion = Emrys::fixedStep(Emrys::processModel(Emrys::affineIn(F), Emrys::additiveNoise(Q)), dt);
 
     // A fix measures the position, H x, with noise of 1 m^2 variance on each axis.
     Eigen::Matrix<double, 2, 4> const H{{1, 0, 0, 0}, {0, 1, 0, 0}};
     double const fixVariance = 1.0;
     Eigen::Matrix2d const R = fixVariance * Eigen::Matrix2d::Identity();
-    auto const fix = Emrys::measurementModel(H, Emrys::additiveNoise(R));
+    auto const fix = Emrys::measurementModel(Emrys::affineIn(H), Emrys::additiveNoise(R));
 
     // The prior: near the origin, moving slowly, its covariance given by its variances. The filter
     // takes the state's space from it.

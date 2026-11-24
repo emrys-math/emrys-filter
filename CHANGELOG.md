@@ -148,6 +148,14 @@ instead.
 
 ### Changed
 
+- The matrix forms are gone; a linear model is one without a function, `affineIn()` alone. Write
+  `measurementModel(affineIn(on<A>(H_A), on<B>(H_B)), noise)` for
+  `measurementModel(H, reads(path<A>, path<B>), noise)`, splitting `H` into the columns of each
+  block, as `h.leftCols<2>()` and `h.rightCols<2>()`, and `on(path<Landmarks>[k], H)` for a selected
+  item; `measurementModel(affineIn(items...), noise)` for `measurementModel(Columns{items...},
+  noise)`; `measurementModel(affineIn(H), noise)` for `measurementModel(H, noise)`; and
+  `fixedStep(processModel(affineIn(F), noise), dt)` for `processModel(F, noise)`, whose `F` is of one
+  step, so that `predict(dt)` refuses it. `Columns` is internal.
 - A process model with `additiveNoise(Q)`, or a composition or placement with a part that has it,
   holds the `Q` of one step, so `predict(dt)`, `predictJoint(dt)`, a filter's `predict(dt)`, and
   every other prediction over a step it is given refuse it at compile time; it took that `Q` at any

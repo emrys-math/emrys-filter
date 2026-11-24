@@ -155,7 +155,7 @@ observeFix(Eigen::Vector2d const & z, NoisePolicy noise)
 {
     return observe(
         Emrys::methods::linearized(),
-        Emrys::measurementModel(Eigen::Matrix2d::Identity(), Emrys::reads(Emrys::path<Position>), std::move(noise)),
+        Emrys::measurementModel(Emrys::affineIn(Emrys::on<Position>(Eigen::Matrix2d::Identity())), std::move(noise)),
         z
     );
 }

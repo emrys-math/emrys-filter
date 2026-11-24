@@ -241,8 +241,7 @@ TEST(UpdateFailureDeathTest, ANonFiniteObservationFails)
         return observe(
             methods::linearized(),
             Emrys::measurementModel(
-                Eigen::Matrix2d::Identity(),
-                Emrys::reads(Emrys::path<Velocity>),
+                Emrys::affineIn(Emrys::on<Velocity>(Eigen::Matrix2d::Identity())),
                 additiveNoise(std::move(noise))
             ),
             observation
@@ -271,8 +270,7 @@ TEST(UpdateFailure, OneSingularBranchFailsMixtureNoise)
     auto const fix = observe(
         methods::linearized(),
         Emrys::measurementModel(
-            Eigen::Matrix2d::Identity(),
-            Emrys::reads(Emrys::path<Velocity>),
+            Emrys::affineIn(Emrys::on<Velocity>(Eigen::Matrix2d::Identity())),
             additiveNoise(std::move(noise))
         ),
         Eigen::Vector2d{0.5, -0.5}
@@ -406,8 +404,7 @@ TEST(UpdateFailure, AnImmFilterKeepsItsState)
     auto const byMode = observe(
         methods::linearized(),
         Emrys::measurementModel(
-            Eigen::Matrix2d::Identity(),
-            Emrys::reads(Emrys::path<Velocity>),
+            Emrys::affineIn(Emrys::on<Velocity>(Eigen::Matrix2d::Identity())),
             additiveNoise(
                 Emrys::byMode<Single>(
                     Emrys::when<Only>(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), Eigen::Matrix2d::Zero()})

@@ -559,6 +559,9 @@ public:
 
     static constexpr bool IsAffine = true;  ///< affine in the whole state, so its Jacobian is the same everywhere
 
+    /// its $ F $ is of one step, so that only fixedStep() takes it (internal::holdsOneStep)
+    static constexpr bool HoldsOneStep = true;
+
     /** The function of \a matrix. */
     explicit LinearStep(Matrix matrix)
         : m_matrix{std::move(matrix)}
@@ -884,6 +887,16 @@ processModel(F && function, Policies &&... policies)
     }
 }
 
+namespace internal
+{
+
+/** Declared here, defined below: the linear whole-state model of a matrix. */
+template <MatrixExpression Matrix, typename... Policies>
+[[nodiscard]] auto
+processModelOfMatrix(Matrix && matrix, Policies &&... policies);
+
+}  // namespace internal
+
 /** \ingroup Models
  * \returns the process model without a function whose map is affineIn() among \a policies
  * (decisions.md [whole-state-models], [affine-coordinates]): of one matrix,
@@ -907,7 +920,7 @@ processModel(Policies &&... policies)
     {
         return std::apply(
             [&](auto const &... other) {
-                return processModel(affine.matrix, other...);
+                return internal::processModelOfMatrix(affine.matrix, other...);
             },
             others
         );
@@ -933,8 +946,10 @@ processModel(Policies &&... policies)
     }
 }
 
-/** \ingroup Models
- * \returns the linear whole-state process model \f$ x_{k+1} = F x_k \f$ of the matrix \a matrix over
+namespace internal
+{
+
+/** \returns the linear whole-state process model \f$ x_{k+1} = F x_k \f$ of the matrix \a matrix over
  * the state's coordinates, with \a policies, its noise (decisions.md [whole-state-models]): its
  * function returns \f$ F x \f$ with \f$ F \f$ as its Jacobian, so every method predicts it exactly,
  * as the matrix measurement model updates exactly. The state's coordinates must add their values, as
@@ -942,12 +957,12 @@ processModel(Policies &&... policies)
  * step is a function.
  *
  * \code
- * auto const cv = processModel(F, additiveNoise(Q));  // F and Q are 4 by 4
+ * auto const cv = fixedStep(processModel(affineIn(F), additiveNoise(Q)), dt);  // F and Q are 4 by 4
  * \endcode
  */
 template <MatrixExpression Matrix, typename... Policies>
 [[nodiscard]] auto
-processModel(Matrix && matrix, Policies &&... policies)
+processModelOfMatrix(Matrix && matrix, Policies &&... policies)
 {
     using Plain = internal::PlainResult<std::remove_cvref_t<Matrix>>;
     using Set = internal::PolicySet<std::remove_cvref_t<Policies>...>;
@@ -962,6 +977,8 @@ processModel(Matrix && matrix, Policies &&... policies)
         std::forward<Policies>(policies)...
     };
 }
+
+}  // namespace internal
 
 namespace internal
 {

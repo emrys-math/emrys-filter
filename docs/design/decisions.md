@@ -1342,7 +1342,7 @@ the instance has, as an `EachRepetition`, so a Gaussian factor gives the block $
 `onEach` takes its own block's count, so the factors follow a space with several resizable blocks. A
 path may name the whole space, and `onEach<>(f)`, with none, covers every repetition of a space that
 has no tag, such as a measurement model's inferred output space. `on()` and `onEach()` belong to the
-tag paths, and place a matrix too, in a linear model's `Columns` [linear-sensors], and a model's
+tag paths, and place a matrix too, in a linear model's `affineIn()` [linear-sensors], and a model's
 noise in `additiveNoise()` and `continuousNoise()`, which take the placed parts themselves rather than
 a `Factors` [model-policies].
 
@@ -1705,29 +1705,29 @@ hand-written model contract, or a block per parameter of `h` in order, a second 
 
 ### linear-sensors
 
-*A linear measurement is a model given its matrix, or its matrix's columns by block, which reads
-blocks whose values add.*
+*A linear measurement is a model without a function, its matrix's columns by block in
+`affineIn()`, which reads blocks whose values add.*
 
-**Rule.** `measurementModel(H, reads(paths...), [outputSpace(space),] noise)` is the model of
-$z = H x \boxplus v$, $x$ the blocks read in the order named.
-`measurementModel(Columns{onEach<B>(H_B), on<A>(H_A)}, ...)` gives $H$ a matrix per block, placed
-by path [product-factors], with no `reads()`. An `onEach` block repeats the measurement
-($I \otimes H_B$) and an `on` block is read into every repetition; the space is then computed at
-each update [measurement-space-functions].
-The function returns $H x$ with $H$ as its Jacobian [returned-jacobians], so every method, form,
+**Rule.** `measurementModel(affineIn(onEach<B>(H_B), on<A>(H_A), [offset(...)]), [outputSpace(space),]
+noise)` is the model of $z = H x \boxplus v$, $H$ a matrix per block, placed by path
+[product-factors], and the blocks it names read, with no `reads()`; `offset()` adds $c$
+[affine-coordinates], and `affineIn(H)` of one matrix is the whole state's [whole-state-models]. An
+`onEach` block repeats the measurement ($I \otimes H_B$) and an `on` block is read into every
+repetition; the space is then computed at each update [measurement-space-functions].
+The map returns $H x$ with $H$ as its Jacobian [returned-jacobians], so every method, form,
 and covariance update takes it exactly. Blocks read and the output space have no `plus()` of their
-own. A block of `Columns` may be placed on selected repetitions, `onEach(path<Landmarks>[seen], h)`
-[placed-selected-values]. The model without a function, `measurementModel(affineIn(on<A>(H_A),
-onEach<B>(H_B)), ...)`, is the same model, and with `offset(...)` adds $c$ [affine-coordinates].
+own. A block may be placed on selected repetitions, `onEach(path<Landmarks>[seen], h)`
+[placed-selected-values].
 
 **Why.** A position fix was a lambda returning its argument, which reads as an approximation and
 differentiates a matrix; a linear measurement is its $H$. Each landmark's position relative to the
 vehicle is linear, but no one matrix fits every count of landmarks.
 
 **Rejected.** A method such as `Exact{}` asserting the function is affine: nothing can check it. A
-default method for every model, which would hide an approximation; only a model given its matrix
+default method for every model, which would hide an approximation; only a model without a function
 defaults, to `Linearized`. A separate `linearModel()`, where the matrix already says it is linear.
-One container for `Factors` and `Columns`: a product's paths name rows and columns of one space, a
+`measurementModel(H, reads(...))` and `Columns{...}`, the forms before 17zt: two spellings of
+`affineIn()` alone. One container for `Factors` and the columns: a product's paths name rows and columns of one space, a
 model's only the state's columns of $H$. $H$ on a quaternion's tangent space, where no function of
 the value has a constant Jacobian.
 
@@ -1979,8 +1979,8 @@ with one tag per repetition, and writes that do not partition assert.
 that is repeated, and `on(path<Landmarks>[repetitions], x)` on several as one block, a repeated block
 of their count; `onEach(path<Landmarks>[repetitions], x)` places a value given for one repetition on
 each repetition of a sequence or a list. They stand where `on<Path>(x)` and `onEach<Path>(x)` do
-[product-factors], [linear-sensors]: a factor of `Factors` or `Product`, a block of `Columns`, a part
-of `additiveNoise()`, and, `on()` alone, a part of `continuousNoise()`. `Columns` read what each
+[product-factors], [linear-sensors]: a factor of `Factors` or `Product`, a block of a model's `affineIn()`, a part
+of `additiveNoise()`, and, `on()` alone, a part of `continuousNoise()`. The blocks of `affineIn()` read what each
 block's path value names, so an `onEach()` of a list measures the repetitions listed in its order,
 and the measurement space it infers has the list's count. `consider()` takes a selected path
 [consider-states], each repetition considered one run of rows, and `given<Path>(space, value,
@@ -2072,8 +2072,9 @@ placed nor composed.*
 state's space and its input vector the whole state, and a process model's output space is the
 state's too. A process model gives both policies or neither. Its noise is over the whole state,
 `continuousNoise(Qc)` of a matrix or `additiveNoise()` of a covariance or a Gaussian;
-`processModel(affineIn(F), noise)` and `processModel(F, noise)` are the matrix model, whose function returns $F x$ with $F$ as its
-Jacobian, so that every method predicts it exactly, as `measurementModel(H, noise)` updates exactly [linear-sensors]. Such a model
+`processModel(affineIn(F), noise)` is the matrix model, whose map returns $F x$ with $F$ as its
+Jacobian, so that every method predicts it exactly, as `measurementModel(affineIn(H), noise)` updates exactly [linear-sensors];
+its $F$ is of one step, so only `fixedStep()` takes it [fixed-step-models]. Such a model
 takes no inputs of the call and no `affineIn()`, and `on()`, `onEach()`, and `compose()` refuse it at
 compile time. A batched function of one writes its Jacobian whole, `Y.jacobian(j)` or `Y.jacobian()`.
 

@@ -111,8 +111,7 @@ makeFix(Eigen::Vector2d const & z)
     return observe(
         methods::linearized(),
         Emrys::measurementModel(
-            Eigen::Matrix2d::Identity(),
-            Emrys::reads(Emrys::path<Position>),
+            Emrys::affineIn(Emrys::on<Position>(Eigen::Matrix2d::Identity())),
             additiveNoise(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), R})
         ),
         z
@@ -837,8 +836,7 @@ makeVelocityFix(Eigen::Vector2d const & z)
     return observe(
         methods::linearized(),
         Emrys::measurementModel(
-            Eigen::Matrix2d::Identity(),
-            Emrys::reads(Emrys::path<Velocity>),
+            Emrys::affineIn(Emrys::on<Velocity>(Eigen::Matrix2d::Identity())),
             additiveNoise(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), 0.01 * Eigen::Matrix2d::Identity()})
         ),
         z
@@ -1133,8 +1131,7 @@ makeExactFix(Eigen::Vector2d const & z)
     return observe(
         methods::linearized(),
         Emrys::measurementModel(
-            Eigen::Matrix2d::Identity(),
-            Emrys::reads(Emrys::path<Position>),
+            Emrys::affineIn(Emrys::on<Position>(Eigen::Matrix2d::Identity())),
             additiveNoise(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), 1e-12 * Eigen::Matrix2d::Identity()})
         ),
         z

@@ -721,7 +721,11 @@ Decided (2026-11-23), not built:
   to the matrix forms, constant items without an offset to `Columns`, and an offset, or a process
   model, to `ConstantAffineFunction<NoAffineFunction, ...>`, which returns $c \boxplus H x$ with $H$
   as its Jacobian and is an `isLinearFunction`. `transform(method, affineIn(...), ...)` makes the
-  model. Stage 4 must keep those internals while it removes the public matrix forms and `Columns`.
+  model.
+- Built as stage 4 (2026-11-24): `measurementModel(H, ...)`, `measurementModel(Columns, ...)`, and
+  `processModel(F, ...)` are `internal::measurementModelOfMatrix()`, `measurementModelOfColumns()`,
+  and `processModelOfMatrix()`, and `Columns` is internal; `LinearStep` holds one step. Every test,
+  example, document, and skill writes `affineIn()`; the benchmarks wrote no matrix form.
 
 The Jacobian a function writes, decided (2026-11-23), not built:
 
@@ -766,12 +770,6 @@ The Jacobian a function writes, decided (2026-11-23), not built:
 In order, each a commit that passes the `land` checks, with its decisions, `usage.md`, and
 `CHANGELOG.md` in it.
 
-4. **The matrix forms go.** `measurementModel(H, reads(...), ...)`, `Columns`, and
-   `processModel(F, noise)`, with `LinearStep` and what only they use; every test, example,
-   benchmark, document, and skill that writes one moves to stage 3's form, and `CHANGELOG.md` says
-   what to write instead of each. `tests/Models/linear_measurement.cpp` and
-   `whole_state_models.cpp` keep their cases in the new spelling, so the exact update and the
-   cached $F$ are shown to survive. [linear-sensors], [whole-state-models], [transform-policies].
 5. **Free functions on the batched output.** `values(Y)`, `wantsJacobian<Name>(Y)`,
    `jacobian<Name>(Y, j)`, and `jacobian<Name>(Y)` replace `BatchedOutput`'s members.
 6. **A function at a point writes its output.** The form with `y` last and its mark; every call

@@ -202,7 +202,7 @@ simulate(Space_ const & space, Eigen::MatrixBase<Derived> const & x, Step const 
  * after the inputs; without one it fails to compile.
  *
  * \code
- * auto const gps = measurementModel(Eigen::Matrix2d::Identity(), reads(path<Position>), additiveNoise(noise));
+ * auto const gps = measurementModel(affineIn(on<Position>(Eigen::Matrix2d::Identity())), additiveNoise(noise));
  * filter.update(observe(methods::linearized(), gps, simulate(space, truth, gps, rng)));
  * \endcode
  *

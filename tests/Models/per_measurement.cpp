@@ -19,12 +19,14 @@
 #include <functional>
 
 using Emrys::additiveNoise;
+using Emrys::affineIn;
 using Emrys::block;
 using Emrys::Composite;
 using Emrys::GaussianParams;
 using Emrys::Linear;
 using Emrys::measurementModel;
 using Emrys::observe;
+using Emrys::on;
 using Emrys::outputSpace;
 using Emrys::path;
 using Emrys::reads;
@@ -274,8 +276,7 @@ TEST(PerMeasurement, LinearModelWithFixedAndRepeatedPartsIsTheHandUpdate)
         }
         Eigen::MatrixXd const r = dense(n, 2.0);
         auto const survey = measurementModel(
-            h,
-            reads(path<Position>, path<Landmarks>),
+            affineIn(on<Position>(h.leftCols(2)), on<Landmarks>(h.rightCols(n - 2))),
             outputSpace(Survey{Fix{}, Offsets{Offset{}, count}}),
             additiveNoise(GaussianParams<Linear<Eigen::Dynamic, 18>>{Eigen::VectorXd::Zero(n), r})
         );

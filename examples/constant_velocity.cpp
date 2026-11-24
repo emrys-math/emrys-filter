@@ -42,8 +42,7 @@ main()
     // with no method to name.
     double const fixVariance = 1.0;
     auto const gps = Emrys::measurementModel(
-        Emrys::DifferenceMatrix<Position>::Identity(),
-        Emrys::reads(Emrys::path<Position>),
+        Emrys::affineIn(Emrys::on<Position>(Emrys::DifferenceMatrix<Position>::Identity())),
         Emrys::additiveNoise(fixVariance * Emrys::DifferenceMatrix<Position>::Identity())
     );
 

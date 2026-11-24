@@ -637,8 +637,9 @@ struct OnPathParts<OnPath<X, Path, Selection>>
 {
     using Value = X;        ///< the value placed
     using PathType = Path;  ///< the path it is placed on, a tag or a TagPath
-    /// whether it is <tt>on<Name>(H)</tt> of one block and no selection, which a model with a function takes
-    static constexpr bool Plain = std::is_same_v<Selection, NoSelection>;
+    /// whether it is <tt>on<Name>(H)</tt> of one tag and no selection, which a model with a function takes
+    static constexpr bool Plain =
+        std::is_same_v<Selection, NoSelection> && std::is_same_v<AsTagPath<Path>, TagPath<PathTag<Path>>>;
 };
 
 /** An OnEach. */
@@ -742,11 +743,6 @@ namedByOneTag()
     if constexpr (PathValue<Item>)
     {
         return std::is_same_v<PathOf<Item>, TagPath<PathTag<PathOf<Item>>>>;
-    }
-    else if constexpr (isConstantItem<Item>)
-    {
-        using Path = typename OnPathParts<Item>::PathType;
-        return std::is_same_v<AsTagPath<Path>, TagPath<PathTag<Path>>>;
     }
     else
     {

@@ -32,11 +32,11 @@
  * function <tt>f(in, out, x[, dt])</tt>, <tt>f(in, x[, dt])</tt>, or <tt>f(x[, dt])</tt> over Eigen
  * vectors, and policies given as calls in any order. A model without reads() and writes() reads and
  * writes the whole state (decisions.md [whole-state-models]), so the textbook Kalman filter on
- * <tt>Linear<4></tt> is <tt>processModel(F, additiveNoise(q))</tt> and
- * <tt>measurementModel(H, additiveNoise(r))</tt>. A process model is processModel(), a built-in model, or compose() of
- * process models; a measurement model is measurementModel(). The built-in process models, RandomWalk, Constant,
- * ConstantVelocity and ConstantAcceleration (Kinematic), OrnsteinUhlenbeck, and Zero, take their tags
- * as template arguments and the scalar of their parameters last, \c double by default:
+ * <tt>Linear<4></tt> is <tt>fixedStep(processModel(affineIn(F), additiveNoise(q)), dt)</tt> and
+ * <tt>measurementModel(affineIn(H), additiveNoise(r))</tt>. A process model is processModel(), a built-in model, or
+ * compose() of process models; a measurement model is measurementModel(). The built-in process models, RandomWalk,
+ * Constant, ConstantVelocity and ConstantAcceleration (Kinematic), OrnsteinUhlenbeck, and Zero, take their tags as
+ * template arguments and the scalar of their parameters last, \c double by default:
  *
  * \code
  * struct Position : Linear<2> {};

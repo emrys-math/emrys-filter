@@ -75,8 +75,11 @@ Follow "The pieces of an estimator" in usage.md, in this order:
 3. One measurement model for each kind of measurement: `measurementModel(h, reads(path<Block>...),
    additiveNoise(noise))`, whose function `h(in, out, x)`, `h(in, x)`, or `h(x)` reads each block it
    names with `block<Tag>(in, x)`. A model without `reads()` reads the whole state, which suits a
-   plain `Linear<N>` state with nothing to name. A linear one gives its matrix in place of `h`, or its `Columns`, a matrix
-   per block, with `onEach<>()` for a repeated block such as landmarks. A model that reads one
+   plain `Linear<N>` state with nothing to name. A linear one has no function: `affineIn()` of a matrix
+   per block, `measurementModel(affineIn(on<Position>(H)), additiveNoise(noise))`, with `onEach<>()`
+   for a repeated block such as landmarks, `offset()` for a constant term, and `affineIn(H)` of one
+   matrix for the whole state. A process model's matrix is `fixedStep(processModel(affineIn(F),
+   noise), dt)`, since its `F` is of one step. A model that reads one
    landmark of many names it `reads(..., path<Landmarks>[k])`, built for each sighting, so a
    sigma-point method spreads over that landmark alone (examples/landmarks.cpp). A function for
    `Linearized` is generic in its scalar (see "Conventions"). A measurement of an angle names

@@ -18,6 +18,7 @@
 #include <array>
 
 using Emrys::additiveNoise;
+using Emrys::affineIn;
 using Emrys::block;
 using Emrys::compose;
 using Emrys::Composite;
@@ -30,6 +31,7 @@ using Emrys::KalmanFilter;
 using Emrys::Linear;
 using Emrys::measurementModel;
 using Emrys::observe;
+using Emrys::on;
 using Emrys::path;
 using Emrys::PosteriorCramerRaoBound;
 using Emrys::reads;
@@ -71,8 +73,7 @@ auto
 makeFixModel()
 {
     return measurementModel(
-        Eigen::Matrix2d::Identity(),
-        reads(path<Position>),
+        affineIn(on<Position>(Eigen::Matrix2d::Identity())),
         additiveNoise(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), fixNoise})
     );
 }
@@ -376,8 +377,7 @@ TEST(PosteriorCramerRaoBound, RefusesASingularNoiseOrPrior)
     EXPECT_EQ(bound.info(), before);
 
     auto const exact = measurementModel(
-        Eigen::Matrix2d::Identity(),
-        reads(path<Position>),
+        affineIn(on<Position>(Eigen::Matrix2d::Identity())),
         additiveNoise(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), Eigen::Matrix2d::Zero()})
     );
     EXPECT_EQ(bound.update(truth, exact).error(), GaussianError::NotPositiveDefinite);

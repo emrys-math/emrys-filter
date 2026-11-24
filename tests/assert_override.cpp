@@ -155,8 +155,7 @@ auto
 positionFix()
 {
     auto const model = Emrys::measurementModel(
-        Eigen::Matrix<double, 1, 1>{1.0},
-        Emrys::reads(Emrys::path<Position>),
+        Emrys::affineIn(Emrys::on<Position>(Eigen::Matrix<double, 1, 1>{1.0})),
         Emrys::additiveNoise(
             Emrys::GaussianParams<Emrys::Linear<1>>{Eigen::Matrix<double, 1, 1>{0.0}, Eigen::Matrix<double, 1, 1>{1.0}}
         )
@@ -185,8 +184,7 @@ TEST(AssertOverride, MixtureFilterReturnsTheErrorOfWeightsThatCannotBeNormalized
     noise.add(std::log(0.9), Vector1{0.0}, Vector1{1.0});
     noise.add(std::log(0.1), Vector1{0.0}, Vector1{100.0});
     auto const robust = Emrys::measurementModel(
-        Vector1{1.0},
-        Emrys::reads(Emrys::path<Position>),
+        Emrys::affineIn(Emrys::on<Position>(Vector1{1.0})),
         Emrys::additiveNoise(std::move(noise))
     );
     auto const kept =

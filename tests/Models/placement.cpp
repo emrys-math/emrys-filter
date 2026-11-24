@@ -15,6 +15,7 @@
 #include <EmrysFilter/Spaces.h>
 
 using Emrys::additiveNoise;
+using Emrys::affineIn;
 using Emrys::block;
 using Emrys::compose;
 using Emrys::Composite;
@@ -374,8 +375,7 @@ TEST(Placement, ComposedMeasurementsMatchOneModel)
 TEST(Placement, APlacedMeasurementModelReadsUnderThePrefix)
 {
     auto const gps = measurementModel(
-        Eigen::Matrix2d::Identity(),
-        reads(path<Position>),
+        affineIn(on<Position>(Eigen::Matrix2d::Identity())),
         additiveNoise(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), 0.1 * Eigen::Matrix2d::Identity()})
     );
     auto const prior = GaussianParams<Pair>{Pair{}, statePoint(12), stateCovariance(12)};
@@ -386,8 +386,7 @@ TEST(Placement, APlacedMeasurementModelReadsUnderThePrefix)
         observe(
             methods::linearized(),
             measurementModel(
-                Eigen::Matrix2d::Identity(),
-                reads(path<Target, Position>),
+                affineIn(on<Emrys::TagPath<Target, Position>>(Eigen::Matrix2d::Identity())),
                 additiveNoise(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), 0.1 * Eigen::Matrix2d::Identity()})
             ),
             z

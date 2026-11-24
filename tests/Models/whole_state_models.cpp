@@ -448,22 +448,21 @@ TEST(WholeStateModels, PositionFixOnLinearMatchesTheTaggedFix)
 {
     auto const z = Eigen::Vector2d{3.4, 1.7};
     auto const tagged =
-        Emrys::measurementModel(Eigen::Matrix2d::Identity(), Emrys::reads(Emrys::path<Position>), fixNoise());
+        Emrys::measurementModel(Emrys::affineIn(Emrys::on<Position>(Eigen::Matrix2d::Identity())), fixNoise());
     auto const byFunction = Emrys::measurementModel(
         [](auto const & x) {
             return x.template head<2>().eval();
         },
         fixNoise()
     );
-    auto const byMatrix = Emrys::measurementModel(fixMatrix(), fixNoise());
-    auto const zeroMean = Emrys::measurementModel(fixMatrix(), Emrys::additiveNoise(fixCovariance()));
+    auto const byMatrix = Emrys::measurementModel(Emrys::affineIn(fixMatrix()), fixNoise());
+    auto const zeroMean = Emrys::measurementModel(Emrys::affineIn(fixMatrix()), Emrys::additiveNoise(fixCovariance()));
     auto const taggedZeroMean = Emrys::measurementModel(
-        Eigen::Matrix2d::Identity(),
-        Emrys::reads(Emrys::path<Position>),
+        Emrys::affineIn(Emrys::on<Position>(Eigen::Matrix2d::Identity())),
         Emrys::additiveNoise(fixCovariance())
     );
     auto const intoFix = Emrys::measurementModel(
-        fixMatrix(),
+        Emrys::affineIn(fixMatrix()),
         Emrys::additiveNoise(GaussianParams<Fix>{Eigen::Vector2d::Zero(), fixCovariance()})
     );
     auto const check = [&](auto const & method) {
@@ -508,8 +507,8 @@ TEST(WholeStateModels, MatrixModelsAreTheTextbookKalmanFilter)
 {
     Eigen::Matrix4d const f = transitionMatrix();
     Eigen::Matrix4d const q = timeStep * spectralDensity() + 0.01 * Eigen::Matrix4d::Identity();
-    auto const model = Emrys::processModel(f, Emrys::additiveNoise(q));
-    auto const fix = Emrys::measurementModel(fixMatrix(), Emrys::additiveNoise(fixCovariance()));
+    auto const model = Emrys::processModel(Emrys::affineIn(f), Emrys::additiveNoise(q));
+    auto const fix = Emrys::measurementModel(Emrys::affineIn(fixMatrix()), Emrys::additiveNoise(fixCovariance()));
     auto const z = Eigen::Vector2d{3.4, 1.7};
 
     Eigen::Vector4d const predictedMean = f * priorMean();
@@ -547,7 +546,7 @@ TEST(WholeStateModels, MatrixModelsAreTheTextbookKalmanFilter)
 }
 
 // A whole-state batched process model writes the whole Jacobian, Y.jacobian() under
-// jacobians::shared(), and predicts as the matrix model does.
+// jacobians::shared(), and predicts as the matrix model does over its step, which only fixedStep() takes.
 TEST(WholeStateModels, BatchedWholeStateModelWritesTheWholeJacobian)
 {
     Eigen::Matrix4d const f = transitionMatrix();
@@ -566,11 +565,11 @@ TEST(WholeStateModels, BatchedWholeStateModelWritesTheWholeJacobian)
         ),
         noise
     );
-    auto const matrix = Emrys::processModel(f, noise);
+    auto const matrix = Emrys::processModel(Emrys::affineIn(f), noise);
     auto const check = [&](auto const & method) {
         expectSame(
             Emrys::predict(method, prior<PlainState>(), batched, timeStep),
-            Emrys::predict(method, prior<PlainState>(), matrix, timeStep)
+            Emrys::predict(prior<PlainState>(), Emrys::fixedStep(matrix, timeStep, method))
         );
     };
     check(methods::linearized());

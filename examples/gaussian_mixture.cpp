@@ -107,8 +107,7 @@ main()
     noise.add(std::log(0.8), Emrys::ValueVector<Position>::Zero(), inlierVariance * identity);
     noise.add(std::log(0.2), Emrys::ValueVector<Position>::Zero(), outlierVariance * identity);
     auto const gps = Emrys::measurementModel(
-        Emrys::DifferenceMatrix<Position>::Identity(),
-        Emrys::reads(Emrys::path<Position>),
+        Emrys::affineIn(Emrys::on<Position>(Emrys::DifferenceMatrix<Position>::Identity())),
         Emrys::additiveNoise(noise)
     );
 

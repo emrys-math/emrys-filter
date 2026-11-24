@@ -162,8 +162,8 @@ The textbook filter of a position and velocity in the plane is
 ```cpp
 using State = Emrys::Linear<4>;  // x, y, and their rates
 auto const motion =
-    Emrys::fixedStep(Emrys::processModel(F, Emrys::additiveNoise(Q)), dt);
-auto const fix = Emrys::measurementModel(H, Emrys::additiveNoise(R));
+    Emrys::fixedStep(Emrys::processModel(Emrys::affineIn(F), Emrys::additiveNoise(Q)), dt);
+auto const fix = Emrys::measurementModel(Emrys::affineIn(H), Emrys::additiveNoise(R));
 auto const prior = Emrys::GaussianParams<State>{mean, cov};
 auto filter = Emrys::KalmanFilter{motion, prior};
 filter.predict();
@@ -239,8 +239,8 @@ measurement, so the measurement grows and shrinks with the block:
 ```cpp
 // each landmark's position relative to the vehicle's, z_i = l_i - p
 auto const relative = Emrys::measurementModel(
-    Emrys::Columns{Emrys::onEach<Landmarks>(Eigen::Matrix2d::Identity()),
-                   Emrys::on<Position>(-Eigen::Matrix2d::Identity())},
+    Emrys::affineIn(Emrys::onEach<Landmarks>(Eigen::Matrix2d::Identity()),
+                   Emrys::on<Position>(-Eigen::Matrix2d::Identity())),
     Emrys::additiveNoise(Emrys::onEach<>(offsetNoise)));
 ```
 
@@ -328,12 +328,12 @@ writes a selection as it reads one, `writes(path<Fleet>[k])`, so a part that mov
 stands beside one that carries the rest, `writes(path<Fleet>[others])`. A model written for one
 vehicle is placed on vehicle `k` by the same path value, `on(path<Fleet>[k], steered)`, and on each
 of the others by `onEach(path<Fleet>[others], cruising)`. Values are placed the same way: a sensor
-that reads the landmarks seen, in their order, is `Columns{onEach(path<Landmarks>[seen], h),
-on<Position>(-h)}`, and a prior with its own factor for one landmark is `Factors{...,
+that reads the landmarks seen, in their order, is `affineIn(onEach(path<Landmarks>[seen], h),
+on<Position>(-h))`, and a prior with its own factor for one landmark is `Factors{...,
 on(path<Landmarks>[k], factor), onEach(path<Landmarks>[others], prior)}`.
 
 A model built once covers a measurement that follows the state's counts:
-`outputSpace(CountFrom<Landmarks, RangeBearings>{})` sizes it, a matrix's `Columns` repeat with a
+`outputSpace(CountFrom<Landmarks, RangeBearings>{})` sizes it, a matrix's `affineIn()` repeats with a
 block, and noise placed with `onEach<>()` is placed for each count. What it can't say, it says when
 built per measurement, sized and with noise computed from that measurement's own data. A
 round-trip range from a pivot with the time differences at the receivers that heard the dwell has

@@ -52,7 +52,7 @@ auto fix(Eigen::Vector2d const & z)
 {
     auto const noise = GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), Eigen::Matrix2d::Identity()};
     return observe(methods::linearized(),
-                   measurementModel(Eigen::Matrix2d::Identity(), reads(path<Position>), additiveNoise(noise)), z);
+                   measurementModel(affineIn(on<Position>(Eigen::Matrix2d::Identity())), additiveNoise(noise)), z);
 }
 ```
 

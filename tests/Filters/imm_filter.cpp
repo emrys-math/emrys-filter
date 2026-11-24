@@ -176,7 +176,7 @@ observeFix(Eigen::Vector2d const & z, NoisePolicy noise)
 {
     return observe(
         Emrys::methods::linearized(),
-        Emrys::measurementModel(Eigen::Matrix2d::Identity(), Emrys::reads(Emrys::path<Position>), std::move(noise)),
+        Emrys::measurementModel(Emrys::affineIn(Emrys::on<Position>(Eigen::Matrix2d::Identity())), std::move(noise)),
         z
     );
 }
@@ -876,8 +876,7 @@ TEST(ImmFilter, ChoosesTheMeasurementByOneAxisAndItsNoiseByAnother)
     Eigen::Vector2d const bias{3.0, -1.0};
     constexpr double outlier = 9.0;
     auto const position = Emrys::measurementModel(
-        Eigen::Matrix2d::Identity(),
-        Emrys::reads(Emrys::path<Position>),
+        Emrys::affineIn(Emrys::on<Position>(Eigen::Matrix2d::Identity())),
         sensorNoise(1.0, outlier)
     );
     auto const biased = makeBiasedFixWith(Eigen::Vector2d::Zero(), bias, sensorNoise(4.0, outlier)).model();

@@ -32,7 +32,6 @@
 using Emrys::additiveNoise;
 using Emrys::affineIn;
 using Emrys::block;
-using Emrys::Columns;
 using Emrys::Composite;
 using Emrys::GaussianMixtureParams;
 using Emrys::GaussianParams;
@@ -100,7 +99,10 @@ template <typename Noise>
 auto
 makeLinear(Noise noise)
 {
-    return measurementModel(h, reads(path<Velocity>, path<Position>), additiveNoise(std::move(noise)));
+    return measurementModel(
+        affineIn(on<Velocity>(h.leftCols<2>()), on<Position>(h.rightCols<2>())),
+        additiveNoise(std::move(noise))
+    );
 }
 
 template <typename Noise>
@@ -131,7 +133,7 @@ expectSamePosterior(A const & a, B const & b)
 
 }  // namespace
 
-// The model's function is H x with its Jacobian H, the model's matrix itself, so no differentiation
+// The model's function is H x with its Jacobian H, its columns placed by block, so no differentiation
 // happens whatever method the call names.
 TEST(LinearMeasurement, ReturnsItsMatrixAsTheJacobian)
 {
@@ -142,7 +144,6 @@ TEST(LinearMeasurement, ReturnsItsMatrixAsTheJacobian)
     auto const returned = linear.function()(in, Linear<3>{}, x);
     EXPECT_TRUE(returned.value.isApprox(h * x, 1e-15));
     EXPECT_EQ(returned.jacobian, h);
-    EXPECT_EQ(returned.jacobian.data(), linear.function().matrix().data());
 }
 
 // Reading the velocity and then the position, the update is the hand Kalman update with H placed
@@ -243,7 +244,7 @@ TEST(LinearMeasurement, WrapsAPeriodicResidual)
     };
     auto const noise = GaussianParams<Linear<1>>{Vector1{0.0}, Vector1{0.01}};
     auto const compass =
-        measurementModel(Vector1{1.0}, reads(path<Heading>), outputSpace(RadiansPi<1>{}), additiveNoise(noise));
+        measurementModel(affineIn(on<Heading>(Vector1{1.0})), outputSpace(RadiansPi<1>{}), additiveNoise(noise));
     auto const function = measurementModel(
         [](auto const & in, auto const &, auto const & x) {
             return block<Heading>(in, x);
@@ -253,7 +254,7 @@ TEST(LinearMeasurement, WrapsAPeriodicResidual)
         additiveNoise(noise)
     );
     auto const columns =
-        measurementModel(Columns{on<Heading>(Vector1{1.0})}, outputSpace(RadiansPi<1>{}), additiveNoise(noise));
+        measurementModel(affineIn(on<Heading>(Vector1{1.0})), outputSpace(RadiansPi<1>{}), additiveNoise(noise));
     using Resolved =
         decltype(Emrys::internal::resolveMeasurement(observe(methods::linearized(), columns, Vector1{}), Pose{}));
     static_assert(std::is_same_v<typename Resolved::Out, RadiansPi<1>>);
@@ -337,7 +338,7 @@ auto
 makeRelative()
 {
     return measurementModel(
-        Columns{onEach<Landmarks>(Eigen::Matrix2d::Identity()), on<Position>(-Eigen::Matrix2d::Identity())},
+        affineIn(onEach<Landmarks>(Eigen::Matrix2d::Identity()), on<Position>(-Eigen::Matrix2d::Identity())),
         additiveNoise(onEach<>(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), offsetNoise}))
     );
 }
@@ -380,7 +381,7 @@ makeRelativeFunction()
 TEST(LinearMeasurement, ColumnsWithoutRepetitionAreTheMatrix)
 {
     auto const columns = measurementModel(
-        Columns{on<Velocity>(h.leftCols<2>()), on<Position>(h.rightCols<2>())},
+        affineIn(on<Velocity>(h.leftCols<2>()), on<Position>(h.rightCols<2>())),
         additiveNoise(makeNoise())
     );
     auto const in = Composite<Velocity, Position>{};
@@ -405,7 +406,7 @@ TEST(LinearMeasurement, NeedsNoMethod)
 {
     auto const linear = makeLinear(makeNoise());
     auto const columns = measurementModel(
-        Columns{on<Velocity>(h.leftCols<2>()), on<Position>(h.rightCols<2>())},
+        affineIn(on<Velocity>(h.leftCols<2>()), on<Position>(h.rightCols<2>())),
         additiveNoise(makeNoise())
     );
     static_assert(std::is_same_v<decltype(observe(linear, reading))::MethodType, methods::Linearized>);
@@ -468,7 +469,10 @@ auto
 makeRelativeTo(Seen const & seen)
 {
     return measurementModel(
-        Columns{onEach(path<Landmarks>[seen], Eigen::Matrix2d::Identity()), on<Position>(-Eigen::Matrix2d::Identity())},
+        affineIn(
+            onEach(path<Landmarks>[seen], Eigen::Matrix2d::Identity()),
+            on<Position>(-Eigen::Matrix2d::Identity())
+        ),
         additiveNoise(onEach<>(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), offsetNoise}))
     );
 }
@@ -555,7 +559,7 @@ TEST(LinearMeasurement, RepeatsOverTheRepetitionsSelected)
 TEST(LinearMeasurement, ColumnsOnOneRepetitionReadIt)
 {
     auto const relative = measurementModel(
-        Columns{on(path<Landmarks>[2], Eigen::Matrix2d::Identity()), on<Position>(-Eigen::Matrix2d::Identity())},
+        affineIn(on(path<Landmarks>[2], Eigen::Matrix2d::Identity()), on<Position>(-Eigen::Matrix2d::Identity())),
         additiveNoise(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), offsetNoise})
     );
     auto const [full, r] = handRelativeTo(3, {2});
@@ -657,7 +661,7 @@ struct Bearings : Emrys::Repeated<Bearing, 4>
 TEST(LinearMeasurement, RepeatsIntoAPeriodicSpace)
 {
     auto const compasses = measurementModel(
-        Columns{onEach<Courses>(Vector1{1.0})},
+        affineIn(onEach<Courses>(Vector1{1.0})),
         outputSpace(Emrys::CountFrom<Courses, Bearings>{}),
         additiveNoise(onEach<Bearings>(GaussianParams<Bearing>{Vector1{0.0}, Vector1{0.01}}))
     );

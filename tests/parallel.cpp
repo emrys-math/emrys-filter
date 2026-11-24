@@ -92,8 +92,7 @@ makeFix(Eigen::Vector2d const & z)
     return observe(
         methods::linearized(),
         Emrys::measurementModel(
-            Eigen::Matrix2d::Identity(),
-            Emrys::reads(Emrys::path<Position>),
+            Emrys::affineIn(Emrys::on<Position>(Eigen::Matrix2d::Identity())),
             additiveNoise(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), Eigen::Matrix2d{{1.0, 0.2}, {0.2, 0.8}}})
         ),
         z
@@ -111,8 +110,7 @@ makeMixtureFix(Eigen::Vector2d const & z)
     return observe(
         Emrys::methods::linearized(),
         Emrys::measurementModel(
-            Eigen::Matrix2d::Identity(),
-            Emrys::reads(Emrys::path<Position>),
+            Emrys::affineIn(Emrys::on<Position>(Eigen::Matrix2d::Identity())),
             additiveNoise(std::move(noise))
         ),
         z

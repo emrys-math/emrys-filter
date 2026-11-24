@@ -757,7 +757,7 @@ updatedBy(Model const & model)
 
 #if defined(MATRIX_PROCESS_MODEL_WITH_READS)  // static_assert: ProcessModel.h: a matrix process model is over the whole
 [[maybe_unused]] auto const model = Emrys::processModel(
-    Eigen::Matrix2d{Eigen::Matrix2d::Identity()},
+    Emrys::affineIn(Eigen::Matrix2d{Eigen::Matrix2d::Identity()}),
     Emrys::reads(Emrys::path<Position>),
     Emrys::writes(Emrys::path<Position>)
 );
@@ -766,20 +766,19 @@ updatedBy(Model const & model)
 #if defined(MATRIX_PROCESS_MODEL_NOT_SQUARE)  // static_assert: ProcessModel.h: a matrix process model's matrix is
                                               // square
 [[maybe_unused]] auto const predicted = Emrys::predict(
-    Emrys::methods::linearized(),
     makeInitial(),
-    Emrys::processModel(Eigen::Matrix<double, 2, 4>{Eigen::Matrix<double, 2, 4>::Zero()}),
-    1.0
+    Emrys::fixedStep(
+        Emrys::processModel(Emrys::affineIn(Eigen::Matrix<double, 2, 4>{Eigen::Matrix<double, 2, 4>::Zero()})),
+        1.0
+    )
 );
 #endif
 
 #if defined(MATRIX_PROCESS_MODEL_OF_A_QUATERNION)  // static_assert: ProcessModel.h: a matrix process model moves a
                                                    // state
 [[maybe_unused]] auto const predicted = Emrys::predict(
-    Emrys::methods::linearized(),
     Emrys::GaussianParams<Attitude>{Eigen::Vector4d{1.0, 0.0, 0.0, 0.0}, Eigen::Matrix3d::Identity()},
-    Emrys::processModel(Eigen::Matrix4d{Eigen::Matrix4d::Identity()}),
-    1.0
+    Emrys::fixedStep(Emrys::processModel(Emrys::affineIn(Eigen::Matrix4d{Eigen::Matrix4d::Identity()})), 1.0)
 );
 #endif
 
@@ -968,8 +967,10 @@ updatedBy(Model const & model)
 #endif
 
 #if defined(FIXED_STEP_BOUND_TO_DYNAMIC_SPACE)  // static_assert: ProcessModel.h: binds to a fixed-size state space
-[[maybe_unused]] auto const model =
-    Emrys::processModel(Eigen::MatrixXd::Identity(4, 4), Emrys::additiveNoise(Eigen::MatrixXd::Identity(4, 4)));
+[[maybe_unused]] auto const model = Emrys::processModel(
+    Emrys::affineIn(Eigen::MatrixXd::Identity(4, 4)),
+    Emrys::additiveNoise(Eigen::MatrixXd::Identity(4, 4))
+);
 [[maybe_unused]] Emrys::FixedStepModel<Emrys::Linear<Eigen::Dynamic>, std::remove_cvref_t<decltype(model)>> const
     bound = Emrys::fixedStep(model, 1.0);
 #endif
@@ -1099,7 +1100,7 @@ squareRootOtherScalar()
     Emrys::observe(
         Emrys::methods::linearized(),
         Emrys::measurementModel(
-            Eigen::Matrix2d{Eigen::Matrix2d::Identity()},
+            positionOf,
             Emrys::reads(Emrys::path<Position>),
             Emrys::additiveNoise(Eigen::Matrix3d{Eigen::Matrix3d::Identity()})
         ),
@@ -1114,8 +1115,7 @@ squareRootOtherScalar()
     Emrys::observe(
         Emrys::methods::linearized(),
         Emrys::measurementModel(
-            Eigen::Matrix2d{Eigen::Matrix2d::Identity()},
-            Emrys::reads(Emrys::path<Position>),
+            Emrys::affineIn(Emrys::on<Position>(Eigen::Matrix2d{Eigen::Matrix2d::Identity()})),
             Emrys::additiveNoise(Emrys::onEach<>(Eigen::Matrix2d{Eigen::Matrix2d::Identity()}))
         ),
         Eigen::Vector2d::Zero()
@@ -1386,13 +1386,12 @@ squareRootRepair()
 #endif
 
 #if defined(LINEAR_MODEL_PLUS)  // static_assert: MeasurementModel.h: a linear measurement model reads blocks with no
-[[maybe_unused]] auto const updated = Emrys::update(
+[[maybe_unused]] auto const linearUpdate = Emrys::update(
     Emrys::GaussianParams<Attitude>{Attitude{}, Eigen::Vector4d{0.0, 0.0, 0.0, 1.0}, Eigen::Matrix3d::Identity()},
     Emrys::observe(
         Emrys::methods::linearized(),
         Emrys::measurementModel(
-            Eigen::Matrix<double, 2, 4>::Zero(),
-            Emrys::reads(Emrys::path<Attitude>),
+            Emrys::affineIn(Emrys::on<Attitude>(Eigen::Matrix<double, 2, 4>{Eigen::Matrix<double, 2, 4>::Zero()})),
             Emrys::additiveNoise(makeNoise())
         ),
         Eigen::Vector2d::Zero()
@@ -1401,13 +1400,12 @@ squareRootRepair()
 #endif
 
 #if defined(LINEAR_MODEL_COLUMNS)  // static_assert: MeasurementModel.h: a linear measurement model's matrix must have
-[[maybe_unused]] auto const updated = Emrys::update(
+[[maybe_unused]] auto const linearUpdate = Emrys::update(
     makeInitial(),
     Emrys::observe(
         Emrys::methods::linearized(),
         Emrys::measurementModel(
-            Eigen::Matrix<double, 2, 3>::Zero(),
-            Emrys::reads(Emrys::path<Position>, Emrys::path<Velocity>),
+            Emrys::affineIn(Eigen::Matrix<double, 2, 3>{Eigen::Matrix<double, 2, 3>::Zero()}),
             Emrys::additiveNoise(makeNoise())
         ),
         Eigen::Vector2d::Zero()
@@ -1463,8 +1461,7 @@ squareRootRepair()
 #if defined(MODEL_NOISE_SIZE_MATRIX)  // static_assert: MeasurementModel.h: a measurement model's additive noise has a
                                       // row for each difference coordinate of the output space
 [[maybe_unused]] auto const model = Emrys::measurementModel(
-    Eigen::Matrix2d::Identity(),
-    Emrys::reads(Emrys::path<Position>),
+    Emrys::affineIn(Emrys::on<Position>(Eigen::Matrix2d::Identity())),
     Emrys::additiveNoise(Emrys::GaussianParams<Emrys::Linear<3>>{Eigen::Vector3d::Zero(), Eigen::Matrix3d::Identity()})
 );
 #endif
@@ -1563,7 +1560,7 @@ makeMap()
 [[maybe_unused]] auto const ranges = Emrys::CountFrom<Landmarks, Emrys::Repeated<Emrys::Linear<1>, 2>>{}(Map{});
 #endif
 
-// Linear models by their columns.
+// Linear models by their columns in affineIn().
 
 // Updates makeMap() by a model with the columns placed, one measurement of makeNoise() per landmark.
 template <typename... Placed>
@@ -1571,30 +1568,19 @@ template <typename... Placed>
 updateByColumns(Placed... placed)
 {
     auto const relative =
-        Emrys::measurementModel(Emrys::Columns{placed...}, Emrys::additiveNoise(Emrys::onEach<>(makeNoise())));
+        Emrys::measurementModel(Emrys::affineIn(placed...), Emrys::additiveNoise(Emrys::onEach<>(makeNoise())));
     [[maybe_unused]] auto const updated =
         Emrys::update(makeMap(), Emrys::observe(Emrys::methods::linearized(), relative, Eigen::Vector2d::Zero()));
 }
 
-#if defined(COLUMNS_NONE)  // static_assert: MeasurementModel.h: a model's matrix needs at least one block of columns
-[[maybe_unused]] constexpr auto size = sizeof(Emrys::Columns<>);
-#endif
-
-#if defined(COLUMNS_NOT_PLACED)  // static_assert: MeasurementModel.h: each block of a model's columns is a matrix
-                                 // placed
-[[maybe_unused]] auto const columns = Emrys::Columns{Eigen::Matrix2d::Identity().eval()};
-#endif
-
-#if defined(COLUMNS_SAME_BLOCK)  // static_assert: MeasurementModel.h: a model's columns name each block of the state
-[[maybe_unused]] auto const columns =
-    Emrys::Columns{Emrys::on<Position>(Eigen::Matrix2d::Identity()), Emrys::on<Position>(Eigen::Matrix2d::Identity())};
-#endif
-
 #if defined(COLUMNS_ROWS)  // static_assert: MeasurementModel.h: every block of a model's columns has the rows of one
-[[maybe_unused]] auto const columns = Emrys::Columns{
-    Emrys::on<Position>(Eigen::Matrix2d::Identity()),
-    Emrys::on<Velocity>(Eigen::Matrix<double, 3, 2>::Zero())
-};
+[[maybe_unused]] auto const model = Emrys::measurementModel(
+    Emrys::affineIn(
+        Emrys::on<Position>(Eigen::Matrix2d::Identity()),
+        Emrys::on<Velocity>(Eigen::Matrix<double, 3, 2>{Eigen::Matrix<double, 3, 2>::Zero()})
+    ),
+    Emrys::additiveNoise(makeNoise())
+);
 #endif
 
 // The same, into the output space given.
@@ -1603,7 +1589,7 @@ template <typename Space, typename... Placed>
 updateByColumnsInto(Space const & space, Placed... placed)
 {
     auto const relative = Emrys::measurementModel(
-        Emrys::Columns{placed...},
+        Emrys::affineIn(placed...),
         Emrys::outputSpace(space),
         Emrys::additiveNoise(Emrys::onEach<>(makeNoise()))
     );
@@ -1631,15 +1617,14 @@ updateByColumnsInto(Space const & space, Placed... placed)
 
 #if defined(COLUMNS_DYNAMIC_ROWS)  // static_assert: MeasurementModel.h: a model whose columns repeat infers its
 [[maybe_unused]] auto const model = Emrys::measurementModel(
-    Emrys::Columns{Emrys::onEach<Landmarks>(Eigen::MatrixXd::Identity(2, 2))},
+    Emrys::affineIn(Emrys::onEach<Landmarks>(Eigen::MatrixXd::Identity(2, 2))),
     Emrys::additiveNoise(makeNoise())
 );
 #endif
 
-#if defined(COLUMNS_WITH_READS)  // static_assert: MeasurementModel.h: a model given Columns reads the blocks its
-                                 // columns
+#if defined(COLUMNS_WITH_READS)  // static_assert: MeasurementModel.h: reads the blocks its affineIn() names
 [[maybe_unused]] auto const model = Emrys::measurementModel(
-    Emrys::Columns{Emrys::on<Position>(Eigen::Matrix2d::Identity())},
+    Emrys::affineIn(Emrys::on<Position>(Eigen::Matrix2d::Identity())),
     Emrys::reads(Emrys::path<Position>),
     Emrys::additiveNoise(makeNoise())
 );
@@ -2134,7 +2119,7 @@ using FleetPosition = Emrys::TagPath<Fleet, Position>;
 
 #if defined(COMPOSE_MEASUREMENT_NO_WRITES)  // static_assert: Placement.h: compose() takes measurement models that
 [[maybe_unused]] auto const model = Emrys::compose(
-    Emrys::measurementModel(Eigen::Matrix2d::Identity(), Emrys::reads(Emrys::path<Position>)),
+    Emrys::measurementModel(Emrys::affineIn(Emrys::on<Position>(Eigen::Matrix2d::Identity()))),
     scalarOf<Range>()
 );
 #endif

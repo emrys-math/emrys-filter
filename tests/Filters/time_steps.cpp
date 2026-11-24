@@ -94,8 +94,7 @@ makeFix(Eigen::Matrix<Scalar, 2, 1> const & z)
     using Vector2 = Eigen::Matrix<Scalar, 2, 1>;
     using Matrix2 = Eigen::Matrix<Scalar, 2, 2>;
     auto const fix = Emrys::measurementModel(
-        Matrix2::Identity(),
-        Emrys::reads(Emrys::path<Position>),
+        Emrys::affineIn(Emrys::on<Position>(Matrix2::Identity())),
         additiveNoise(
             GaussianParams<Linear<2>, Scalar>{
                 Vector2::Zero(),

@@ -101,8 +101,7 @@ makeFix(Eigen::Vector2d const & z)
     return observe(
         Emrys::methods::linearized(),
         Emrys::measurementModel(
-            Eigen::Matrix2d::Identity(),
-            Emrys::reads(Emrys::path<Position>),
+            Emrys::affineIn(Emrys::on<Position>(Eigen::Matrix2d::Identity())),
             additiveNoise(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), R})
         ),
         z

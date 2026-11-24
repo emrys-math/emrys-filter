@@ -3,7 +3,7 @@
 /** \file
  * Measurement models and their observations (decisions.md [model-policies], [sensors], [linear-sensors],
  * [measurement-space-functions], [templated-measurements], [method-per-measurement]): the MeasurementFunction that
- * measurementModel() builds from a function, a matrix, or Columns and its policies, or from a likelihood alone;
+ * measurementModel() builds from a function and its policies, from affineIn() alone, or from a likelihood alone;
  * CountFrom, a measurement space that repeats with a block of the state; the MeasurementModel concept; Observed,
  * what observe() makes of a model, a method, an observation, and the call's inputs, and the Measurement concept a
  * filter's update() takes. How an update reads one is in MeasurementReads.h. Read Measurement.h next.
@@ -400,10 +400,7 @@ struct FirstEachPathOf<First, Rest...>
         conditional_t<ColumnsOf<First>::Each, typename ColumnsOf<First>::Path, typename FirstEachPathOf<Rest...>::type>;
 };
 
-}  // namespace internal
-
-/** \ingroup Models
- * \brief The matrix \f$ H \f$ of a linear measurement model by its columns: a matrix per block of
+/** \brief The matrix \f$ H \f$ of a linear measurement model by its columns: a matrix per block of
  * the state read, each placed by tag path with on() or onEach() (decisions.md [linear-sensors]).
  *
  * The measurement is \f$ z = \sum_k H_k x_k \boxplus v \f$ over the blocks read, in the order
@@ -417,8 +414,8 @@ struct FirstEachPathOf<First, Rest...>
  *
  * \code
  * // each landmark's position relative to the vehicle's, z_i = l_i - p
- * auto const relative = measurementModel(Columns{onEach<Landmarks>(Eigen::Matrix2d::Identity()),
- *                                                on<Position>(-Eigen::Matrix2d::Identity())},
+ * auto const relative = measurementModel(affineIn(onEach<Landmarks>(Eigen::Matrix2d::Identity()),
+ *                                                 on<Position>(-Eigen::Matrix2d::Identity())),
  *                                        additiveNoise(onEach<>(R)));
  * \endcode
  *
@@ -429,17 +426,6 @@ struct FirstEachPathOf<First, Rest...>
 template <typename... Placed>
 class Columns
 {
-    static_assert(sizeof...(Placed) > 0, "a model's matrix needs at least one block of columns");
-    static_assert(
-        (internal::ColumnsOf<Placed>::IsPlaced && ...),
-        "each block of a model's columns is a matrix placed on a block of the state, with on<Path>() or "
-        "onEach<Path>()"
-    );
-    static_assert(
-        !(internal::ColumnsOf<Placed>::IsPlaced && ...)
-            || internal::distinctTypes<internal::AsTagPath<typename internal::ColumnsOf<Placed>::Path>...>(),
-        "a model's columns name each block of the state once"
-    );
     static_assert(
         internal::agreedRows<internal::ColumnsOf<Placed>::Rows...> != 0,
         "every block of a model's columns has the rows of one repetition of the measurement"
@@ -492,9 +478,6 @@ private:
 
     std::tuple<Placed...> m_placed;  ///< the matrices, as placed by path
 };
-
-namespace internal
-{
 
 /** Whether \a T is a Columns. */
 template <typename T>
@@ -1062,8 +1045,10 @@ measurementModel(F && function, Policies &&... policies)
     }
 }
 
-/** \ingroup Models
- * \returns the linear measurement model \f$ z = H x \boxplus v \f$ of the matrix \a matrix over the
+namespace internal
+{
+
+/** \returns the linear measurement model \f$ z = H x \boxplus v \f$ of the matrix \a matrix over the
  * blocks that reads() names, stacked in that order as \f$ x \f$, or over the whole state without
  * reads() (decisions.md [linear-sensors], [whole-state-models]), with \a policies as
  * measurementModel(function, policies...) takes them. The blocks must add their values, as Linear
@@ -1071,13 +1056,12 @@ measurementModel(F && function, Policies &&... policies)
  * differentiated.
  *
  * \code
- * auto const gps = measurementModel(Eigen::Matrix2d::Identity(), reads(path<Position>), additiveNoise(r));
- * auto const fix = measurementModel(H, additiveNoise(R));  // H is 2 by 4, R 2 by 2
+ * auto const fix = measurementModel(affineIn(H), additiveNoise(R));  // H is 2 by 4, R 2 by 2
  * \endcode
  */
 template <MatrixExpression Matrix, typename... Policies>
 [[nodiscard]] auto
-measurementModel(Matrix && matrix, Policies &&... policies)
+measurementModelOfMatrix(Matrix && matrix, Policies &&... policies)
 {
     using Plain = internal::PlainResult<std::remove_cvref_t<Matrix>>;
     using Set = internal::PolicySet<std::remove_cvref_t<Policies>...>;
@@ -1089,20 +1073,24 @@ measurementModel(Matrix && matrix, Policies &&... policies)
     };
 }
 
-/** \ingroup Models
- * \returns the linear measurement model with \f$ H \f$ given by \a columns, a matrix per block read
+}  // namespace internal
+
+namespace internal
+{
+
+/** \returns the linear measurement model with \f$ H \f$ given by \a columns, a matrix per block read
  * in the order given, which is what the model reads, so it takes no reads() (decisions.md
  * [linear-sensors]). If the columns repeat, with onEach(), and no outputSpace() is given, the
  * measurement space is a Repeated block of Linear coordinates with the block's count at each update.
  */
 template <typename... Placed, typename... Policies>
 [[nodiscard]] auto
-measurementModel(Columns<Placed...> columns, Policies &&... policies)
+measurementModelOfColumns(Columns<Placed...> columns, Policies &&... policies)
 {
     using ColumnsType = Columns<Placed...>;
     static_assert(
         !internal::hasPolicy<internal::PolicyKind::reads, Policies...>,
-        "a model given Columns reads the blocks its columns are placed on, so it takes no reads()"
+        "a model without a function reads the blocks its affineIn() names, so it takes no reads()"
     );
     auto const read = internal::columnsReads(columns);
     using Function = internal::ColumnsFunction<Placed...>;
@@ -1114,9 +1102,16 @@ measurementModel(Columns<Placed...> columns, Policies &&... policies)
             "compile time, or give it outputSpace() with a function such as CountFrom"
         );
         auto const space = outputSpace(internal::repeatedColumnsSpace(columns));
-        using Set = internal::PolicySet<decltype(read), decltype(space), std::remove_cvref_t<Policies>...>;
+        using Set = internal::PolicySet<
+            std::remove_cvref_t<decltype(read)>,
+            std::remove_cvref_t<decltype(space)>,
+            std::remove_cvref_t<Policies>...>;
         static_assert(internal::checkMeasurementFunction<Function, Set>());
-        return MeasurementFunction<Function, decltype(read), decltype(space), std::remove_cvref_t<Policies>...>{
+        return MeasurementFunction<
+            Function,
+            std::remove_cvref_t<decltype(read)>,
+            std::remove_cvref_t<decltype(space)>,
+            std::remove_cvref_t<Policies>...>{
             Function{std::move(columns)},
             read,
             space,
@@ -1125,15 +1120,17 @@ measurementModel(Columns<Placed...> columns, Policies &&... policies)
     }
     else
     {
-        using Set = internal::PolicySet<decltype(read), std::remove_cvref_t<Policies>...>;
+        using Set = internal::PolicySet<std::remove_cvref_t<decltype(read)>, std::remove_cvref_t<Policies>...>;
         static_assert(internal::checkMeasurementFunction<Function, Set>());
-        return MeasurementFunction<Function, decltype(read), std::remove_cvref_t<Policies>...>{
+        return MeasurementFunction<Function, std::remove_cvref_t<decltype(read)>, std::remove_cvref_t<Policies>...>{
             Function{std::move(columns)},
             read,
             std::forward<Policies>(policies)...
         };
     }
 }
+
+}  // namespace internal
 
 /** \ingroup Models
  * \returns the measurement model known by its likelihood alone, <tt>measurementModel(reads(...),
@@ -1156,7 +1153,7 @@ measurementModel(Policies &&... policies)
         {
             return std::apply(
                 [&](auto const &... other) {
-                    return measurementModel(affine.matrix, other...);
+                    return internal::measurementModelOfMatrix(affine.matrix, other...);
                 },
                 others
             );
@@ -1167,7 +1164,7 @@ measurementModel(Policies &&... policies)
                 [&](auto const &... other) {
                     return std::apply(
                         [&](auto const &... constant) {
-                            return measurementModel(Columns{constant...}, other...);
+                            return internal::measurementModelOfColumns(internal::Columns{constant...}, other...);
                         },
                         affine.constants
                     );
@@ -1613,14 +1610,14 @@ observe(Method method, M && model, Z && observation, Args &&... args)
 /** \ingroup Models
  * \returns the Measurement of \a observation by \a model with the call's \a args, as
  * observe(method, model, observation, args...) makes it, with no method given. A model given its
- * matrix, <tt>measurementModel(H, noise)</tt>, is linear, and its measurement is pushed through by
+ * matrix, <tt>measurementModel(affineIn(H), noise)</tt>, is linear, and its measurement is pushed through by
  * Linearized, which is exact for it, so a linear Kalman filter names no method. Any other model's
  * measurement has no method, for the filters that weight points by the likelihood, which push no
  * %Gaussian through the model, and a Kalman update refuses it at compile time (decisions.md
  * [linear-sensors]).
  *
  * \code
- * filter.update(observe(fix, z));        // fix = measurementModel(H, additiveNoise(R))
+ * filter.update(observe(fix, z));        // fix = measurementModel(affineIn(H), additiveNoise(R))
  * particles.update(observe(range, z));
  * \endcode
  */

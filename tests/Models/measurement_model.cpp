@@ -106,8 +106,7 @@ TEST(MeasurementModel, ALinearModelUpdatesAsTheKalmanFilterDoes)
     Eigen::Matrix2d const h = Eigen::Matrix2d::Identity();
     Eigen::Matrix2d const r = 0.1 * Eigen::Matrix2d::Identity();
     auto const gps = measurementModel(
-        h,
-        reads(path<Position>),
+        affineIn(on<Position>(h)),
         additiveNoise(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), r})
     );
     Eigen::Vector2d const z{3.5, 3.8};
@@ -144,9 +143,9 @@ TEST(MeasurementModel, NoiseTakesADiagonalCovariance)
 
     auto const prior = makePrior();
     Eigen::Vector2d const z{3.5, 3.8};
-    auto const dense = measurementModel(Eigen::Matrix2d::Identity(), reads(path<Position>), additiveNoise(r));
+    auto const dense = measurementModel(affineIn(on<Position>(Eigen::Matrix2d::Identity())), additiveNoise(r));
     auto const fromDiagonal =
-        measurementModel(Eigen::Matrix2d::Identity(), reads(path<Position>), additiveNoise(variances.asDiagonal()));
+        measurementModel(affineIn(on<Position>(Eigen::Matrix2d::Identity())), additiveNoise(variances.asDiagonal()));
     auto const expected = update(prior, observe(dense, z));
     auto const actual = update(prior, observe(fromDiagonal, z));
     ASSERT_TRUE(expected && actual);
