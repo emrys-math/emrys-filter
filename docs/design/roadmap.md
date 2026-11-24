@@ -223,10 +223,11 @@ takes an integer repetition today, that argument takes a sequence or a list too.
 
 - [ ] **`reads()`, the rest.** A plain model reads a selection ([selected-reads],
       `tests/Models/selected_reads.cpp`), with a returned Jacobian and for the likelihoods of
-      sampled states. Left: the same equality with the state written with one tag per repetition in
-      each Gaussian form, and through `ParticleFilter`, the Rao-Blackwellized filters, and
-      `GaussianMixtureFilter` themselves; an update that reads an integer selection of a resizable
-      state allocates nothing where the same model on a fixed-size state allocates nothing. A
+      sampled states, and through each Gaussian form of the Kalman filter, `GaussianMixtureFilter`,
+      `ParticleFilter`, and `RbParticleFilter` (`tests/Filters/selected_filters.cpp`). Left: the
+      same through `RbPointMassFilter`, and an update that reads an integer selection of a
+      resizable state allocates nothing where the same model on a fixed-size state allocates
+      nothing. A
       `SelectedPath` (`Spaces/TagPath.h`) is not a `PathValue`, so that no policy takes one and
       drops its selection: each item here makes its policy take it. `on<Path>()` and `compose()`
       carry the selections of the models they take ([composed-selections],
@@ -257,14 +258,12 @@ takes an integer repetition today, that argument takes a sequence or a list too.
       meets. It was not built, since an item without a selection would then still become an
       input by name while one with a selection kept its path.
 - [ ] **`writes()`, the rest.** A process model writes a selection ([selected-writes],
-      `tests/Models/selected_writes.cpp`), through compositions and `on<Path>()`. Left: the same
-      equality through `ParticleFilter` and the Rao-Blackwellized filters, whose prediction moves
-      sampled states, and a batched function that writes a list.
+      `tests/Models/selected_writes.cpp`), through compositions, `on<Path>()`, and the filters
+      (`tests/Filters/selected_filters.cpp`). Left: a batched function that writes a list.
 - [ ] **Placing a model, the rest.** `on(path<Fleet>[k], model)` and
       `onEach(path<Fleet>[repetitions], model)` are built ([placed-repetitions],
-      `tests/Models/placed_repetitions.cpp`). Left: the same equality through `ParticleFilter` and
-      the Rao-Blackwellized filters, and a test of `on(path<Fleet, Body>[k], model)`, a block
-      inside the repetition.
+      `tests/Models/placed_repetitions.cpp`). Left: a test of `on(path<Fleet, Body>[k], model)`, a
+      block inside the repetition.
 - [ ] **Placing a matrix, a factor, and noise, the rest.** Built ([placed-selected-values]):
       factors, `Columns`, additive noise, and continuous noise on selections. Left: a test of a
       factor placed on selections in a `Product` given to a filter, and of selected `Columns` under

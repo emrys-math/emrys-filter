@@ -1,0 +1,312 @@
+// Selections of a repeated block through the filters (roadmap step 17zu, decisions.md [selected-reads],
+// [selected-writes], [placed-selected-values]). A state written with one tag per repetition,
+// Composite<Position, Heading, First, Second, Third>, has the coordinates of Composite<Position, Heading,
+// Landmarks> with three landmarks, in the same order, so each filter's step through a model that reads or
+// writes path<Landmarks>[k] must equal its step through the model that reads or writes the tagged block:
+// the Kalman filter in each of its four forms, the Gaussian mixture filter, the particle filter, drawn from
+// the same generator, and the Rao-Blackwellized particle filter. The two differ only in the sizes Eigen
+// fixes at compile time, hence the tolerance.
+
+#include <EmrysFilter/Distributions/Gaussian.h>
+#include <EmrysFilter/Distributions/Mixture.h>
+#include <EmrysFilter/Distributions/ParticleGaussian.h>
+#include <EmrysFilter/Distributions/Sampling.h>
+#include <EmrysFilter/Filters/InfoFilter.h>
+#include <EmrysFilter/Filters/KalmanFilter.h>
+#include <EmrysFilter/Filters/MixtureFilter.h>
+#include <EmrysFilter/Filters/ParticleFilter.h>
+#include <EmrysFilter/Filters/RbParticleFilter.h>
+#include <EmrysFilter/Filters/SqrtInfoFilter.h>
+#include <EmrysFilter/Filters/SqrtKalmanFilter.h>
+#include <EmrysFilter/Models/Measurement.h>
+#include <EmrysFilter/Models/ProcessModel.h>
+
+#include <gtest/gtest.h>
+
+#include <array>
+#include <cmath>
+#include <random>
+#include <utility>
+
+using Emrys::additiveNoise;
+using Emrys::block;
+using Emrys::compose;
+using Emrys::Composite;
+using Emrys::continuousNoise;
+using Emrys::GaussianParams;
+using Emrys::Linear;
+using Emrys::measurementModel;
+using Emrys::observe;
+using Emrys::on;
+using Emrys::path;
+using Emrys::processModel;
+using Emrys::RadiansPi;
+using Emrys::RandomWalk;
+using Emrys::reads;
+using Emrys::Repeated;
+using Emrys::writes;
+
+namespace methods = Emrys::methods;
+
+namespace
+{
+
+struct Position : Linear<2>
+{};
+
+struct Heading : RadiansPi<>
+{};
+
+struct Landmark : Linear<2>
+{};
+
+struct Landmarks : Repeated<Landmark, 6>
+{
+    using Repeated::Repeated;
+};
+
+using Map = Composite<Position, Heading, Landmarks>;
+
+struct First : Linear<2>
+{};
+
+struct Second : Linear<2>
+{};
+
+struct Third : Linear<2>
+{};
+
+using Tagged = Composite<Position, Heading, First, Second, Third>;
+
+/// the vehicle's rest, given its position, in the Rao-Blackwellized filter
+using Vector9 = Eigen::Matrix<double, 9, 1>;
+using Matrix9 = Eigen::Matrix<double, 9, 9>;
+
+// A vehicle at (1, 2) heading 0.3, and landmarks at (10, 4), (-3, 8), and (6, -7).
+Vector9
+mapMean()
+{
+    Vector9 mean;
+    mean << 1.0, 2.0, 0.3, 10.0, 4.0, -3.0, 8.0, 6.0, -7.0;
+    return mean;
+}
+
+// A covariance with every block correlated with every other: A A^T + I / 2 for a fixed full A.
+Matrix9
+mapCovariance()
+{
+    Matrix9 a;
+    for (Eigen::Index i = 0; i < 9; ++i)
+    {
+        for (Eigen::Index j = 0; j < 9; ++j)
+        {
+            a(i, j) = 0.3 * std::sin(1.0 + 3.0 * double(i) + 7.0 * double(j));
+        }
+    }
+    return a * a.transpose() + 0.5 * Matrix9::Identity();
+}
+
+GaussianParams<Map>
+mapPrior()
+{
+    return {Map{Position{}, Heading{}, Landmarks{Landmark{}, 3}}, mapMean(), mapCovariance()};
+}
+
+GaussianParams<Tagged>
+taggedPrior()
+{
+    return {mapMean(), mapCovariance()};
+}
+
+// The range and the bearing from the vehicle to the landmark that \a item reads under Landmark.
+template <typename Item>
+auto
+sightingOf(Item const & item)
+{
+    return measurementModel(
+        []<typename T>(auto const & in, auto const & x) {
+            Eigen::Vector<T, 2> const d = block<Landmark>(in, x) - block<Position>(in, x);
+            return Eigen::Vector<T, 2>{
+                T(Eigen::numext::sqrt(T(d.squaredNorm()))),
+                T(Eigen::numext::atan2(d(1), d(0)) - block<Heading>(in, x)(0))
+            };
+        },
+        reads(path<Position>, path<Heading>, item),
+        additiveNoise(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), Eigen::Vector2d{0.04, 0.0025}.asDiagonal()})
+    );
+}
+
+auto const selectedSighting = [] {
+    return sightingOf(path<Landmarks>[1]);
+};
+
+auto const taggedSighting = [] {
+    return sightingOf(on<Landmark>(path<Second>));
+};
+
+Eigen::Vector2d const observed{9.5, 0.1};
+
+// The landmarks that \a items write each drift toward the origin by a tenth a second, with density
+// 0.01 on each coordinate.
+template <typename... Items>
+auto
+driftOf(Items const &... items)
+{
+    return processModel(
+        []<typename T>(auto const & x, double dt) {
+            return Eigen::Matrix<T, Eigen::Dynamic, 1, Eigen::ColMajor, 12, 1>{(1.0 - 0.1 * dt) * x};
+        },
+        reads(items...),
+        writes(items...),
+        continuousNoise(0.01)
+    );
+}
+
+// The vehicle wanders, landmark 1 drifts, and the others drift more slowly, selected or tagged.
+auto
+selectedMotion()
+{
+    return compose(
+        RandomWalk<Position>{0.2},
+        RandomWalk<Heading>{0.01},
+        driftOf(path<Landmarks>[1]),
+        driftOf(path<Landmarks>[std::array{0, 2}])
+    );
+}
+
+auto
+taggedMotion()
+{
+    return compose(
+        RandomWalk<Position>{0.2},
+        RandomWalk<Heading>{0.01},
+        driftOf(on<Landmark>(path<Second>)),
+        driftOf(path<First>, path<Third>)
+    );
+}
+
+// Two Gaussian states agree in their means and covariances, and the step moved the state.
+template <typename A, typename B>
+void
+expectSameGaussian(A const & a, B const & b, double tolerance)
+{
+    EXPECT_LT((a.mean() - b.mean()).norm(), tolerance);
+    Eigen::MatrixXd const lowerA = a.covarianceLower().template triangularView<Eigen::Lower>();
+    Eigen::MatrixXd const lowerB = b.covarianceLower().template triangularView<Eigen::Lower>();
+    EXPECT_LT((lowerA - lowerB).norm(), tolerance);
+    EXPECT_GT((a.mean() - mapMean()).norm(), 1e-3);
+}
+
+}  // namespace
+
+// The Kalman filter in each form predicts and updates through the selections as through the tagged blocks.
+TEST(SelectedFilters, EachGaussianFormStepsAsTheTaggedBlocks)
+{
+    {
+        auto selected = Emrys::KalmanFilter{selectedMotion(), mapPrior(), methods::unscented()};
+        auto byTag = Emrys::KalmanFilter{taggedMotion(), taggedPrior(), methods::unscented()};
+        selected.predict(0.5);
+        byTag.predict(0.5);
+        ASSERT_TRUE(selected.update(observe(methods::unscented(), selectedSighting(), observed)));
+        ASSERT_TRUE(byTag.update(observe(methods::unscented(), taggedSighting(), observed)));
+        expectSameGaussian(selected.state(), byTag.state(), 1e-12);
+    }
+    {
+        auto selected = Emrys::SqrtKalmanFilter{selectedMotion(), Emrys::toSqrt(mapPrior()).value()};
+        auto byTag = Emrys::SqrtKalmanFilter{taggedMotion(), Emrys::toSqrt(taggedPrior()).value()};
+        ASSERT_TRUE(selected.predict(0.5));
+        ASSERT_TRUE(byTag.predict(0.5));
+        ASSERT_TRUE(selected.update(observe(methods::linearized(), selectedSighting(), observed)));
+        ASSERT_TRUE(byTag.update(observe(methods::linearized(), taggedSighting(), observed)));
+        expectSameGaussian(*Emrys::toGaussian(selected.state()), *Emrys::toGaussian(byTag.state()), 1e-11);
+    }
+    {
+        auto selected = Emrys::InfoFilter{selectedMotion(), Emrys::toInfo(mapPrior()).value()};
+        auto byTag = Emrys::InfoFilter{taggedMotion(), Emrys::toInfo(taggedPrior()).value()};
+        ASSERT_TRUE(selected.predict(0.5));
+        ASSERT_TRUE(byTag.predict(0.5));
+        ASSERT_TRUE(selected.update(observe(methods::linearized(), selectedSighting(), observed)));
+        ASSERT_TRUE(byTag.update(observe(methods::linearized(), taggedSighting(), observed)));
+        expectSameGaussian(*Emrys::toGaussian(selected.state()), *Emrys::toGaussian(byTag.state()), 1e-10);
+    }
+    {
+        auto selected = Emrys::SqrtInfoFilter{selectedMotion(), Emrys::toSqrtInfo(mapPrior()).value()};
+        auto byTag = Emrys::SqrtInfoFilter{taggedMotion(), Emrys::toSqrtInfo(taggedPrior()).value()};
+        ASSERT_TRUE(selected.predict(0.5));
+        ASSERT_TRUE(byTag.predict(0.5));
+        ASSERT_TRUE(selected.update(observe(methods::linearized(), selectedSighting(), observed)));
+        ASSERT_TRUE(byTag.update(observe(methods::linearized(), taggedSighting(), observed)));
+        expectSameGaussian(*Emrys::toGaussian(selected.state()), *Emrys::toGaussian(byTag.state()), 1e-10);
+    }
+}
+
+// The Gaussian mixture filter steps each component as the Kalman filter does, and weights them alike.
+TEST(SelectedFilters, AGaussianMixtureStepsAsTheTaggedBlocks)
+{
+    auto selectedMixture = Emrys::GaussianMixtureParams<Map>{mapPrior().space()};
+    auto taggedMixture = Emrys::GaussianMixtureParams<Tagged>{Tagged{}};
+    Vector9 shifted = mapMean();
+    shifted.head<2>() += Eigen::Vector2d{0.5, -0.4};
+    for (auto const & [logWeight, mean] : {std::pair{0.0, mapMean()}, std::pair{std::log(0.5), shifted}})
+    {
+        selectedMixture.add(logWeight, mean, mapCovariance());
+        taggedMixture.add(logWeight, mean, mapCovariance());
+    }
+    auto selected = Emrys::GaussianMixtureFilter{selectedMotion(), std::move(selectedMixture)};
+    auto byTag = Emrys::GaussianMixtureFilter{taggedMotion(), std::move(taggedMixture)};
+    selected.predict(0.5);
+    byTag.predict(0.5);
+    ASSERT_TRUE(selected.update(observe(methods::unscented(), selectedSighting(), observed)));
+    ASSERT_TRUE(byTag.update(observe(methods::unscented(), taggedSighting(), observed)));
+    ASSERT_EQ(selected.state().size(), byTag.state().size());
+    for (Eigen::Index i = 0; i < selected.state().size(); ++i)
+    {
+        auto const & a = selected.state().begin()[i];
+        auto const & b = byTag.state().begin()[i];
+        EXPECT_NEAR(a.logWeight, b.logWeight, 1e-12);
+        expectSameGaussian(a.component, b.component, 1e-12);
+    }
+}
+
+// The particle filter draws the same process noise from the same generator and weights the same
+// particles alike through the selections as through the tagged blocks.
+TEST(SelectedFilters, AParticleFilterStepsAsTheTaggedBlocks)
+{
+    auto draws = std::mt19937_64{5};
+    auto const prior = mapPrior();
+    Eigen::MatrixXd const states = Emrys::drawSamples(prior.toDensity().value(), 50, draws);
+    auto selected = Emrys::ParticleFilter{selectedMotion(), Emrys::ParticleSet<Map>{mapPrior().space(), states}};
+    auto byTag = Emrys::ParticleFilter{taggedMotion(), Emrys::ParticleSet<Tagged>{Tagged{}, states}};
+    auto selectedRng = std::mt19937_64{7};
+    auto taggedRng = std::mt19937_64{7};
+    selected.predict(selectedRng, 0.5);
+    byTag.predict(taggedRng, 0.5);
+    EXPECT_LT((selected.state().states() - byTag.state().states()).norm(), 1e-12);
+    ASSERT_TRUE(selected.update(observe(selectedSighting(), observed)));
+    ASSERT_TRUE(byTag.update(observe(taggedSighting(), observed)));
+    EXPECT_LT((selected.state().logWeights() - byTag.state().logWeights()).matrix().norm(), 1e-10);
+}
+
+// The Rao-Blackwellized particle filter, sampling the vehicle's position, predicts each particle's
+// Gaussian over the rest through the selected writes, and updates it through a sighting of one
+// landmark, as through the tagged blocks.
+TEST(SelectedFilters, ARaoBlackwellizedFilterStepsAsTheTaggedBlocks)
+{
+    auto selectedDraws = std::mt19937_64{9};
+    auto taggedDraws = std::mt19937_64{9};
+    auto selected =
+        Emrys::RbParticleFilter{selectedMotion(), Emrys::drawParticleGaussian<Position>(mapPrior(), 20, selectedDraws)};
+    auto byTag =
+        Emrys::RbParticleFilter{taggedMotion(), Emrys::drawParticleGaussian<Position>(taggedPrior(), 20, taggedDraws)};
+    selected.predict(selectedDraws, 0.5);
+    byTag.predict(taggedDraws, 0.5);
+    ASSERT_TRUE(selected.update(observe(methods::unscented(), selectedSighting(), observed)));
+    ASSERT_TRUE(byTag.update(observe(methods::unscented(), taggedSighting(), observed)));
+    auto const & a = selected.state();
+    auto const & b = byTag.state();
+    EXPECT_LT((a.particles().logWeights() - b.particles().logWeights()).matrix().norm(), 1e-10);
+    for (Eigen::Index i = 0; i < a.particles().size(); ++i)
+    {
+        EXPECT_LT((a.conditional(i).mean() - b.conditional(i).mean()).norm(), 1e-10);
+    }
+}

@@ -108,6 +108,7 @@ add_executable(emrys_filter_tests
   Filters/update_failure.cpp
   Filters/update_outcomes.cpp
   Filters/large_fixed.cpp
+  Filters/selected_filters.cpp
   Smoothers/smoothing.cpp
   Smoothers/mixture_smoothing.cpp
 )
