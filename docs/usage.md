@@ -177,7 +177,7 @@ space is named once, by the prior, and the filter binds the step to it. A model 
 updated exactly by every method, so its measurement needs none. A
 nonlinear whole-state model is a function of the whole state, `f(x, dt)` for a process model and
 `h(x)` for a measurement model, with its noise over the whole state:
-`processModel(f, continuousNoise(Qc))` or `additiveNoise(Q)`, and
+`processModel(f, continuousNoise(Qc))`, or `additiveNoise(Q)` under `fixedStep()`, and
 `measurementModel(h, additiveNoise(R))`. Such a model takes
 no inputs of the call and is neither placed nor composed. Once a state has parts that models read
 apart, name them, as the rest of this page does.
@@ -507,7 +507,8 @@ auto const unicycle = Emrys::processModel(
 
 `reads()` names what the function reads, blocks of the state or inputs of the call; `writes()` the
 blocks of the state its result fills, in order; `continuousNoise()` white-noise spectral densities
-by block of the output, discretized over the step, or `additiveNoise()` a fixed $Q$. A function
+by block of the output, discretized over the step, or `additiveNoise()` the $Q$ of one step, which
+only `fixedStep(model, dt)` takes: `predict(dt)` refuses a model with it, or with a part that has it. A function
 that knows its Jacobian over its input's differences returns `withJacobian(y, J)` and is never
 differentiated. `affineIn(path<...>)` names the inputs the function is affine in given the rest,
 which every sigma-point method then carries exactly rather than spreading points over them.

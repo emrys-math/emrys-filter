@@ -338,6 +338,9 @@ class PlacedStep
 {
 public:
 
+    /// whether the model placed holds one step (holdsOneStep)
+    static constexpr bool HoldsOneStep = holdsOneStep<Model>;
+
     using InnerIn = typename Model::template Policy<PolicyKind::reads>::InputSpace;  ///< the model's input
     using InnerOut = OutputSpaceOf<Model>;                                           ///< and its output
 
@@ -704,6 +707,13 @@ struct EachPlacement
 template <typename Prefix, typename Model, typename Selection, typename... Renames>
 class EachStep
 {
+public:
+
+    /// whether the model placed holds one step (holdsOneStep)
+    static constexpr bool HoldsOneStep = holdsOneStep<Model>;
+
+private:
+
     /** how the model is placed */
     using P = EachPlacement<Prefix, Model, Selection, Renames...>;
     /** the tag of the repeated block */

@@ -493,6 +493,55 @@ struct Landmarks : Emrys::Linear<Eigen::Dynamic, 8>
 [[maybe_unused]] constexpr auto size = sizeof(Emrys::Kinematic<double, Attitude, Spin>);
 #endif
 
+#if defined(PREDICT_ADDITIVE_NOISE)  // static_assert: ProcessModel.h: only fixedStep(model, dt) predicts it
+[[maybe_unused]] auto const predicted = Emrys::predict(
+    methods::linearized(),
+    makeInitial(),
+    Emrys::processModel(
+        [](auto const & x, auto) {
+            return x.eval();
+        },
+        Emrys::additiveNoise(makeInitial())
+    ),
+    1.0
+);
+#endif
+
+#if defined(PREDICT_COMPOSED_ADDITIVE_NOISE)  // static_assert: ProcessModel.h: only fixedStep(model, dt) predicts it
+[[maybe_unused]] auto const predicted = Emrys::predict(
+    methods::linearized(),
+    makeInitial(),
+    Emrys::compose(
+        Emrys::Constant<Position>{},
+        Emrys::processModel(
+            []<typename T>(auto const & in, auto const &, auto const & x, auto) {
+                return Eigen::Matrix<T, 2, 1>{Emrys::block<Velocity>(in, x)};
+            },
+            Emrys::reads(Emrys::path<Velocity>),
+            Emrys::writes(Emrys::path<Velocity>),
+            Emrys::additiveNoise(makeNoise())
+        )
+    ),
+    1.0
+);
+#endif
+
+#if defined(FILTER_PREDICT_ADDITIVE_NOISE)  // static_assert: ProcessModel.h: only fixedStep(model, dt) predicts it
+[[maybe_unused]] auto const predicted = [] {
+    auto filter = Emrys::KalmanFilter{
+        Emrys::processModel(
+            [](auto const & x, auto) {
+                return x.eval();
+            },
+            Emrys::additiveNoise(makeInitial())
+        ),
+        makeInitial()
+    };
+    filter.predict(1.0);
+    return filter.state().mean();
+}();
+#endif
+
 #if defined(OU_MEAN_SIZE)  // static_assert: ProcessModel.h: must have the size of its block
 [[maybe_unused]] constexpr auto size = sizeof(Emrys::OrnsteinUhlenbeck<Speed, Emrys::RevertingTo<Offset>>);
 #endif

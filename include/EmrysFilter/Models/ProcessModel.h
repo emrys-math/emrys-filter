@@ -628,6 +628,18 @@ struct ProcessWrites<true, Writes>
 
 }  // namespace internal
 
+namespace internal
+{
+
+/** Whether the process model or function \a T holds one step (decisions.md [fixed-step-models]):
+ * it has additiveNoise(), a \f$ Q \f$ of one step, or a part of it does, so that only
+ * fixedStep(model, dt) takes it. A type that does not say holds none.
+ */
+template <typename T>
+inline constexpr bool holdsOneStep = requires { requires bool(T::HoldsOneStep); };
+
+}  // namespace internal
+
 /** \ingroup Models
  * \brief A process model: a function \f$ f \f$ of its input and the step, with the policies that say
  * what it reads, what it writes, and what it is affine in, and its noise (decisions.md
@@ -679,6 +691,11 @@ public:
 
     /// whether the model reads and writes the whole state (decisions.md [whole-state-models])
     static constexpr bool Whole = !has<internal::PolicyKind::writes>;
+
+    /** Whether the model holds one step: its additiveNoise() is a \f$ Q \f$ of one step, or a part's
+     * is, so that only fixedStep() takes it (decisions.md [fixed-step-models]).
+     */
+    static constexpr bool HoldsOneStep = has<internal::PolicyKind::additiveNoise> || internal::holdsOneStep<F>;
 
     /** The paths of the blocks written, a TagPaths; the whole space for a whole-state model. */
     using WritePaths = typename internal::ProcessWrites<Whole, Policy<internal::PolicyKind::writes>>::Paths;
@@ -2409,6 +2426,14 @@ template <typename... Models>
 class Composition
 {
     static_assert(sizeof...(Models) > 0, "a composition needs a process model");
+
+public:
+
+    /// whether a part holds one step, so that the whole does (internal::holdsOneStep)
+    static constexpr bool HoldsOneStep = (internal::holdsOneStep<Models> || ...);
+
+private:
+
     static_assert(
         internal::oneDeclaredScalar<Models...>(),
         "the parts of a composition must have one scalar: give every built-in model the same Scalar"
@@ -2954,11 +2979,19 @@ public:
         return m_out;
     }
 
-    /** \returns the process noise \f$ Q \f$ over \a dt, in \a Scalar over the state's differences */
+    /** \returns the process noise \f$ Q \f$ over \a dt, in \a Scalar over the state's differences: what
+     * every prediction over a step it is given takes, and so where a model that holds one step is
+     * refused (internal::holdsOneStep); FixedStepModel computes its \f$ Q \f$ by processNoise().
+     */
     template <typename Scalar>
     [[nodiscard]] typename Moments<Space, Scalar>::MatrixType
     noise(Scalar dt) const
     {
+        static_assert(
+            !holdsOneStep<std::remove_cvref_t<decltype(model())>>,
+            "a process model with additiveNoise() holds the Q of one step, so only fixedStep(model, dt) predicts it; "
+            "give continuousNoise() for a step that varies"
+        );
         using Matrix = typename Moments<Space, Scalar>::MatrixType;
         auto const partial = model().template noiseOver<Scalar>(m_out, dt);
         Matrix q = Matrix::Zero(m_stateDifferenceSize, m_stateDifferenceSize);

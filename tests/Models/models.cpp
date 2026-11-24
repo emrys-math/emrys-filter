@@ -215,7 +215,7 @@ kalman(
 }
 
 // The bias part of makeModel() with no Jacobian of its own and its noise over timeStep fixed, so that
-// a model with it is differentiated.
+// a model with it is differentiated, and holds timeStep, which only fixedStep() takes ([fixed-step-models]).
 auto
 untransitioned()
 {
@@ -273,7 +273,7 @@ TEST(ProcessModel, TransitionMatrixFromTheParts)
         compose(ConstantAcceleration<Position, Velocity, Acceleration>{jerkDensity}, untransitioned());
     static_assert(hasTransition<decltype(makeModel())> && !hasTransition<decltype(evaluated)>);
     auto const x = makeState();
-    auto const predicted = Emrys::predict(methods::linearized(), x, evaluated, timeStep);
+    auto const predicted = Emrys::predict(x, Emrys::fixedStep(evaluated, timeStep, methods::linearized()));
     Matrix7 const f = transitionMatrix();
     EXPECT_LT((predicted.mean() - f * x.mean()).norm(), 1e-12);
     EXPECT_LT((predicted.covarianceLower() - (f * x.covarianceLower() * f.transpose() + processNoise())).norm(), 1e-12);

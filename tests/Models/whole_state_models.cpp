@@ -411,7 +411,7 @@ TEST(FunctionForms, BatchedFormsPredictAndUpdateAlike)
 
 // A whole-state constant-velocity model on Linear<4>, f(x, dt) with continuousNoise() of a matrix,
 // predicts as the tagged model does on Composite<Position, Velocity>, and so does the same model with
-// additiveNoise() of the discretized Gaussian.
+// additiveNoise() of the discretized Gaussian over its fixed step.
 TEST(WholeStateModels, ConstantVelocityOnLinearMatchesTheTaggedModel)
 {
     auto const step = []<typename T>(auto const & x, double dt) {
@@ -434,7 +434,7 @@ TEST(WholeStateModels, ConstantVelocityOnLinearMatchesTheTaggedModel)
         auto const predicted = Emrys::predict(method, prior<PlainState>(), continuous, timeStep);
         static_assert(std::is_same_v<decltype(predicted), GaussianParams<PlainState> const>);
         expectSame(predicted, expected);
-        expectSame(Emrys::predict(method, prior<PlainState>(), additive, timeStep), expected);
+        expectSame(Emrys::predict(prior<PlainState>(), Emrys::fixedStep(additive, timeStep, method)), expected);
     };
     check(methods::linearized());
     check(methods::unscented());
@@ -500,7 +500,8 @@ TEST(WholeStateModels, PositionFixOnLinearMatchesTheTaggedFix)
 
 // The matrix process model processModel(F, noise) and the matrix fix are the textbook Kalman
 // filter: x = F x, P = F P F' + Q, then the update with K = P H' S^-1, written out in plain Eigen,
-// under a linear and a sigma-point method, and as a KalmanFilter with no lambda written. It predicts
+// under a linear and a sigma-point method over its fixed step, which its additiveNoise() holds, and
+// as a KalmanFilter with no lambda written. It predicts
 // as the whole-state function does, and its fixed step caches F as its transition. Its noises are
 // given by their covariances alone, Q and R, and are zero-mean.
 TEST(WholeStateModels, MatrixModelsAreTheTextbookKalmanFilter)
@@ -520,7 +521,7 @@ TEST(WholeStateModels, MatrixModelsAreTheTextbookKalmanFilter)
     Eigen::Matrix4d const cov = (Eigen::Matrix4d::Identity() - gain * h) * predictedCov;
 
     auto const check = [&](auto const & method) {
-        auto const predicted = Emrys::predict(method, prior<PlainState>(), model, timeStep);
+        auto const predicted = Emrys::predict(prior<PlainState>(), Emrys::fixedStep(model, timeStep, method));
         EXPECT_LT((predicted.mean() - predictedMean).norm(), 1e-12);
         EXPECT_LT(
             (predicted.covarianceLower() - predictedCov).template triangularView<Eigen::Lower>().toDenseMatrix().norm(),

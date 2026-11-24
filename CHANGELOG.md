@@ -135,6 +135,11 @@ instead.
 
 ### Changed
 
+- A process model with `additiveNoise(Q)`, or a composition or placement with a part that has it,
+  holds the `Q` of one step, so `predict(dt)`, `predictJoint(dt)`, a filter's `predict(dt)`, and
+  every other prediction over a step it is given refuse it at compile time; it took that `Q` at any
+  step, whatever `dt` said. Write `fixedStep(model, dt)` for the step the `Q` is of, or
+  `continuousNoise(Qc)` for a step that varies.
 - `Gaussian::llt()` is `Gaussian::cholesky()`, and returns a `CholeskyFactorization<MatrixType>`,
   the library's own factorization, where it returned an `Eigen::LLT`; `Gaussian::LltType` is
   `Gaussian::CholeskyType`. Write `g.covarianceRoot()`, new on the density, for

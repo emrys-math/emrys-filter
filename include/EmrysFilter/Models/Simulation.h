@@ -175,14 +175,16 @@ simulate(Space_ const & space, Eigen::MatrixBase<Derived> const & x, Model const
 
 /** \ingroup Models
  * \returns a draw of the true state one step of \a step, made by fixedStep(model, dt), after the
- * true state \a x in \a space, with the call's \a args: simulate(space, x, model, rng, dt, args...).
+ * true state \a x in \a space, with the call's \a args: the draw of the FixedStepModel that \a step
+ * makes over \a space and the scalar of \a x, as a filter binds it.
  */
 template <Space Space_, typename Derived, typename Step, std::uniform_random_bit_generator G, typename... Args>
     requires isUnboundStep<Step>
 [[nodiscard]] typename Moments<Space_, typename Derived::Scalar>::VectorType
 simulate(Space_ const & space, Eigen::MatrixBase<Derived> const & x, Step const & step, G & rng, Args const &... args)
 {
-    return simulate(space, x, step.model(), rng, step.timeStep(), args...);
+    using Bound = internal::BoundStep<Step, Space_, typename Derived::Scalar>;
+    return simulate(space, x, Bound{step.model(), space, step.timeStep(), step.method()}, rng, args...);
 }
 
 /** \ingroup Models

@@ -706,7 +706,9 @@ Decided (2026-11-23), not built:
   function, as now.
 - `additiveNoise(Q)` on a process model is a $Q$ of one step too, and is held to `fixedStep()` by
   the same rule: `predict(dt)` refuses a process model with it, and `continuousNoise()` is the
-  noise of a variable step. A measurement model's `additiveNoise()` is not touched.
+  noise of a variable step. A measurement model's `additiveNoise()` is not touched. Built as stage
+  1 (2026-11-24): `ResolvedProcess::noise(dt)`, which every prediction over a given step takes,
+  refuses `internal::holdsOneStep`; a constant item of stage 2 joins that trait.
 
 The Jacobian a function writes, decided (2026-11-23), not built:
 
@@ -751,11 +753,6 @@ The Jacobian a function writes, decided (2026-11-23), not built:
 In order, each a commit that passes the `land` checks, with its decisions, `usage.md`, and
 `CHANGELOG.md` in it.
 
-1. **A process model's `additiveNoise()` is held to `fixedStep()`.** `predict(dt)`,
-   `predictJoint(dt)`, and the filters' `predict(dt)` refuse a process model that has it, with one
-   message naming `fixedStep()` and `continuousNoise()`; a composition has it when a part does.
-   The tests and examples that predict such a model with a step move to `fixedStep()` or to
-   `continuousNoise()`. A negative compile case; [continuous-time-noise] and [fixed-step-models].
 2. **Constant items beside a function.** `affineIn()` takes `on<Name>(H)` and `offset(...)`;
    `Policies.h` holds them, `ResolvedReads.h` adds their inputs to what the model reads, and the
    model's function becomes $g$ with the constant part added: its value by `plus()` on the output,

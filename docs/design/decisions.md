@@ -1775,7 +1775,7 @@ step: `RandomWalk` takes a white-noise spectral density over its block's differe
 `OrnsteinUhlenbeck` a time constant and a stationary variance, and `Constant` nothing; `Zero`, which
 resets its block [unused-blocks], takes the variance it resets to, the same over every step. A model of the
 user's own gives `continuousNoise()`, spectral densities by block of its output discretized as
-$Q_c \, \Delta t$, or `additiveNoise()`, a fixed discrete $Q$, or neither; never both, and never a
+$Q_c \, \Delta t$, or `additiveNoise()`, the $Q$ of one step [fixed-step-models], or neither; never both, and never a
 mixture. `OrnsteinUhlenbeck` takes one $\tau$ and $\sigma^2$, by name, for every coordinate of its
 block, so coordinates that differ are blocks of their own; `RevertingTo<M>` reverts it to $m$ by
 $x' = \phi x + (1 - \phi) m$, $m$ read from the state or the call. `RandomWalk` is a model of its own, which
@@ -2262,7 +2262,7 @@ place of `predict(dt, inputs...)`, never both, and refuses a leading number or `
 would be read as an input. It takes its method from the model, and another method doesn't compile. A
 `SwitchingModel` is fixed-step when all its models are, with one shared step. `fixedStep(model, dt,
 [method])` names no space: each filter's deduction guide binds it to the state's space and scalar,
-and the free `predict()` and `predictJoint()` to the prior's.
+and the free `predict()` and `predictJoint()` to the prior's. Only it takes a process model's `additiveNoise()`, one step's $Q$.
 
 **Why.** The cache belongs to the pair of model and step, not to a filter, so every filter uses it
 without a time member of its own, sized by the space the prior already names. A per-step prediction
