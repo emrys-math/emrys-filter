@@ -487,7 +487,7 @@ conditionOnPrediction(
     using MeasurementVector = typename GaussianParams<MeasurementSpace, Scalar>::VectorType;
     using InnovationVector = typename GaussianParams<MeasurementSpace, Scalar>::DifferenceVectorType;
     using InnovationMatrix = typename GaussianParams<MeasurementSpace, Scalar>::MatrixType;
-    MeasurementVector const observed = observedValue<Scalar>(resolved, y.space());
+    MeasurementVector const observedVector = observedValue<Scalar>(resolved, y.space());
 
     // updates::Joseph's H and linearization error, once for every noise component: of the measurement
     // before additive noise, which each component then adds back as its own R. H is the measurement's
@@ -552,7 +552,7 @@ conditionOnPrediction(
                                auto const & makeCov,
                                InnovationMatrix const & noise,
                                Eigen::Index component) -> std::expected<Branch, GaussianError> {
-        InnovationVector residual = Emrys::minus(y.space(), observed, mean);
+        InnovationVector residual = Emrys::minus(y.space(), observedVector, mean);
         InnovationMatrix cov = makeCov();
         auto conditioned = kalmanCondition<BranchStatistics, BranchRepair>(
             prior,
@@ -636,7 +636,7 @@ conditionOnPrediction(
                         Scalar(0),
                         Innovation<MeasurementSpace, Scalar>{
                             InnovationInPlace{},
-                            InnovationVector{Emrys::minus(y.space(), observed, mean)},
+                            InnovationVector{Emrys::minus(y.space(), observedVector, mean)},
                             makeCov,
                             [&](auto const & residual, auto & cov) {
                                 auto conditioned = kalmanConditionInPlace<Statistics, BranchRepair>(
@@ -756,6 +756,7 @@ namespace internal
 template <typename Space, typename P, typename Selection>
 struct GivenSpaceOf
 {
+    /// the space
     using type = decltype(pathChoiceSubspace<P>(std::declval<Space const &>(), std::declval<Selection const &>()));
 };
 

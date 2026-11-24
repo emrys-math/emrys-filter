@@ -330,15 +330,15 @@ TEST(InfoGaussianParams, MarginalMatchesTheCovarianceForm)
 
     // A list of repetitions, in its order, and a sequence, as the covariance form's marginals.
     auto const check = [&](auto const & selection) {
-        auto const info = Emrys::toInfo(fleet)->marginal<Fleet>(selection);
-        auto const rootInfo = Emrys::toSqrtInfo(fleet)->marginal<Fleet>(selection);
-        ASSERT_TRUE(info && rootInfo);
+        auto const selectedInfo = Emrys::toInfo(fleet)->marginal<Fleet>(selection);
+        auto const selectedRootInfo = Emrys::toSqrtInfo(fleet)->marginal<Fleet>(selection);
+        ASSERT_TRUE(selectedInfo && selectedRootInfo);
         auto const expected = fleet.marginal<Fleet>(selection).copy();
         Eigen::MatrixXd const expectedCov = expected.covarianceLower().template selfadjointView<Eigen::Lower>();
-        EXPECT_TRUE(info->mean()->isApprox(expected.mean(), 1e-12));
-        EXPECT_TRUE(info->covariance()->isApprox(expectedCov, 1e-12));
-        EXPECT_TRUE(rootInfo->mean()->isApprox(expected.mean(), 1e-12));
-        EXPECT_TRUE(rootInfo->covariance()->isApprox(expectedCov, 1e-12));
+        EXPECT_TRUE(selectedInfo->mean()->isApprox(expected.mean(), 1e-12));
+        EXPECT_TRUE(selectedInfo->covariance()->isApprox(expectedCov, 1e-12));
+        EXPECT_TRUE(selectedRootInfo->mean()->isApprox(expected.mean(), 1e-12));
+        EXPECT_TRUE(selectedRootInfo->covariance()->isApprox(expectedCov, 1e-12));
     };
     check(std::array{2, 0});
     check(Eigen::seqN(1, 2));

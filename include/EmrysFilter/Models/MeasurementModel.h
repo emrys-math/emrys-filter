@@ -317,7 +317,7 @@ struct ColumnsOf
 };
 
 /** A matrix read from the block that \a P names, or from the repetitions \a S selects of the
- * repeated block it runs through, read as reads() reads <tt>path<P>[selection]</tt>.
+ * repeated block it runs through, read as reads() reads <tt>path\<P\>[selection]</tt>.
  */
 template <MatrixExpression M, typename P, typename S>
 struct ColumnsOf<OnPath<M, P, S>>
