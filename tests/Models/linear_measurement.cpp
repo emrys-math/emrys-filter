@@ -519,6 +519,24 @@ TEST(LinearMeasurement, RepeatsOverTheRepetitionsSelected)
         auto const [full, r] = handRelativeTo(4, {1, 2, 3});
         expectHandUpdate(prior, makeRelativeTo(Eigen::seqN(1, 3)), full, r, Eigen::VectorXd::LinSpaced(6, 0.5, -1.5));
     }
+
+    // The square-root and information forms update through the same columns as the covariance form.
+    auto const relative = makeRelativeTo(std::array{3, 1});
+    Eigen::Vector4d const observed{0.5, -0.2, 1.1, 0.4};
+    auto const expected = Emrys::update(prior, observe(methods::linearized(), relative, observed));
+    ASSERT_TRUE(expected);
+    auto const & reference = expected->branches[0].posterior;
+    auto const still = Emrys::compose(Emrys::Constant<Position>{}, Emrys::Constant<Landmarks>{});
+    auto const expectNear = [&](auto filter) {
+        ASSERT_TRUE(filter.update(observe(methods::linearized(), relative, observed)));
+        auto const gaussian = Emrys::toGaussian(filter.state());
+        ASSERT_TRUE(gaussian);
+        EXPECT_LT((gaussian->mean() - reference.mean()).norm(), 1e-9);
+        EXPECT_LT((gaussian->covarianceLower() - reference.covarianceLower()).norm(), 1e-9);
+    };
+    expectNear(Emrys::SqrtKalmanFilter{still, Emrys::toSqrt(prior).value()});
+    expectNear(Emrys::InfoFilter{still, Emrys::toInfo(prior).value()});
+    expectNear(Emrys::SqrtInfoFilter{still, Emrys::toSqrtInfo(prior).value()});
 }
 
 // Columns placed on one landmark measure it alone, in a measurement space of one repetition's

@@ -265,9 +265,9 @@ takes an integer repetition today, that argument takes a sequence or a list too.
       `tests/Models/placed_repetitions.cpp`). Left: a test of `on(path<Fleet, Body>[k], model)`, a
       block inside the repetition.
 - [ ] **Placing a matrix, a factor, and noise, the rest.** Built ([placed-selected-values]):
-      factors, `Columns`, additive noise, and continuous noise on selections. Left: a test of a
-      factor placed on selections in a `Product` given to a filter, and of selected `Columns` under
-      the information and square-root forms.
+      factors, `Columns`, additive noise, and continuous noise on selections, and selected
+      `Columns` under every Gaussian form (`tests/Models/linear_measurement.cpp`). Left: a test of
+      a factor placed on selections in a `Product` given to a filter.
 - [ ] **`consider()` and `given()`, the rest.** Both take selections
       ([placed-selected-values], `tests/Models/consider.cpp`). Left: a selected `given()` through
       the Rao-Blackwellized filters and the IMM filter, which take a `GivenBlock` of a whole block.
