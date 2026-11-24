@@ -94,6 +94,7 @@ Read the index, then the decisions your change touches.
 | [function-scalars](#function-scalars) | A function the library calls with a vector may take the vector's scalar as its one template parameter, which the call supplies |
 | [model-placement](#model-placement) | A model is placed on a block by prefixing its paths, on every repetition by onEach, and models compose side by side |
 | [selected-reads](#selected-reads) | A model reads selected repetitions under the tag of their space, and holds the selection |
+| [composed-selections](#composed-selections) | A composition reads each name with one selection, and a placement keeps its model's selections |
 | [whole-state-models](#whole-state-models) | A model given without `reads()` and `writes()` reads and writes the whole state, and is neither placed nor composed |
 | [transform-policies](#transform-policies) | `transform()` takes a measurement model's policies before its inputs, matches its inputs by tag, and takes no process model |
 | [affine-coordinates](#affine-coordinates) | A model declares the inputs it is affine in, and every sigma-point method factors them out |
@@ -1933,6 +1934,35 @@ selection: a count is never inferred from what a model reads [several-resizable-
 with one tag per repetition, which has the same coordinates.
 
 **Where.** `Models/Policies.h` (`ReadItem`, `Reads`), `Models/ResolvedReads.h` (`ReadBlocks`).
+
+### composed-selections
+
+*A composition reads each name with one selection, and a placement keeps its model's selections.*
+
+**Rule.** `compose()` reads each name once [model-placement], with the selection of the first part
+that reads it [selected-reads]. Parts that read under one name read in one way, a whole block, one
+repetition, or several, which the types check, and select the same repetitions in the same order,
+however each spells them, which is asserted when the composition meets a state. The parts
+together read no coordinate twice, as one model does not. `on<Path>(model)` prefixes the path of
+an item that selects repetitions of a block of the model's block and keeps its selection. A
+selection in any other item is refused, since that item is an input of the call, and
+`onEach<Path>(model)` refuses a model that selects, since one repetition holds no repeated block.
+
+**Why.** Each part's function reads its input by name from the one input gathered for the whole,
+so a name has one block behind it. A sequence that counts from the block's end names no
+repetition until it meets a count, and a sequence and a list may name the same repetitions, so
+the selections are compared resolved, against the state.
+
+**Rejected.** One selection type for a name, compared when the composition is built:
+`Eigen::seqN(1, 2)` and the list `{1, 2}` are the same repetitions, and two sequences that count
+from the end cannot be compared without a count.
+
+**Evidence.** `tests/Models/selected_placement.cpp`: each update and each prediction equals the one
+on a state written with one tag per repetition, and parts that disagree assert, in a composition
+and in one that is placed.
+
+**Where.** `Models/ProcessModel.h` (`ReadUnion`, `unionReads()`, `partsSelectionsAgree()`),
+`Models/Placement.h` (`Placement`), `Models/ResolvedReads.h` (`selectionsAgree()`).
 
 ### whole-state-models
 

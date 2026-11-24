@@ -1421,7 +1421,9 @@ struct ItemsOf<Reads<Items...>>
 /// \endcond
 
 /** The union of read items: \a Acc, a Reads of the items kept so far, with each of \a Items appended
- * unless one of its name is already there, which must then read the same path.
+ * unless one of its name is already there, which must then read the same path, and repetitions of it
+ * selected in the same way: none, one, or several. Whether two selections name the same repetitions
+ * is known only when they meet a state (partsSelectionsAgree()).
  */
 template <typename Acc, typename... Items>
 struct ReadUnion
@@ -1441,6 +1443,14 @@ struct ReadUnion<Reads<Kept...>, First, Rest...>
          && ...),
         "two parts of a composition read different blocks under one name; read one under another name with "
         "on<Name>(path) in its reads()"
+    );
+    static_assert(
+        ((!std::is_same_v<typename Kept::NameType, typename First::NameType>
+          || (Kept::Selected == First::Selected
+              && RepetitionIndex<typename Kept::SelectionType> == RepetitionIndex<typename First::SelectionType>))
+         && ...),
+        "two parts of a composition read a block and repetitions selected of it, or one repetition and several, "
+        "under one name; read one under another name with on<Name>(path) in its reads()"
     );
 
     using type = typename ReadUnion<std::conditional_t<present, Reads<Kept...>, Reads<Kept..., First>>, Rest...>::type;
@@ -1584,6 +1594,153 @@ inline constexpr bool returnsStepJacobianIn = [] {
 /** The items of the model \a Model's reads(), as a tuple type. */
 template <typename Model>
 using ReadItemsOf = typename ItemsOf<typename Model::template Policy<PolicyKind::reads>>::type;
+
+/** \returns the position among the items in the tuple type \a Items of the one read under the name
+ * \a Name, or their count if none is
+ */
+template <typename Items, typename Name>
+[[nodiscard]] consteval std::size_t
+itemNamed()
+{
+    return []<typename... Each>(std::tuple<Each...> *) {
+        constexpr std::array<bool, sizeof...(Each) + 1> same{std::is_same_v<typename Each::NameType, Name>..., true};
+        std::size_t i = 0;
+        while (!same[i])
+        {
+            ++i;
+        }
+        return i;
+    }(static_cast<Items *>(nullptr));
+}
+
+/** \returns the reads() policy \a Target whose items are those of \a reads one for one, under other
+ * paths and names as a placement gives them, holding each item's selection of \a reads
+ */
+template <typename Target, typename... Items>
+[[nodiscard]] Target
+readsWithSelectionsOf(Reads<Items...> const & reads)
+{
+    return [&]<std::size_t... I>(std::index_sequence<I...>) {
+        return Target{std::in_place, reads.template selection<I>()...};
+    }(std::index_sequence_for<Items...>{});
+}
+
+/** \returns the selection that the first of the models \a first and \a rest to read under the name
+ * \a Name holds for it, or NoSelection where that part reads a whole block
+ */
+template <typename Name, typename First, typename... Rest>
+[[nodiscard]] decltype(auto)
+selectionReadAs(First const & first, [[maybe_unused]] Rest const &... rest)
+{
+    constexpr std::size_t item = itemNamed<ReadItemsOf<First>, Name>();
+    if constexpr (item < std::tuple_size_v<ReadItemsOf<First>>)
+    {
+        return (first.template policy<PolicyKind::reads>().template selection<item>());
+    }
+    else
+    {
+        static_assert(sizeof...(Rest) > 0);
+        return selectionReadAs<Name>(rest...);
+    }
+}
+
+/** \returns the reads() policy \a Union of a composition of \a parts, the union of theirs
+ * (ReadUnion): each item holds the selection of the first part that reads its name
+ */
+template <typename Union, typename... Parts>
+[[nodiscard]] Union
+unionReads([[maybe_unused]] Parts const &... parts)
+{
+    if constexpr (!Union::Selected)
+    {
+        return Union{};
+    }
+    else
+    {
+        return [&]<typename... Items>(std::type_identity<Reads<Items...>>) {
+            return Union{std::in_place, selectionReadAs<typename Items::NameType>(parts...)...};
+        }(std::type_identity<Union>{});
+    }
+}
+
+/** \returns whether the models \a a and \a b, parts of a composition, hold the same repetitions of
+ * the block of \a space that \a a reads at position \a I of its reads(), where that item selects
+ * repetitions and \a b reads under its name
+ */
+template <std::size_t I, typename Space, typename A, typename B>
+[[nodiscard]] bool
+itemSelectionAgrees([[maybe_unused]] Space const & space, [[maybe_unused]] A const & a, [[maybe_unused]] B const & b)
+{
+    using Item = std::tuple_element_t<I, ReadItemsOf<A>>;
+    if constexpr (Item::Selected)
+    {
+        constexpr std::size_t other = itemNamed<ReadItemsOf<B>, typename Item::NameType>();
+        if constexpr (other < std::tuple_size_v<ReadItemsOf<B>>)
+        {
+            return sameRepetitions<typename Item::PathType>(
+                space,
+                a.template policy<PolicyKind::reads>().template selection<I>(),
+                b.template policy<PolicyKind::reads>().template selection<other>()
+            );
+        }
+        else
+        {
+            return true;
+        }
+    }
+    else
+    {
+        return true;
+    }
+}
+
+/** \returns whether part \a P of \a parts and part \a Q after it select the same repetitions of the
+ * blocks of \a space that both read under one name; true for any other pair of positions, so that
+ * each pair is compared once
+ */
+template <std::size_t P, std::size_t Q, typename Space, typename... Parts>
+[[nodiscard]] bool
+pairSelectionsAgree([[maybe_unused]] Space const & space, [[maybe_unused]] std::tuple<Parts...> const & parts)
+{
+    if constexpr (P < Q)
+    {
+        using A = std::tuple_element_t<P, std::tuple<Parts...>>;
+        return [&]<std::size_t... I>(std::index_sequence<I...>) {
+            return (itemSelectionAgrees<I>(space, std::get<P>(parts), std::get<Q>(parts)) && ... && true);
+        }(std::make_index_sequence<std::tuple_size_v<ReadItemsOf<A>>>{});
+    }
+    else
+    {
+        return true;
+    }
+}
+
+/** \returns whether part \a P of \a parts selects the same repetitions as each part after it, of
+ * the blocks of \a space that both read under one name, and whether its own parts agree, where it
+ * is a composition or places one (selectionsAgree())
+ */
+template <std::size_t P, typename Space, typename... Parts>
+[[nodiscard]] bool
+partSelectionsAgree(Space const & space, std::tuple<Parts...> const & parts)
+{
+    return selectionsAgree(std::get<P>(parts), space) && [&]<std::size_t... Q>(std::index_sequence<Q...>) {
+        return (pairSelectionsAgree<P, Q>(space, parts) && ...);
+    }(std::index_sequence_for<Parts...>{});
+}
+
+/** \returns whether the models \a parts of a composition that read repetitions of a block of
+ * \a space under one name select the same ones, and whether each part's own parts do: the
+ * composition's reads() holds the first part's selection for each name, and every part's function
+ * reads the block gathered with it
+ */
+template <typename Space, typename... Parts>
+[[nodiscard]] bool
+partsSelectionsAgree(Space const & space, std::tuple<Parts...> const & parts)
+{
+    return [&]<std::size_t... P>(std::index_sequence<P...>) {
+        return (partSelectionsAgree<P>(space, parts) && ...);
+    }(std::index_sequence_for<Parts...>{});
+}
 
 /** \returns the input space instance of \a Part, a part of a composition: its names' blocks of the
  * whole's input \a in
@@ -1903,9 +2060,12 @@ struct FirstScalarOr<std::tuple<First, Rest...>>
  *
  * Each part's function is called on its own input, gathered from the whole's by name, and its result
  * is written into the whole's output by block. When every part returns its Jacobian the composition
- * does too, assembled from theirs; otherwise the whole is differentiated. The parts that state a
- * scalar, as the built-in models do, state the same one, which is the composition's; a composition
- * of parts that state none, such as Constant, has \c double.
+ * does too, assembled from theirs; otherwise the whole is differentiated. Where parts select
+ * repetitions of a repeated block, the whole reads each name with the selection of the first part
+ * that reads it, and the parts that read it must select the same ones (decisions.md
+ * [composed-selections]). The parts that state a scalar, as the built-in models do, state the same
+ * one, which is the composition's; a composition of parts that state none, such as Constant, has
+ * \c double.
  *
  * \tparam Models  the parts, each a ProcessModel
  *
@@ -1977,6 +2137,12 @@ public:
     /** The composition of \a models. */
     explicit Composition(Models... models)
         : m_parts{std::move(models)...}
+        , m_reads{std::apply(
+              [](Models const &... parts) {
+                  return internal::unionReads<ReadsPolicy>(parts...);
+              },
+              m_parts
+          )}
     {}
 
     /** \returns the function: the composition itself */
@@ -1986,14 +2152,34 @@ public:
         return *this;
     }
 
-    /** \returns the policy of kind \a K, which the whole must have */
+    /** \returns the policy of kind \a K, which the whole must have: its reads(), which holds the
+     * selection of each item that reads repetitions of a repeated block, the first part's that
+     * reads its name, or the writes() or affineIn(), which hold nothing
+     */
     template <internal::PolicyKind K>
     [[nodiscard]] Policy<K> const &
     policy() const
     {
         static_assert(has<K>, "the composition was not given this policy");
-        static constexpr Policy<K> value{};
-        return value;
+        if constexpr (K == internal::PolicyKind::reads)
+        {
+            return m_reads;
+        }
+        else
+        {
+            static constexpr Policy<K> value{};
+            return value;
+        }
+    }
+
+    /** \returns whether the parts that read repetitions of a block of \a space under one name select
+     * the same ones (internal::partsSelectionsAgree()), which the whole asserts when it meets a state
+     */
+    template <typename Space>
+    [[nodiscard]] bool
+    selectionsAgree(Space const & space) const
+    {
+        return internal::partsSelectionsAgree(space, m_parts);
     }
 
     /** \returns the parts, in order */
@@ -2096,7 +2282,8 @@ private:
         ((diffBlock<Row, Columns>(out, out, q) = diffBlock<Row, Columns>(pout, pout, partNoise)), ...);
     }
 
-    std::tuple<Models...> m_parts;  ///< the parts, in order
+    std::tuple<Models...> m_parts;                       ///< the parts, in order
+    EMRYS_FILTER_NO_UNIQUE_ADDRESS ReadsPolicy m_reads;  ///< the reads() of the whole, with its selections
 };
 
 namespace internal
@@ -2167,7 +2354,6 @@ template <ProcessModel... Models>
 compose(Models &&... models)
 {
     static_assert((internal::wholeStateRefused<std::remove_cvref_t<Models>> && ...));
-    static_assert((internal::selectionRefused<std::remove_cvref_t<Models>> && ...));
     return Composition<std::remove_cvref_t<Models>...>{std::forward<Models>(models)...};
 }
 

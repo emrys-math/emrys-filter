@@ -144,7 +144,7 @@ thread counts but not across standard libraries.
 Done when: parallel draws are bitwise reproducible across thread counts within one standard
 library, and the six resamplers pass their tests.
 
-## 17zu. Selections of a repeated block — not started
+## 17zu. Selections of a repeated block — in progress
 
 A model, a placement, and an accessor name part of a repeated block: one repetition, a run of
 repetitions, or a list of them. Today an item of `reads()` is a path, a path is a type, and a model's
@@ -152,8 +152,9 @@ reads are resolved from those types and the space alone, so a model that uses on
 `Landmarks` reads the whole block. A sigma-point method then spreads its points over every landmark.
 `affineIn()` does not replace the selection: it names whole items, so it is right only where the
 function is affine in the repetition it uses, and it still forms the Jacobian and $P_{a|n}$ over
-every repetition. Designed on 2026-11-23, its spellings decided that day, and not built. Every place that names a block takes a selection in this one step, so that no spelling is left to
-be found incompatible later.
+every repetition. Designed on 2026-11-23, its spellings decided that day; the items below are what
+is left to build. Every place that names a block takes a selection in this one step, so that no
+spelling is left to be found incompatible later.
 
 **The selection** is the subscript of a path value that runs through a repeated block. A repeated
 block cannot hold another, so a path takes one subscript and it is never ambiguous. The path may
@@ -225,26 +226,32 @@ takes an integer repetition today, that argument takes a sequence or a list too.
       sampled states. Left: the same equality with the state written with one tag per repetition in
       each Gaussian form, and through `ParticleFilter`, the Rao-Blackwellized filters, and
       `GaussianMixtureFilter` themselves; an update that reads an integer selection of a resizable
-      state allocates nothing where the same model on a fixed-size state allocates nothing; and a
-      process model that reads a selection, tested with the item below.
-      `on()`, `onEach()`, and `compose()` refuse a model whose `reads()` has a selection
-      (`internal::SelectionRefusal`), since they make their `reads()` from the parts' types: the
-      placing item below carries the values through and removes the refusal. A `SelectedPath`
-      (`Spaces/TagPath.h`) is not a `PathValue`, so that no policy takes one and drops its
-      selection: each item here makes its policy take it.
-- [ ] **Selections through a placement and a composition.** Build this before `writes()`: a
-      model that writes part of a block is of use only as a part of a composition, since a filter's
-      model writes every coordinate once. `on()`, `onEach()`, and `compose()` make their `reads()`
-      from the parts' types (`Placement.h`: `placedPolicy()` returns `ReadsPolicy{}`, and
-      `OuterItemOf` drops an item's selection type; `ProcessModel.h`: `Composition::policy()`
-      returns a static default, and `ReadUnion` compares paths only), so they refuse a model with
-      a selection (`internal::SelectionRefusal`). Carry each selection's value: a placed `Reads`
-      built from the inner one's `selection<I>()`, and a composition that holds its union `Reads`,
-      each item's selection from the first part that reads its name. Parts that share a name hold
-      equal selections, asserted when the composition meets a state, where both resolve against
-      the block's count (a sequence that counts from the end cannot be compared sooner). Then
-      remove the refusal and its three negative cases. Test: `compose()` of two sightings under
-      two names equals the composition on the state with one tag per repetition.
+      state allocates nothing where the same model on a fixed-size state allocates nothing. A
+      `SelectedPath` (`Spaces/TagPath.h`) is not a `PathValue`, so that no policy takes one and
+      drops its selection: each item here makes its policy take it. `on<Path>()` and `compose()`
+      carry the selections of the models they take ([composed-selections],
+      `tests/Models/selected_placement.cpp`, which also has process models that read a selection,
+      as parts of a composition).
+- [ ] **Parts that read a block and one of its repetitions.** A question for the user, found
+      while testing compositions. The blocks a model reads are disjoint: `ReadBlocks` asserts "a
+      model must not read a coordinate twice", since the joint of what is read is a marginal of
+      the state. A composition's reads are the union of its parts' by name, so
+      `compose(steerToward, Constant<Landmarks>{})`, where `steerToward` reads
+      `path<Landmarks>[k]` under `Landmark` and `Constant` reads all of `path<Landmarks>`, reads
+      landmark `k` twice and asserts. So does any part that reads one repetition beside a part
+      that carries the whole block, which every process model of a state with a repeated block
+      has until `writes()` takes a selection. Two selections of one block that overlap do the
+      same. To allow them, the joint would hold each coordinate once and an item's rows of the
+      input would be gathered from it, the input then having more coordinates than the joint,
+      and a Jacobian's columns would be summed into the joint's. Decide whether this step builds
+      that or the rule stays, with `writes()` of a selection as the way to split the block.
+- [ ] **A selection outside the block a model is placed on.** A question for the user. In
+      `on<Vehicle>(model)`, an item of the model's `reads()` that the block `Vehicle` lacks is an
+      input of the call under its name, so `path<Landmarks>[k]` there would lose its selection,
+      and `on<Path>()` refuses it at compile time (`Placement::OuterItemOf`). The other choice
+      keeps such an item as it is, path and selection, read from the state the placed model
+      meets. It was not built, since an item without a selection would then still become an
+      input by name while one with a selection kept its path.
 - [ ] **`writes()` of a process model.** The same path values, and `on<Name>(...)`, which
       `writes()` does not take today, named as `reads()` names them (`internal::ReadItemOf`). Keep
       `Writes<Paths...>` for whole blocks, so that every model there is keeps its type, and add a

@@ -423,37 +423,33 @@ struct WholeStateRefusal
 template <typename Model>
 inline constexpr bool wholeStateRefused = WholeStateRefusal<Model>::value;
 
-/** Refuses the model \a Model where models are placed or composed, by on(), onEach(), and compose(),
- * when an item of its reads() selects repetitions of a repeated block: a placement and a composition
- * make their reads() from the parts' types, which do not hold a selection's value. Roadmap step 17zu
- * builds them. The assertion is a class's, as WholeStateRefusal's is.
+/** \returns whether the parts of \a model that read repetitions of a block of \a space under one name
+ * select the same ones (decisions.md [composed-selections]): a composition holds the selection of the
+ * first part that reads a name, and every part's function reads its input by that name. A
+ * composition's function and a placed model's answer for their parts, with \c selectionsAgree(space);
+ * any other model has no parts, and one whose reads() selects nothing has nothing to compare.
  */
-template <typename Model>
-struct SelectionRefusal
+template <typename Model, typename Space>
+[[nodiscard]] bool
+selectionsAgree([[maybe_unused]] Model const & model, [[maybe_unused]] Space const & space)
 {
-    static_assert(
-        []() consteval {
-            if constexpr (readsWholeState<Model>)
-            {
-                return true;
-            }
-            else
-            {
-                return !Model::template Policy<PolicyKind::reads>::Selected;
-            }
-        }(),
-        "a model whose reads() selects repetitions of a repeated block, path<Tags...>[...], is not yet placed by "
-        "on() or onEach() or composed by compose()"
-    );
-
-    static constexpr bool value = true;  ///< read to make the assertion
-};
-
-/** True once SelectionRefusal has refused a \a Model whose reads() selects repetitions: assert it
- * where models are placed or composed.
- */
-template <typename Model>
-inline constexpr bool selectionRefused = SelectionRefusal<Model>::value;
+    if constexpr (readsWholeState<Model>)
+    {
+        return true;
+    }
+    else if constexpr (!Model::template Policy<PolicyKind::reads>::Selected)
+    {
+        return true;
+    }
+    else if constexpr (requires { model.function().selectionsAgree(space); })
+    {
+        return model.function().selectionsAgree(space);
+    }
+    else
+    {
+        return true;
+    }
+}
 
 /** What \a Model reads in the state space \a Space: its reads(), or ReadsWhole for a whole-state model. */
 template <typename Model, typename Space>
@@ -856,6 +852,10 @@ public:
         else
         {
             static_assert(checkReadNames<ReadsPolicy, Space>());
+            EMRYS_FILTER_ASSERT(
+                selectionsAgree(model, space)
+                && "parts of a composition that read repetitions of a block under one name select the same ones"
+            );
             [&]<std::size_t... I>(std::index_sequence<I...>) {
                 ((m_valueRows[I] = blockRows<typename Item<I>::NameType>(m_in),
                   m_differenceRows[I] = differenceBlockRows<typename Item<I>::NameType>(m_in)),

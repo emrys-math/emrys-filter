@@ -42,8 +42,13 @@ instead.
   A sequence or a list is read as the repeated block with their count, so a function written for
   the whole block runs on part of it, and `on<Name>(path<Landmarks>[seen])` reads it under a name
   that may bound the count more tightly. The model holds the selection, so it is built for each
-  measurement whose selection differs. `on()`, `onEach()`, and `compose()` do not take such a
-  model yet, and `writes()` does not take a selected path yet.
+  measurement whose selection differs. `writes()` does not take a selected path yet.
+- `compose()` and `on<Path>()` take a model whose `reads()` selects repetitions. A composition reads
+  each name once, with the selection of the first part that reads it; parts that read a block
+  under one name select the same repetitions, which is asserted when the composition meets a
+  state. `on<Path>(model)` keeps the selections of the items in the model's block. `onEach<Path>()`
+  refuses such a model, since one repetition holds no repeated block, and `on<Path>()` refuses a
+  selection in an item that the model's block lacks, at compile time.
 - `idx()`, `diffIdx()`, `block()`, and `diffBlock()` take an Eigen sequence or a list of
   repetitions where they take one repetition's index: `block<Fleet>(space, x, Eigen::seqN(1, 2))`
   is vehicles 1 and 2, and `idx<TagPath<Fleet, Heading>>(space, std::array{3, 0})` the headings of

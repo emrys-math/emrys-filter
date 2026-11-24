@@ -256,6 +256,42 @@ selectedCount(S const & space, Selection const & selection)
     });
 }
 
+/** \returns whether the selections \a a and \a b name the same repetitions, in the same order, of the
+ * repeated block that \a Path runs through in \a space: two integers, or two of a sequence and a
+ * list, each resolved against the block's count, so that a sequence that counts from the block's end
+ * is compared with a list
+ */
+template <typename Path, typename S, typename A, typename B>
+[[nodiscard]] bool
+sameRepetitions([[maybe_unused]] S const & space, A const & a, B const & b)
+{
+    static_assert(RepetitionIndex<A> == RepetitionIndex<B>);
+    if constexpr (RepetitionIndex<A>)
+    {
+        return Eigen::Index(a) == Eigen::Index(b);
+    }
+    else
+    {
+        return withRepeatedSplit<Path>([&]<typename Outer, typename RepeatedTag, typename... Inner>() {
+            auto const * tag = locateRepeated<false, Outer>(space).second;
+            auto const first = resolveRepetitions<RepeatedTag::MaxCount>(tag->count(), a);
+            auto const second = resolveRepetitions<RepeatedTag::MaxCount>(tag->count(), b);
+            if (first.size() != second.size())
+            {
+                return false;
+            }
+            for (Eigen::Index i = 0; i < first.size(); ++i)
+            {
+                if (first[i] != second[i])
+                {
+                    return false;
+                }
+            }
+            return true;
+        });
+    }
+}
+
 /** Whether the rows of the repetitions that \a Selection selects through the path \a Path are one run
  * whatever its values: whole repetitions of a sequence whose increment is one.
  */

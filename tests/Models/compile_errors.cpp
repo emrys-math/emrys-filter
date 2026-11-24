@@ -144,7 +144,8 @@ makeWholeFix()
     );
 }
 
-// Models whose reads() selects one repetition of a repeated block, which are not yet placed or composed.
+// Models whose reads() selects repetitions of a repeated block: one repetition of Fixes, which no block that these
+// cases place a model on holds, and a step from what its item reads, a whole block or repetitions of it.
 [[maybe_unused]] auto
 makeFixOfOne()
 {
@@ -166,6 +167,19 @@ makeStepOfOne()
         },
         Emrys::reads(Emrys::path<Fixes>[1]),
         Emrys::writes(Emrys::path<Offset>)
+    );
+}
+
+template <typename Written>
+[[maybe_unused]] auto
+makeStepFromFixes(auto const & item)
+{
+    return Emrys::processModel(
+        []<typename T>(auto const &, auto const &, auto const & x, auto) {
+            return Eigen::Matrix<T, 2, 1>{x.template head<2>()};
+        },
+        Emrys::reads(item),
+        Emrys::writes(Emrys::path<Written>)
     );
 }
 
@@ -545,16 +559,19 @@ struct Landmarks : Emrys::Linear<Eigen::Dynamic, 8>
 [[maybe_unused]] auto const composed = Emrys::compose(makeWholeFix(), makeFixModel());
 #endif
 
-#if defined(ON_MODEL_THAT_READS_A_SELECTION)  // static_assert: ResolvedReads.h: a model whose reads() selects
+#if defined(ON_MODEL_THAT_SELECTS_OUTSIDE_ITS_BLOCK)  // static_assert: Placement.h: reads() selects repetitions only
 [[maybe_unused]] auto const placed = Emrys::on<Position>(makeFixOfOne());
 #endif
 
-#if defined(COMPOSE_MODELS_THAT_READ_A_SELECTION)  // static_assert: ResolvedReads.h: a model whose reads() selects
-[[maybe_unused]] auto const composed = Emrys::compose(makeFixOfOne(), makeFixModel());
+#if defined(ON_EACH_MODEL_THAT_READS_A_SELECTION)  // static_assert: Placement.h: which holds no repeated block
+[[maybe_unused]] auto const placed = Emrys::onEach<Fixes>(makeStepOfOne());
 #endif
 
-#if defined(COMPOSE_PROCESS_MODELS_THAT_READ_A_SELECTION)  // static_assert: ResolvedReads.h: a model whose reads()
-[[maybe_unused]] auto const composed = Emrys::compose(makeStepOfOne(), makeModel());
+#if defined(COMPOSE_A_BLOCK_AND_A_SELECTION_OF_IT)  // static_assert: ProcessModel.h: two parts of a composition read a
+[[maybe_unused]] auto const composed = Emrys::compose(
+    makeStepFromFixes<Offset>(Emrys::path<Fixes>),
+    makeStepFromFixes<Position>(Emrys::path<Fixes>[Eigen::seqN(0, 2)])
+);
 #endif
 
 #if defined(FUNCTION_IN_NO_FORM)  // static_assert: Methods.h: a model's function takes h(x), h(in, x), or h(in, out, x)

@@ -313,8 +313,12 @@ auto const updated = filter.update(
 A function that is affine in the landmark given the vehicle names it, `affineIn(path<Landmark>)`,
 and the points then spread over the vehicle alone. A selection whose blocks have no tag of their
 own, or two selections of one block, are read under names: `on<From>(path<Fleet>[i])` and
-`on<To>(path<Fleet>[j])`. A model that reads a selection is not yet placed by `on()` or `onEach()`
-or composed by `compose()`, and `writes()` does not yet take one.
+`on<To>(path<Fleet>[j])`. `compose()` reads each name once, so two parts that sight two landmarks
+read them under two names, and two parts that read a landmark under one name must select the same
+one, which is asserted when the composition meets a state. `on<Path>(model)` keeps the selections of
+the model it places. The parts of one composition read no coordinate twice, so a part that reads
+`path<Landmarks>[k]` cannot stand beside one that reads all of `path<Landmarks>`, and `writes()`
+does not yet take a selection.
 
 A model built once covers a measurement that follows the state's counts:
 `outputSpace(CountFrom<Landmarks, RangeBearings>{})` sizes it, a matrix's `Columns` repeat with a
