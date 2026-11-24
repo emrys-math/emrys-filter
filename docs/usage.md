@@ -134,6 +134,7 @@ Answer each question below on its own. The first answer is the default; where an
 |---|---|---|
 | Linear dynamics and measurements, Gaussian noise | `KalmanFilter`, with each measurement a `measurementModel()` given its matrix; on a plain vector, the process model too | [constant_velocity.cpp](../examples/constant_velocity.cpp), [linear_kalman.cpp](../examples/linear_kalman.cpp) |
 | Mildly nonlinear models, a posterior near one Gaussian | `KalmanFilter`: `methods::linearized()` is the EKF, `methods::unscented()` the unscented filter, chosen per model | [unicycle.cpp](../examples/unicycle.cpp) |
+| A map of many landmarks, each measurement of one | `KalmanFilter` over a `Repeated` block, each model reading `path<Landmarks>[k]` | [landmarks.cpp](../examples/landmarks.cpp) |
 | A state on a manifold, such as an attitude | `KalmanFilter` over a `UnitQuaternion` block | [attitude.cpp](../examples/attitude.cpp) |
 | A sensor's bias or a parameter known only from its calibration, to account for without estimating it | `KalmanFilter`, with `Emrys::consider(Emrys::path<Bias>)` in the measurement's `observe()` | [consider_bias.cpp](../examples/consider_bias.cpp) |
 | A precise, strongly nonlinear measurement | `methods::iterated(methods::linearized())` (the iterated EKF) or `methods::iterated(methods::unscented())` (the iterated posterior linearization filter) as the measurement's method | — |
@@ -310,7 +311,8 @@ auto const updated = filter.update(
     Emrys::observe(Emrys::methods::unscented(), sighting(k), z));
 ```
 
-A function that is affine in the landmark given the vehicle names it, `affineIn(path<Landmark>)`,
+[landmarks.cpp](../examples/landmarks.cpp) runs it, a vehicle sighting one landmark a step. A
+function that is affine in the landmark given the vehicle names it, `affineIn(path<Landmark>)`,
 and the points then spread over the vehicle alone. A selection whose blocks have no tag of their
 own, or two selections of one block, are read under names: `on<From>(path<Fleet>[i])` and
 `on<To>(path<Fleet>[j])`. `compose()` reads each name once, so two parts that sight two landmarks

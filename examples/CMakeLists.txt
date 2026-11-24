@@ -4,6 +4,7 @@ set(EMRYS_FILTER_EXAMPLES
   constant_velocity
   linear_kalman
   unicycle
+  landmarks
   attitude
   consider_bias
   particle_filter

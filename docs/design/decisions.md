@@ -1716,7 +1716,8 @@ by path [product-factors], with no `reads()`. An `onEach` block repeats the meas
 each update [measurement-space-functions].
 The function returns $H x$ with $H$ as its Jacobian [returned-jacobians], so every method, form,
 and covariance update takes it exactly. Blocks read and the output space have no `plus()` of their
-own.
+own. A block of `Columns` may be placed on selected repetitions, `onEach(path<Landmarks>[seen], h)`
+[placed-selected-values].
 
 **Why.** A position fix was a lambda returning its argument, which reads as an approximation and
 differentiates a matrix; a linear measurement is its $H$. Each landmark's position relative to the
@@ -1828,7 +1829,8 @@ is a call named for what it declares, given at most once: `reads(items...)`, `wr
 method is never a policy: it is given at the call, `predict(method, ...)` and
 `observe(method, ...)`, since it is the filter's rule for pushing the joint prior through the
 model, and a composition is one model. An input of a call is named by the tag of its space, as a
-distribution or as `sure<Tag>(value)`.
+distribution or as `sure<Tag>(value)`. An item of `reads()` or `writes()` may select repetitions of
+a repeated block [selected-reads], [selected-writes].
 
 **Why.** With nothing positional but the function, a policy named by its call reads at the call
 site and cannot land in the wrong slot, and a model reads what it names wherever those blocks sit.
@@ -1890,7 +1892,8 @@ noise; an input renamed to a `Repeated` tag has a value per repetition, any othe
 `compose(models...)` of measurement models measures the blocks they write side by side: the union
 of their reads, their noise on their blocks, and the sum of their log-likelihoods where each has
 one. Parts of a composition of process models that state a scalar state the same one; a part that
-states none joins any.
+states none joins any. A model is placed on selected repetitions by a path value too,
+`on(path<Fleet>[k], model)` [placed-repetitions].
 
 **Why.** A model is written once for the block it moves, a vehicle or a sensor, and placed where the
 state holds it, so a two-vehicle state is two placements of one model. Sharing an input, gravity

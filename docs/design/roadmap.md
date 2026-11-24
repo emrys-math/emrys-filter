@@ -272,12 +272,6 @@ takes an integer repetition today, that argument takes a sequence or a list too.
 - [ ] **`consider()` and `given()`, the rest.** Both take selections
       ([placed-selected-values], `tests/Models/consider.cpp`). Left: a selected `given()` through
       the Rao-Blackwellized filters and the IMM filter, which take a `GivenBlock` of a whole block.
-- [ ] **Records.** The rules in [repetition-selections], [model-policies], [model-placement],
-      [linear-sensors], [product-factors], and [consider-states]; a section of usage.md and the user
-      skills that describe `reads()`; CHANGELOG, with the `erase()` change; and
-      `examples/landmarks.cpp`, a vehicle sighting landmarks one at a time, which fails when its
-      consistency check does.
-
 Done when: every item's test and every negative compile case passes on all three compilers, and the
 audit's list has no function without a test or a refusal.
 

@@ -76,7 +76,9 @@ Follow "The pieces of an estimator" in usage.md, in this order:
    additiveNoise(noise))`, whose function `h(in, out, x)`, `h(in, x)`, or `h(x)` reads each block it
    names with `block<Tag>(in, x)`. A model without `reads()` reads the whole state, which suits a
    plain `Linear<N>` state with nothing to name. A linear one gives its matrix in place of `h`, or its `Columns`, a matrix
-   per block, with `onEach<>()` for a repeated block such as landmarks. A function for
+   per block, with `onEach<>()` for a repeated block such as landmarks. A model that reads one
+   landmark of many names it `reads(..., path<Landmarks>[k])`, built for each sighting, so a
+   sigma-point method spreads over that landmark alone (examples/landmarks.cpp). A function for
    `Linearized` is generic in its scalar (see "Conventions"). A measurement of an angle names
    its periodic space with `outputSpace()`. The noise is additive, `additiveNoise(R)` of its
    covariance alone when it is zero-mean, a Gaussian, or a Gaussian mixture, or an input of the call, named by its tag in `reads()` and passed to `observe()`

@@ -81,6 +81,8 @@ instead.
 - `nees<Path>(truth, estimate, repetitions)` tests the repetitions selected of a repeated block:
   `nees<Landmarks>(truth, filter.state(), k)`.
 - `NeesMonitor::add<Path>(truth, estimate, repetitions)` adds the NEES of the repetitions selected.
+- `examples/landmarks.cpp`: a vehicle mapping landmarks, each sighting a model of one landmark,
+  `path<Landmarks>[k]`.
 - The forms of `idx()`, `diffIdx()`, `block()`, `diffBlock()`, and `marginal()` that take a
   repetition take a path that reaches its repeated block through other tags:
   `block<TagPath<Theater, Fleet>>(space, x, k)`. The path had to start at the repeated block.
