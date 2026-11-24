@@ -1081,6 +1081,21 @@ public:
         });
     }
 
+    /** A product conditions on blocks, not on repetitions selected of a repeated block: its
+     * factor on every repetition, an EachRepetition, has no conditional of some of them.
+     * Condition the product's parameters in a joint form instead.
+     */
+    template <typename GivenPath, typename Derived, internal::RepetitionChoice Choice>
+    void
+    conditional(Eigen::MatrixBase<Derived> const &, Choice const &) const
+    {
+        static_assert(
+            std::is_void_v<Derived>,
+            "a product conditions on blocks, not on selected repetitions of a repeated block; convert it to a "
+            "Gaussian first"
+        );
+    }
+
 private:
 
     /** The product of \a factors in \a space, each taken from its position \a K. */

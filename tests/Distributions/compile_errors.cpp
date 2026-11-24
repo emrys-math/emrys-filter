@@ -240,6 +240,41 @@ makeCars()
     makeCars().conditional<Emrys::TagPath<Cars, Wheel>>(Eigen::Matrix<double, 1, 1>::Zero(), 1);
 #endif
 
+// A grid or a particle-Gaussian split takes a block outside every repeated block, so a path into each
+// repetition is refused (roadmap 17zu audit); a model placed on one repetition covers that case.
+#if defined(POINT_GRID_INSIDE_REPETITIONS)  // static_assert: TagPath.h: this path continues inside a repeated block
+[[maybe_unused]] auto const grid =
+    Emrys::pointGrid<Emrys::TagPath<Cars, Wheel>>(Cars{Car{}, 2}, Eigen::Matrix<double, 1, 3>{0.0, 1.0, 2.0});
+#endif
+
+#if defined(REGULAR_GRID_INSIDE_REPETITIONS)  // static_assert: TagPath.h: this path continues inside a repeated block
+[[maybe_unused]] auto const grid = Emrys::regularGrid<Emrys::TagPath<Cars, Wheel>>(
+    Cars{Car{}, 2},
+    Eigen::Matrix<double, 1, 1>{0.0},
+    Eigen::Matrix<double, 1, 1>{1.0},
+    std::array<Eigen::Index, 1>{3}
+);
+#endif
+
+#if defined(PARTICLE_GAUSSIAN_INSIDE_REPETITIONS)  // static_assert: TagPath.h: this path continues inside a repeated
+[[maybe_unused]] void
+drawInsideRepetitions()
+{
+    auto draws = std::mt19937{1};
+    [[maybe_unused]] auto const split = Emrys::drawParticleGaussian<Emrys::TagPath<Cars, Wheel>>(makeCars(), 10, draws);
+}
+#endif
+
+#if defined(PRODUCT_CONDITIONAL_ON_REPETITIONS)  // static_assert: Product.h: a product conditions on blocks, not on
+[[maybe_unused]] void
+productOnRepetitions()
+{
+    auto const car = Emrys::GaussianParams<Car>{Eigen::Vector3d::Zero(), Eigen::Matrix3d::Identity()};
+    auto const product = Emrys::Product{Cars{Car{}, 2}, Emrys::onEach<Cars>(car)};
+    product.conditional<Cars>(Eigen::Vector3d::Zero(), 1);
+}
+#endif
+
 // A view of a temporary would dangle, so marginal() and toDensity() of an rvalue are deleted.
 
 #if defined(GAUSSIAN_MARGINAL_OF_TEMPORARY)  // deleted: Gaussian.h: marginal() const &&

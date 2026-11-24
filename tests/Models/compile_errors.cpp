@@ -1791,6 +1791,55 @@ scalarOf(auto... policies)
 [[maybe_unused]] auto const repetitionMark = Emrys::given<Fleet>(Emrys::Composite<Fleet>{}, Eigen::Vector4d{}, 1);
 #endif
 
+// The built-in process models take blocks outside every repeated block, so a path into each repetition is
+// refused (roadmap 17zu audit); on(path<Fleet>[k], model) and onEach() place one on repetitions.
+[[maybe_unused]] Emrys::GaussianParams<Emrys::Composite<Fleet>>
+makeFleetPrior()
+{
+    return {Emrys::Composite<Fleet>{Fleet{Vehicle{}, 2}}, Eigen::VectorXd::Zero(8), Eigen::MatrixXd::Identity(8, 8)};
+}
+
+using FleetPosition = Emrys::TagPath<Fleet, Position>;
+
+#if defined(RANDOM_WALK_INSIDE_REPETITIONS)  // static_assert: TagPath.h: this path continues inside a repeated block
+[[maybe_unused]] auto const predicted = Emrys::predict(
+    Emrys::methods::linearized(),
+    makeFleetPrior(),
+    Emrys::compose(Emrys::RandomWalk<FleetPosition>{0.1}, Emrys::RandomWalk<Emrys::TagPath<Fleet, Velocity>>{0.1}),
+    1.0
+);
+#endif
+
+#if defined(KINEMATIC_INSIDE_REPETITIONS)  // static_assert: TagPath.h: this path continues inside a repeated block
+[[maybe_unused]] auto const predicted = Emrys::predict(
+    Emrys::methods::linearized(),
+    makeFleetPrior(),
+    Emrys::ConstantVelocity<FleetPosition, Emrys::TagPath<Fleet, Velocity>>{0.1},
+    1.0
+);
+#endif
+
+#if defined(ORNSTEIN_UHLENBECK_INSIDE_REPETITIONS)  // static_assert: TagPath.h: this path continues inside a
+[[maybe_unused]] auto const predicted = Emrys::predict(
+    Emrys::methods::linearized(),
+    makeFleetPrior(),
+    Emrys::compose(
+        Emrys::OrnsteinUhlenbeck<FleetPosition>{Emrys::TimeConstant{1.0}, Emrys::StationaryVariance{1.0}},
+        Emrys::Constant<Emrys::TagPath<Fleet, Velocity>>{}
+    ),
+    1.0
+);
+#endif
+
+#if defined(ZERO_INSIDE_REPETITIONS)  // static_assert: TagPath.h: this path continues inside a repeated block
+[[maybe_unused]] auto const predicted = Emrys::predict(
+    Emrys::methods::linearized(),
+    makeFleetPrior(),
+    Emrys::compose(Emrys::Zero<FleetPosition>{1.0}, Emrys::Constant<Emrys::TagPath<Fleet, Velocity>>{}),
+    1.0
+);
+#endif
+
 #if defined(ON_EACH_OF_ONE_REPETITION)  // static_assert: Placement.h: places a model on each of several repetitions
 [[maybe_unused]] auto const model = Emrys::onEach(Emrys::path<Fleet>[1], pushed());
 #endif

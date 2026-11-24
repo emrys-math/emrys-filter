@@ -272,11 +272,6 @@ takes an integer repetition today, that argument takes a sequence or a list too.
 - [ ] **`consider()` and `given()`, the rest.** Both take selections
       ([placed-selected-values], `tests/Models/consider.cpp`). Left: a selected `given()` through
       the Rao-Blackwellized filters and the IMM filter, which take a `GivenBlock` of a whole block.
-- [ ] **Audit.** List every public function that takes a path, among them `pointGrid()`,
-      `regularGrid()`, the Rao-Blackwellized filters' blocks, `CountFrom`, and `byMode()`, and a
-      path through a repeated block with no subscript (`path<Fleet, Heading>`), and give each a
-      test with a selection or a `static_assert` that refuses one, with its negative compile case.
-      The list goes in the commit message.
 - [ ] **Records.** The rules in [repetition-selections], [model-policies], [model-placement],
       [linear-sensors], [product-factors], and [consider-states]; a section of usage.md and the user
       skills that describe `reads()`; CHANGELOG, with the `erase()` change; and

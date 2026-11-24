@@ -306,7 +306,7 @@ TEST(ComputedSpace, UpdatesGivenABlock)
 }
 
 // CountFrom gives a resizable coordinate the count of a repeated block, one coordinate per
-// repetition, whether or not the model reads the block.
+// repetition, whether or not the model reads the block, and so does a path into each repetition.
 TEST(ComputedSpace, CountFromSizesAResizableCoordinate)
 {
     auto const space = Map{Pose{}, Landmarks{Landmark{}, 5}};
@@ -314,6 +314,23 @@ TEST(ComputedSpace, CountFromSizesAResizableCoordinate)
     EXPECT_EQ(Emrys::valueDimension(ranges), 5);
     auto const rangeBearings = CountFrom<Landmarks, RangeBearings>{}(space);
     EXPECT_EQ(rangeBearings.count(), 5);
+
+    // A path into each repetition counts the repetitions too: a coordinate per car's speed.
+    struct Speed : Linear<1>
+    {};
+
+    struct Car : Composite<Landmark, Speed>
+    {};
+
+    struct Cars : Repeated<Car, 8>
+    {
+        using Repeated::Repeated;
+    };
+
+    using Garage = Composite<Pose, Cars>;
+    auto const speeds =
+        CountFrom<Emrys::TagPath<Cars, Speed>, Linear<Eigen::Dynamic, 8>>{}(Garage{Pose{}, Cars{Car{}, 3}});
+    EXPECT_EQ(Emrys::valueDimension(speeds), 3);
 }
 
 // Noise placed by tag path in a fixed measurement space is the Gaussian of its parts: a radar whose
