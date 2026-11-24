@@ -1787,6 +1787,10 @@ scalarOf(auto... policies)
 [[maybe_unused]] auto const model = Emrys::on(Emrys::path<Fleet>[Eigen::seqN(0, 2)], scalarOf<Range>());
 #endif
 
+#if defined(GIVEN_SELECTED_TEMP)  // deleted: Measurement.h: given(Space const &, Value const &&, Selection const &)
+[[maybe_unused]] auto const repetitionMark = Emrys::given<Fleet>(Emrys::Composite<Fleet>{}, Eigen::Vector4d{}, 1);
+#endif
+
 #if defined(ON_EACH_OF_ONE_REPETITION)  // static_assert: Placement.h: places a model on each of several repetitions
 [[maybe_unused]] auto const model = Emrys::onEach(Emrys::path<Fleet>[1], pushed());
 #endif

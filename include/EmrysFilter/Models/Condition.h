@@ -16,6 +16,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <Eigen/Cholesky>
 
@@ -277,12 +278,81 @@ posteriorCov(
     return Matrix{Scalar(0.5) * (result + result.transpose())};
 }
 
-/** The rows of the state's differences that a Kalman update considers, one BlockRows per block
- * that a consider() names, resolved against the state's space (decisions.md [consider-states]).
- * NoConsidered, of no blocks, is the full update.
+/** A capacity of ConsideredRows that nothing bounds, whose rows a std::vector holds. */
+inline constexpr std::size_t unboundedRows = std::size_t(-1);
+
+/** The rows of the state's differences that a Kalman update considers, resolved against the state's
+ * space (decisions.md [consider-states]): one BlockRows per block that a consider() names, or per
+ * repetition it selects, up to \a Capacity of them. NoConsidered, of no blocks, is the full update.
  */
-template <std::size_t K>
-using ConsideredRows = std::array<BlockRows, K>;
+template <std::size_t Capacity>
+class ConsideredRows
+{
+public:
+
+    constexpr ConsideredRows() = default;
+
+    /** Adds the block \a rows. */
+    constexpr void
+    add(BlockRows rows)
+    {
+        EMRYS_FILTER_ASSERT(m_size < Capacity && "the blocks considered exceed their bound");
+        m_rows[m_size++] = rows;
+    }
+
+    /** \returns the first block considered */
+    [[nodiscard]] constexpr BlockRows const *
+    begin() const
+    {
+        return m_rows.data();
+    }
+
+    /** \returns the end of the blocks considered */
+    [[nodiscard]] constexpr BlockRows const *
+    end() const
+    {
+        return m_rows.data() + m_size;
+    }
+
+private:
+
+    std::array<BlockRows, Capacity> m_rows{};  ///< the blocks, the first m_size of them
+    std::size_t m_size = 0;                    ///< how many there are
+};
+
+/** The rows considered where nothing bounds how many repetitions a selection names. */
+template <>
+class ConsideredRows<unboundedRows>
+{
+public:
+
+    ConsideredRows() = default;
+
+    /** Adds the block \a rows. */
+    void
+    add(BlockRows rows)
+    {
+        m_rows.push_back(rows);
+    }
+
+    /** \returns the first block considered */
+    [[nodiscard]] auto
+    begin() const
+    {
+        return m_rows.begin();
+    }
+
+    /** \returns the end of the blocks considered */
+    [[nodiscard]] auto
+    end() const
+    {
+        return m_rows.end();
+    }
+
+private:
+
+    std::vector<BlockRows> m_rows;  ///< the blocks
+};
 
 /** The considered rows of a full update: none. */
 using NoConsidered = ConsideredRows<0>;

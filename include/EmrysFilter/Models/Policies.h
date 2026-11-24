@@ -1567,6 +1567,57 @@ consider(Paths const &...)
     return {};
 }
 
+/** \ingroup Models
+ * \brief The blocks of the state that a Kalman update considers, as consider() names them when one
+ * of them selects repetitions of a repeated block (decisions.md [consider-states],
+ * [repetition-selections]): each item a block, or the repetitions it selects, held by value.
+ *
+ * \tparam Items  the items, as internal::ReadItem
+ */
+template <typename... Items>
+struct ConsiderItems : internal::ReadSelections<std::index_sequence_for<Items...>, Items...>
+{
+    static constexpr std::size_t Count = sizeof...(Items);  ///< the number of items
+
+    /** The item at position \a I. */
+    template <std::size_t I>
+    using Item = std::tuple_element_t<I, std::tuple<Items...>>;
+
+    /** The items holding \a selections, one for each in order. */
+    explicit ConsiderItems(std::in_place_t, typename Items::SelectionType const &... selections)
+        : internal::ReadSelections<std::index_sequence_for<Items...>, Items...>{std::in_place, selections...}
+    {}
+
+    /** \returns the selection of the item at position \a I, or internal::NoSelection */
+    template <std::size_t I>
+    [[nodiscard]] auto const &
+    selection() const
+    {
+        return static_cast<internal::ItemSelection<I, typename Item<I>::SelectionType> const &>(*this).value;
+    }
+};
+
+/** \ingroup Models
+ * \returns the blocks named by \a items, each a path value or a selected path such as
+ * <tt>path<Landmarks>[k]</tt>, as the argument of observe() that considers them: one repetition,
+ * or each of a sequence or a list (decisions.md [consider-states], [placed-selected-values]). The
+ * selections are held by value, and no coordinate is considered twice, which is asserted where the
+ * update meets the state.
+ */
+template <typename... Items>
+    requires(
+        sizeof...(Items) > 0 && !(PathValue<Items> && ...)
+        && (internal::ReadItemOf<std::remove_cvref_t<Items>>::valid && ...)
+    )
+[[nodiscard]] ConsiderItems<typename internal::ReadItemOf<std::remove_cvref_t<Items>>::type...>
+consider(Items const &... items)
+{
+    return ConsiderItems<typename internal::ReadItemOf<std::remove_cvref_t<Items>>::type...>{
+        std::in_place,
+        internal::readSelection(items)...
+    };
+}
+
 namespace internal
 {
 
@@ -1577,6 +1628,9 @@ inline constexpr bool isConsider = false;
 /// \cond INTERNAL_SPECIALIZATIONS
 template <typename... Paths>
 inline constexpr bool isConsider<Consider<Paths...>>{true};
+
+template <typename... Items>
+inline constexpr bool isConsider<ConsiderItems<Items...>>{true};
 /// \endcond
 
 }  // namespace internal

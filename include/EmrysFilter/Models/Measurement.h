@@ -521,7 +521,7 @@ conditionOnPrediction(
     constexpr bool BranchStatistics = Statistics || MixtureParams;
     using BranchRepair = typename R::InnovationRepair;
     // The blocks considered, which every branch keeps as the prior has them [consider-states].
-    auto const considered = consideredRows<R>(prior.space());
+    auto const considered = consideredRows(resolved, prior.space());
 
     // What the updates take to make updates::Joseph's terms for a noise component whose covariance is
     // noise: a callable that makes them when the form asks, and nothing for the forms that never
@@ -720,13 +720,27 @@ conditionOnPrediction(
 }  // namespace internal
 
 /** \ingroup Models
+ * The repetitions of a repeated block of a state given from outside the %Gaussian being updated, as
+ * given(space, value, selection) makes it: those that \a Selection selects of the repeated block the
+ * path \a P runs through, as one block, the block that is repeated for one, a repeated block of
+ * their count for several.
+ */
+template <typename Space, typename P, typename Value, typename Selection = internal::NoSelection>
+struct GivenBlock
+{
+    Space space;          ///< the whole state space
+    Value const & value;  ///< the repetitions' value, known or an uncertain input
+    Selection selection;  ///< the repetitions given
+};
+
+/** \ingroup Models
  * A block of a state given from outside the %Gaussian being updated, as given() makes it, for
  * update(prior, measurement, given): the block named by the path \a P of a state in \a Space,
  * given as \a Value. The space is a copy, since a space is empty or holds its sizes, so only the
  * value is borrowed.
  */
 template <typename Space, typename P, typename Value>
-struct GivenBlock
+struct GivenBlock<Space, P, Value, internal::NoSelection>
 {
     Space space;          ///< the whole state space
     Value const & value;  ///< the block's value, known or an uncertain input
@@ -735,11 +749,31 @@ struct GivenBlock
 namespace internal
 {
 
-/** A measurement's model as a function of the rest of the state and the block named by the path
- * \a P, which together make up a state in \a Space: <tt>(x, p, inputs...)</tt>, with the call's
- * uncertain inputs after them. Holds the measurement \a M resolved against \a Space.
+/** The space of what a block given by the path \a P with the selection \a Selection names in a state
+ * in \a Space, as \c type: the block, the block that is repeated for one repetition, or a repeated
+ * block of their count for several.
  */
-template <typename Space, typename P, typename M>
+template <typename Space, typename P, typename Selection>
+struct GivenSpaceOf
+{
+    using type = decltype(pathChoiceSubspace<P>(std::declval<Space const &>(), std::declval<Selection const &>()));
+};
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename Space, typename P>
+struct GivenSpaceOf<Space, P, NoSelection>
+{
+    using type = PathTag<P>;
+};
+
+/// \endcond
+
+/** A measurement's model as a function of the rest of the state and the block named by the path
+ * \a P, or the repetitions \a Selection selects of the repeated block it runs through, which together
+ * make up a state in \a Space: <tt>(x, p, inputs...)</tt>, with the call's uncertain inputs after
+ * them. Holds the measurement \a M resolved against \a Space.
+ */
+template <typename Space, typename P, typename M, typename Selection = NoSelection>
 class PinnedMeasurement
 {
 public:
@@ -756,8 +790,20 @@ private:
         valueDimensionAtCompileTime<DifferenceSpace<Space>>;  ///< the whole state's difference dimension
     static constexpr int DMax = maxValueDimensionAtCompileTime<DifferenceSpace<Space>>;  ///< a bound on it
 
+    /** The given block's space. */
+    using GivenSpace = typename GivenSpaceOf<Space, P, Selection>::type;
+
+    /** Whether the given rows are one run: a block, one repetition, or whole repetitions of a
+     * sequence whose increment is one. A list is given through its coordinates' indices.
+     */
+    static constexpr bool OneRun =
+        std::is_same_v<Selection, NoSelection> || RepetitionIndex<Selection> || selectsOneRun<P, Selection>;
+
     /** The given block's difference dimension. */
-    static constexpr int PinnedD = valueDimensionAtCompileTime<DifferenceSpace<PathTag<P>>>;
+    static constexpr int PinnedD = valueDimensionAtCompileTime<DifferenceSpace<GivenSpace>>;
+
+    /** A bound on it. */
+    static constexpr int PinnedDMax = maxValueDimensionAtCompileTime<DifferenceSpace<GivenSpace>>;
 
     /** The rest's difference dimension. */
     static constexpr int RestD = D == Eigen::Dynamic || PinnedD == Eigen::Dynamic ? Eigen::Dynamic : D - PinnedD;
@@ -765,7 +811,49 @@ private:
     static constexpr int RestDMax = RestD == Eigen::Dynamic ? DMax : RestD;  ///< a bound on it
 
     /** The given block's value dimension. */
-    static constexpr int PinnedN = valueDimensionAtCompileTime<PathTag<P>>;
+    static constexpr int PinnedN = valueDimensionAtCompileTime<GivenSpace>;
+
+    /** A bound on it. */
+    static constexpr int PinnedNMax = maxValueDimensionAtCompileTime<GivenSpace>;
+
+    /** The indices of the given coordinates, in values and in differences, where they are not one
+     * run, and of the rest's differences; nothing otherwise.
+     */
+    struct ListedRows
+    {
+        IndexVector<PinnedN, PinnedNMax> given;             ///< the given value coordinates
+        IndexVector<PinnedD, PinnedDMax> givenDifferences;  ///< the given difference coordinates
+        IndexVector<RestD, RestDMax> restDifferences;       ///< the difference coordinates outside them
+    };
+
+    /** \returns the given rows of \a space with \a selection where they are one run, in values, or in
+     * differences if \a Difference
+     */
+    template <bool Difference>
+    [[nodiscard]] static BlockRows
+    givenRun(Space const & space, [[maybe_unused]] Selection const & selection)
+    {
+        if constexpr (std::is_same_v<Selection, NoSelection>)
+        {
+            if constexpr (Difference)
+            {
+                return differenceBlockRows<P>(space);
+            }
+            else
+            {
+                return blockRows<P>(space);
+            }
+        }
+        else if constexpr (RepetitionIndex<Selection>)
+        {
+            return repetitionBlockRows<Difference, P>(space, selection);
+        }
+        else
+        {
+            auto const coordinates = selectionCoordinates<Difference, P>(space, selection);
+            return BlockRows{coordinates.size() > 0 ? coordinates(0) : Eigen::Index{0}, coordinates.size()};
+        }
+    }
 
     /** The rest's value dimension. */
     static constexpr int RestN = N == Eigen::Dynamic || PinnedN == Eigen::Dynamic ? Eigen::Dynamic : N - PinnedN;
@@ -777,21 +865,33 @@ public:
     /** Resolves \a measurement against \a space and the given block's rows and the rest's in it;
      * the measurement outlives this.
      */
-    PinnedMeasurement(Space const & space, M const & measurement)
+    PinnedMeasurement(Space const & space, M const & measurement, Selection const & selection = {})
         : m_resolved{measurement, space}
-        , m_rows{blockRows<P>(space)}
-        , m_differenceRows{differenceBlockRows<P>(space)}
         , m_size{valueDimension(space)}
         , m_differenceSize{differenceDimension(space)}
     {
-        m_rest.resize(m_size - m_rows.size);
-        Eigen::Index k = 0;
-        for (Eigen::Index i = 0; i < m_size; ++i)
+        if constexpr (OneRun)
         {
-            if (i < m_rows.start || i >= m_rows.start + m_rows.size)
+            m_rows = givenRun<false>(space, selection);
+            m_differenceRows = givenRun<true>(space, selection);
+            m_rest.resize(m_size - m_rows.size);
+            Eigen::Index k = 0;
+            for (Eigen::Index i = 0; i < m_size; ++i)
             {
-                m_rest(k++) = i;
+                if (i < m_rows.start || i >= m_rows.start + m_rows.size)
+                {
+                    m_rest(k++) = i;
+                }
             }
+        }
+        else
+        {
+            m_listed.given = selectionCoordinates<false, P>(space, selection);
+            m_listed.givenDifferences = selectionCoordinates<true, P>(space, selection);
+            m_rows = BlockRows{0, m_listed.given.size()};
+            m_differenceRows = BlockRows{0, m_listed.givenDifferences.size()};
+            m_rest = complementOf<RestN, RestNMax>(m_listed.given, m_size);
+            m_listed.restDifferences = complementOf<RestD, RestDMax>(m_listed.givenDifferences, m_differenceSize);
         }
     }
 
@@ -823,7 +923,14 @@ public:
         auto state = Eigen::Matrix<T, N, 1, Eigen::ColMajor, NMax, 1>{};
         state.resize(m_size);
         state(m_rest) = x;
-        middleRowsOf<PinnedN>(state, m_rows.start, m_rows.size) = p.template cast<T>();
+        if constexpr (OneRun)
+        {
+            middleRowsOf<PinnedN>(state, m_rows.start, m_rows.size) = p.template cast<T>();
+        }
+        else
+        {
+            state(m_listed.given) = p.template cast<T>();
+        }
         using Returned = std::remove_cvref_t<decltype(m_resolved.evaluateAtState(state, inputs...))>;
         if constexpr (!isWithJacobian<Returned>)
         {
@@ -866,7 +973,15 @@ public:
         {
             auto state = states.col(j);
             state(m_rest) = xs.col(j);
-            middleRowsOf<PinnedN>(state, m_rows.start, m_rows.size) = p.col(p.cols() == 1 ? 0 : j).template cast<T>();
+            if constexpr (OneRun)
+            {
+                middleRowsOf<PinnedN>(state, m_rows.start, m_rows.size) =
+                    p.col(p.cols() == 1 ? 0 : j).template cast<T>();
+            }
+            else
+            {
+                state(m_listed.given) = p.col(p.cols() == 1 ? 0 : j).template cast<T>();
+            }
         }
         m_resolved.evaluateStateColumns(y, states, inputs...);
     }
@@ -887,18 +1002,32 @@ private:
         constexpr int Rows = Whole::RowsAtCompileTime;
         constexpr int MaxRows = Whole::MaxRowsAtCompileTime;
         using RestJacobian = MatrixOf<Scalar, Rows, RestD, MaxRows, RestDMax>;
-        using GivenJacobian =
-            MatrixOf<Scalar, Rows, PinnedD, MaxRows, maxValueDimensionAtCompileTime<DifferenceSpace<PathTag<P>>>>;
-        Eigen::Index const before = m_differenceRows.start;
-        Eigen::Index const after = m_differenceSize - m_differenceRows.start - m_differenceRows.size;
-        RestJacobian rest(whole.rows(), before + after);
-        rest.leftCols(before) = whole.leftCols(before);
-        rest.rightCols(after) = whole.rightCols(after);
-        GivenJacobian given = middleColsOf<PinnedD>(whole, m_differenceRows.start, m_differenceRows.size);
+        using GivenJacobian = MatrixOf<Scalar, Rows, PinnedD, MaxRows, PinnedDMax>;
+        auto const [rest, given] = [&] {
+            if constexpr (OneRun)
+            {
+                Eigen::Index const before = m_differenceRows.start;
+                Eigen::Index const after = m_differenceSize - m_differenceRows.start - m_differenceRows.size;
+                RestJacobian restColumns(whole.rows(), before + after);
+                restColumns.leftCols(before) = whole.leftCols(before);
+                restColumns.rightCols(after) = whole.rightCols(after);
+                return std::pair{
+                    std::move(restColumns),
+                    GivenJacobian{middleColsOf<PinnedD>(whole, m_differenceRows.start, m_differenceRows.size)}
+                };
+            }
+            else
+            {
+                return std::pair{
+                    RestJacobian{whole(Eigen::placeholders::all, m_listed.restDifferences)},
+                    GivenJacobian{whole(Eigen::placeholders::all, m_listed.givenDifferences)}
+                };
+            }
+        }();
         return [&]<std::size_t... K>(std::index_sequence<K...>) {
             using Tuple =
                 std::tuple<RestJacobian, GivenJacobian, std::remove_cvref_t<decltype(jacobianBlock<1 + K>(blocks))>...>;
-            return ArgumentJacobians<Tuple>{Tuple{std::move(rest), std::move(given), jacobianBlock<1 + K>(blocks)...}};
+            return ArgumentJacobians<Tuple>{Tuple{rest, given, jacobianBlock<1 + K>(blocks)...}};
         }(std::make_index_sequence<InputCount>{});
     }
 
@@ -908,6 +1037,26 @@ private:
     Eigen::Index m_size;                  ///< the whole state's value dimension
     Eigen::Index m_differenceSize;        ///< the whole state's difference dimension
     IndexVector<RestN, RestNMax> m_rest;  ///< the rows outside the given block
+    EMRYS_FILTER_NO_UNIQUE_ADDRESS std::conditional_t<OneRun, NoSelection, ListedRows>
+        m_listed{};  ///< a list's indices
+
+    /** \returns the indices from 0 to \a size that are not among \a taken, in order */
+    template <int Size, int MaxSize, typename Taken>
+    [[nodiscard]] static IndexVector<Size, MaxSize>
+    complementOf(Taken const & taken, Eigen::Index size)
+    {
+        auto result = IndexVector<Size, MaxSize>{};
+        result.resize(size - taken.size());
+        Eigen::Index k = 0;
+        for (Eigen::Index i = 0; i < size; ++i)
+        {
+            if ((taken.array() != i).all())
+            {
+                result(k++) = i;
+            }
+        }
+        return result;
+    }
 };
 
 }  // namespace internal
@@ -935,6 +1084,35 @@ template <typename P, typename Space, typename Value>
 void
 given(Space const & space, Value const && value) = delete;
 
+/** \ingroup Models
+ * \returns the repetitions that \a selection selects of the repeated block the path \a P runs
+ * through, of a state in \a space, given as \a value from outside the %Gaussian being updated
+ * (decisions.md [placed-selected-values]): one repetition, whose value is in the block that is
+ * repeated, or a sequence or a list of them, whose value is of them in the order selected. The mark
+ * copies the space and the selection and refers to \a value, as given(space, value) does.
+ */
+template <typename P, typename Space, typename Value, typename Selection>
+    requires(internal::RepetitionIndex<Selection> || internal::RepetitionSelection<Selection>)
+[[nodiscard]] auto
+given(Space const & space, Value const & value, Selection const & selection)
+{
+    if constexpr (internal::RepetitionIndex<Selection>)
+    {
+        return GivenBlock<Space, internal::AsTagPath<P>, Value, Eigen::Index>{space, value, Eigen::Index(selection)};
+    }
+    else
+    {
+        return GivenBlock<Space, internal::AsTagPath<P>, Value, Selection>{space, value, selection};
+    }
+}
+
+/** \ingroup Models
+ * given() of a temporary value is deleted, as for a block.
+ */
+template <typename P, typename Space, typename Value, typename Selection>
+void
+given(Space const &, Value const &&, Selection const &) = delete;
+
 namespace internal
 {
 
@@ -942,9 +1120,16 @@ namespace internal
  * resolved as \a f, so that a caller updating many Gaussians, each given its own value of the
  * block, as a Rao-Blackwellized filter does, resolves it once; \a value is the given block's value.
  */
-template <bool Statistics, UncertainInput Prior, typename Space, typename P, typename M, typename Value>
+template <
+    bool Statistics,
+    UncertainInput Prior,
+    typename Space,
+    typename P,
+    typename M,
+    typename Selection,
+    typename Value>
 [[nodiscard]] auto
-updateBranchesWith(Prior const & prior, PinnedMeasurement<Space, P, M> const & f, Value const & value)
+updateBranchesWith(Prior const & prior, PinnedMeasurement<Space, P, M, Selection> const & f, Value const & value)
 {
     auto const & resolved = f.resolved();
     using R = std::remove_cvref_t<decltype(resolved)>;
@@ -996,8 +1181,8 @@ template <typename T>
 inline constexpr bool isGivenBlock = false;
 
 /** A GivenBlock is one. */
-template <typename Space, typename P, typename Value>
-inline constexpr bool isGivenBlock<GivenBlock<Space, P, Value>> = true;
+template <typename Space, typename P, typename Value, typename Selection>
+inline constexpr bool isGivenBlock<GivenBlock<Space, P, Value, Selection>> = true;
 
 /** A measurement with a block of the state given, as a step that updates several Gaussians, each
  * given the same value, passes it on (an IMM's modes, given a cell's center): \a F, a
@@ -1030,6 +1215,22 @@ updateBranches(Prior const & prior, M const & measurement, GivenBlock<Space, P, 
     return updateBranchesWith<Statistics>(prior, f, pinned.value);
 }
 
+/** update(prior, measurement, pinned) for repetitions given, as for a block. */
+template <
+    bool Statistics,
+    UncertainInput Prior,
+    Measurement M,
+    typename Space,
+    typename P,
+    typename Value,
+    typename Selection>
+[[nodiscard]] auto
+updateBranches(Prior const & prior, M const & measurement, GivenBlock<Space, P, Value, Selection> const & pinned)
+{
+    auto const f = PinnedMeasurement<Space, P, M, Selection>{pinned.space, measurement, pinned.selection};
+    return updateBranchesWith<Statistics>(prior, f, pinned.value);
+}
+
 }  // namespace internal
 
 /** \ingroup Models
@@ -1052,9 +1253,9 @@ updateBranches(Prior const & prior, M const & measurement, GivenBlock<Space, P, 
  *
  * \sa given(), RbPointMassFilter
  */
-template <UncertainInput Prior, Measurement M, typename Space, typename P, typename Value>
+template <UncertainInput Prior, Measurement M, typename Space, typename P, typename Value, typename Selection>
 [[nodiscard]] auto
-update(Prior const & prior, M const & measurement, GivenBlock<Space, P, Value> const & pinned)
+update(Prior const & prior, M const & measurement, GivenBlock<Space, P, Value, Selection> const & pinned)
 {
     return internal::updateBranches<false>(internal::withCovariance(prior), measurement, pinned);
 }

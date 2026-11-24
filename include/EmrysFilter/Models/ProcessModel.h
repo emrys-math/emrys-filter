@@ -2835,24 +2835,26 @@ public:
                     q(m_writeDifferenceIndices(r), m_writeDifferenceIndices(c)) = partial(r, c);
                 }
             }
-            return q;
         }
-        for (std::size_t k = 0; k < WriteCount; ++k)
+        else
         {
-            for (std::size_t l = 0; l < WriteCount; ++l)
+            for (std::size_t k = 0; k < WriteCount; ++k)
             {
-                q.block(
-                    m_writeDifferenceRows[k].start,
-                    m_writeDifferenceRows[l].start,
-                    m_writeDifferenceRows[k].size,
-                    m_writeDifferenceRows[l].size
-                ) =
-                    partial.block(
-                        m_outDifferenceRows[k].start,
-                        m_outDifferenceRows[l].start,
-                        m_outDifferenceRows[k].size,
-                        m_outDifferenceRows[l].size
-                    );
+                for (std::size_t l = 0; l < WriteCount; ++l)
+                {
+                    q.block(
+                        m_writeDifferenceRows[k].start,
+                        m_writeDifferenceRows[l].start,
+                        m_writeDifferenceRows[k].size,
+                        m_writeDifferenceRows[l].size
+                    ) =
+                        partial.block(
+                            m_outDifferenceRows[k].start,
+                            m_outDifferenceRows[l].start,
+                            m_outDifferenceRows[k].size,
+                            m_outDifferenceRows[l].size
+                        );
+                }
             }
         }
         return q;

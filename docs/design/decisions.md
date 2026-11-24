@@ -1974,19 +1974,24 @@ each repetition of a sequence or a list. They stand where `on<Path>(x)` and `onE
 [product-factors], [linear-sensors]: a factor of `Factors` or `Product`, a block of `Columns`, a part
 of `additiveNoise()`, and, `on()` alone, a part of `continuousNoise()`. `Columns` read what each
 block's path value names, so an `onEach()` of a list measures the repetitions listed in its order,
-and the measurement space it infers has the list's count.
+and the measurement space it infers has the list's count. `consider()` takes a selected path
+[consider-states], each repetition considered one run of rows, and `given<Path>(space, value,
+selection)` gives the repetitions selected as one block, in the order selected.
 
 **Why.** One spelling places a model and a value on repetitions [placed-repetitions]. A product's
 factors partition its space, which its constructor asserts, so selections that place two factors on
 one repetition, or leave one uncovered, assert there when the space is known. Continuous noise is a
 sum of its parts, as it is for blocks.
 
-**Evidence.** `tests/Distributions/product.cpp`, `tests/Models/linear_measurement.cpp`, and
-`tests/Models/selected_writes.cpp`: each equals its form on the blocks or the hand-built matrices.
+**Evidence.** `tests/Distributions/product.cpp`, `tests/Models/linear_measurement.cpp`,
+`tests/Models/selected_writes.cpp`, and `tests/Models/consider.cpp`: each equals its form on the
+blocks or the hand-built matrices, and a coordinate considered twice asserts.
 
 **Where.** `Spaces/TagPath.h` (`OnPath`, `OnEach` with a selection), `Distributions/Product.h`
 (`PlacedFactor`), `Models/MeasurementModel.h` (`ColumnsOf`, `repeatedColumnsSpace()`),
-`Models/Policies.h` (`noiseFactor()`), `Models/ProcessModel.h` (`addContinuousPart()`).
+`Models/Policies.h` (`noiseFactor()`, `ConsiderItems`), `Models/ProcessModel.h`
+(`addContinuousPart()`), `Models/Condition.h` (`ConsideredRows`), `Models/Measurement.h`
+(`GivenBlock`, `PinnedMeasurement`).
 
 ### placed-repetitions
 

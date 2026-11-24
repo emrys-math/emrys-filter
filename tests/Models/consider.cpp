@@ -7,7 +7,9 @@
 // Iterated<Linearized>, in each covariance update form, with mixture noise, for a considered block the
 // model doesn't read, on a unit quaternion, whose reset leaves the considered block alone, and in each
 // mode of an ImmFilter (Filters/ImmFilter.h). With the considered block unread and uncorrelated, the
-// update is the update of the rest alone.
+// update is the update of the rest alone. Selected repetitions of a repeated block are considered as
+// the tagged blocks with their coordinates are, and an update given selected repetitions, as a
+// Rao-Blackwellized filter's, is the update given the tagged block ([placed-selected-values]).
 
 #include <EmrysFilter/Distributions/ContinuousTimeMarkovChain.h>
 #include <EmrysFilter/Distributions/Mixture.h>
@@ -20,6 +22,7 @@
 
 #include "unequal_dimensions.h"
 
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <type_traits>
@@ -387,3 +390,221 @@ TEST(Consider, EachModeOfAnImmFilterKeepsTheConsideredBlock)
         EXPECT_GT(std::abs(mode.mean()(0) - prior.mean()(0)), 1e-3) << m;
     }
 }
+
+namespace
+{
+
+struct Landmark : Linear<2>
+{};
+
+struct Landmarks : Emrys::Repeated<Landmark, 6>
+{
+    using Repeated::Repeated;
+};
+
+/// a vehicle and three landmarks, and the same coordinates with a tag per landmark
+using Map = Composite<Position, Landmarks>;
+
+struct First : Linear<2>
+{};
+
+struct Second : Linear<2>
+{};
+
+struct Third : Linear<2>
+{};
+
+using TaggedMap = Composite<Position, First, Second, Third>;
+
+using Vector8 = Eigen::Matrix<double, 8, 1>;
+using Matrix8 = Eigen::Matrix<double, 8, 8>;
+
+Vector8
+mapMean()
+{
+    Vector8 mean;
+    mean << 1.0, 2.0, 10.0, 4.0, -3.0, 8.0, 6.0, -7.0;
+    return mean;
+}
+
+// A covariance with every block correlated with every other: A A^T + I / 2 for a fixed full A.
+Matrix8
+mapCovariance()
+{
+    Matrix8 a;
+    for (Eigen::Index i = 0; i < 8; ++i)
+    {
+        for (Eigen::Index j = 0; j < 8; ++j)
+        {
+            a(i, j) = 0.3 * std::sin(1.0 + 3.0 * double(i) + 7.0 * double(j));
+        }
+    }
+    return a * a.transpose() + 0.5 * Matrix8::Identity();
+}
+
+// The ranges from the vehicle, the input's first block, to the three landmarks after it, whatever the
+// blocks they are read as.
+template <typename... Items>
+auto
+makeRanges(Items const &... items)
+{
+    return measurementModel(
+        []<typename T>(auto const & x) {
+            Eigen::Matrix<T, 3, 1> z;
+            for (Eigen::Index i = 0; i < 3; ++i)
+            {
+                z(i) = Eigen::numext::sqrt(T((x.template segment<2>(2 + 2 * i) - x.template head<2>()).squaredNorm()));
+            }
+            return z;
+        },
+        reads(path<Position>, items...),
+        additiveNoise(GaussianParams<Linear<3>>{Eigen::Vector3d::Zero(), 0.04 * Eigen::Matrix3d::Identity()})
+    );
+}
+
+}  // namespace
+
+// Considering one landmark, a list of them in any order, or a sequence, keeps those landmarks as
+// considering their tagged blocks does, under each method.
+TEST(Consider, SelectedRepetitionsAreConsideredAsTheirTaggedBlocks)
+{
+    auto const prior = GaussianParams<Map>{Map{Position{}, Landmarks{Landmark{}, 3}}, mapMean(), mapCovariance()};
+    auto const tagged = GaussianParams<TaggedMap>{mapMean(), mapCovariance()};
+    auto const model = makeRanges(path<Landmarks>);
+    auto const taggedModel = makeRanges(path<First>, path<Second>, path<Third>);
+    Eigen::Vector3d const z{9.5, 7.0, 9.6};
+    auto const check = [&](auto const & method, auto const & selected, auto const & byTag, double tolerance) {
+        auto const a = Emrys::update(prior, observe(method, model, z, selected));
+        auto const b = Emrys::update(tagged, observe(method, taggedModel, z, byTag));
+        ASSERT_TRUE(a && b);
+        auto const & posterior = a->branches[0].posterior;
+        EXPECT_LT((posterior.mean() - b->branches[0].posterior.mean()).norm(), tolerance);
+        Eigen::MatrixXd const lowerA = posterior.covarianceLower().template triangularView<Eigen::Lower>();
+        Eigen::MatrixXd const lowerB =
+            b->branches[0].posterior.covarianceLower().template triangularView<Eigen::Lower>();
+        EXPECT_LT((lowerA - lowerB).norm(), tolerance);
+        EXPECT_GT((posterior.mean() - mapMean()).norm(), 1e-3);
+    };
+    auto const iterated = methods::iterated(methods::linearized(), {.tolerance = 1e-12, .maxIterations = 20});
+    auto const methodsOf = [&](auto const & selected, auto const & byTag) {
+        check(methods::linearized(), selected, byTag, 1e-12);
+        check(methods::unscented(), selected, byTag, 1e-12);
+        check(iterated, selected, byTag, 1e-10);
+    };
+    methodsOf(consider(path<Landmarks>[1]), consider(path<Second>));
+    methodsOf(consider(path<Landmarks>[std::array{2, 0}]), consider(path<Third>, path<First>));
+    methodsOf(
+        consider(path<Landmarks>[Eigen::seqN(1, 2)], path<Position>),
+        consider(path<Second>, path<Third>, path<Position>)
+    );
+}
+
+namespace
+{
+
+/// the two landmarks at either end, given together, with the third first
+struct Ends : Composite<Third, First>
+{};
+
+using EndsMap = Composite<Position, Second, Ends>;
+
+// The prior over the rest of a map, the blocks not given, at the rows \a rows of the map's moments.
+template <typename Rest>
+GaussianParams<Rest>
+restPrior(std::vector<Eigen::Index> const & rows)
+{
+    auto const n = Eigen::Index(rows.size());
+    Eigen::VectorXd mean(n);
+    Eigen::MatrixXd covariance(n, n);
+    for (Eigen::Index i = 0; i < n; ++i)
+    {
+        mean(i) = mapMean()(rows[std::size_t(i)]);
+        for (Eigen::Index j = 0; j < n; ++j)
+        {
+            covariance(i, j) = mapCovariance()(rows[std::size_t(i)], rows[std::size_t(j)]);
+        }
+    }
+    return {mean, covariance};
+}
+
+// Two posteriors agree, and the update moved the prior.
+template <typename A, typename B, typename Prior>
+void
+expectSamePosterior(A const & a, B const & b, Prior const & prior)
+{
+    ASSERT_TRUE(a && b);
+    auto const & posterior = a->branches[0].posterior;
+    EXPECT_LT((posterior.mean() - b->branches[0].posterior.mean()).norm(), 1e-12);
+    Eigen::MatrixXd const lowerA = posterior.covarianceLower().template triangularView<Eigen::Lower>();
+    Eigen::MatrixXd const lowerB = b->branches[0].posterior.covarianceLower().template triangularView<Eigen::Lower>();
+    EXPECT_LT((lowerA - lowerB).norm(), 1e-12);
+    EXPECT_GT((posterior.mean() - prior.mean()).norm(), 1e-3);
+}
+
+}  // namespace
+
+// An update given one landmark, or a list of them as one block in the list's order, is the update
+// given the tagged block with the same coordinates, the landmark known exactly or uncertain.
+TEST(Consider, AnUpdateGivenSelectedRepetitionsIsGivenTheirTaggedBlock)
+{
+    auto const space = Map{Position{}, Landmarks{Landmark{}, 3}};
+    Eigen::Vector3d const z{9.5, 7.0, 9.6};
+    auto const model = makeRanges(path<Landmarks>);
+    {
+        using Rest = Composite<Position, First, Third>;
+        auto const prior = restPrior<Rest>({0, 1, 2, 3, 6, 7});
+        Eigen::Vector2d const landmark{-2.8, 8.3};
+        auto const uncertain = GaussianParams<Landmark>{landmark, 0.2 * Eigen::Matrix2d::Identity()};
+        auto const taggedModel = makeRanges(path<First>, path<Second>, path<Third>);
+        for (auto const & method : {methods::linearized()})
+        {
+            expectSamePosterior(
+                Emrys::update(prior, observe(method, model, z), Emrys::given<Landmarks>(space, landmark, 1)),
+                Emrys::update(prior, observe(method, taggedModel, z), Emrys::given<Second>(TaggedMap{}, landmark)),
+                prior
+            );
+        }
+        expectSamePosterior(
+            Emrys::update(prior, observe(methods::unscented(), model, z), Emrys::given<Landmarks>(space, uncertain, 1)),
+            Emrys::update(
+                prior,
+                observe(methods::unscented(), taggedModel, z),
+                Emrys::given<Second>(TaggedMap{}, uncertain)
+            ),
+            prior
+        );
+    }
+    {
+        using Rest = Composite<Position, Second>;
+        auto const prior = restPrior<Rest>({0, 1, 4, 5});
+        Eigen::Vector4d const ends{6.2, -6.8, 10.1, 3.9};
+        auto const endsModel = makeRanges(path<Ends, First>, path<Second>, path<Ends, Third>);
+        auto const list = std::array{2, 0};
+        expectSamePosterior(
+            Emrys::update(prior, observe(methods::unscented(), model, z), Emrys::given<Landmarks>(space, ends, list)),
+            Emrys::update(prior, observe(methods::unscented(), endsModel, z), Emrys::given<Ends>(EndsMap{}, ends)),
+            prior
+        );
+    }
+}
+
+#if GTEST_HAS_DEATH_TEST && !defined(NDEBUG) && !defined(EIGEN_NO_DEBUG)
+// Two selections that name one landmark consider a coordinate twice.
+TEST(ConsiderDeathTest, ASelectionNamesNoCoordinateTwice)
+{
+    auto const prior = GaussianParams<Map>{Map{Position{}, Landmarks{Landmark{}, 3}}, mapMean(), mapCovariance()};
+    auto const model = makeRanges(path<Landmarks>);
+    EXPECT_DEATH(
+        (void)Emrys::update(
+            prior,
+            observe(
+                methods::linearized(),
+                model,
+                Eigen::Vector3d{9.5, 7.0, 9.6},
+                consider(path<Landmarks>[1], path<Landmarks>[Eigen::seqN(0, 2)])
+            )
+        ),
+        "twice"
+    );
+}
+#endif

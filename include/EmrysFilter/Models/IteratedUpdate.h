@@ -469,7 +469,7 @@ iteratedUpdate(
     ReadDifference readStep = ReadDifference::Zero(reads.differenceIndices().size());
     std::size_t iteration = 0;
     bool converged = false;
-    auto const considered = consideredRows<R>(prior.space());
+    auto const considered = consideredRows(resolved, prior.space());
     constexpr bool Considers = R::ConsiderType::Count > 0;
 
     // A sigma-point method spreads its points by the posterior covariance of the blocks read at the

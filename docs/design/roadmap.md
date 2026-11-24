@@ -269,9 +269,9 @@ takes an integer repetition today, that argument takes a sequence or a list too.
       factors, `Columns`, additive noise, and continuous noise on selections. Left: a test of a
       factor placed on selections in a `Product` given to a filter, and of selected `Columns` under
       the information and square-root forms.
-- [ ] **`consider()` and `given()`.** `consider(path<Landmarks>[k])` considers one landmark, and
-      `given<Path>(space, value, selection)` gives one. Test: each equals its form on the state with
-      one tag per repetition.
+- [ ] **`consider()` and `given()`, the rest.** Both take selections
+      ([placed-selected-values], `tests/Models/consider.cpp`). Left: a selected `given()` through
+      the Rao-Blackwellized filters and the IMM filter, which take a `GivenBlock` of a whole block.
 - [ ] **Distributions, the rest.** `marginal<Path>(k)`, `mean<Path>(k)`, and `covariance<Path>(k)`
       take a sequence or a list on every distribution that took an integer, through
       `internal::marginalOverElement()` (`Spaces/Selection.h`) and `internal::elementMarginal()`,

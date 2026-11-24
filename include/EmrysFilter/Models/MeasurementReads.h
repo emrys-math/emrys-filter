@@ -1255,6 +1255,7 @@ struct ConsideredRowsOf<Consider<Paths...>>
     [[nodiscard]] static ConsideredRows<sizeof...(Paths)>
     resolve([[maybe_unused]] Space const & space)
     {
+        auto result = ConsideredRows<sizeof...(Paths)>{};
         static_assert(
             ([]<typename First, typename... Rest>(TagPath<First, Rest...> *) {
                 return countTag<First, Space>() > 0;
@@ -1263,20 +1264,130 @@ struct ConsideredRowsOf<Consider<Paths...>>
             "a path of consider() names no block of the state"
         );
         static_assert((liesInNoOther<Paths, Paths...> && ...), "a block of consider() lies in another it names");
-        return {differenceBlockRows<Paths>(space)...};
+        (result.add(differenceBlockRows<Paths>(space)), ...);
+        return result;
     }
 };
 
 /// \endcond
 
-/** \returns the rows of the blocks that the measurement \a R considers, resolved against \a space,
- * the state's space (decisions.md [consider-states]): none for a full update
+/** The most repetitions the selection \a Selection names of the repeated block the path \a Path
+ * runs through in \a Space: one for no selection or an integer, the block's bound for any other,
+ * which may be unboundedRows.
+ */
+template <typename Space, typename Path, typename Selection>
+inline constexpr std::size_t consideredBound = [] {
+    if constexpr (std::is_same_v<Selection, NoSelection> || RepetitionIndex<Selection>)
+    {
+        return std::size_t{1};
+    }
+    else
+    {
+        return withRepeatedSplit<Path>([]<typename Outer, typename RepeatedTag, typename... Inner>() {
+            return RepeatedTag::MaxCount == Eigen::Dynamic ? unboundedRows : std::size_t(RepeatedTag::MaxCount);
+        });
+    }
+}();
+
+/** The considered rows of items whose bounds are \a Bounds: unboundedRows if one is, and their sum otherwise. */
+template <std::size_t... Bounds>
+inline constexpr std::size_t consideredCapacity = ((Bounds == unboundedRows) || ...) ? unboundedRows : (Bounds + ...);
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename... Items>
+struct ConsideredRowsOf<ConsiderItems<Items...>>
+{
+    /** \returns the rows of the blocks and the repetitions \a consider names, in \a space, the state's
+     * space, one BlockRows per block or repetition, after asserting that no coordinate is named twice
+     */
+    template <typename Space>
+    [[nodiscard]] static auto
+    resolve(Space const & space, ConsiderItems<Items...> const & consider)
+    {
+        static_assert(
+            ([]<typename First, typename... Rest>(TagPath<First, Rest...> *) {
+                return countTag<First, Space>() > 0;
+            }(static_cast<typename Items::PathType *>(nullptr))
+             && ...),
+            "a path of consider() names no block of the state"
+        );
+        auto result = ConsideredRows<
+            consideredCapacity<consideredBound<Space, typename Items::PathType, typename Items::SelectionType>...>>{};
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+            (
+                [&] {
+                    using Item = std::tuple_element_t<I, std::tuple<Items...>>;
+                    using Path = typename Item::PathType;
+                    [[maybe_unused]] auto const & selection = consider.template selection<I>();
+                    if constexpr (!Item::Selected)
+                    {
+                        result.add(differenceBlockRows<Path>(space));
+                    }
+                    else if constexpr (RepetitionIndex<typename Item::SelectionType>)
+                    {
+                        result.add(repetitionBlockRows<true, Path>(space, selection));
+                    }
+                    else
+                    {
+                        withRepeatedSplit<Path>([&]<typename Outer, typename RepeatedTag, typename... Inner>() {
+                            auto const * tag = locateRepeated<false, Outer>(space).second;
+                            auto const repetitions = resolveRepetitions<RepeatedTag::MaxCount>(tag->count(), selection);
+                            for (Eigen::Index r = 0; r < repetitions.size(); ++r)
+                            {
+                                result.add(repetitionBlockRows<true, Path>(space, Eigen::Index(repetitions[r])));
+                            }
+                        });
+                    }
+                }(),
+                ...
+            );
+        }(std::index_sequence_for<Items...>{});
+        EMRYS_FILTER_ASSERT(distinctConsidered(result) && "consider() names no coordinate twice");
+        return result;
+    }
+
+private:
+
+    /** \returns whether the blocks \a rows are disjoint */
+    template <typename Rows>
+    [[nodiscard]] static bool
+    distinctConsidered(Rows const & rows)
+    {
+        for (auto a = rows.begin(); a != rows.end(); ++a)
+        {
+            for (auto b = a + 1; b != rows.end(); ++b)
+            {
+                if (a->start < b->start + b->size && b->start < a->start + a->size)
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+};
+
+/// \endcond
+
+/** \returns the rows of the blocks that the measurement \a resolved considers, resolved against
+ * \a space, the state's space (decisions.md [consider-states]): none for a full update
  */
 template <typename R, typename Space>
 [[nodiscard]] auto
-consideredRows(Space const & space)
+consideredRows(R const & resolved, Space const & space)
 {
-    return ConsideredRowsOf<typename R::ConsiderType>::resolve(space);
+    using C = typename R::ConsiderType;
+    if constexpr (requires { requires std::is_empty_v<C>; })
+    {
+        return ConsideredRowsOf<C>::resolve(space);
+    }
+    else
+    {
+        return ConsideredRowsOf<C>::resolve(
+            space,
+            argumentOfKind<ArgumentKind::consider>(resolved.observed().arguments(), Consider<>{})
+        );
+    }
 }
 
 template <

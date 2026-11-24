@@ -54,6 +54,8 @@ instead.
   `Factors` or `Product`, a block of `Columns`, or a part of `additiveNoise()` on selected
   repetitions, and `on()` a part of `continuousNoise()`. `Columns{onEach(path<Landmarks>[seen], h),
   on<Position>(-h)}` measures the landmarks listed, in a space of their count.
+- `consider()` takes a selected path, `consider(path<Landmarks>[k])`, and
+  `given<Path>(space, value, selection)` gives selected repetitions to `update()` as one block.
 - `compose()` and `on<Path>()` take a model whose `reads()` selects repetitions. A composition reads
   each name once, with the selection of the first part that reads it; parts that read a block
   under one name select the same repetitions, which is asserted when the composition meets a
