@@ -15,6 +15,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
 #include <numbers>
 #include <type_traits>
@@ -165,6 +166,59 @@ TEST(ResizableSpace, GaussianInsertAndErase)
     EXPECT_EQ(g.mean().tail<3>(), mean.tail<3>());
     EXPECT_EQ((g.covarianceLower().block<3, 3>(3, 3)), (cov.block<3, 3>(6, 6)));
     EXPECT_TRUE(g.toDensity().has_value());
+}
+
+// erase<Landmarks>(elements) takes a sequence or a list as it takes one element (roadmap step 17zu,
+// [repetition-selections]). The indices are those before the call, so erasing landmarks 0 and 2 of
+// four, named in either order, is erasing 2 and then 0; a sequence is its elements from the highest
+// down; and a sequence may count from the block's end. A mixture's components erase the same.
+TEST(ResizableSpace, EraseTakesASequenceOrAList)
+{
+    Eigen::VectorXd const mean = iota(15);
+    Eigen::MatrixXd const cov = makeCov(15);
+    auto const make = [&] {
+        return GaussianParams<Map>{makeMap(4), mean, cov};
+    };
+
+    auto oneByOne = make();
+    oneByOne.erase<Landmarks>(2);
+    oneByOne.erase<Landmarks>(0);
+    auto listed = make();
+    listed.erase<Landmarks>(std::array{0, 2});
+    EXPECT_EQ(listed.space(), makeMap(2));
+    EXPECT_EQ(listed.mean(), oneByOne.mean());
+    EXPECT_EQ(listed.covarianceLower(), oneByOne.covarianceLower());
+    auto reversed = make();
+    reversed.erase<Landmarks>(std::array{2, 0});
+    EXPECT_EQ(reversed.mean(), oneByOne.mean());
+    EXPECT_EQ(reversed.covarianceLower(), oneByOne.covarianceLower());
+
+    auto middleByOne = make();
+    middleByOne.erase<Landmarks>(2);
+    middleByOne.erase<Landmarks>(1);
+    auto middle = make();
+    middle.erase<Landmarks>(Eigen::seqN(1, 2));
+    EXPECT_EQ(middle.space(), makeMap(2));
+    EXPECT_EQ(middle.mean(), middleByOne.mean());
+    EXPECT_EQ(middle.covarianceLower(), middleByOne.covarianceLower());
+
+    auto newestByOne = make();
+    newestByOne.erase<Landmarks>(3);
+    newestByOne.erase<Landmarks>(2);
+    auto newest = make();
+    newest.erase<Landmarks>(Eigen::placeholders::lastN(2));
+    EXPECT_EQ(newest.mean(), newestByOne.mean());
+    EXPECT_EQ(newest.covarianceLower(), newestByOne.covarianceLower());
+
+    auto mixture = GaussianMixtureParams<Map>{makeMap(4)};
+    mixture.add(0.0, mean, cov);
+    mixture.erase<Landmarks>(std::array{2, 0});
+    EXPECT_EQ(mixture.space(), makeMap(2));
+    for (auto const & component : mixture)
+    {
+        EXPECT_EQ(component.component.space(), mixture.space());
+        EXPECT_EQ(component.component.mean(), oneByOne.mean());
+    }
 }
 
 // Marginals of the repeated block and of a path into it carry the current count, and a conditional
@@ -571,7 +625,7 @@ TEST(ResizableSpaceDeathTest, SizesMustMatchTheSpace)
     EXPECT_DEATH(g.resize(10), "fit the space");
     EXPECT_DEATH(g.insert<Landmarks>(3, makeLandmark(), Eigen::Matrix3d::Identity()), "out of range");
     EXPECT_DEATH(g.insert<Landmarks>(0, Eigen::Vector2d::Zero(), Eigen::Matrix2d::Identity()), "whole elements");
-    EXPECT_DEATH(g.erase<Landmarks>(1, 2), "out of range");
+    EXPECT_DEATH(g.erase<Landmarks>(Eigen::seqN(1, 2)), "out of range");
 
     struct Capped : Repeated<Landmark, 2>
     {

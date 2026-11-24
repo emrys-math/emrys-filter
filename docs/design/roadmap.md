@@ -260,10 +260,10 @@ takes an integer repetition today, that argument takes a sequence or a list too.
       mixtures, hybrids, and `ParticleSet`), and the changes that follow. `covariance<RowPath,
       ColPath>()` takes a selection for each of its paths that runs through a repeated block, in
       order: `covariance<Position, Landmarks>(k)`, `covariance<Landmarks, Landmarks>(i, j)`.
-      `nees<Path>()` takes the selection last. `erase<Path>(element, count)` becomes
-      `erase<Path>(selection)`, which erases a list too; it breaks callers, who write
-      `erase<Path>(Eigen::seqN(element, count))`. `insert<Path>()` is unchanged: it takes a
-      position, not a selection.
+      `nees<Path>()` takes the selection last. `erase<Path>(elements)` is built, on `GaussianParams`,
+      a mixture's parameters, and `ParticleSet` (`internal::forEachErasedRun()`), and lacks only a
+      test of a list on `ParticleSet`. `insert<Path>()` is unchanged: it takes a position, not a
+      selection.
 - [ ] **Audit.** List every public function that takes a path, among them `pointGrid()`,
       `regularGrid()`, the Rao-Blackwellized filters' blocks, `CountFrom`, and `byMode()`, and a
       path through a repeated block with no subscript (`path<Fleet, Heading>`), and give each a

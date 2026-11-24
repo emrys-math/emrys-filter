@@ -774,27 +774,30 @@ public:
         m_bandwidth.reset();
     }
 
-    /** Removes \a count elements of the resizable block named by the tag path \a Path from every
-     * particle, starting at its element \a element. A stored bandwidth is marginalized, which
-     * keeps the kernel density estimate exact.
+    /** Removes the elements \a elements of the resizable block named by the tag path \a Path from
+     * every particle: one element's index, an Eigen sequence, or a list of indices, as
+     * GaussianParams::erase() takes. A stored bandwidth is marginalized, which keeps the kernel
+     * density estimate exact.
      */
-    template <typename Path>
+    template <typename Path, internal::RepetitionChoice Choice>
     void
-    erase(Index element, Index count = 1)
+    erase(Choice const & elements)
     {
         touchShape();
-        auto const rows = internal::shrinkBlock<Path>(m_space, element, count);
-        Index const newRows = m_rows - rows.count;
-        m_stateScratch.resize(std::size_t(newRows * size()));
-        auto shrunk = SampleSetMap<Space_, Scalar_>{m_stateScratch.data(), newRows, size()};
-        shrunk.topRows(rows.start) = states().topRows(rows.start);
-        shrunk.bottomRows(newRows - rows.start) = states().bottomRows(newRows - rows.start);
-        m_states.swap(m_stateScratch);
-        m_rows = newRows;
-        if (m_bandwidth)
-        {
-            internal::eraseSymmetric(*m_bandwidth, rows.differenceStart, rows.differenceCount);
-        }
+        internal::forEachErasedRun<Path>(m_space, elements, [&](Index element, Index count) {
+            auto const rows = internal::shrinkBlock<Path>(m_space, element, count);
+            Index const newRows = m_rows - rows.count;
+            m_stateScratch.resize(std::size_t(newRows * size()));
+            auto shrunk = SampleSetMap<Space_, Scalar_>{m_stateScratch.data(), newRows, size()};
+            shrunk.topRows(rows.start) = states().topRows(rows.start);
+            shrunk.bottomRows(newRows - rows.start) = states().bottomRows(newRows - rows.start);
+            m_states.swap(m_stateScratch);
+            m_rows = newRows;
+            if (m_bandwidth)
+            {
+                internal::eraseSymmetric(*m_bandwidth, rows.differenceStart, rows.differenceCount);
+            }
+        });
     }
 
     /** Removes every particle; the space, bandwidth, capacity, and scratch stay. */

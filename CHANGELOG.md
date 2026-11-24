@@ -138,6 +138,12 @@ instead.
   so its covariance differs from the earlier one, and from `predictJoint()`'s, by rounding. The
   ranging EKF's step in 2D with 4 anchors takes 1,315 instructions where it took 2,410
   ([docs/benchmarks.md](docs/benchmarks.md)).
+- `erase<Path>(element, count)` of `GaussianParams`, of a mixture's parameters, and of `ParticleSet`
+  is `erase<Path>(elements)`: one element's index, an Eigen sequence, or a list of indices, each
+  named once and all erased together, so the indices are those before the call. Write
+  `erase<Path>(Eigen::seqN(element, count))` for `erase<Path>(element, count)`; `erase<Path>(element)`
+  is unchanged. A list erases elements that are not next to each other in one call:
+  `erase<Landmarks>(std::array{0, 2})`.
 - **Breaking:** `Roughen` moves the particles of a Rao-Blackwellized state in place, so it no
   longer allocates a copy of the particle set at each call. A state of the user's own that it
   roughens needs `forEachParticle(policy, f)`, as `ParticleGaussianParams` has, in place of

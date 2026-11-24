@@ -7,6 +7,9 @@
  * next.
  */
 
+#include <algorithm>
+#include <functional>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -439,6 +442,61 @@ marginalOverElement(Space const & space, Choice const & repetitions, Make make)
         resolveCoordinates(space, idx<Path>(space, repetitions), diffIdx<Path>(space, repetitions)),
         pathChoiceSubspace<Path>(space, repetitions)
     );
+}
+
+/** \returns a bound on the number of elements of an elementwise block of type \a Block, a repeated
+ * block's repetitions or a resizable leaf's coordinates, or Eigen::Dynamic
+ */
+template <typename Block>
+consteval int
+maxElementCount()
+{
+    if constexpr (IsRepeated<Block>)
+    {
+        return Block::MaxCount;
+    }
+    else if constexpr (Block::MaxValueDimension == Eigen::Dynamic)
+    {
+        return Eigen::Dynamic;
+    }
+    else
+    {
+        return Block::MaxValueDimension / Block::ValueDimensionStep;
+    }
+}
+
+/** Calls \a eraseRun(first, count) for each run of consecutive elements that \a elements names of
+ * the elementwise block named by \a Path in \a space, the highest run first, so that each call's
+ * indices are those of the block as the calls before it left it. \a elements is one element's
+ * index, or a sequence or a list of them, each named once; an element is a repetition of a repeated
+ * block, or a coordinate of a resizable Linear or Periodic block. \a eraseRun shrinks the block.
+ */
+template <typename Path, typename Space, typename Choice, typename EraseRun>
+void
+forEachErasedRun(Space & space, Choice const & elements, EraseRun eraseRun)
+{
+    if constexpr (RepetitionIndex<Choice>)
+    {
+        eraseRun(Eigen::Index(elements), Eigen::Index{1});
+    }
+    else
+    {
+        auto const * block = std::get<2>(locateElementwise<Path>(space));
+        using Block = std::remove_cvref_t<decltype(*block)>;
+        auto chosen = resolveRepetitions<maxElementCount<Block>()>(elementCount(*block), elements);
+        std::sort(chosen.data(), chosen.data() + chosen.size(), std::greater<>{});
+        Eigen::Index i = 0;
+        while (i < chosen.size())
+        {
+            Eigen::Index j = i;
+            while (j + 1 < chosen.size() && chosen[j + 1] == chosen[j] - 1)
+            {
+                ++j;
+            }
+            eraseRun(chosen[j], j - i + 1);
+            i = j + 1;
+        }
+    }
 }
 
 }  // namespace internal

@@ -1060,19 +1060,22 @@ public:
         insert<Path>(element, mean, cov, Cross::Zero(cov.rows(), differenceDimension()));
     }
 
-    /** Removes \a count elements of the resizable block named by the tag path \a Path from
-     * every component, starting at its element \a element. See GaussianParams::erase().
+    /** Removes the elements \a elements of the resizable block named by the tag path \a Path from
+     * every component: one element's index, an Eigen sequence, or a list of indices. See
+     * GaussianParams::erase().
      */
-    template <typename Path>
+    template <typename Path, internal::RepetitionChoice Choice>
         requires(isGaussian<ComponentType>)
     void
-    erase(Index element, Index count = 1)
+    erase(Choice const & elements)
     {
         m_stamp.touchShape();
-        static_cast<void>(internal::shrinkBlock<Path>(m_space, element, count));
+        internal::forEachErasedRun<Path>(m_space, elements, [&](Index element, Index count) {
+            static_cast<void>(internal::shrinkBlock<Path>(m_space, element, count));
+        });
         for (auto & entry : m_entries)
         {
-            entry.component.template erase<Path>(element, count);
+            entry.component.template erase<Path>(elements);
         }
     }
 

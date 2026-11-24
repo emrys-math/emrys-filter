@@ -504,18 +504,22 @@ public:
         insert<Path>(element, mean, cov, Cross::Zero(cov.rows(), differenceDimension()));
     }
 
-    /** Removes \a count elements of the resizable block named by the tag path \a Path,
-     * starting at its element \a element: the marginal of the rest. The space's block shrinks
-     * to match.
+    /** Removes the elements \a elements of the resizable block named by the tag path \a Path: the
+     * marginal of the rest. The space's block shrinks to match. \a elements is one element's
+     * index, an Eigen sequence, such as <tt>Eigen::seqN(first, count)</tt>, or a list of indices,
+     * each named once and all removed together, so the indices are those before the call
+     * (decisions.md [repetition-selections]).
      */
-    template <typename Path>
+    template <typename Path, internal::RepetitionChoice Choice>
     void
-    erase(Index element, Index count = 1)
+    erase(Choice const & elements)
     {
         m_stamp.touchShape();
-        auto const rows = internal::shrinkBlock<Path>(m_space, element, count);
-        internal::eraseRows(m_moments.mean(), rows.start, rows.count);
-        internal::eraseSymmetric(m_moments.covarianceLower(), rows.differenceStart, rows.differenceCount);
+        internal::forEachErasedRun<Path>(m_space, elements, [&](Index element, Index count) {
+            auto const rows = internal::shrinkBlock<Path>(m_space, element, count);
+            internal::eraseRows(m_moments.mean(), rows.start, rows.count);
+            internal::eraseSymmetric(m_moments.covarianceLower(), rows.differenceStart, rows.differenceCount);
+        });
         m_factorValid = false;
     }
 
