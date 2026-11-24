@@ -515,7 +515,11 @@ which every sigma-point method then carries exactly rather than spreading points
 `affineIn(on<Bias>(H), offset(on<Range>(c)))` gives a constant part the function leaves out, `H`
 over every row of the output for the input `Bias`, which the function then does not read, and the
 term `c` by block of the output, or `offset(c)` for all of it. A process model with one predicts
-only over `fixedStep()`.
+only over `fixedStep()`. A model without a function is `affineIn()` alone, its exact affine map:
+`measurementModel(affineIn(on<Position>(H), offset(c)), outputSpace(...), additiveNoise(R))`,
+`processModel(affineIn(on<Position>(I), on<Velocity>(dt * I)), writes(path<Position>), noise)`, and
+`affineIn(F)` of one matrix for the whole state; `transform(method, affineIn(...), inputs...)` takes
+one too.
 [unicycle.cpp](../examples/unicycle.cpp) and [attitude.cpp](../examples/attitude.cpp) each write
 one, and `processModel()` in `Models/ProcessModel.h` documents the policies.
 

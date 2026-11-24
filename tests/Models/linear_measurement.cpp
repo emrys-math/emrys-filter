@@ -30,6 +30,7 @@
 #include <vector>
 
 using Emrys::additiveNoise;
+using Emrys::affineIn;
 using Emrys::block;
 using Emrys::Columns;
 using Emrys::Composite;
@@ -337,6 +338,16 @@ makeRelative()
 {
     return measurementModel(
         Columns{onEach<Landmarks>(Eigen::Matrix2d::Identity()), on<Position>(-Eigen::Matrix2d::Identity())},
+        additiveNoise(onEach<>(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), offsetNoise}))
+    );
+}
+
+// The same measurement as a model without a function, affineIn() of its columns.
+auto
+makeRelativeMap()
+{
+    return measurementModel(
+        affineIn(onEach<Landmarks>(Eigen::Matrix2d::Identity()), on<Position>(-Eigen::Matrix2d::Identity())),
         additiveNoise(onEach<>(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), offsetNoise}))
     );
 }
@@ -661,4 +672,23 @@ TEST(LinearMeasurement, RepeatsIntoAPeriodicSpace)
     EXPECT_NEAR(updated->branches[0].innovation.residual()(0), residual, 1e-12);
     EXPECT_NEAR(updated->branches[0].posterior.mean()(2), 3.1 + 0.8 * residual - 2 * std::numbers::pi, 1e-12);
     EXPECT_NEAR(updated->branches[0].posterior.mean()(3), 0.5 + 0.8 * 0.1, 1e-12);
+}
+
+// affineIn() of onEach<Landmarks>(H) and on<Position>(H) without a function repeats the measurement with
+// the landmarks as Columns does, for every count, without a method given.
+TEST(LinearMeasurement, AnAffineMapWithoutAFunctionRepeatsAsColumnsDo)
+{
+    for (Eigen::Index const count : {Eigen::Index{2}, Eigen::Index{4}})
+    {
+        auto const prior = makeMap(count);
+        Eigen::VectorXd const observed = Eigen::VectorXd::LinSpaced(2 * count, 0.5, -1.5);
+        auto const a = Emrys::update(prior, observe(makeRelativeMap(), observed));
+        auto const b = Emrys::update(prior, observe(makeRelative(), observed));
+        ASSERT_TRUE(a && b);
+        EXPECT_LT((a->branches[0].posterior.mean() - b->branches[0].posterior.mean()).norm(), 1e-14);
+        EXPECT_LT(
+            (a->branches[0].posterior.covarianceLower() - b->branches[0].posterior.covarianceLower()).norm(),
+            1e-14
+        );
+    }
 }

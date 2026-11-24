@@ -2656,7 +2656,9 @@ transformModel(Method const & method, Model const & model, Inputs const &... inp
  * \sa \ref Transforms, condition(), linearizedAbout()
  */
 template <typename Method, typename F, typename... Args>
-    requires(!MeasurementModel<F> && !internal::isModel<F> && internal::crossCount<Args...> <= 1)
+    requires(
+        !MeasurementModel<F> && !internal::isModel<F> && !internal::ModelPolicy<F> && internal::crossCount<Args...> <= 1
+    )
 [[nodiscard]] auto
 transform(Method const & method, F const & f, Args const &... args)
 {
@@ -2669,6 +2671,30 @@ transform(Method const & method, F const & f, Args const &... args)
     auto const all = std::tuple<Args const &...>{args...};
     return [&]<std::size_t... P, std::size_t... I>(std::index_sequence<P...>, std::index_sequence<I...>) {
         auto const model = measurementModel(f, std::get<P>(all)...);
+        return internal::transformModel(method, model, std::get<Policies + I>(all)...);
+    }(std::make_index_sequence<Policies>{}, std::make_index_sequence<sizeof...(Args) - Policies>{});
+}
+
+/** \ingroup Transforms
+ * \returns transform(method, f, policies..., inputs...) of the map without a function that the
+ * affineIn() among \a policy and \a args gives (decisions.md [transform-policies]):
+ * <tt>transform(method, affineIn(on<Position>(H), offset(c)), position)</tt>, whose update is exact
+ * under every method.
+ */
+template <typename Method, internal::ModelPolicy Policy, typename... Args>
+    requires(internal::crossCount<Args...> <= 1)
+[[nodiscard]] auto
+transform(Method const & method, Policy const & policy, Args const &... args)
+{
+    static_assert(
+        !internal::policyAfterInput<Args...>,
+        "transform(method, affineIn(...), ...) takes the rest of its policies before its inputs: "
+        "transform(method, affineIn(...), additiveNoise(...), inputs...)"
+    );
+    constexpr std::size_t Policies = internal::leadingPolicies<Args...>;
+    auto const all = std::tuple<Args const &...>{args...};
+    return [&]<std::size_t... P, std::size_t... I>(std::index_sequence<P...>, std::index_sequence<I...>) {
+        auto const model = measurementModel(policy, std::get<P>(all)...);
         return internal::transformModel(method, model, std::get<Policies + I>(all)...);
     }(std::make_index_sequence<Policies>{}, std::make_index_sequence<sizeof...(Args) - Policies>{});
 }

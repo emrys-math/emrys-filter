@@ -716,6 +716,12 @@ Decided (2026-11-23), not built:
   and adds $H x + c$ by `plus()` and $H$ to a returned Jacobian. The factored transform then carries
   the constant columns exactly at each point; it does not yet add them once in closed form, which
   stage 3's model without a function will need. A batched function takes no constant items.
+- Built as stage 3 (2026-11-24), the models without a function: the policies-only
+  `measurementModel()` and a new policies-only `processModel()` take `AffineMatrix` (`affineIn(F)`)
+  to the matrix forms, constant items without an offset to `Columns`, and an offset, or a process
+  model, to `ConstantAffineFunction<NoAffineFunction, ...>`, which returns $c \boxplus H x$ with $H$
+  as its Jacobian and is an `isLinearFunction`. `transform(method, affineIn(...), ...)` makes the
+  model. Stage 4 must keep those internals while it removes the public matrix forms and `Columns`.
 
 The Jacobian a function writes, decided (2026-11-23), not built:
 
@@ -760,12 +766,6 @@ The Jacobian a function writes, decided (2026-11-23), not built:
 In order, each a commit that passes the `land` checks, with its decisions, `usage.md`, and
 `CHANGELOG.md` in it.
 
-3. **Models without a function.** `measurementModel(affineIn(...), [outputSpace(...),] noise)`,
-   `processModel(affineIn(...), [writes(...),] noise)`, and `transform(method, affineIn(...),
-   inputs...)`; `onEach<Block>(H)` as an item, which repeats the measurement with the block as
-   `Columns` does; and the whole state as one item, a matrix given bare, `affineIn(F)`, for a
-   model without tags [whole-state-models]. The update of such a measurement model is the exact
-   one the matrix model has now, never a transform, and `FixedStepModel` caches its $F$.
 4. **The matrix forms go.** `measurementModel(H, reads(...), ...)`, `Columns`, and
    `processModel(F, noise)`, with `LinearStep` and what only they use; every test, example,
    benchmark, document, and skill that writes one moves to stage 3's form, and `CHANGELOG.md` says

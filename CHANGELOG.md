@@ -10,6 +10,12 @@ instead.
 
 - An example of `PosteriorCramerRaoBound` on the Models page of the reference: the bound stepped
   along true states that `simulate()` draws, a column per Monte Carlo run.
+- Models without a function, `affineIn()` alone as the whole map, updated and predicted exactly:
+  `measurementModel(affineIn(on<A>(H_A), onEach<B>(H_B)), noise)`, as `Columns` gives it, and with
+  `offset(...)` its constant term; `processModel(affineIn(on<A>(F_A)...), writes(...), noise)`,
+  which holds one step and whose fixed step caches its `F`; `affineIn(F)` of one matrix over the
+  whole state, as `processModel(F, noise)` and `measurementModel(H, noise)` are; and
+  `transform(method, affineIn(...), inputs...)`.
 - Constant items in `affineIn()`: `on<Name>(H)`, a matrix over every row of the output for an input
   that the function then does not read, and `offset(on<Block>(c)...)` or `offset(c)`, the constant
   term by block of the output or for all of it: `affineIn(path<Velocity>, on<Bias>(Hb),

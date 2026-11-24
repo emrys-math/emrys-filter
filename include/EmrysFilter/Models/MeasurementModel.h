@@ -1146,20 +1146,70 @@ template <internal::ModelPolicy... Policies>
 [[nodiscard]] auto
 measurementModel(Policies &&... policies)
 {
-    using Set = internal::PolicySet<std::remove_cvref_t<Policies>...>;
-    static_assert(internal::checkMeasurementPolicies<Set>());
-    static_assert(
-        Set::template has<internal::PolicyKind::logLikelihood>,
-        "a measurement model without a function is known by its likelihood alone, so it takes logLikelihood(g)"
-    );
-    static_assert(
-        !Set::template has<internal::PolicyKind::additiveNoise>,
-        "a measurement model known by its likelihood alone has no function to add noise to"
-    );
-    return MeasurementFunction<internal::NoFunction, std::remove_cvref_t<Policies>...>{
-        internal::NoFunction{},
-        std::forward<Policies>(policies)...
-    };
+    if constexpr (internal::hasAffineMap<Policies...>)
+    {
+        // A model without a function: affineIn() is its whole map (decisions.md [linear-sensors]).
+        auto const & affine = internal::affineMapAmong(policies...);
+        using Affine = std::remove_cvref_t<decltype(affine)>;
+        auto const others = internal::othersThanAffine(policies...);
+        if constexpr (internal::isAffineMatrix<Affine>)
+        {
+            return std::apply(
+                [&](auto const &... other) {
+                    return measurementModel(affine.matrix, other...);
+                },
+                others
+            );
+        }
+        else if constexpr (Affine::NoOffset && Affine::NoPoints)
+        {
+            return std::apply(
+                [&](auto const &... other) {
+                    return std::apply(
+                        [&](auto const &... constant) {
+                            return measurementModel(Columns{constant...}, other...);
+                        },
+                        affine.constants
+                    );
+                },
+                others
+            );
+        }
+        else
+        {
+            return internal::modelOfAffineMap(
+                [](auto && function, auto &&... made) {
+                    using Set = internal::PolicySet<std::remove_cvref_t<decltype(made)>...>;
+                    static_assert(internal::checkMeasurementPolicies<Set>());
+                    return MeasurementFunction<
+                        std::remove_cvref_t<decltype(function)>,
+                        std::remove_cvref_t<decltype(made)>...>{
+                        std::forward<decltype(function)>(function),
+                        std::forward<decltype(made)>(made)...
+                    };
+                },
+                affine,
+                others
+            );
+        }
+    }
+    else
+    {
+        using Set = internal::PolicySet<std::remove_cvref_t<Policies>...>;
+        static_assert(internal::checkMeasurementPolicies<Set>());
+        static_assert(
+            Set::template has<internal::PolicyKind::logLikelihood>,
+            "a measurement model without a function is known by its likelihood alone, so it takes logLikelihood(g)"
+        );
+        static_assert(
+            !Set::template has<internal::PolicyKind::additiveNoise>,
+            "a measurement model known by its likelihood alone has no function to add noise to"
+        );
+        return MeasurementFunction<internal::NoFunction, std::remove_cvref_t<Policies>...>{
+            internal::NoFunction{},
+            std::forward<Policies>(policies)...
+        };
+    }
 }
 
 namespace internal
@@ -1516,6 +1566,10 @@ inline constexpr bool isLinearFunction<LinearFunction<Matrix>>{true};
 
 template <typename... Placed>
 inline constexpr bool isLinearFunction<ColumnsFunction<Placed...>>{true};
+
+template <typename Offset, typename... Constants>
+inline constexpr bool
+    isLinearFunction<ConstantAffineFunction<NoAffineFunction, NoAffineFunction, Offset, Constants...>>{true};
 /// \endcond
 
 /** The method observe() gives a measurement it is given none for: Linearized for a model given its

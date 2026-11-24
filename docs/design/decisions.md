@@ -1717,7 +1717,8 @@ each update [measurement-space-functions].
 The function returns $H x$ with $H$ as its Jacobian [returned-jacobians], so every method, form,
 and covariance update takes it exactly. Blocks read and the output space have no `plus()` of their
 own. A block of `Columns` may be placed on selected repetitions, `onEach(path<Landmarks>[seen], h)`
-[placed-selected-values].
+[placed-selected-values]. The model without a function, `measurementModel(affineIn(on<A>(H_A),
+onEach<B>(H_B)), ...)`, is the same model, and with `offset(...)` adds $c$ [affine-coordinates].
 
 **Why.** A position fix was a lambda returning its argument, which reads as an approximation and
 differentiates a matrix; a linear measurement is its $H$. Each landmark's position relative to the
@@ -2071,7 +2072,7 @@ placed nor composed.*
 state's space and its input vector the whole state, and a process model's output space is the
 state's too. A process model gives both policies or neither. Its noise is over the whole state,
 `continuousNoise(Qc)` of a matrix or `additiveNoise()` of a covariance or a Gaussian;
-`processModel(F, noise)` is the matrix model, whose function returns $F x$ with $F$ as its
+`processModel(affineIn(F), noise)` and `processModel(F, noise)` are the matrix model, whose function returns $F x$ with $F$ as its
 Jacobian, so that every method predicts it exactly, as `measurementModel(H, noise)` updates exactly [linear-sensors]. Such a model
 takes no inputs of the call and no `affineIn()`, and `on()`, `onEach()`, and `compose()` refuse it at
 compile time. A batched function of one writes its Jacobian whole, `Y.jacobian(j)` or `Y.jacobian()`.

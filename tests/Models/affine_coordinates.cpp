@@ -5,7 +5,8 @@
 // state get Isserlis' moments from every sigma-point method; a sure input is not factored; Linearized ignores the
 // declaration. Constant items of affineIn(), on<Name>(H) and offset(), give the same result under every method as the
 // model written as one function, in a measurement model, a process model, and transform(), with the function called as
-// often and never given the constant input.
+// often and never given the constant input. A model without a function, affineIn() alone, is its exact affine map under
+// every method, and a process model of it caches its transition.
 
 #include <cmath>
 #include <tuple>
@@ -675,4 +676,127 @@ TYPED_TEST(ConstantItemsTest, TransformGivesTheMomentsOfTheWholeFunction)
     );
     EXPECT_LT((constant.mean() - whole.mean()).norm(), 1e-10);
     EXPECT_LT((constant.covarianceLower() - whole.covarianceLower()).norm(), 1e-10);
+}
+
+namespace
+{
+
+// The place's columns of a reading without a function.
+Eigen::Matrix<double, 3, 2>
+placeColumns()
+{
+    return Eigen::Matrix<double, 3, 2>{{1.0, 0.2}, {-0.4, 0.8}, {0.3, 0.3}};
+}
+
+}  // namespace
+
+// A measurement model without a function, affineIn() of on<Place>(Hp), on<Lean>(Hl), and offset(c),
+// updates as the function that returns Hp place + Hl lean + c with its Jacobian, under every method,
+// and observe() without a method takes its exact update.
+TYPED_TEST(ConstantItemsTest, AModelWithoutAFunctionIsItsAffineMap)
+{
+    auto const prior = surveyed();
+    Eigen::Vector3d const z{0.9, -0.4, 1.3};
+    auto const map = measurementModel(
+        affineIn(
+            on<Place>(placeColumns()),
+            on<Lean>(leanColumns()),
+            offset(on<Seen>(seenOffset), on<Level>(levelOffset))
+        ),
+        outputSpace(Reading{}),
+        additiveNoise(readingNoise())
+    );
+    auto const function = measurementModel(
+        []<typename T>(auto const & in, auto const &, auto const & x) {
+            Eigen::Vector<T, 3> y =
+                placeColumns().cast<T>() * block<Place>(in, x) + leanColumns().cast<T>() * block<Lean>(in, x);
+            y.template head<2>() += seenOffset.cast<T>();
+            y.template tail<1>() += levelOffset.cast<T>();
+            Eigen::Matrix<double, 3, 4> jacobian;
+            jacobian << placeColumns(), leanColumns();
+            return withJacobian(y, jacobian);
+        },
+        reads(path<Place>, path<Lean>),
+        outputSpace(Reading{}),
+        additiveNoise(readingNoise())
+    );
+    auto const x = update(prior, observe(TypeParam{}, map, z));
+    auto const y = update(prior, observe(methods::linearized(), function, z));
+    auto const w = update(prior, observe(map, z));
+    ASSERT_TRUE(x && y && w);
+    EXPECT_LT((x->branches.front().posterior.mean() - y->branches.front().posterior.mean()).norm(), 1e-10);
+    EXPECT_LT(
+        (x->branches.front().posterior.covarianceLower() - y->branches.front().posterior.covarianceLower()).norm(),
+        1e-10
+    );
+    EXPECT_LT((w->branches.front().posterior.mean() - y->branches.front().posterior.mean()).norm(), 1e-12);
+}
+
+// A process model without a function, affineIn() of on<Place>(I) and on<Drift>(dt I) writing the
+// place, holds one step; over fixedStep() it caches its transition, and predicts F P F' + Q.
+TEST(ConstantItems, AProcessModelWithoutAFunctionCachesItsTransition)
+{
+    constexpr double dt = 0.5;
+    Eigen::Matrix2d const i2 = Eigen::Matrix2d::Identity();
+    auto const model = Emrys::compose(
+        processModel(
+            affineIn(on<Place>(i2), on<Drift>(Eigen::Matrix2d{dt * i2})),
+            writes(path<Place>),
+            Emrys::continuousNoise(on<Place>(0.2))
+        ),
+        Constant<Lean>{},
+        Constant<Drift>{}
+    );
+    static_assert(Emrys::internal::holdsOneStep<std::remove_cvref_t<decltype(model)>>);
+    auto const fixed = Emrys::FixedStepModel{model, Surveyed{}, dt};
+    static_assert(decltype(fixed)::CachesTransition);
+    Eigen::Matrix<double, 6, 6> f = Eigen::Matrix<double, 6, 6>::Identity();
+    f.block<2, 2>(0, 4) = dt * i2;
+    EXPECT_LT((fixed.transition() - f).norm(), 1e-15);
+    auto const prior = surveyed();
+    auto const predicted = Emrys::predict(prior, fixed);
+    Eigen::Matrix<double, 6, 6> q = Eigen::Matrix<double, 6, 6>::Zero();
+    q.block<2, 2>(0, 0) = 0.2 * dt * i2;
+    Eigen::Matrix<double, 6, 6> const p = prior.covarianceLower().selfadjointView<Eigen::Lower>();
+    Eigen::Matrix<double, 6, 6> const cov = predicted.covarianceLower().selfadjointView<Eigen::Lower>();
+    EXPECT_LT((predicted.mean() - f * prior.mean()).norm(), 1e-12);
+    EXPECT_LT((cov - (f * p * f.transpose() + q)).norm(), 1e-12);
+}
+
+// affineIn() of one matrix is the whole state's map without a function, as the matrix forms are:
+// processModel(affineIn(F), additiveNoise(Q)) over its step, and measurementModel(affineIn(H), noise).
+TEST(ConstantItems, AMatrixIsTheWholeStatesMap)
+{
+    Eigen::Matrix<double, 6, 6> f = Eigen::Matrix<double, 6, 6>::Identity();
+    f.block<2, 2>(0, 4) = 0.5 * Eigen::Matrix2d::Identity();
+    Eigen::Matrix<double, 6, 6> const q = 0.01 * Eigen::Matrix<double, 6, 6>::Identity();
+    Eigen::Matrix<double, 3, 6> h = Eigen::Matrix<double, 3, 6>::Zero();
+    h.leftCols<2>() = placeColumns();
+    h.middleCols<2>(2) = leanColumns();
+    auto const prior = surveyed();
+    auto const noise = GaussianParams<Linear<6>>{Eigen::Matrix<double, 6, 1>::Zero(), q};
+    auto const p = Emrys::predict(prior, Emrys::fixedStep(processModel(affineIn(f), additiveNoise(noise)), 0.5));
+    auto const r = Emrys::predict(prior, Emrys::fixedStep(processModel(f, additiveNoise(noise)), 0.5));
+    EXPECT_LT((p.mean() - r.mean()).norm(), 1e-14);
+    EXPECT_LT((p.covarianceLower() - r.covarianceLower()).norm(), 1e-14);
+    auto const fixNoise =
+        GaussianParams<Linear<3>>{Eigen::Vector3d::Zero(), Eigen::Matrix3d{0.05 * Eigen::Matrix3d::Identity()}};
+    auto const z = Eigen::Vector3d{0.9, -0.4, 1.3};
+    auto const x = update(prior, observe(measurementModel(affineIn(h), additiveNoise(fixNoise)), z));
+    auto const y = update(prior, observe(measurementModel(h, additiveNoise(fixNoise)), z));
+    ASSERT_TRUE(x && y);
+    EXPECT_LT((x->branches.front().posterior.mean() - y->branches.front().posterior.mean()).norm(), 1e-14);
+}
+
+// transform() of affineIn() alone gives the affine map's moments, Hp mu + c and Hp P Hp', under every method.
+TYPED_TEST(ConstantItemsTest, TransformOfAMapWithoutAFunction)
+{
+    auto const place = GaussianParams<Place>{Eigen::Vector2d{0.8, -0.3}, Eigen::Matrix2d{{0.2, 0.03}, {0.03, 0.1}}};
+    Eigen::Vector3d const c{seenOffset(0), seenOffset(1), levelOffset(0)};
+    auto const y =
+        Emrys::transform(TypeParam{}, affineIn(on<Place>(placeColumns()), offset(c)), outputSpace(Reading{}), place);
+    Eigen::Matrix2d const p = place.covarianceLower().selfadjointView<Eigen::Lower>();
+    Eigen::Matrix3d const cov = y.covarianceLower().template selfadjointView<Eigen::Lower>();
+    EXPECT_LT((y.mean() - (placeColumns() * place.mean() + c)).norm(), 1e-12);
+    EXPECT_LT((cov - placeColumns() * p * placeColumns().transpose()).norm(), 1e-12);
 }

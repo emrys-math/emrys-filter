@@ -624,30 +624,58 @@ namespace internal
 template <typename F, typename InnerIn, typename Offset, typename... Constants>
 class ConstantAffineFunction;
 
-/** The value and the path of the OnPath \a T, a value placed on one block. */
+/** The value and the path of \a T, a value placed on one block by on() or on each repetition by
+ * onEach().
+ */
 template <typename T>
 struct OnPathParts
 {};
 
-/** An OnPath of no selection. */
-template <typename X, typename Path>
-struct OnPathParts<OnPath<X, Path, NoSelection>>
+/** An OnPath. */
+template <typename X, typename Path, typename Selection>
+struct OnPathParts<OnPath<X, Path, Selection>>
 {
     using Value = X;        ///< the value placed
-    using PathType = Path;  ///< the path it is placed on, a TagPath
+    using PathType = Path;  ///< the path it is placed on, a tag or a TagPath
+    /// whether it is <tt>on<Name>(H)</tt> of one block and no selection, which a model with a function takes
+    static constexpr bool Plain = std::is_same_v<Selection, NoSelection>;
 };
 
-/** Whether \a T is a constant item of affineIn(), <tt>on<Name>(H)</tt>: a matrix on one tag. */
+/** An OnEach. */
+template <typename X, typename Path, typename Selection>
+struct OnPathParts<OnEach<X, Path, Selection>>
+{
+    using Value = X;                      ///< the value placed
+    using PathType = Path;                ///< the path of the repeated block, a tag or a TagPath
+    static constexpr bool Plain = false;  ///< only a model without a function takes it
+};
+
+/** Whether \a T is a constant item of affineIn(), <tt>on<Name>(H)</tt> or <tt>onEach<Block>(H)</tt>,
+ * or either of a selection: a matrix placed on an input.
+ */
 template <typename T>
 inline constexpr bool isConstantItem = false;
 
-/** An OnPath of a matrix on one tag is one. */
-template <typename X, typename Path>
-inline constexpr bool isConstantItem<OnPath<X, Path, NoSelection>> = MatrixExpression<X>;
+/** An OnPath of a matrix is one. */
+template <typename X, typename Path, typename Selection>
+inline constexpr bool isConstantItem<OnPath<X, Path, Selection>> = MatrixExpression<X>;
+
+/** An OnEach of a matrix is one. */
+template <typename X, typename Path, typename Selection>
+inline constexpr bool isConstantItem<OnEach<X, Path, Selection>> = MatrixExpression<X>;
 
 /** Whether \a T is an offset() part of a block, <tt>on<Block>(c)</tt>. */
 template <typename T>
-inline constexpr bool isOffsetPart = isConstantItem<T>;
+inline constexpr bool isOffsetPart = [] {
+    if constexpr (isConstantItem<T>)
+    {
+        return OnPathParts<T>::Plain;
+    }
+    else
+    {
+        return false;
+    }
+}();
 
 /** Whether \a T is an AffineOffset. */
 template <typename T>
@@ -760,6 +788,15 @@ struct AffineConstants<AffineIn<Points...>, Offset, Constants...>
     /// the affineIn() of the model the factories make: every name, the constant ones last
     using AllNames = AffineIn<Points..., internal::PathTag<typename internal::OnPathParts<Constants>::PathType>...>;
 
+    /// whether every constant item is <tt>on<Name>(H)</tt> of one input, which a model with a function takes
+    static constexpr bool PlainConstants = (internal::OnPathParts<Constants>::Plain && ... && true);
+
+    /// whether no item is a path value, so that a model without a function takes it
+    static constexpr bool NoPoints = sizeof...(Points) == 0;
+
+    /// whether the offset has no part
+    static constexpr bool NoOffset = std::is_same_v<Offset, AffineOffset<>>;
+
     /// the function the factories make of \a F, which reads \a InnerIn
     template <typename F, typename InnerIn>
     using FunctionOf = internal::ConstantAffineFunction<F, InnerIn, Offset, Constants...>;
@@ -767,6 +804,30 @@ struct AffineConstants<AffineIn<Points...>, Offset, Constants...>
     std::tuple<Constants...> constants;  ///< the constant items
     Offset offset;                       ///< the offset
 };
+
+/** \ingroup Models
+ * \brief affineIn() of one matrix, \f$ F \f$ or \f$ H \f$ over the whole state, which a model
+ * without a function and without tags takes as its whole map (decisions.md [whole-state-models]).
+ *
+ * \tparam Matrix  the matrix, a plain Eigen matrix
+ */
+template <typename Matrix>
+struct AffineMatrix
+{
+    Matrix matrix;  ///< the matrix
+};
+
+/** \ingroup Models
+ * \returns the affineIn() of the matrix \a matrix over the whole state, for a model without a
+ * function: <tt>processModel(affineIn(F), additiveNoise(Q))</tt> or
+ * <tt>measurementModel(affineIn(H), additiveNoise(R))</tt>
+ */
+template <MatrixExpression Matrix>
+[[nodiscard]] AffineMatrix<typename Matrix::PlainObject>
+affineIn(Matrix const & matrix)
+{
+    return {matrix};
+}
 
 /** \ingroup Models
  * \returns the offset() of affineIn(): the constant term \f$ c \f$ by block of the output, each part
@@ -1367,6 +1428,9 @@ template <typename Points, typename Offset, typename... Constants>
 inline constexpr std::optional<PolicyKind> policyKind<AffineConstants<Points, Offset, Constants...>>{
     PolicyKind::affineIn
 };
+
+template <typename Matrix>
+inline constexpr std::optional<PolicyKind> policyKind<AffineMatrix<Matrix>>{PolicyKind::affineIn};
 
 template <typename... Parts>
 inline constexpr std::optional<PolicyKind> policyKind<AdditiveNoise<Parts...>>{PolicyKind::additiveNoise};

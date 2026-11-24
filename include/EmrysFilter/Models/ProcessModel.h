@@ -885,6 +885,55 @@ processModel(F && function, Policies &&... policies)
 }
 
 /** \ingroup Models
+ * \returns the process model without a function whose map is affineIn() among \a policies
+ * (decisions.md [whole-state-models], [affine-coordinates]): of one matrix,
+ * <tt>processModel(affineIn(F), additiveNoise(Q))</tt>, the whole state's step \f$ F x \f$; or of
+ * constant items, <tt>processModel(affineIn(on<Position>(I), on<Velocity>(dt * I)), writes(path<Position>),
+ * ...)</tt>, the blocks writes() names as \f$ \sum_k H_k x_k + c \f$. Either holds one step, so only
+ * fixedStep() predicts it, and FixedStepModel caches its \f$ F \f$.
+ */
+template <internal::ModelPolicy... Policies>
+[[nodiscard]] auto
+processModel(Policies &&... policies)
+{
+    static_assert(
+        internal::hasAffineMap<Policies...>,
+        "a process model is a function with its policies, or affineIn() of its matrices with its policies"
+    );
+    auto const & affine = internal::affineMapAmong(policies...);
+    using Affine = std::remove_cvref_t<decltype(affine)>;
+    auto const others = internal::othersThanAffine(policies...);
+    if constexpr (internal::isAffineMatrix<Affine>)
+    {
+        return std::apply(
+            [&](auto const &... other) {
+                return processModel(affine.matrix, other...);
+            },
+            others
+        );
+    }
+    else
+    {
+        static_assert(
+            internal::hasPolicy<internal::PolicyKind::writes, Policies...>,
+            "a process model without a function names the blocks its affineIn() gives with writes()"
+        );
+        return internal::modelOfAffineMap(
+            [](auto && function, auto &&... made) {
+                using Set = internal::PolicySet<std::remove_cvref_t<decltype(made)>...>;
+                static_assert(internal::checkProcessPolicies<Set>());
+                return ProcessFunction<std::remove_cvref_t<decltype(function)>, std::remove_cvref_t<decltype(made)>...>{
+                    std::forward<decltype(function)>(function),
+                    std::forward<decltype(made)>(made)...
+                };
+            },
+            affine,
+            others
+        );
+    }
+}
+
+/** \ingroup Models
  * \returns the linear whole-state process model \f$ x_{k+1} = F x_k \f$ of the matrix \a matrix over
  * the state's coordinates, with \a policies, its noise (decisions.md [whole-state-models]): its
  * function returns \f$ F x \f$ with \f$ F \f$ as its Jacobian, so every method predicts it exactly,

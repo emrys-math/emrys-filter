@@ -674,6 +674,49 @@ updatedBy(Model const & model)
 );
 #endif
 
+#if defined(AFFINE_EACH_WITH_FUNCTION)  // static_assert: AffineConstants.h: are a model's without one
+[[maybe_unused]] auto const model = Emrys::measurementModel(
+    positionOf,
+    Emrys::reads(Emrys::path<Position>),
+    Emrys::affineIn(Emrys::onEach<Fixes>(Eigen::Matrix2d::Identity())),
+    Emrys::additiveNoise(makeNoise())
+);
+#endif
+
+#if defined(AFFINE_MAP_WITH_POINTS)  // static_assert: AffineConstants.h: takes on<Name>(H), not path<Name>
+[[maybe_unused]] auto const model = Emrys::measurementModel(
+    Emrys::affineIn(Emrys::path<Position>, Emrys::on<Velocity>(Eigen::Matrix2d::Identity())),
+    Emrys::additiveNoise(makeNoise())
+);
+#endif
+
+#if defined(AFFINE_MAP_EACH_OFFSET)  // static_assert: AffineConstants.h: take no offset() yet
+[[maybe_unused]] auto const model = Emrys::measurementModel(
+    Emrys::affineIn(Emrys::onEach<Fixes>(Eigen::Matrix2d::Identity()), Emrys::offset(Eigen::Vector2d::Zero())),
+    Emrys::additiveNoise(makeNoise())
+);
+#endif
+
+#if defined(PROCESS_WITHOUT_A_MAP)  // static_assert: ProcessModel.h: or affineIn() of its matrices with its policies
+[[maybe_unused]] auto const model = Emrys::processModel(Emrys::additiveNoise(makeNoise()));
+#endif
+
+#if defined(PROCESS_MAP_WITHOUT_WRITES)  // static_assert: ProcessModel.h: names the blocks its affineIn() gives
+[[maybe_unused]] auto const model = Emrys::processModel(
+    Emrys::affineIn(Emrys::on<Position>(Eigen::Matrix2d::Identity())),
+    Emrys::additiveNoise(makeNoise())
+);
+#endif
+
+#if defined(TRANSFORM_MAP_POLICY_AFTER)  // static_assert: Transform.h: takes the rest of its policies before its inputs
+[[maybe_unused]] auto const transformed = Emrys::transform(
+    methods::unscented(),
+    Emrys::affineIn(Emrys::on<Position>(Eigen::Matrix2d::Identity())),
+    makePosition(),
+    Emrys::additiveNoise(makeNoise())
+);
+#endif
+
 #if defined(OU_MEAN_SIZE)  // static_assert: ProcessModel.h: must have the size of its block
 [[maybe_unused]] constexpr auto size = sizeof(Emrys::OrnsteinUhlenbeck<Speed, Emrys::RevertingTo<Offset>>);
 #endif

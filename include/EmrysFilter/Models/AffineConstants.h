@@ -108,6 +108,12 @@ struct OutputSpaceOfFunction<F>
     using OutputSpaceType = typename F::OutputSpaceType;  ///< the function's output space
 };
 
+/** What a model without a function has in its place: its map is affineIn() alone, \f$ y = c \boxplus
+ * \sum_k H_k x_k \f$ with \f$ c \f$ a point of the output, zero where offset() gives none.
+ */
+struct NoAffineFunction
+{};
+
 /** The function of a model with constant items in affineIn(): the function \a F called on the
  * input \a InnerIn, the items of reads() it was given, and \f$ \sum_k H_k x_k + c \f$ added to its
  * value by plus() on the output, where \f$ x_k \f$ is the input named by the constant item
@@ -165,11 +171,33 @@ public:
             "its output's plus() is the plain one, as a Linear or a Periodic output's is"
         );
         using T = typename X::Scalar;
+        using Value = typename Moments<Out, T>::VectorType;
+        if constexpr (std::is_same_v<F, NoAffineFunction>)
+        {
+            // The map is the constant part alone, its value the offset moved by H x, its Jacobian the
+            // matrices, so nothing is differentiated.
+            using Scalar = std::conditional_t<std::is_floating_point_v<T>, T, double>;
+            Value const zero = Value::Zero(valueDimension(out));
+            Value value = plus(out, zero, constantPart<T>(in, out, x));
+            return withJacobian(std::move(value), constantJacobian<Scalar>(in, out));
+        }
+        else
+        {
+            return withFunction<T, Value>(in, out, x, std::forward<Rest>(rest)...);
+        }
+    }
+
+private:
+
+    /** operator()() of a model with a function */
+    template <typename T, typename Value, typename In, typename Out, typename X, typename... Rest>
+    [[nodiscard]] auto
+    withFunction(In const & in, Out const & out, X const & x, Rest &&... rest) const
+    {
         InnerIn const inner = innerOf(in, static_cast<CompositeBlocks<InnerIn> *>(nullptr));
         auto const innerX = gatherInner<T>(in, inner, x, static_cast<CompositeBlocks<InnerIn> *>(nullptr));
         auto const returned = callForm(m_function, inner, out, innerX, std::forward<Rest>(rest)...);
         auto const delta = constantPart<T>(in, out, x);
-        using Value = typename Moments<Out, T>::VectorType;
         if constexpr (isWithJacobian<std::remove_cvref_t<decltype(returned)>>)
         {
             Value value = plus(out, returned.value, delta);
@@ -181,8 +209,6 @@ public:
             return value;
         }
     }
-
-private:
 
     /** \returns the instance of \a InnerIn whose blocks are those of \a in with the same names */
     template <typename... Names, typename In>
@@ -266,12 +292,29 @@ private:
             valueDimensionAtCompileTime<DifferenceSpace<In>>,
             maxValueDimensionAtCompileTime<DifferenceSpace<Out>>,
             maxValueDimensionAtCompileTime<DifferenceSpace<In>>>;
-        Matrix result = Matrix::Zero(differenceDimension(out), differenceDimension(in));
+        Matrix result = constantJacobian<Scalar>(in, out);
         [&]<typename... Names>(std::tuple<Names...> *) {
             ((result.middleCols(differenceBlockRows<Names>(in).start, differenceBlockRows<Names>(in).size) =
                   jacobian.middleCols(differenceBlockRows<Names>(inner).start, differenceBlockRows<Names>(inner).size)),
              ...);
         }(static_cast<CompositeBlocks<InnerIn> *>(nullptr));
+        return result;
+    }
+
+    /** \returns the Jacobian over the input \a in of the constant part alone, in \a Scalar: each
+     * constant item's matrix in its input's columns, zero elsewhere
+     */
+    template <typename Scalar, typename In, typename Out>
+    [[nodiscard]] auto
+    constantJacobian(In const & in, Out const & out) const
+    {
+        using Matrix = MatrixOf<
+            Scalar,
+            valueDimensionAtCompileTime<DifferenceSpace<Out>>,
+            valueDimensionAtCompileTime<DifferenceSpace<In>>,
+            maxValueDimensionAtCompileTime<DifferenceSpace<Out>>,
+            maxValueDimensionAtCompileTime<DifferenceSpace<In>>>;
+        Matrix result = Matrix::Zero(differenceDimension(out), differenceDimension(in));
         std::apply(
             [&](auto const &... constants) {
                 ((result.middleCols(
@@ -410,12 +453,102 @@ withAffineConstants(Make const & make, F && function, Policies const &... polici
     );
     auto const & affine = affineConstantsAmong(policies...);
     using Affine = std::remove_cvref_t<decltype(affine)>;
+    static_assert(
+        Affine::PlainConstants,
+        "a model with a function takes on<Name>(H) of one input in affineIn(); onEach() and a selection of "
+        "repetitions are a model's without one"
+    );
     using InnerIn = typename std::remove_cvref_t<decltype(readsAmong(policies...))>::InputSpace;
     using Function = typename Affine::template FunctionOf<std::decay_t<F>, InnerIn>;
     return make(
         Function{std::forward<F>(function), affine.constants, affine.offset},
         rewrittenPolicy<Affine>(policies)...
     );
+}
+
+/** Whether \a T is an AffineMatrix. */
+template <typename T>
+inline constexpr bool isAffineMatrix = false;
+
+/** An AffineMatrix is one. */
+template <typename Matrix>
+inline constexpr bool isAffineMatrix<AffineMatrix<Matrix>> = true;
+
+/** Whether one of \a Policies is an affineIn() that a model without a function takes as its map: of
+ * constant items, or of a matrix.
+ */
+template <typename... Policies>
+inline constexpr bool hasAffineMap =
+    hasAffineConstants<Policies...> || (isAffineMatrix<std::remove_cvref_t<Policies>> || ... || false);
+
+/** \returns the policies among \a policies other than affineIn(), as a tuple of copies */
+template <typename... Policies>
+[[nodiscard]] auto
+othersThanAffine(Policies const &... policies)
+{
+    return std::tuple_cat([&]() {
+        if constexpr (isAffineConstants<Policies> || isAffineMatrix<Policies>)
+        {
+            return std::tuple<>{};
+        }
+        else
+        {
+            return std::tuple<Policies>{policies};
+        }
+    }()...);
+}
+
+/** \returns the affineIn() that is a model's map among \a policies */
+template <typename... Policies>
+[[nodiscard]] auto const &
+affineMapAmong(Policies const &... policies)
+{
+    auto const all = std::tie(policies...);
+    constexpr std::size_t I = [] {
+        constexpr bool found[] = {(isAffineConstants<Policies> || isAffineMatrix<Policies>)...};
+        std::size_t i = 0;
+        while (!found[i])
+        {
+            ++i;
+        }
+        return i;
+    }();
+    return std::get<I>(all);
+}
+
+/** \returns \a make called with the function and the policies of the model without a function whose
+ * map is the affineIn() \a affine, the constant items on one input each and an offset: the
+ * ConstantAffineFunction of no function, reads() of the constant names, and affineIn() of them, with
+ * \a others, the model's other policies, after them
+ */
+template <typename Make, typename Affine, typename... Others>
+[[nodiscard]] auto
+modelOfAffineMap(Make const & make, Affine const & affine, std::tuple<Others...> const & others)
+{
+    static_assert(
+        Affine::NoPoints,
+        "a model without a function has no coefficient to give at each point, so its affineIn() takes on<Name>(H), "
+        "not path<Name>"
+    );
+    static_assert(
+        Affine::PlainConstants,
+        "a model without a function whose affineIn() has an offset() takes on<Name>(H) of one input each; onEach() "
+        "and a selection of repetitions take no offset() yet"
+    );
+    using Function = typename Affine::template FunctionOf<NoAffineFunction, NoAffineFunction>;
+    return [&]<typename... Names>(std::tuple<Names...> *) {
+        return std::apply(
+            [&](auto const &... other) {
+                return make(
+                    Function{NoAffineFunction{}, affine.constants, affine.offset},
+                    Reads<ReadItem<TagPath<Names>, Names>...>{},
+                    typename Affine::AllNames{},
+                    other...
+                );
+            },
+            others
+        );
+    }(static_cast<typename Affine::ConstantNames *>(nullptr));
 }
 
 }  // namespace internal
