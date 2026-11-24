@@ -260,12 +260,11 @@ takes an integer repetition today, that argument takes a sequence or a list too.
       `tests/Models/selected_writes.cpp`), through compositions and `on<Path>()`. Left: the same
       equality through `ParticleFilter` and the Rao-Blackwellized filters, whose prediction moves
       sampled states, and a batched function that writes a list.
-- [ ] **Placing a model.** `on(path<Fleet>[k], model, renames...)` places it on one repetition, and
-      `onEach(path<Fleet>[moving], model, renames...)` on each repetition of a sequence or a list;
-      an input renamed to a `Repeated` tag has a value per repetition placed. This value form
-      stands beside `on<Path>(model)`, since the path value is the one that `reads()` takes; the
-      selection as an argument, `on<Fleet>(k, model)`, was rejected. Test: equal to
-      `compose(on<A>(model), on<C>(model))` on the state with one tag per repetition.
+- [ ] **Placing a model, the rest.** `on(path<Fleet>[k], model)` and
+      `onEach(path<Fleet>[repetitions], model)` are built ([placed-repetitions],
+      `tests/Models/placed_repetitions.cpp`). Left: the same equality through `ParticleFilter` and
+      the Rao-Blackwellized filters, and a test of `on(path<Fleet, Body>[k], model)`, a block
+      inside the repetition.
 - [ ] **Placing a matrix, a factor, and noise.** `Columns{onEach(path<Landmarks>[seen], h),
       on<Position>(-h)}` measures the landmarks listed, and its inferred space has the list's
       count. In `Factors` and in a model's noise, the selections placed on one block cover each of

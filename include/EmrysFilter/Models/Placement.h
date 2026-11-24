@@ -173,16 +173,63 @@ nameIndex()
     return i;
 }
 
+/** The block a model placed on the TagPath \a Prefix with the selection \a Selection is placed on,
+ * as \c type: the block the path names, or the block that is repeated where the path names a
+ * repeated block and \a Selection selects one of its repetitions.
+ */
+template <typename Prefix, typename Selection>
+struct PlacedBlockOf
+{
+    using type = PathTag<Prefix>;  ///< the block the path names
+};
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename Prefix, typename Selection>
+    requires(!std::is_same_v<Selection, NoSelection> && IsRepeated<PathTag<Prefix>>)
+struct PlacedBlockOf<Prefix, Selection>
+{
+    using type = RepeatedBlock<PathTag<Prefix>>;
+};
+
+/// \endcond
+
+/** PlacedBlockOf, as a type. */
+template <typename Prefix, typename Selection>
+using PlacedBlock = typename PlacedBlockOf<Prefix, Selection>::type;
+
+/** \returns the space of the block in the state's \a space that a model placed on the TagPath
+ * \a Prefix with the selection \a Selection is placed on: the block the path names, or, for one
+ * repetition, its space inside the block that is repeated, which every repetition shares
+ */
+template <typename Prefix, typename Selection, typename Space>
+[[nodiscard]] auto
+placedSubspace(Space const & space)
+{
+    if constexpr (std::is_same_v<Selection, NoSelection>)
+    {
+        return pathSubspace<Prefix>(space);
+    }
+    else
+    {
+        return pathElementSubspace<Prefix>(space);
+    }
+}
+
 /** How the model \a Model, placed on the block that the TagPath \a Prefix names with the renames
  * \a Renames, reads and writes: each item of its reads() that starts in the block is a block of the
  * state, its path prefixed, its name a PlacedName of its own, and its selection of repetitions, where
  * it has one, the model's; each other item is an input of the call, under its name or the one a
- * rename gives it; and each block written is prefixed.
+ * rename gives it; and each block written is prefixed. Where \a Selection is an integer, the model
+ * is placed on one repetition of the repeated block \a Prefix names, or on the block \a Prefix names
+ * inside it, and every item in the block selects that repetition.
  */
-template <typename Prefix, typename Model, typename... Renames>
+template <typename Prefix, typename Selection, typename Model, typename... Renames>
 struct Placement
 {
-    using PrefixSpace = PathTag<Prefix>;                                    ///< the block the model is placed on
+    /// whether the model is placed on one repetition, which every item in its block then selects
+    static constexpr bool Selected = !std::is_same_v<Selection, NoSelection>;
+
+    using PrefixSpace = PlacedBlock<Prefix, Selection>;                     ///< the block the model is placed on
     using InnerReads = typename Model::template Policy<PolicyKind::reads>;  ///< the model's own reads()
     using InnerItems = typename ItemsOf<InnerReads>::type;                  ///< and its items
 
@@ -220,7 +267,7 @@ struct Placement
             ReadItem<
                 JoinPaths<Prefix, typename Item::PathType>,
                 PlacedName<Prefix, typename Item::NameType>,
-                typename Item::SelectionType>,
+                std::conditional_t<Selected, Selection, typename Item::SelectionType>>,
             ReadItem<TagPath<New>, New>>;
     };
 
@@ -243,15 +290,40 @@ struct Placement
     }(static_cast<AffineNamesOfModel<Model> *>(nullptr)))::type;
 };
 
+/** \returns the reads() policy \a Target of a model placed on a block, from the model's \a reads:
+ * each item holds the model's selection, or, where the model is placed on one repetition, \a where,
+ * the repetition, if the item is in it
+ */
+template <typename Target, typename Selection, typename... Items>
+[[nodiscard]] Target
+placedReads(Reads<Items...> const & reads, [[maybe_unused]] Selection const & where)
+{
+    return [&]<std::size_t... I>(std::index_sequence<I...>) {
+        auto const selectionOf = [&]<std::size_t K>(std::integral_constant<std::size_t, K>) ->
+            typename Target::template Item<K>::SelectionType {
+                if constexpr (!std::is_same_v<Selection, NoSelection> && Target::template Item<K>::Selected)
+                {
+                    return where;
+                }
+                else
+                {
+                    return reads.template selection<K>();
+                }
+            };
+        return Target{std::in_place, selectionOf(std::integral_constant<std::size_t, I>{})...};
+    }(std::index_sequence_for<Items...>{});
+}
+
 /** The function of a process model placed on a block (see on()): the model's own function, called
  * with the model's input and output spaces under the names it reads and writes them by, on the
  * input vector as it is, since the placed model reads the same blocks in the same order. Its
  * noise is the model's.
  *
- * \tparam Prefix  the path to the block the model is placed on, a TagPath
- * \tparam Model   the model placed
+ * \tparam Prefix     the path to the block the model is placed on, a TagPath
+ * \tparam Model      the model placed
+ * \tparam Selection  NoSelection, or an integer type where the model is placed on one repetition
  */
-template <typename Prefix, typename Model>
+template <typename Prefix, typename Model, typename Selection = NoSelection>
 class PlacedStep
 {
 public:
@@ -328,7 +400,7 @@ public:
     [[nodiscard]] bool
     selectionsAgree(Space const & space) const
     {
-        return internal::selectionsAgree(m_model, pathSubspace<Prefix>(space));
+        return internal::selectionsAgree(m_model, placedSubspace<Prefix, Selection>(space));
     }
 
 private:
@@ -337,15 +409,23 @@ private:
 };
 
 /** The placed writes() of the process model \a Model on the block that \a Prefix names: each path
- * prefixed, each name a PlacedName, and each selection of repetitions the model's.
+ * prefixed, each name a PlacedName, and each selection of repetitions the model's, or, where the
+ * model is placed on one repetition (\a Selection an integer type), that repetition.
  */
-template <typename Prefix, typename Model>
+template <typename Prefix, typename Model, typename Selection = NoSelection>
 using PlacedWrites = typename decltype([]<std::size_t... K>(std::index_sequence<K...>) {
     static_assert(
-        (startsIn<WritePathAt<Model, K>, PathTag<Prefix>> && ...),
+        (startsIn<WritePathAt<Model, K>, PlacedBlock<Prefix, Selection>> && ...),
         "on<Path>(model) places a model whose writes() are blocks of the block Path names"
     );
-    if constexpr (writesSelected<Model>)
+    if constexpr (!std::is_same_v<Selection, NoSelection>)
+    {
+        return std::type_identity<WritesItems<ReadItem<
+            JoinPaths<Prefix, WritePathAt<Model, K>>,
+            PlacedName<Prefix, WriteNameAt<Model, K>>,
+            Selection>...>>{};
+    }
+    else if constexpr (writesSelected<Model>)
     {
         return std::type_identity<WritesItems<ReadItem<
             JoinPaths<Prefix, WritePathAt<Model, K>>,
@@ -361,13 +441,20 @@ using PlacedWrites = typename decltype([]<std::size_t... K>(std::index_sequence<
 }(std::make_index_sequence<writeCount<Model>>{}))::type;
 
 /** \returns the placed writes() of \a model on the block that \a Prefix names (PlacedWrites), with
- * the selections that the model's writes() holds
+ * the selections that the model's writes() holds, or with \a where, the repetition the model is
+ * placed on
  */
-template <typename Prefix, typename Model>
-[[nodiscard]] PlacedWrites<Prefix, Model>
-placedWrites(Model const & model)
+template <typename Prefix, typename Model, typename Selection = NoSelection>
+[[nodiscard]] PlacedWrites<Prefix, Model, Selection>
+placedWrites(Model const & model, [[maybe_unused]] Selection const & where = {})
 {
-    if constexpr (writesSelected<Model>)
+    if constexpr (!std::is_same_v<Selection, NoSelection>)
+    {
+        return [&]<std::size_t... K>(std::index_sequence<K...>) {
+            return PlacedWrites<Prefix, Model, Selection>{std::in_place, ((void)K, where)...};
+        }(std::make_index_sequence<writeCount<Model>>{});
+    }
+    else if constexpr (writesSelected<Model>)
     {
         return std::apply(
             [](auto const &... selections) {
@@ -394,11 +481,16 @@ enum class EachKind
  * TagPath \a Prefix names with the renames \a Renames, reads: the whole repeated block once, under
  * its tag, in place of the items that start in one repetition; each input renamed to a Repeated tag
  * as one argument with a value per repetition; and each other input as it is, shared by every
- * repetition (decisions.md [model-placement]).
+ * repetition (decisions.md [model-placement]). Where \a Selection is a sequence or a list, the model
+ * is placed on each of the repetitions it selects, read and written as a repeated block of their
+ * count under the block's tag.
  */
-template <typename Prefix, typename Model, typename... Renames>
+template <typename Prefix, typename Model, typename Selection, typename... Renames>
 struct EachPlacement
 {
+    /// whether the model is placed on selected repetitions, not on every one
+    static constexpr bool Selected = !std::is_same_v<Selection, NoSelection>;
+
     using RepeatedTag = PathTag<Prefix>;  ///< the repeated block
 
     static_assert(IsRepeated<RepeatedTag>, "onEach<Path>(model) places a model on a repeated block of the state");
@@ -469,10 +561,10 @@ struct EachPlacement
         }
     }
 
-    /** The placed reads(): the repeated block, then each input. */
+    /** The placed reads(): the repeated block, or the repetitions selected, then each input. */
     using ReadsPolicy = typename decltype([]<std::size_t... K>(std::index_sequence<K...>) {
         return std::type_identity<decltype(std::tuple_cat(
-            std::tuple<ReadItem<Prefix, RepeatedTag>>{},
+            std::tuple<ReadItem<Prefix, RepeatedTag, Selection>>{},
             std::conditional_t<
                 kind<K>() == EachKind::state,
                 std::tuple<>,
@@ -484,6 +576,40 @@ struct EachPlacement
     using ReadsOfEach = typename decltype([]<typename... Items>(std::tuple<Items...> *) {
         return std::type_identity<Reads<Items...>>{};
     }(static_cast<ReadsPolicy *>(nullptr)))::type;
+
+    /** The placed writes(): the repeated block, or the repetitions selected, under its tag. */
+    using WritesOfEach =
+        std::conditional_t<Selected, WritesItems<ReadItem<Prefix, RepeatedTag, Selection>>, Writes<Prefix>>;
+
+    /** \returns the placed reads(), whose first item holds \a where, the repetitions selected */
+    [[nodiscard]] static ReadsOfEach
+    makeReads([[maybe_unused]] Selection const & where)
+    {
+        if constexpr (Selected)
+        {
+            return [&]<std::size_t... K>(std::index_sequence<K...>) {
+                return ReadsOfEach{std::in_place, where, ((void)K, NoSelection{})...};
+            }(std::make_index_sequence<ReadsOfEach::Count - 1>{});
+        }
+        else
+        {
+            return {};
+        }
+    }
+
+    /** \returns the placed writes(), which holds \a where, the repetitions selected */
+    [[nodiscard]] static WritesOfEach
+    makeWrites([[maybe_unused]] Selection const & where)
+    {
+        if constexpr (Selected)
+        {
+            return WritesOfEach{std::in_place, where};
+        }
+        else
+        {
+            return {};
+        }
+    }
 
     /** The placed affineIn(): the repeated block where the model is affine in every block of one
      * repetition it reads, and each input the model is affine in.
@@ -511,15 +637,16 @@ struct EachPlacement
  * repetitions, and its Jacobian, where it returns one, assembled into the whole's. Its noise is the
  * model's on every repetition, block-diagonal.
  *
- * \tparam Prefix   the path to the repeated block, a TagPath
- * \tparam Model    the model placed
- * \tparam Renames  the renames of its inputs
+ * \tparam Prefix     the path to the repeated block, a TagPath
+ * \tparam Model      the model placed
+ * \tparam Selection  NoSelection, or the sequence or list of repetitions it is placed on
+ * \tparam Renames    the renames of its inputs
  */
-template <typename Prefix, typename Model, typename... Renames>
+template <typename Prefix, typename Model, typename Selection, typename... Renames>
 class EachStep
 {
     /** how the model is placed */
-    using P = EachPlacement<Prefix, Model, Renames...>;
+    using P = EachPlacement<Prefix, Model, Selection, Renames...>;
     /** the tag of the repeated block */
     using RepeatedTag = typename P::RepeatedTag;
     /** one repetition's block */
@@ -815,11 +942,12 @@ private:
  * called with its input space under the names it reads by and the output as it is, since a
  * measurement's output is not part of the state.
  *
- * \tparam Prefix   the path to the block the model is placed on, a TagPath
- * \tparam F        the model's function
- * \tparam InnerIn  the model's input space
+ * \tparam Prefix     the path to the block the model is placed on, a TagPath
+ * \tparam F          the model's function
+ * \tparam InnerIn    the model's input space
+ * \tparam Selection  NoSelection, or an integer type where the model is placed on one repetition
  */
-template <typename Prefix, typename F, typename InnerIn>
+template <typename Prefix, typename F, typename InnerIn, typename Selection = NoSelection>
 class PlacedMeasure
 {
 public:
@@ -871,9 +999,9 @@ public:
     template <typename Space>
     [[nodiscard]] bool
     selectionsAgree(Space const & space) const
-        requires requires(F const & f) { f.selectionsAgree(pathSubspace<Prefix>(space)); }
+        requires requires(F const & f) { f.selectionsAgree(placedSubspace<Prefix, Selection>(space)); }
     {
-        return m_function.selectionsAgree(pathSubspace<Prefix>(space));
+        return m_function.selectionsAgree(placedSubspace<Prefix, Selection>(space));
     }
 
 private:
@@ -922,9 +1050,10 @@ struct PlacedSample
 };
 
 /** The output space function of a measurement model placed on the block that \a Prefix names: the
- * model's own, called with the space of that block, since the model was written for it.
+ * model's own, called with the space of that block, since the model was written for it; for one
+ * repetition (\a Selection an integer type), the space inside the block that is repeated.
  */
-template <typename Prefix, typename G>
+template <typename Prefix, typename G, typename Selection = NoSelection>
 struct PlacedOutputSpace
 {
     G function;  ///< the model's output space function
@@ -934,23 +1063,30 @@ struct PlacedOutputSpace
     [[nodiscard]] auto
     operator()(StateSpace const & space) const
     {
-        return function(pathSubspace<Prefix>(space));
+        return function(placedSubspace<Prefix, Selection>(space));
     }
 };
 
 /** \returns the policy \a policy of a measurement model placed on the block that \a Prefix names,
  * with reads \a ReadsPolicy and affine names \a AffinePolicy: the reads() placed, holding the
- * selections that the model's holds, the affineIn() placed, a likelihood, a draw, or an output space
- * function given the placed input or the block's space, and anything else as it is
+ * selections that the model's holds or \a where, the repetition it is placed on (placedReads()), the
+ * affineIn() placed, a likelihood, a draw, or an output space function given the placed input or the
+ * block's space, and anything else as it is
  */
-template <typename Prefix, typename InnerIn, typename ReadsPolicy, typename AffinePolicy, typename Policy>
+template <
+    typename Prefix,
+    typename InnerIn,
+    typename ReadsPolicy,
+    typename AffinePolicy,
+    typename Policy,
+    typename Selection>
 [[nodiscard]] auto
-placedPolicy(Policy const & policy)
+placedPolicy(Policy const & policy, [[maybe_unused]] Selection const & where)
 {
     constexpr std::optional<PolicyKind> kind = policyKind<Policy>;
     if constexpr (kind == PolicyKind::reads)
     {
-        return readsWithSelectionsOf<ReadsPolicy>(policy);
+        return placedReads<ReadsPolicy>(policy, where);
     }
     else if constexpr (kind == PolicyKind::affineIn)
     {
@@ -971,7 +1107,9 @@ placedPolicy(Policy const & policy)
         if constexpr (Policy::Computed)
         {
             using G = std::remove_cvref_t<decltype(policy.value)>;
-            return OutputSpace<PlacedOutputSpace<Prefix, G>>{PlacedOutputSpace<Prefix, G>{policy.value}};
+            return OutputSpace<PlacedOutputSpace<Prefix, G, Selection>>{
+                PlacedOutputSpace<Prefix, G, Selection>{policy.value}
+            };
         }
         else
         {
@@ -1129,6 +1267,81 @@ placedNoiseParts(Model const & model)
     }
 }
 
+/** \returns the process model \a model placed on the block that \a Prefix names with the renames
+ * \a renames (see on()), or on its repetition \a where where that is an integer
+ */
+template <typename Prefix, typename Selection, typename Model, typename... Renames>
+[[nodiscard]] auto
+placeProcess(Selection const & where, Model const & model, Renames const &...)
+{
+    static_assert(wholeStateRefused<Model>);
+    using Placement = internal::Placement<Prefix, Selection, Model, Renames...>;
+    using Step = PlacedStep<Prefix, Model, Selection>;
+    return ProcessFunction<
+        Step,
+        typename Placement::ReadsPolicy,
+        PlacedWrites<Prefix, Model, Selection>,
+        typename Placement::AffinePolicy>{
+        Step{model},
+        placedReads<typename Placement::ReadsPolicy>(model.template policy<PolicyKind::reads>(), where),
+        placedWrites<Prefix>(model, where),
+        typename Placement::AffinePolicy{}
+    };
+}
+
+/** \returns the measurement model \a model placed on the block that \a Prefix names with the
+ * renames \a renames (see on()), or on its repetition \a where where that is an integer
+ */
+template <typename Prefix, typename Selection, typename Model, typename... Renames>
+[[nodiscard]] auto
+placeMeasurement(Selection const & where, Model const & model, Renames const &...)
+{
+    static_assert(wholeStateRefused<Model>);
+    using Placement = internal::Placement<Prefix, Selection, Model, Renames...>;
+    using InnerIn = typename Model::template Policy<PolicyKind::reads>::InputSpace;
+    using ReadsPolicy = typename Placement::ReadsPolicy;
+    using AffinePolicy = typename Placement::AffinePolicy;
+    auto const function = [&] {
+        if constexpr (Model::HasFunction)
+        {
+            return PlacedMeasure<Prefix, typename Model::FunctionType, InnerIn, Selection>{model.function()};
+        }
+        else
+        {
+            return NoFunction{};
+        }
+    }();
+    return std::apply(
+        [&](auto const &... policies) {
+            return MeasurementFunction<
+                std::remove_cvref_t<decltype(function)>,
+                decltype(placedPolicy<Prefix, InnerIn, ReadsPolicy, AffinePolicy>(policies, where))...>{
+                function,
+                placedPolicy<Prefix, InnerIn, ReadsPolicy, AffinePolicy>(policies, where)...
+            };
+        },
+        model.policies()
+    );
+}
+
+/** \returns the process model \a model placed on every repetition of the repeated block that
+ * \a Prefix names with the renames \a renames (see onEach()), or on each that \a where selects
+ */
+template <typename Prefix, typename Selection, typename Model, typename... Renames>
+[[nodiscard]] auto
+placeEach(Selection const & where, Model const & model, Renames const &...)
+{
+    static_assert(wholeStateRefused<Model>);
+    using Each = EachPlacement<Prefix, Model, Selection, Renames...>;
+    using Step = EachStep<Prefix, Model, Selection, Renames...>;
+    return ProcessFunction<Step, typename Each::ReadsOfEach, typename Each::WritesOfEach, typename Each::AffineOfEach>{
+        Step{model},
+        Each::makeReads(where),
+        Each::makeWrites(where),
+        typename Each::AffineOfEach{}
+    };
+}
+
 }  // namespace internal
 
 /** \ingroup Models
@@ -1145,24 +1358,34 @@ placedNoiseParts(Model const & model)
  */
 template <typename Path, ProcessModel Model, typename... Renames>
 [[nodiscard]] auto
-on(Model const & model, Renames const &...)
+on(Model const & model, Renames const &... renames)
 {
-    static_assert(internal::wholeStateRefused<Model>);
-    using Prefix = internal::AsTagPath<Path>;
-    using Placement = internal::Placement<Prefix, Model, Renames...>;
-    using Step = internal::PlacedStep<Prefix, Model>;
-    return ProcessFunction<
-        Step,
-        typename Placement::ReadsPolicy,
-        internal::PlacedWrites<Prefix, Model>,
-        typename Placement::AffinePolicy>{
-        Step{model},
-        internal::readsWithSelectionsOf<typename Placement::ReadsPolicy>(
-            model.template policy<internal::PolicyKind::reads>()
-        ),
-        internal::placedWrites<Prefix>(model),
-        typename Placement::AffinePolicy{}
-    };
+    return internal::placeProcess<internal::AsTagPath<Path>>(internal::NoSelection{}, model, renames...);
+}
+
+/** \ingroup Models
+ * \returns the process model \a model placed on one repetition of a repeated block of the state,
+ * the one that \a where selects, <tt>path<Fleet>[k]</tt>, or on a block inside it,
+ * <tt>path<Fleet, Body>[k]</tt> (decisions.md [model-placement], [placed-repetitions]): as
+ * on<Path>(model) places it, each path into the state it reads and writes running through the
+ * repetition. The model's own reads() and writes() select no repetitions. Two placements of models
+ * that read or write blocks under one name do so under one name here too, so a composition of them
+ * reads one repetition under it; onEach(path<Fleet>[repetitions], model) places a model on several.
+ *
+ * \code
+ * auto const fleet = compose(on(path<Fleet>[k], steered), onEach(path<Fleet>[others], cruising));
+ * \endcode
+ */
+template <typename Path, typename Selection, ProcessModel Model, typename... Renames>
+[[nodiscard]] auto
+on(SelectedPath<Path, Selection> const & where, Model const & model, Renames const &... renames)
+{
+    static_assert(
+        internal::RepetitionIndex<Selection>,
+        "on(path<Block>[k], model) places a model on one repetition; onEach(path<Block>[repetitions], model) places "
+        "it on each of several"
+    );
+    return internal::placeProcess<Path>(where.selection, model, renames...);
 }
 
 /** \ingroup Models
@@ -1173,35 +1396,28 @@ on(Model const & model, Renames const &...)
  */
 template <typename Path, MeasurementModel Model, typename... Renames>
 [[nodiscard]] auto
-on(Model const & model, Renames const &...)
+on(Model const & model, Renames const &... renames)
 {
-    static_assert(internal::wholeStateRefused<Model>);
-    using Prefix = internal::AsTagPath<Path>;
-    using Placement = internal::Placement<Prefix, Model, Renames...>;
-    using InnerIn = typename Model::template Policy<internal::PolicyKind::reads>::InputSpace;
-    using ReadsPolicy = typename Placement::ReadsPolicy;
-    using AffinePolicy = typename Placement::AffinePolicy;
-    auto const function = [&] {
-        if constexpr (Model::HasFunction)
-        {
-            return internal::PlacedMeasure<Prefix, typename Model::FunctionType, InnerIn>{model.function()};
-        }
-        else
-        {
-            return internal::NoFunction{};
-        }
-    }();
-    return std::apply(
-        [&](auto const &... policies) {
-            return MeasurementFunction<
-                std::remove_cvref_t<decltype(function)>,
-                decltype(internal::placedPolicy<Prefix, InnerIn, ReadsPolicy, AffinePolicy>(policies))...>{
-                function,
-                internal::placedPolicy<Prefix, InnerIn, ReadsPolicy, AffinePolicy>(policies)...
-            };
-        },
-        model.policies()
+    return internal::placeMeasurement<internal::AsTagPath<Path>>(internal::NoSelection{}, model, renames...);
+}
+
+/** \ingroup Models
+ * \returns the measurement model \a model placed on one repetition of a repeated block of the
+ * state, the one that \a where selects, <tt>path<Landmarks>[k]</tt>, or on a block inside it
+ * (decisions.md [model-placement], [placed-repetitions]): as on<Path>(model) places it, each path
+ * into the state it reads running through the repetition. The model's own reads() selects no
+ * repetitions.
+ */
+template <typename Path, typename Selection, MeasurementModel Model, typename... Renames>
+[[nodiscard]] auto
+on(SelectedPath<Path, Selection> const & where, Model const & model, Renames const &... renames)
+{
+    static_assert(
+        internal::RepetitionIndex<Selection>,
+        "on(path<Block>[k], model) places a model on one repetition; a measurement of several is a composition of "
+        "placements, or a model whose reads() selects them"
     );
+    return internal::placeMeasurement<Path>(where.selection, model, renames...);
 }
 
 /** \ingroup Models
@@ -1218,18 +1434,38 @@ on(Model const & model, Renames const &...)
  */
 template <typename Path, ProcessModel Model, typename... Renames>
 [[nodiscard]] auto
-onEach(Model const & model, Renames const &...)
+onEach(Model const & model, Renames const &... renames)
 {
-    static_assert(internal::wholeStateRefused<Model>);
-    using Prefix = internal::AsTagPath<Path>;
-    using Each = internal::EachPlacement<Prefix, Model, Renames...>;
-    using Step = internal::EachStep<Prefix, Model, Renames...>;
-    return ProcessFunction<Step, typename Each::ReadsOfEach, Writes<Prefix>, typename Each::AffineOfEach>{
-        Step{model},
-        typename Each::ReadsOfEach{},
-        Writes<Prefix>{},
-        typename Each::AffineOfEach{}
-    };
+    return internal::placeEach<internal::AsTagPath<Path>>(internal::NoSelection{}, model, renames...);
+}
+
+/** \ingroup Models
+ * \returns the process model \a model placed on each repetition that \a where selects of a repeated
+ * block of the state, a sequence or a list, <tt>path<Fleet>[moving]</tt> (decisions.md
+ * [model-placement], [placed-repetitions]): as onEach<Path>(model) places it on every repetition,
+ * the repetitions read and written as a repeated block of their count under the block's tag, so that
+ * an input renamed to a Repeated tag has a value per repetition selected, in their order. The
+ * repetitions not selected are left to other parts of a composition.
+ *
+ * \code
+ * auto const fleet = compose(on(path<Fleet>[k], steered), onEach(path<Fleet>[others], cruising));
+ * \endcode
+ */
+template <typename Path, typename Selection, ProcessModel Model, typename... Renames>
+[[nodiscard]] auto
+onEach(SelectedPath<Path, Selection> const & where, Model const & model, Renames const &... renames)
+{
+    static_assert(
+        !internal::RepetitionIndex<Selection>,
+        "onEach(path<Block>[repetitions], model) places a model on each of several repetitions, a sequence or a "
+        "list; on(path<Block>[k], model) places it on one"
+    );
+    static_assert(
+        internal::IsRepeated<internal::PathTag<Path>>,
+        "onEach(path<Block>[repetitions], model) places a model on repetitions of the repeated block the path names, "
+        "so the path ends at it"
+    );
+    return internal::placeEach<Path>(where.selection, model, renames...);
 }
 
 namespace internal

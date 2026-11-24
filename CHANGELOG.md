@@ -46,6 +46,10 @@ instead.
 - A process model's `writes()` takes a selected path and `on<Name>(path)`, as `reads()` does:
   `writes(path<Fleet>[k])` writes vehicle `k`, and the parts of a composition may write different
   repetitions of one block. A measurement model's `writes()` takes neither.
+- `on(path<Fleet>[k], model)` places a process or a measurement model on one repetition of a
+  repeated block, and `onEach(path<Fleet>[repetitions], model)` places a process model on each
+  repetition of a sequence or a list, an input renamed to a `Repeated` tag having a value per
+  repetition selected.
 - `compose()` and `on<Path>()` take a model whose `reads()` selects repetitions. A composition reads
   each name once, with the selection of the first part that reads it; parts that read a block
   under one name select the same repetitions, which is asserted when the composition meets a

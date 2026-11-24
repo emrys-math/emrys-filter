@@ -94,6 +94,7 @@ Read the index, then the decisions your change touches.
 | [function-scalars](#function-scalars) | A function the library calls with a vector may take the vector's scalar as its one template parameter, which the call supplies |
 | [model-placement](#model-placement) | A model is placed on a block by prefixing its paths, on every repetition by onEach, and models compose side by side |
 | [selected-reads](#selected-reads) | A model reads selected repetitions under the tag of their space, and holds the selection |
+| [placed-repetitions](#placed-repetitions) | A model is placed on one repetition, or on each of several, by a selected path |
 | [selected-writes](#selected-writes) | A process model writes selected repetitions under the tag of their space, and holds the selection |
 | [composed-selections](#composed-selections) | A composition reads each name with one selection, and a placement keeps its model's selections |
 | [whole-state-models](#whole-state-models) | A model given without `reads()` and `writes()` reads and writes the whole state, and is neither placed nor composed |
@@ -1960,6 +1961,34 @@ with one tag per repetition, and writes that do not partition assert.
 
 **Where.** `Models/Policies.h` (`WritesItems`), `Models/ProcessModel.h` (`outputOf()`,
 `writesPartition()`, `ResolvedProcess`), `Models/Placement.h` (`placedWrites()`).
+
+### placed-repetitions
+
+*A model is placed on one repetition, or on each of several, by a selected path.*
+
+**Rule.** `on(path<Fleet>[k], model, renames...)` places a process or a measurement model on
+repetition `k`, as `on<Path>()` places it on a block [model-placement]: each item of its `reads()`
+and `writes()` in the repetition becomes the joined path, `path<Fleet, Position>[k]`, under the
+same placed name, and the rest are inputs of the call. A path that goes on inside the repetition,
+`path<Fleet, Body>[k]`, places it on that block. `onEach(path<Fleet>[repetitions], model,
+renames...)` places a process model on each repetition of a sequence or a list, read and written
+as a repeated block of their count under the block's tag, so an input renamed to a `Repeated` tag
+has a value per repetition selected, in their order. A repetition holds no repeated block, so the
+model's own `reads()` and `writes()` select no repetitions, and the forms that take a type, `on<Path>()` and `onEach<Path>()`, stay.
+
+**Why.** The path value is what `reads()` takes [selected-reads], so a placement takes it too, and a
+part that moves vehicle `k` stands beside `onEach()` of the others, which carries them. The name a
+placement on one repetition gives a block is the same for every `k`, since `k` is a value; two
+placements on different repetitions that read a block under one name are refused as two parts that
+read one name with two selections are [composed-selections], and `onEach()` covers them.
+
+**Rejected.** `on<Fleet>(k, model)`: the selection as a separate argument, beside a path that
+`reads()` spells differently.
+
+**Evidence.** `tests/Models/placed_repetitions.cpp`: each prediction and update equals that of the
+model placed on the block written with one tag per repetition.
+
+**Where.** `Models/Placement.h` (`placeProcess()`, `placeMeasurement()`, `placeEach()`).
 
 ### composed-selections
 

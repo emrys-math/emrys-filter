@@ -1778,6 +1778,28 @@ scalarOf(auto... policies)
 [[maybe_unused]] auto const model = Emrys::onEach<Fleet>(Emrys::RandomWalk<Position>{0.1});
 #endif
 
+// Placement on repetitions by a path value (Placement.h, roadmap 17zu).
+#if defined(ON_REPETITION_OF_A_SEQUENCE)  // static_assert: Placement.h: places a model on one repetition; onEach
+[[maybe_unused]] auto const model = Emrys::on(Emrys::path<Fleet>[Eigen::seqN(0, 2)], pushed());
+#endif
+
+#if defined(ON_REPETITION_MEASUREMENT_OF_A_SEQUENCE)  // static_assert: Placement.h: a measurement of several is a
+[[maybe_unused]] auto const model = Emrys::on(Emrys::path<Fleet>[Eigen::seqN(0, 2)], scalarOf<Range>());
+#endif
+
+#if defined(ON_EACH_OF_ONE_REPETITION)  // static_assert: Placement.h: places a model on each of several repetitions
+[[maybe_unused]] auto const model = Emrys::onEach(Emrys::path<Fleet>[1], pushed());
+#endif
+
+#if defined(ON_EACH_INSIDE_A_REPETITION)  // static_assert: Placement.h: so the path ends at it
+[[maybe_unused]] auto const model = Emrys::onEach(
+    Emrys::path<Fleet, Position>[Eigen::seqN(0, 2)],
+    Emrys::RandomWalk<Position> {
+        0.1
+    }
+);
+#endif
+
 #if defined(COMPOSE_WRITES_ONE_NAME)  // static_assert: ProcessModel.h: two parts of a composition write blocks under
 [[maybe_unused]] auto const model = Emrys::compose(
     Emrys::processModel(

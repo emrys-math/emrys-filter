@@ -319,7 +319,9 @@ one, which is asserted when the composition meets a state. `on<Path>(model)` kee
 the model it places. The parts of one composition read no coordinate twice, so a part that reads
 `path<Landmarks>[k]` cannot stand beside one that reads all of `path<Landmarks>`. A process model
 writes a selection as it reads one, `writes(path<Fleet>[k])`, so a part that moves vehicle `k`
-stands beside one that carries the rest, `writes(path<Fleet>[others])`.
+stands beside one that carries the rest, `writes(path<Fleet>[others])`. A model written for one
+vehicle is placed on vehicle `k` by the same path value, `on(path<Fleet>[k], steered)`, and on each
+of the others by `onEach(path<Fleet>[others], cruising)`.
 
 A model built once covers a measurement that follows the state's counts:
 `outputSpace(CountFrom<Landmarks, RangeBearings>{})` sizes it, a matrix's `Columns` repeat with a

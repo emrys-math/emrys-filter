@@ -81,6 +81,7 @@ add_executable(emrys_filter_tests
   Models/linear_measurement.cpp
   Models/per_measurement.cpp
   Models/selected_reads.cpp
+  Models/placed_repetitions.cpp
   Models/selected_placement.cpp
   Models/selected_writes.cpp
   Models/fixed_step_model.cpp
