@@ -1,6 +1,7 @@
 // Allocation control [allocation]: on bounded spaces, the Kalman filter's steps allocate nothing once
 // warmed up, with a fixed-step model too [fixed-step-models] and a linear sensor [linear-sensors], the hidden Markov
-// filter included (step 15, [emissions]),
+// filter included (step 15, [emissions]), an update that reads one repetition of a bounded repeated block
+// (step 17zu, [selected-reads]),
 // and the smoothers' histories (step 14, [smoothing]) take no more than a node per step, the covariance
 // reset on a unit quaternion allocates nothing (step 13e, [covariance-reset]), and neither do the closed-form
 // divergences [divergences], single draws with their log-densities, or the Monte Carlo divergences under
@@ -122,6 +123,54 @@ TEST(Allocation, KalmanFilterUpdatesByALinearModelWithoutAllocating)
     expectStepsAllocateNothing([&](int k) {
         filter.predict(timeStep);
         EXPECT_TRUE(filter.update(observe(methods::linearized(), gps, fixAt(k))));
+    });
+}
+
+namespace
+{
+
+struct Landmark : Linear<2>
+{};
+
+struct Landmarks : Emrys::Repeated<Landmark, 6>
+{
+    using Repeated::Repeated;
+};
+
+using Map = Composite<Position, Landmarks>;
+
+}  // namespace
+
+// An update that reads one landmark of a repeated block, path<Landmarks>[k], allocates nothing on a
+// state whose block's count is bounded, under Linearized and Unscented, as a model of fixed-size
+// blocks does (roadmap 17zu, [selected-reads]): the selection's rows and joint are sized by the bound.
+TEST(Allocation, AnUpdateOfOneRepetitionAllocatesNothing)
+{
+    auto const prior = GaussianParams<Map>{
+        Map{Position{}, Landmarks{Landmark{}, 3}},
+        Eigen::VectorXd::LinSpaced(8, 0.0, 7.0),
+        Eigen::MatrixXd::Identity(8, 8)
+    };
+    auto const motion = compose(Emrys::RandomWalk<Position>{0.1}, Emrys::Constant<Landmarks>{});
+    auto const sighting = [](Eigen::Index k) {
+        return Emrys::measurementModel(
+            []<typename T>(auto const & in, auto const & x) {
+                Eigen::Matrix<T, 2, 1> const d = Emrys::block<Landmark>(in, x) - Emrys::block<Position>(in, x);
+                return Eigen::Matrix<T, 2, 1>{d(0) + T(0.01) * d.squaredNorm(), d(1)};
+            },
+            Emrys::reads(Emrys::path<Position>, Emrys::path<Landmarks>[k]),
+            additiveNoise(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), 0.1 * Eigen::Matrix2d::Identity()})
+        );
+    };
+    auto linearized = KalmanFilter{motion, prior, methods::linearized()};
+    expectStepsAllocateNothing([&](int k) {
+        linearized.predict(timeStep);
+        EXPECT_TRUE(linearized.update(observe(methods::linearized(), sighting(k % 3), Eigen::Vector2d{1.0, 0.5})));
+    });
+    auto unscented = KalmanFilter{motion, prior, methods::unscented()};
+    expectStepsAllocateNothing([&](int k) {
+        unscented.predict(timeStep);
+        EXPECT_TRUE(unscented.update(observe(methods::unscented(), sighting(k % 3), Eigen::Vector2d{1.0, 0.5})));
     });
 }
 
