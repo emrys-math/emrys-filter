@@ -262,11 +262,22 @@ TEST(GaussianSpace, MarginalOfSeveralRepetitionsIsARepeatedBlock)
     Eigen::MatrixXd const listedBlock = g.covariance<Fleet>(lastAndFirst);
     EXPECT_LT((listedBlock - expectedCov).norm(), 1e-14);
 
+    // A cross-covariance takes a selection for each path that runs through a repeated block:
+    // vehicle 2 with vehicle 0, and vehicle 1's heading, at row 6, with the list.
+    Eigen::MatrixXd const lastWithFirst = g.covariance<Fleet, Fleet>(2, 0);
+    EXPECT_EQ(lastWithFirst, Eigen::MatrixXd{cov.block(7, 1, 3, 3)});
+    Eigen::MatrixXd const headingWithListed = g.covariance<TagPath<Fleet, Heading>, Fleet>(1, lastAndFirst);
+    // Row 6 is above some of the list's rows, where the Gaussian reads the entry below the diagonal, which
+    // A A^T equals only to rounding.
+    EXPECT_LT((headingWithListed - Eigen::MatrixXd{cov(std::array<Eigen::Index, 1>{6}, rows)}).norm(), 1e-14);
+
     auto const density = g.toDensity();
     ASSERT_TRUE(density.has_value());
     EXPECT_EQ(density->marginal<Fleet>(lastAndFirst).copy().mean(), expectedMean);
     Eigen::VectorXd const viewedMean = density->mean<Fleet>(lastAndFirst);
     EXPECT_EQ(viewedMean, expectedMean);
+    Eigen::MatrixXd const viewedCross = density->covariance<Fleet, Fleet>(2, 0);
+    EXPECT_EQ(viewedCross, lastWithFirst);
 }
 
 // mean<Path>() and covariance<Path>() select blocks with compile-time sizes, covariance<A, B>() reads the lower

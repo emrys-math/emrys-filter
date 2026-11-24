@@ -257,13 +257,12 @@ takes an integer repetition today, that argument takes a sequence or a list too.
       `internal::marginalOverElement()` (`Spaces/Selection.h`) and `internal::elementMarginal()`,
       tested on `GaussianParams` and its view (`tests/Distributions/gaussian_space.cpp`). Left: a
       test of each on the other distributions (the Gaussian forms, `StudentT`, `Uniform`, `Gamma`,
-      mixtures, hybrids, and `ParticleSet`), and the changes that follow. `covariance<RowPath,
-      ColPath>()` takes a selection for each of its paths that runs through a repeated block, in
-      order: `covariance<Position, Landmarks>(k)`, `covariance<Landmarks, Landmarks>(i, j)`.
-      `nees<Path>()` takes the selection last. `erase<Path>(elements)` is built, on `GaussianParams`,
-      a mixture's parameters, and `ParticleSet` (`internal::forEachErasedRun()`), and lacks only a
-      test of a list on `ParticleSet`. `insert<Path>()` is unchanged: it takes a position, not a
-      selection.
+      mixtures, hybrids, and `ParticleSet`). Also built: a Gaussian's `covariance<RowPath,
+      ColPath>(selections...)`, `nees<Path>(truth, estimate, repetitions)`, and
+      `erase<Path>(elements)` on `GaussianParams`, a mixture's parameters, and `ParticleSet`
+      (`internal::forEachErasedRun()`). Left of those: `NeesMonitor::add<Path>()` with a selection,
+      and a test of erasing a list from a `ParticleSet`. `insert<Path>()` is unchanged: it takes a
+      position, not a selection.
 - [ ] **Audit.** List every public function that takes a path, among them `pointGrid()`,
       `regularGrid()`, the Rao-Blackwellized filters' blocks, `CountFrom`, and `byMode()`, and a
       path through a repeated block with no subscript (`path<Fleet, Heading>`), and give each a

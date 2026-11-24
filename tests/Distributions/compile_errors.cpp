@@ -796,6 +796,15 @@ elementOfUnrepeated()
 }
 #endif
 
+#if defined(CROSS_COVARIANCE_OF_ONE_SELECTION)  // static_assert: Selection.h: a cross-covariance takes one selection
+[[maybe_unused]] void
+crossOfOneSelection()
+{
+    auto const params = makeConvoy();
+    [[maybe_unused]] auto const cross = params.covariance<Fleet, Fleet>(0);
+}
+#endif
+
 #if defined(INSERT_INTO_FIXED_BLOCK)  // static_assert: Subspace.h: insert() and erase() take a Repeated block or a
 [[maybe_unused]] void
 insertIntoFixed()

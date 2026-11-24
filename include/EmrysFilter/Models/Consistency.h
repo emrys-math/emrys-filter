@@ -20,6 +20,7 @@
 #include <EmrysFilter/Core/Macros.h>
 #include <EmrysFilter/Core/Math.h>
 #include <EmrysFilter/Core/NumericError.h>
+#include <EmrysFilter/Spaces/Selection.h>
 #include <EmrysFilter/Spaces/TagPath.h>
 #include <EmrysFilter/Distributions/GaussianForm.h>
 #include <EmrysFilter/Models/Measurement.h>
@@ -531,6 +532,44 @@ nees(Eigen::MatrixBase<Derived> const & truth, Estimate const & estimate)
     // block() is a vector even for one coordinate, where truth(idx<Path>()) would be a scalar.
     auto const block = Emrys::block<Path>(estimate.space(), truth);
     auto const marginal = estimate.template marginal<Path>();
+    if constexpr (internal::isExpected<std::remove_cvref_t<decltype(marginal)>>)
+    {
+        if (!marginal)
+        {
+            return std::unexpected{marginal.error()};
+        }
+        return nees(block, *marginal);
+    }
+    else
+    {
+        return nees(block, marginal);
+    }
+}
+
+/** \ingroup Filters
+ * \returns nees<Path>(truth, estimate) of the repetitions \a repetitions of the repeated block that
+ * \a Path runs through: one repetition's index, or an Eigen sequence or a list of them, as
+ * marginal<Path>(repetitions) takes (decisions.md [repetition-selections]). The degrees of freedom
+ * are the difference dimension of what is selected.
+ *
+ * \code
+ * auto const landmarkNees = nees<Landmarks>(truth, filter.state(), k);
+ * \endcode
+ */
+template <typename Path, GaussianForm Estimate, typename Derived, internal::RepetitionChoice Choice>
+    requires requires(Estimate const & estimate, Choice const & repetitions) {
+        estimate.template marginal<Path>(repetitions);
+    }
+[[nodiscard]] std::expected<typename Estimate::Scalar, GaussianError>
+nees(Eigen::MatrixBase<Derived> const & truth, Estimate const & estimate, Choice const & repetitions)
+{
+    EMRYS_FILTER_ASSERT(truth.size() == estimate.valueDimension() && "the true state must fit the estimate's space");
+    // The truth's entries as a vector in the marginal's space, whose size a repeated block's type
+    // does not fix, even where a list's type fixes how many repetitions it names.
+    using Selected = decltype(internal::pathChoiceSubspace<Path>(estimate.space(), repetitions));
+    ValueVector<Selected, typename Derived::Scalar> const block =
+        Emrys::block<Path>(estimate.space(), truth, repetitions);
+    auto const marginal = estimate.template marginal<Path>(repetitions);
     if constexpr (internal::isExpected<std::remove_cvref_t<decltype(marginal)>>)
     {
         if (!marginal)

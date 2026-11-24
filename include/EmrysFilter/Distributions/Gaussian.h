@@ -616,6 +616,25 @@ public:
         );
     }
 
+    /** covariance<RowPath, ColPath>() of selected repetitions: \a repetitions holds one selection,
+     * a repetition's index or a sequence or a list of them, for each of the two paths that runs
+     * through a repeated block, in order. <tt>covariance<Position, Landmarks>(k)</tt> is the
+     * position's cross-covariance with landmark \a k, and <tt>covariance<Landmarks, Landmarks>(i,
+     * j)</tt> that of landmarks \a i and \a j (decisions.md [repetition-selections]).
+     */
+    template <typename RowPath, typename ColPath, internal::RepetitionChoice... Choices>
+        requires(sizeof...(Choices) > 0)
+    [[nodiscard]] auto
+    covariance(Choices const &... repetitions) const
+    {
+        auto const [rows, cols] = internal::crossDiffIdx<RowPath, ColPath>(m_space, repetitions...);
+        return internal::lowerSymmetricCross<DifferenceDimensionAtCompileTime, MaxDifferenceDimensionAtCompileTime>(
+            covarianceLower(),
+            rows,
+            cols
+        );
+    }
+
     /** Sets the mean, normalized by the space, moving \a mean if it is an rvalue of the stored
      * type. Does not invalidate the factorization.
      */
@@ -1136,6 +1155,15 @@ public:
         return source().template covariance<RowPath, ColPath>();
     }
 
+    /** covariance<RowPath, ColPath>() of selected repetitions; see GaussianParams::covariance(). */
+    template <typename RowPath, typename ColPath, internal::RepetitionChoice... Choices>
+        requires(sizeof...(Choices) > 0)
+    [[nodiscard]] auto
+    covariance(Choices const &... repetitions) const
+    {
+        return source().template covariance<RowPath, ColPath>(repetitions...);
+    }
+
     /** \returns the Cholesky factorization of the covariance, which gives the solves by it, the
      *           quadratic form of its inverse, and its log-determinant
      */
@@ -1592,8 +1620,10 @@ template <template <typename, typename, typename> typename Marginal, typename Pa
 [[nodiscard]] auto
 elementMarginal(Source const & source, Choice const & element)
 {
-    auto const selection =
-        Coordinates{asIndexSet(idx<Path>(source.space(), element)), asIndexSet(diffIdx<Path>(source.space(), element))};
+    auto const selection = Coordinates{
+        asIndexSet(marginalIdx<false, Path>(source.space(), element)),
+        asIndexSet(marginalIdx<true, Path>(source.space(), element))
+    };
     auto space = pathChoiceSubspace<Path>(source.space(), element);
     return Marginal<Source, std::remove_cvref_t<decltype(selection)>, decltype(space)>{
         source,

@@ -52,6 +52,12 @@ instead.
   `covariance<Path>(k)` take an Eigen sequence or a list of repetitions where they take one:
   `g.marginal<Fleet>(std::array{2, 0})` is the marginal of vehicles 2 and 0, in that order, over a
   `Fleet` of two.
+- A Gaussian's `covariance<RowPath, ColPath>()` takes a selection of repetitions for each of its two
+  paths that runs through a repeated block, in order: `covariance<Position, Landmarks>(k)` is the
+  position's cross-covariance with landmark `k`, and `covariance<Landmarks, Landmarks>(i, j)` that
+  of landmarks `i` and `j`.
+- `nees<Path>(truth, estimate, repetitions)` tests the repetitions selected of a repeated block:
+  `nees<Landmarks>(truth, filter.state(), k)`.
 - The forms of `idx()`, `diffIdx()`, `block()`, `diffBlock()`, and `marginal()` that take a
   repetition take a path that reaches its repeated block through other tags:
   `block<TagPath<Theater, Fleet>>(space, x, k)`. The path had to start at the repeated block.

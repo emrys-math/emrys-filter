@@ -427,6 +427,34 @@ pathChoiceSubspace(S const & space, [[maybe_unused]] Choice const & choice)
     }
 }
 
+/** \returns the coordinates in \a space that a marginal of the repetitions \a choice takes, in
+ * values, or in differences if \a Difference: for one repetition what idx() and diffIdx() give, and
+ * for several a column whose type does not fix its size, since their space, a repeated block, does
+ * not fix its own, even where a list's type fixes how many it names
+ */
+template <bool Difference, typename Path, typename S, typename Choice>
+[[nodiscard]] auto
+marginalIdx(S const & space, Choice const & choice)
+{
+    if constexpr (RepetitionIndex<Choice>)
+    {
+        if constexpr (Difference)
+        {
+            return diffIdx<Path>(space, choice);
+        }
+        else
+        {
+            return idx<Path>(space, choice);
+        }
+    }
+    else
+    {
+        auto const coordinates = selectionCoordinates<Difference, Path>(space, choice);
+        using Coordinates = std::remove_cvref_t<decltype(coordinates)>;
+        return IndexVector<Eigen::Dynamic, Coordinates::MaxRowsAtCompileTime>{coordinates};
+    }
+}
+
 /** Shared implementation of marginal<Path>(repetitions) for distributions that own their
  * parameters, where \a Path runs through a repeated block and \a repetitions is one repetition's
  * index, or a sequence or a list of them.
@@ -439,9 +467,59 @@ template <typename Path, typename Space, typename Choice, typename Make>
 marginalOverElement(Space const & space, Choice const & repetitions, Make make)
 {
     return make(
-        resolveCoordinates(space, idx<Path>(space, repetitions), diffIdx<Path>(space, repetitions)),
+        resolveCoordinates(
+            space,
+            marginalIdx<false, Path>(space, repetitions),
+            marginalIdx<true, Path>(space, repetitions)
+        ),
         pathChoiceSubspace<Path>(space, repetitions)
     );
+}
+
+/** Whether the path \a P (a tag or a TagPath) runs through a repeated block: one of its tags is one. */
+template <typename P>
+inline constexpr bool runsThroughRepeated = withPathTags<P>([]<typename... Tags>() {
+    return (IsRepeated<Tags> || ...);
+});
+
+/** \returns the difference indices in \a space of the blocks named by the paths \a RowPath and
+ * \a ColPath, as a pair, where \a choices select repetitions: one choice for each of the two paths
+ * that runs through a repeated block, in order, so one or two. A path given no choice is indexed
+ * whole, as diffIdx<Path>(space) gives it.
+ */
+template <typename RowPath, typename ColPath, typename S, typename... Choices>
+[[nodiscard]] auto
+crossDiffIdx(S const & space, Choices const &... choices)
+{
+    constexpr bool rows = runsThroughRepeated<RowPath>;
+    constexpr bool cols = runsThroughRepeated<ColPath>;
+    static_assert(
+        sizeof...(Choices) == std::size_t(rows) + std::size_t(cols),
+        "a cross-covariance takes one selection of repetitions for each of its two paths that runs through a "
+        "repeated block, in order"
+    );
+    auto const chosen = std::tie(choices...);
+    auto const rowIdx = [&] {
+        if constexpr (rows)
+        {
+            return diffIdx<RowPath>(space, std::get<0>(chosen));
+        }
+        else
+        {
+            return diffIdx<RowPath>(space);
+        }
+    }();
+    auto const colIdx = [&] {
+        if constexpr (cols)
+        {
+            return diffIdx<ColPath>(space, std::get<rows ? 1 : 0>(chosen));
+        }
+        else
+        {
+            return diffIdx<ColPath>(space);
+        }
+    }();
+    return std::pair{rowIdx, colIdx};
 }
 
 /** \returns a bound on the number of elements of an elementwise block of type \a Block, a repeated

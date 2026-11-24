@@ -356,6 +356,48 @@ TEST(Nees, TakesTheErrorInTheSpace)
     EXPECT_NEAR(Emrys::nees(Eigen::Vector2d{10, 3.1}, estimate).value(), across * across / 0.01, 1e-10);
 }
 
+// nees<Path>(truth, estimate, repetitions) is the Mahalanobis distance over the repetitions selected
+// of a repeated block (roadmap step 17zu, [repetition-selections]): one, or a list in its order,
+// read from the truth and the estimate by the same path, here against d^T P_ss^-1 d over the rows
+// counted by hand, and through a square-root form's marginal too.
+TEST(Nees, OfSelectedRepetitionsReadsTheTruthByThePath)
+{
+    struct Tracks : Emrys::Repeated<Rate, 4>
+    {
+        using Repeated::Repeated;
+    };
+
+    using Scene = Emrys::Composite<Range, Tracks>;
+    Eigen::MatrixXd a(7, 7);
+    for (Eigen::Index i = 0; i < 7; ++i)
+    {
+        for (Eigen::Index j = 0; j < 7; ++j)
+        {
+            a(i, j) = 0.3 * std::sin(1.0 + 2.0 * double(i) + 5.0 * double(j));
+        }
+    }
+    Eigen::MatrixXd const cov = a * a.transpose() + Eigen::MatrixXd::Identity(7, 7);
+    Eigen::VectorXd const mean = Eigen::VectorXd::LinSpaced(7, 1.0, 7.0);
+    auto const estimate = Emrys::GaussianParams<Scene>{Scene{Range{}, Tracks{Rate{}, 3}}, mean, cov};
+    Eigen::VectorXd const truth = mean + Eigen::VectorXd::LinSpaced(7, 0.5, -0.4);
+
+    // Track 1 is at rows 3 and 4; the list names track 2, at rows 5 and 6, and then track 0, at rows 1 and 2.
+    auto const one = std::array<Eigen::Index, 2>{3, 4};
+    auto const listed = std::array<Eigen::Index, 4>{5, 6, 1, 2};
+    auto const byHand = [&](auto const & rows) {
+        Eigen::VectorXd const d = (truth - mean)(rows);
+        return d.dot(Eigen::MatrixXd{cov(rows, rows)}.ldlt().solve(d));
+    };
+    EXPECT_NEAR(Emrys::nees<Tracks>(truth, estimate, 1).value(), byHand(one), 1e-12);
+    auto const lastAndFirst = std::array{2, 0};
+    EXPECT_NEAR(Emrys::nees<Tracks>(truth, estimate, lastAndFirst).value(), byHand(listed), 1e-12);
+    EXPECT_NEAR(
+        Emrys::nees<Tracks>(truth, Emrys::toSqrt(estimate).value(), lastAndFirst).value(),
+        byHand(listed),
+        1e-11
+    );
+}
+
 // nees<Path>() of a block is the Mahalanobis distance over that block's entries alone, d^T P_bb^-1 d,
 // read from the truth and the estimate by the same path; the block here starts at entry 1, not 0.
 // It agrees with nees() of the block's marginal view, which has no density of its own, and with
