@@ -5,7 +5,8 @@
 // order, so a model placed on a repetition must predict or update as the model placed on its tagged block;
 // the two differ only in the sizes Eigen fixes at compile time, hence the tolerance. Also covered: models
 // placed on one repetition that each write a block of it, an input with a value per repetition selected,
-// and the selections the placed model's policies hold.
+// the selections the placed model's policies hold, and items outside the block placed on, which are read
+// from the state, path and selection kept ([model-placement]).
 
 #include <EmrysFilter/Distributions/Gaussian.h>
 #include <EmrysFilter/Models/Measurement.h>
@@ -469,4 +470,144 @@ TEST(PlacedRepetitions, OnABlockInsideOneRepetitionIsOnTheTaggedBlock)
     };
     expectSame(methods::linearized());
     expectSame(methods::unscented());
+}
+
+namespace
+{
+
+/// a vehicle outside the fleet
+struct Leader : Vehicle
+{};
+
+/// the position a fix is relative to
+struct Beacon : Linear<2>
+{};
+
+/// the velocity a vehicle keeps station on, another vehicle's
+struct TargetVelocity : Linear<2>
+{};
+
+using Convoy = Composite<Leader, Fleet>;
+
+// The position of a vehicle, read by \a own under Position, relative to the beacon, read by \a beacon
+// under Beacon.
+template <typename Own, typename Other>
+auto
+relativeFix(Own const & own, Other const & beacon)
+{
+    return measurementModel(
+        []<typename T>(auto const & in, auto const & x) {
+            Eigen::Vector<T, 2> const d = block<Position>(in, x) - block<Beacon>(in, x);
+            return Eigen::Vector<T, 2>{d(0), T(d(1) + T(0.1) * d(0) * d(0))};
+        },
+        reads(own, beacon),
+        additiveNoise(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), Eigen::Vector2d{0.04, 0.09}.asDiagonal()})
+    );
+}
+
+// A vehicle that keeps station on the velocity \a target reads under TargetVelocity: its velocity
+// relaxes toward it, and its position moves by its own.
+template <typename Target>
+auto
+following(Target const & target)
+{
+    return processModel(
+        []<typename T>(auto const & in, auto const & out, auto const & x, double dt) {
+            auto y = zeros<T>(out);
+            auto const v = block<Velocity>(in, x);
+            block<Position>(out, y) = block<Position>(in, x) + dt * v + T(0.1) * v.cwiseProduct(v);
+            block<Velocity>(out, y) = v + T(0.5 * dt) * (block<TargetVelocity>(in, x) - v);
+            return y;
+        },
+        reads(path<Position>, path<Velocity>, target),
+        writes(path<Position>, path<Velocity>),
+        continuousNoise(on<Velocity>(0.2))
+    );
+}
+
+}  // namespace
+
+// A measurement placed on a block reads an item outside it from the state, its path and selection
+// kept: on vehicle 1, a beacon that is another vehicle's position or the leader's; on the leader, a
+// vehicle's position. Each updates as the model written with the whole paths, unplaced.
+TEST(PlacedRepetitions, AnItemOutsideThePlacedBlockIsReadFromTheState)
+{
+    Eigen::Matrix<double, 16, 16> a;
+    for (Eigen::Index i = 0; i < 16; ++i)
+    {
+        for (Eigen::Index j = 0; j < 16; ++j)
+        {
+            a(i, j) = 0.3 * std::sin(2.0 + 3.0 * double(i) + 7.0 * double(j));
+        }
+    }
+    Eigen::Matrix<double, 16, 16> const covariance =
+        a * a.transpose() + 0.5 * Eigen::Matrix<double, 16, 16>::Identity();
+    Eigen::Matrix<double, 16, 1> const mean = Eigen::Matrix<double, 16, 1>::LinSpaced(16, -3.0, 4.0);
+    auto const prior = GaussianParams<Convoy>{Convoy{Leader{}, Fleet{Vehicle{}, 3}}, mean, covariance};
+    Eigen::Vector2d const observed{1.5, -0.7};
+    auto const expectSame = [&](auto const & placed, auto const & unplaced) {
+        auto const expectSameBy = [&](auto const & method) {
+            auto const x = Emrys::update(prior, observe(method, placed, observed));
+            auto const y = Emrys::update(prior, observe(method, unplaced, observed));
+            ASSERT_TRUE(x && y);
+            auto const & p = x->branches[0].posterior;
+            auto const & q = y->branches[0].posterior;
+            EXPECT_LT((p.mean() - q.mean()).norm(), 1e-12);
+            Eigen::MatrixXd const lowerP = p.covarianceLower().template triangularView<Eigen::Lower>();
+            Eigen::MatrixXd const lowerQ = q.covarianceLower().template triangularView<Eigen::Lower>();
+            EXPECT_LT((lowerP - lowerQ).norm(), 1e-12);
+            EXPECT_GT((p.mean() - mean).norm(), 1e-3);
+        };
+        expectSameBy(methods::linearized());
+        expectSameBy(methods::unscented());
+    };
+    expectSame(
+        on(path<Fleet>[1], relativeFix(path<Position>, on<Beacon>(path<Fleet, Position>[2]))),
+        relativeFix(path<Fleet, Position>[1], on<Beacon>(path<Fleet, Position>[2]))
+    );
+    expectSame(
+        on(path<Fleet>[1], relativeFix(path<Position>, on<Beacon>(path<Leader, Position>))),
+        relativeFix(path<Fleet, Position>[1], on<Beacon>(path<Leader, Position>))
+    );
+    expectSame(
+        on<Leader>(relativeFix(path<Position>, on<Beacon>(path<Fleet, Position>[0]))),
+        relativeFix(path<Leader, Position>, on<Beacon>(path<Fleet, Position>[0]))
+    );
+
+    // The placed model's item outside the block keeps its path and its selection, which placing the
+    // model on vehicle 1 leaves as it was.
+    auto const placed = on(path<Fleet>[1], relativeFix(path<Position>, on<Beacon>(path<Fleet, Position>[2])));
+    auto const & placedReads = placed.policy<Emrys::internal::PolicyKind::reads>();
+    using Outside = std::remove_cvref_t<decltype(placedReads)>::Item<1>;
+    static_assert(std::is_same_v<Outside::PathType, Emrys::TagPath<Fleet, Position>>);
+    static_assert(std::is_same_v<Outside::NameType, Beacon>);
+    EXPECT_EQ(placedReads.selection<0>(), 1);
+    EXPECT_EQ(placedReads.selection<1>(), 2);
+}
+
+// A model placed on each of vehicles 1 and 2 reads vehicle 0's velocity from the state, beside the
+// model of vehicle 0, which reads it under the same name, and predicts as the model placed on each
+// tagged block, reading the tagged block First's.
+TEST(PlacedRepetitions, OnEachReadsARepetitionOutsideItFromTheState)
+{
+    auto const lead = processModel(
+        turn,
+        reads(path<Fleet, Position>[0], on<TargetVelocity>(path<Fleet, Velocity>[0])),
+        writes(path<Fleet>[0]),
+        continuousNoise(0.3)
+    );
+    auto const taggedLead = processModel(
+        turn,
+        reads(path<First, Position>, on<TargetVelocity>(path<First, Velocity>)),
+        writes(path<First>),
+        continuousNoise(0.3)
+    );
+    expectSamePredictions(
+        compose(lead, onEach(path<Fleet>[std::array{1, 2}], following(on<TargetVelocity>(path<Fleet, Velocity>[0])))),
+        compose(
+            taggedLead,
+            on<Second>(following(on<TargetVelocity>(path<First, Velocity>))),
+            on<Third>(following(on<TargetVelocity>(path<First, Velocity>)))
+        )
+    );
 }

@@ -64,9 +64,10 @@ instead.
 - `compose()` and `on<Path>()` take a model whose `reads()` selects repetitions. A composition reads
   each name once, with the selection of the first part that reads it; parts that read a block
   under one name select the same repetitions, which is asserted when the composition meets a
-  state. `on<Path>(model)` keeps the selections of the items in the model's block. `onEach<Path>()`
-  refuses such a model, since one repetition holds no repeated block, and `on<Path>()` refuses a
-  selection in an item that the model's block lacks, at compile time.
+  state. `on<Path>(model)` keeps the selections of the items in the model's block, and
+  `on<Path>()` and `onEach<Path>()` keep those of the items outside it, which are read from the
+  state: a model placed on vehicle 1 reads `path<Fleet>[0]`. A selected item the state lacks is a
+  compile error, since an input of the call has no repetitions.
 - `idx()`, `diffIdx()`, `block()`, and `diffBlock()` take an Eigen sequence or a list of
   repetitions where they take one repetition's index: `block<Fleet>(space, x, Eigen::seqN(1, 2))`
   is vehicles 1 and 2, and `idx<TagPath<Fleet, Heading>>(space, std::array{3, 0})` the headings of
@@ -170,6 +171,11 @@ instead.
   so its covariance differs from the earlier one, and from `predictJoint()`'s, by rounding. The
   ranging EKF's step in 2D with 4 anchors takes 1,315 instructions where it took 2,410
   ([docs/benchmarks.md](docs/benchmarks.md)).
+- `on<Path>(model)` and `onEach<Path>(model)` keep the path of an item of the model's `reads()`
+  outside the block they place it on, which is then read from the state where the state has it and
+  is an input by its one tag otherwise. An item of several tags, `path<Leader, Position>`, was an
+  input under its last tag, `Position`; write `path<Position>` in the model's `reads()` to keep it
+  an input.
 - `erase<Path>(element, count)` of `GaussianParams`, of a mixture's parameters, and of `ParticleSet`
   is `erase<Path>(elements)`: one element's index, an Eigen sequence, or a list of indices, each
   named once and all erased together, so the indices are those before the call. Write

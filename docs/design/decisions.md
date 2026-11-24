@@ -1885,8 +1885,9 @@ cover `sample()` and `logLikelihood()`.
 
 **Rule.** `on<Path>(model, renames...)` places a model on the block `Path` names: every item of its
 `reads()` that starts in that block, and every block it writes, is prefixed; its function is
-untouched. Any other item is an input of the call and keeps its tag, so two placements share it,
-unless a rename `on<Name>(path<Tag>)` gives it its own name. `onEach<Path>(model, renames...)`
+untouched. Any other item keeps its path and selection, read from the state where the state has
+it and otherwise an input of the call by its one tag, so two placements share it, unless a rename
+`on<Name>(path<Tag>)` reads it by another tag, selecting nothing. `onEach<Path>(model, renames...)`
 places one copy of a process model on every repetition of a repeated block, each with its own
 noise; an input renamed to a `Repeated` tag has a value per repetition, any other is shared.
 `compose(models...)` of measurement models measures the blocks they write side by side: the union
@@ -1902,10 +1903,10 @@ specific force. A `Repeated` tag is the spelling a state already uses for a flee
 one model of one state, with one scalar, so a part in another scalar is a slip that would mix
 precisions silently.
 
-**Rejected.** Prefixing the inputs too, which makes sharing the special case. Deciding which items
-are inputs from the state at the call, which would leave a composition's reads unknown until a
-state meets it. A separate spelling for an input every repetition shares. Parts of different
-scalars, with the composition in their common type. `Composition::part<I>()`: a part has no tag,
+**Rejected.** Prefixing the inputs too, which makes sharing the special case. Every item outside the
+block an input by its name: a model on one vehicle could not read another vehicle or a landmark,
+and a path of several tags kept only its last. A separate spelling for an input every repetition
+shares. Parts of different scalars, with the composition in their common type. `Composition::part<I>()`: a part has no tag,
 and with no setters it could only assign a whole new part, which composing a new model does too.
 
 **Where.** `Models/Placement.h`, `Models/ProcessModel.h` (`compose()` of process models).
@@ -2036,9 +2037,10 @@ that reads it [selected-reads]. Parts that read under one name read in one way, 
 repetition, or several, which the types check, and select the same repetitions in the same order,
 however each spells them, which is asserted when the composition meets a state. The parts
 together read no coordinate twice, as one model does not. `on<Path>(model)` prefixes the path of
-an item that selects repetitions of a block of the model's block and keeps its selection. A
-selection in any other item is refused, since that item is an input of the call, and
-`onEach<Path>(model)` refuses a model that selects, since one repetition holds no repeated block.
+an item that selects repetitions of a block of the model's block and keeps its selection, and
+keeps any other item's [model-placement]; `onEach<Path>(model)` refuses a selection only inside
+one repetition, which holds no repeated block. A selected item the state lacks is refused, since
+an input of the call has no repetitions.
 
 **Why.** Each part's function reads its input by name from the one input gathered for the whole,
 so a name has one block behind it. A sequence that counts from the block's end names no

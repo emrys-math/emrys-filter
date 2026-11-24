@@ -515,7 +515,9 @@ that has them. `Emrys::compose(models...)` puts models side by side, each writin
 `compose(unicycle, Emrys::RandomWalk<Speed>{0.1}, Emrys::RandomWalk<TurnRate>{0.01})`.
 `Emrys::on<Ownship>(vehicle)` places a model on the block `Ownship`, prefixing every path into the
 state it reads and writes, so two vehicles are `compose(on<Ownship>(vehicle), on<Target>(vehicle))`.
-An input keeps its tag, shared by both, unless renamed: `on<Target>(vehicle,
+Any other path the model reads is kept as it is, with its selection: it is read from the state
+where the state has it, so a model on one vehicle may read another, `path<Fleet>[0]`, and is
+otherwise an input by its tag, shared by both, unless renamed: `on<Target>(vehicle,
 on<TargetForce>(path<SpecificForce>))` reads the target's force from the argument tagged
 `TargetForce`. `Emrys::onEach<Fleet>(vehicle)` places one copy on every repetition of a `Repeated`
 block, each with its own noise; an input renamed to a `Repeated` tag has a value per repetition.

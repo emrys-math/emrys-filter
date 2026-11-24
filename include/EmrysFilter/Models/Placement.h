@@ -218,10 +218,12 @@ placedSubspace(Space const & space)
 /** How the model \a Model, placed on the block that the TagPath \a Prefix names with the renames
  * \a Renames, reads and writes: each item of its reads() that starts in the block is a block of the
  * state, its path prefixed, its name a PlacedName of its own, and its selection of repetitions, where
- * it has one, the model's; each other item is an input of the call, under its name or the one a
- * rename gives it; and each block written is prefixed. Where \a Selection is an integer, the model
- * is placed on one repetition of the repeated block \a Prefix names, or on the block \a Prefix names
- * inside it, and every item in the block selects that repetition.
+ * it has one, the model's; each other item is kept as it is, path, name, and selection, so it is read
+ * from the state where the state has it and is an input of the call by its one tag otherwise
+ * (decisions.md [model-placement]); an item a rename renames is the new name's, by that tag;
+ * and each block written is prefixed. Where \a Selection is an integer, the model is placed on one
+ * repetition of the repeated block \a Prefix names, or on the block \a Prefix names inside it, and
+ * every item in the block selects that repetition.
  */
 template <typename Prefix, typename Selection, typename Model, typename... Renames>
 struct Placement
@@ -251,14 +253,17 @@ struct Placement
 
         using New = Renamed<typename Item::NameType, Renames...>;  ///< an input's name after the renames
 
+        /// whether a rename renames the item, which is then read by the new name's tag
+        static constexpr bool IsRenamed = !State && !std::is_same_v<New, typename Item::NameType>;
+
         static_assert(
             State || sameLeaf<New, typename Item::NameType>,
             "a renamed input has the same leaf beneath it as the name the model reads it under"
         );
         static_assert(
-            State || !Item::Selected,
-            "on<Path>(model) places a model whose reads() selects repetitions only of a block of the block Path "
-            "names; any other item is an input of the call, which has no repetitions to select"
+            !IsRenamed || !Item::Selected,
+            "on<Path>(model, on<Name>(path<Tag>)) renames an input of the call, which has no repetitions to select, "
+            "so the item it renames selects none"
         );
 
         /** The item. */
@@ -268,7 +273,10 @@ struct Placement
                 JoinPaths<Prefix, typename Item::PathType>,
                 PlacedName<Prefix, typename Item::NameType>,
                 std::conditional_t<Selected, Selection, typename Item::SelectionType>>,
-            ReadItem<TagPath<New>, New>>;
+            std::conditional_t<
+                IsRenamed,
+                ReadItem<TagPath<New>, New>,
+                ReadItem<typename Item::PathType, typename Item::NameType, typename Item::SelectionType>>>;
     };
 
     /** The placed reads(). */
@@ -292,7 +300,8 @@ struct Placement
 
 /** \returns the reads() policy \a Target of a model placed on a block, from the model's \a reads:
  * each item holds the model's selection, or, where the model is placed on one repetition, \a where,
- * the repetition, if the item is in it
+ * the repetition, if the item is in it, which is where the model's item selects none and the placed
+ * one does
  */
 template <typename Target, typename Selection, typename... Items>
 [[nodiscard]] Target
@@ -301,7 +310,8 @@ placedReads(Reads<Items...> const & reads, [[maybe_unused]] Selection const & wh
     return [&]<std::size_t... I>(std::index_sequence<I...>) {
         auto const selectionOf = [&]<std::size_t K>(std::integral_constant<std::size_t, K>) ->
             typename Target::template Item<K>::SelectionType {
-                if constexpr (!std::is_same_v<Selection, NoSelection> && Target::template Item<K>::Selected)
+                if constexpr (!std::is_same_v<Selection, NoSelection> && Target::template Item<K>::Selected
+                              && !Reads<Items...>::template Item<K>::Selected)
                 {
                     return where;
                 }
@@ -473,15 +483,16 @@ placedWrites(Model const & model, [[maybe_unused]] Selection const & where = {})
 enum class EachKind
 {
     state,     ///< a block of one repetition
-    shared,    ///< an input every repetition reads
+    shared,    ///< an item outside one repetition, which every repetition reads
     repeated,  ///< an input with a value per repetition, renamed to a Repeated tag
 };
 
 /** How the process model \a Model, placed on every repetition of the repeated block that the
  * TagPath \a Prefix names with the renames \a Renames, reads: the whole repeated block once, under
  * its tag, in place of the items that start in one repetition; each input renamed to a Repeated tag
- * as one argument with a value per repetition; and each other input as it is, shared by every
- * repetition (decisions.md [model-placement]). Where \a Selection is a sequence or a list, the model
+ * as one argument with a value per repetition; and each other item as it is, path and selection,
+ * read from the state where the state has it, shared by every repetition (decisions.md
+ * [model-placement]). Where \a Selection is a sequence or a list, the model
  * is placed on each of the repetitions it selects, read and written as a repeated block of their
  * count under the block's tag.
  */
@@ -513,9 +524,9 @@ struct EachPlacement
         "block of one repetition of the block Path names"
     );
     static_assert(
-        !InnerReads::Selected && !writesSelected<Model>,
+        !writesSelected<Model>,
         "onEach<Path>(model) places a model on one repetition of a repeated block, which holds no repeated block, so "
-        "the model's reads() and writes() select no repetitions"
+        "the model's writes() select no repetitions"
     );
     static_assert(
         FixedSizeSpace<InnerIn> && FixedSizeSpace<InnerOut>,
@@ -549,6 +560,11 @@ struct EachPlacement
                 sameLeaf<RepeatedBlock<NewName<K>>, typename InnerItem<K>::NameType>,
                 "an input renamed to a Repeated tag repeats the leaf the model reads it under"
             );
+            static_assert(
+                !InnerItem<K>::Selected,
+                "onEach<Path>(model, on<Name>(path<Tag>)) renames an input of the call, which has no repetitions to "
+                "select, so the item it renames selects none"
+            );
             return EachKind::repeated;
         }
         else
@@ -557,18 +573,32 @@ struct EachPlacement
                 sameLeaf<NewName<K>, typename InnerItem<K>::NameType>,
                 "a renamed input has the same leaf beneath it as the name the model reads it under"
             );
+            static_assert(
+                std::is_same_v<NewName<K>, typename InnerItem<K>::NameType> || !InnerItem<K>::Selected,
+                "onEach<Path>(model, on<Name>(path<Tag>)) renames an input of the call, which has no repetitions to "
+                "select, so the item it renames selects none"
+            );
             return EachKind::shared;
         }
     }
 
-    /** The placed reads(): the repeated block, or the repetitions selected, then each input. */
+    /** Item \a K of the model outside one repetition, as the placed reads() holds it: as it is, path,
+     * name, and selection, read from the state where the state has it (decisions.md
+     * [model-placement]), or, renamed, by the new name's tag.
+     */
+    template <std::size_t K>
+    using OuterItem = std::conditional_t<
+        std::is_same_v<NewName<K>, typename InnerItem<K>::NameType>,
+        ReadItem<typename InnerItem<K>::PathType, NewName<K>, typename InnerItem<K>::SelectionType>,
+        ReadItem<TagPath<NewName<K>>, NewName<K>>>;
+
+    /** The placed reads(): the repeated block, or the repetitions selected, then each item outside
+     * one repetition.
+     */
     using ReadsPolicy = typename decltype([]<std::size_t... K>(std::index_sequence<K...>) {
         return std::type_identity<decltype(std::tuple_cat(
             std::tuple<ReadItem<Prefix, RepeatedTag, Selection>>{},
-            std::conditional_t<
-                kind<K>() == EachKind::state,
-                std::tuple<>,
-                std::tuple<ReadItem<TagPath<NewName<K>>, NewName<K>>>>{}...
+            std::conditional_t<kind<K>() == EachKind::state, std::tuple<>, std::tuple<OuterItem<K>>>{}...
         ))>{};
     }(std::make_index_sequence<ItemCount>{}))::type;
 
@@ -581,19 +611,48 @@ struct EachPlacement
     using WritesOfEach =
         std::conditional_t<Selected, WritesItems<ReadItem<Prefix, RepeatedTag, Selection>>, Writes<Prefix>>;
 
-    /** \returns the placed reads(), whose first item holds \a where, the repetitions selected */
+    /** \returns the placed reads(), whose first item holds \a where, the repetitions selected, and
+     * each item outside one repetition its selection in the model's \a reads
+     */
     [[nodiscard]] static ReadsOfEach
-    makeReads([[maybe_unused]] Selection const & where)
+    makeReads(InnerReads const & reads, [[maybe_unused]] Selection const & where)
     {
-        if constexpr (Selected)
+        if constexpr (!ReadsOfEach::Selected)
         {
-            return [&]<std::size_t... K>(std::index_sequence<K...>) {
-                return ReadsOfEach{std::in_place, where, ((void)K, NoSelection{})...};
-            }(std::make_index_sequence<ReadsOfEach::Count - 1>{});
+            return {};
         }
         else
         {
-            return {};
+            return [&]<std::size_t... K>(std::index_sequence<K...>) {
+                return std::apply(
+                    [&](auto const &... selections) {
+                        return ReadsOfEach{std::in_place, where, selections...};
+                    },
+                    std::tuple_cat(outerSelection<K>(reads)...)
+                );
+            }(std::make_index_sequence<ItemCount>{});
+        }
+    }
+
+    /** \returns the selection the placed reads() holds for item \a K of the model's \a reads, as a
+     * tuple: none for an item in one repetition, the model's for an item outside it, and NoSelection
+     * for an item renamed
+     */
+    template <std::size_t K>
+    [[nodiscard]] static auto
+    outerSelection([[maybe_unused]] InnerReads const & reads)
+    {
+        if constexpr (kind<K>() == EachKind::state)
+        {
+            return std::tuple<>{};
+        }
+        else if constexpr (std::is_same_v<NewName<K>, typename InnerItem<K>::NameType>)
+        {
+            return std::tuple{reads.template selection<K>()};
+        }
+        else
+        {
+            return std::tuple{NoSelection{}};
         }
     }
 
@@ -1336,7 +1395,7 @@ placeEach(Selection const & where, Model const & model, Renames const &...)
     using Step = EachStep<Prefix, Model, Selection, Renames...>;
     return ProcessFunction<Step, typename Each::ReadsOfEach, typename Each::WritesOfEach, typename Each::AffineOfEach>{
         Step{model},
-        Each::makeReads(where),
+        Each::makeReads(model.template policy<PolicyKind::reads>(), where),
         Each::makeWrites(where),
         typename Each::AffineOfEach{}
     };
@@ -1346,11 +1405,13 @@ placeEach(Selection const & where, Model const & model, Renames const &...)
 
 /** \ingroup Models
  * \returns the process model \a model placed on the block of the state that \a Path (a tag or a
- * TagPath) names (decisions.md [model-placement]): every path into the state it reads and writes
- * is prefixed by \a Path, and its function is untouched. An item that selects repetitions of a
- * repeated block in the model's block selects the same ones where it is placed. An input of the call
- * keeps its tag, so two placements of one model share it, unless \a renames rename it, each
- * <tt>on<Name>(path<Tag>)</tt>, which gives the input \a Tag the name \a Name.
+ * TagPath) names (decisions.md [model-placement]): every path it reads that starts in that block,
+ * and every path it writes, is prefixed by \a Path, and its function is untouched. An item that
+ * selects repetitions of a repeated block in the model's block selects the same ones where it is
+ * placed. Any other item keeps its path and selection, read from the state where the state has it,
+ * <tt>path<Fleet>[0]</tt>, and otherwise an input of the call by its tag, so two placements of one
+ * model share it, unless \a renames rename it, each <tt>on<Name>(path<Tag>)</tt>, which gives the
+ * input \a Tag the name \a Name.
  *
  * \code
  * auto const pair = compose(on<Ownship>(vehicle), on<Target>(vehicle, on<TargetForce>(path<SpecificForce>)));
@@ -1368,7 +1429,8 @@ on(Model const & model, Renames const &... renames)
  * the one that \a where selects, <tt>path<Fleet>[k]</tt>, or on a block inside it,
  * <tt>path<Fleet, Body>[k]</tt> (decisions.md [model-placement], [placed-repetitions]): as
  * on<Path>(model) places it, each path into the state it reads and writes running through the
- * repetition. The model's own reads() and writes() select no repetitions. Two placements of models
+ * repetition. Its items in that block select no repetitions; one outside it is kept, as on<Path>(model)
+ * keeps it, so the model may read another repetition, <tt>path<Fleet>[j]</tt>. Two placements of models
  * that read or write blocks under one name do so under one name here too, so a composition of them
  * reads one repetition under it; onEach(path<Fleet>[repetitions], model) places a model on several.
  *
@@ -1391,7 +1453,8 @@ on(SelectedPath<Path, Selection> const & where, Model const & model, Renames con
 /** \ingroup Models
  * \returns the measurement model \a model placed on the block of the state that \a Path (a tag or
  * a TagPath) names (decisions.md [model-placement]): every path into the state it reads is prefixed
- * by \a Path, and an input of the call keeps its tag unless \a renames rename it, as on() of a
+ * by \a Path, and any other item keeps its path and selection, read from the state where the state
+ * has it and otherwise an input of the call by its tag unless \a renames rename it, as on() of a
  * process model does. Its output is its own, since a measurement is not part of the state.
  */
 template <typename Path, MeasurementModel Model, typename... Renames>
@@ -1405,8 +1468,8 @@ on(Model const & model, Renames const &... renames)
  * \returns the measurement model \a model placed on one repetition of a repeated block of the
  * state, the one that \a where selects, <tt>path<Landmarks>[k]</tt>, or on a block inside it
  * (decisions.md [model-placement], [placed-repetitions]): as on<Path>(model) places it, each path
- * into the state it reads running through the repetition. The model's own reads() selects no
- * repetitions.
+ * into the state it reads running through the repetition. Its items in that block select no
+ * repetitions; one outside it is kept, as on<Path>(model) keeps it.
  */
 template <typename Path, typename Selection, MeasurementModel Model, typename... Renames>
 [[nodiscard]] auto
@@ -1426,7 +1489,8 @@ on(SelectedPath<Path, Selection> const & where, Model const & model, Renames con
  * [model-placement]): each repetition moves by the model on its own blocks, with its own noise. An
  * input renamed by \a renames to a Repeated tag, <tt>on<Forces>(path<SpecificForce>)</tt> with
  * <tt>struct Forces : Repeated<SpecificForce, N></tt>, is one argument with a value per
- * repetition; any other input is shared by every repetition.
+ * repetition; any other item outside one repetition keeps its path and selection, read from the
+ * state where the state has it, and is shared by every repetition.
  *
  * \code
  * auto const fleet = compose(on<Ownship>(vehicle), onEach<Targets>(vehicle, on<TargetForces>(path<SpecificForce>)));

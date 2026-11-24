@@ -665,6 +665,11 @@ protected:
                 "an item of reads() that names no block of the state names an input of the call by one tag, so a "
                 "path of several tags must be in the state"
             );
+            static_assert(
+                !Item<I>::Selected,
+                "a selected item of reads() names a block of the state, since an item the state lacks is an input "
+                "of the call, which has no repetitions to select"
+            );
             using Tag = PathTag<typename Item<I>::PathType>;
             constexpr auto matches = []<std::size_t... J>(std::index_sequence<J...>) {
                 return std::array<bool, ArgumentCount + 1>{std::is_same_v<InputTag<Argument<J>>, Tag>..., false};

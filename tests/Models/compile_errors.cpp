@@ -559,12 +559,36 @@ struct Landmarks : Emrys::Linear<Eigen::Dynamic, 8>
 [[maybe_unused]] auto const composed = Emrys::compose(makeWholeFix(), makeFixModel());
 #endif
 
-#if defined(ON_MODEL_THAT_SELECTS_OUTSIDE_ITS_BLOCK)  // static_assert: Placement.h: reads() selects repetitions only
-[[maybe_unused]] auto const placed = Emrys::on<Position>(makeFixOfOne());
+#if defined(ON_EACH_SELECTED_WRITES)  // static_assert: Placement.h: the model's writes() select no repetitions
+[[maybe_unused]] auto const placed = Emrys::onEach<Fixes>(Emrys::processModel(
+    []<typename T>(auto const & x, auto) {
+        return Eigen::Matrix<T, 2, 1>{x};
+    },
+    Emrys::reads(Emrys::path<Fixes>[1]),
+    Emrys::writes(Emrys::path<Fixes>[1])
+));
 #endif
 
-#if defined(ON_EACH_MODEL_THAT_READS_A_SELECTION)  // static_assert: Placement.h: which holds no repeated block
-[[maybe_unused]] auto const placed = Emrys::onEach<Fixes>(makeStepOfOne());
+#if defined(ON_RENAMED_SELECTION)  // static_assert: Placement.h: on<Path>(model, on<Name>(path<Tag>)) renames
+[[maybe_unused]] auto const placed = Emrys::on<Position>(makeFixOfOne(), Emrys::on<Offset>(Emrys::path<Fix>));
+#endif
+
+#if defined(EACH_RENAMED_SELECTION)  // static_assert: Placement.h: onEach<Path>(model, on<Name>(path<Tag>)) renames
+[[maybe_unused]] auto const placed = Emrys::onEach<Fixes>(
+    Emrys::processModel(
+        []<typename T>(auto const & in, auto const &, auto const & x, auto) {
+            return Eigen::Matrix<T, 2, 1>{Emrys::block<Fix>(in, x) + Emrys::block<Offset>(in, x)};
+        },
+        Emrys::reads(Emrys::path<Fix>, Emrys::on<Offset>(Emrys::path<Fixes>[1])),
+        Emrys::writes(Emrys::path<Fix>)
+    ),
+    Emrys::on<Position>(Emrys::path<Offset>)
+);
+#endif
+
+#if defined(SELECTED_INPUT)  // static_assert: ResolvedReads.h: a selected item of reads() names a block of the state
+[[maybe_unused]] auto const updated =
+    Emrys::update(makeInitial(), Emrys::observe(Emrys::methods::linearized(), makeFixOfOne(), Eigen::Vector2d::Zero()));
 #endif
 
 #if defined(COMPOSE_A_BLOCK_AND_A_SELECTION_OF_IT)  // static_assert: ProcessModel.h: two parts of a composition read a

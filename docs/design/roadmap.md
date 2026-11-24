@@ -249,13 +249,6 @@ takes an integer repetition today, that argument takes a sequence or a list too.
       `MeasurementReads.h`, `ProcessModel.h`) would change. Until then `writes()` of a selection is
       the way to split the block; writes must stay distinct in any case. The item closes when the
       step does, with the assertion documented in usage.md.
-- [ ] **A selection outside the block a model is placed on.** A question for the user. In
-      `on<Vehicle>(model)`, an item of the model's `reads()` that the block `Vehicle` lacks is an
-      input of the call under its name, so `path<Landmarks>[k]` there would lose its selection,
-      and `on<Path>()` refuses it at compile time (`Placement::OuterItemOf`). The other choice
-      keeps such an item as it is, path and selection, read from the state the placed model
-      meets. It was not built, since an item without a selection would then still become an
-      input by name while one with a selection kept its path.
 Done when: every item's test and every negative compile case passes on all three compilers, and the
 audit's list has no function without a test or a refusal.
 
