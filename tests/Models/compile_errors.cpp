@@ -493,6 +493,18 @@ struct Landmarks : Emrys::Linear<Eigen::Dynamic, 8>
 [[maybe_unused]] constexpr auto size = sizeof(Emrys::Kinematic<double, Attitude, Spin>);
 #endif
 
+#if defined(OU_MEAN_SIZE)  // static_assert: ProcessModel.h: must have the size of its block
+[[maybe_unused]] constexpr auto size = sizeof(Emrys::OrnsteinUhlenbeck<Speed, Emrys::RevertingTo<Offset>>);
+#endif
+
+#if defined(OU_MEAN_NOT_LINEAR)  // static_assert: ProcessModel.h: a block and a mean whose values add
+[[maybe_unused]] constexpr auto size = sizeof(Emrys::OrnsteinUhlenbeck<Heading, Emrys::RevertingTo<Speed>>);
+#endif
+
+#if defined(OU_MEAN_SAME_TAG)  // static_assert: ProcessModel.h: must end in another tag than its block
+[[maybe_unused]] constexpr auto size = sizeof(Emrys::OrnsteinUhlenbeck<Speed, Emrys::RevertingTo<Speed>>);
+#endif
+
 #if defined(ZERO_QUATERNION)  // static_assert: ProcessModel.h: the block of a Zero model must have differences
 [[maybe_unused]] constexpr auto size = sizeof(Emrys::Zero<Attitude>);
 #endif

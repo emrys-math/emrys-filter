@@ -201,7 +201,11 @@ as an instance, `Emrys::minus(space, a, b)`, wherever its size can't be read fro
 **A process model.** A process model writes some blocks of the state from the blocks it reads, and
 `Emrys::compose(models...)` puts models side by side: `ConstantVelocity<Position, Velocity>{q}`,
 `ConstantAcceleration`, `RandomWalk<B>{q}`, `OrnsteinUhlenbeck<B>{TimeConstant{tau},
-StationaryVariance{s}}`, `Constant<B>{}`, and `Zero<B>{variance}` are built in. Their parameters
+StationaryVariance{s}}`, `Constant<B>{}`, and `Zero<B>{variance}` are built in.
+`OrnsteinUhlenbeck<B, RevertingTo<M>>{TimeConstant{tau}, StationaryVariance{s}}` reverts to a mean
+instead of zero, the block `M`: read from the state where the state has it, such as a block that
+`Constant<M>{}` or `RandomWalk<M>{q}` models, and otherwise an input of the call,
+`Emrys::sure<M>(m)` or a Gaussian over `M`. Their parameters
 are continuous-time spectral densities, discretized exactly over each step; `Zero` resets its
 block to zero with its variance over any step, for the block of a switching model's mode in
 which the quantity is zero. Every coordinate of the state must be written by exactly one model,

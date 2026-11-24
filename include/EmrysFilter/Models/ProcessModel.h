@@ -1076,6 +1076,46 @@ struct OrnsteinUhlenbeckStep
     }
 };
 
+/** The function of an OrnsteinUhlenbeck model about a mean: \f$ y = \phi x + (1 - \phi) m \f$ with
+ * \f$ \phi = e^{-\Delta t / \tau} \f$, \f$ x \f$ the block read under \a Block and \f$ m \f$ the
+ * mean read under \a Mean, and \f$ [\phi I, (1 - \phi) I] \f$ in their columns as its Jacobian.
+ */
+template <typename Scalar, typename Block, typename Mean>
+struct OrnsteinUhlenbeckMeanStep
+{
+    Scalar timeConstant;  ///< \f$ \tau \f$
+
+    /** \returns the block moved toward the mean, with its Jacobian over the input's differences */
+    template <typename In, typename Out, typename X, typename TimeScalar>
+    [[nodiscard]] auto
+    operator()(In const & in, Out const & out, X const & x, TimeScalar dt) const
+    {
+        using T = ScalarOf<X>;
+        using JacobianMatrix = CrossMatrixOf<Out, In, TimeScalar>;
+        constexpr int Values = rowsAtCompileTime<false, Block>;
+        constexpr int Differences = rowsAtCompileTime<true, Block>;
+        TimeScalar const phi = Eigen::numext::exp(TimeScalar(-dt / TimeScalar(timeConstant)));
+        BlockRows const own = blockRows<Block>(in);
+        BlockRows const mean = blockRows<Mean>(in);
+        EMRYS_FILTER_ASSERT(
+            own.size == mean.size && "the mean an OrnsteinUhlenbeck model reverts to has the size of its block"
+        );
+        typename Moments<Out, T>::VectorType y{
+            T(phi) * middleRowsOf<Values>(x, own.start, own.size)
+            + T(1 - phi) * middleRowsOf<Values>(x, mean.start, mean.size)
+        };
+        Eigen::Index const n = differenceDimension(out);
+        JacobianMatrix jacobian = JacobianMatrix::Zero(n, differenceDimension(in));
+        blockOf<Differences, Differences>(jacobian, 0, differenceBlockRows<Block>(in).start, n, n)
+            .diagonal()
+            .setConstant(phi);
+        blockOf<Differences, Differences>(jacobian, 0, differenceBlockRows<Mean>(in).start, n, n)
+            .diagonal()
+            .setConstant(1 - phi);
+        return withJacobian(std::move(y), std::move(jacobian));
+    }
+};
+
 /** The noise of an OrnsteinUhlenbeck model over a step: \f$ \sigma^2 (1 - \phi^2) \f$ on each
  * coordinate.
  */
@@ -1369,8 +1409,85 @@ StationaryVariance(Value) -> StationaryVariance<internal::DeducedScalar<Value>>;
 /// \endcond
 
 /** \ingroup Models
- * \brief A zero-mean Ornstein-Uhlenbeck (first-order Gauss-Markov) process on each coordinate
- * of the block named by \a Path, such as a slowly varying sensor bias.
+ * \brief The mean \f$ m \f$ that an OrnsteinUhlenbeck model reverts to, the block named by
+ * \a Mean: <tt>OrnsteinUhlenbeck<Bias, RevertingTo<Offset>></tt>.
+ *
+ * The model reads it under its last tag, from the state where the state has it, such as a block
+ * that Constant or RandomWalk models, and otherwise as an input of the call, <tt>sure<Offset>(m)</tt>
+ * or a %Gaussian over it (decisions.md [continuous-time-noise]).
+ */
+template <typename Mean>
+struct RevertingTo
+{};
+
+namespace internal
+{
+
+/** Whether \a T is a RevertingTo. */
+template <typename T>
+inline constexpr bool isRevertingTo = false;
+
+/** A RevertingTo is one. */
+template <typename Mean>
+inline constexpr bool isRevertingTo<RevertingTo<Mean>> = true;
+
+/** The scalar of an OrnsteinUhlenbeck model whose second argument is \a Second: \a Second itself,
+ * or \c double after a RevertingTo.
+ */
+template <typename Second>
+struct OrnsteinUhlenbeckScalar
+{
+    using type = Second;  ///< the scalar given
+};
+
+/** After a RevertingTo, \c double. */
+template <typename Mean>
+struct OrnsteinUhlenbeckScalar<RevertingTo<Mean>>
+{
+    using type = double;  ///< the default scalar
+};
+
+/** The step, reads(), and affineIn() of an OrnsteinUhlenbeck model on \a Path whose second
+ * argument is \a Second: the form about zero, which reads its block alone.
+ */
+template <typename Path, typename Second, typename Scalar>
+struct OrnsteinUhlenbeckForm
+{
+    using Step = OrnsteinUhlenbeckStep<Scalar>;  ///< \f$ y = \phi x \f$
+    using ReadsType = ReadsOne<Path>;            ///< the block
+    using Affine = AffineIn<PathTag<Path>>;      ///< in the block
+};
+
+/** The form about the mean \a Mean, which reads the block and the mean and is affine in both. */
+template <typename Path, typename Mean, typename Scalar>
+struct OrnsteinUhlenbeckForm<Path, RevertingTo<Mean>, Scalar>
+{
+    static_assert(
+        isLinear<PathTag<Path>> && isLinear<PathTag<Mean>>,
+        "an OrnsteinUhlenbeck model about a mean takes a block and a mean whose values add, a linear space each, "
+        "since phi x + (1 - phi) m is the exact step only there"
+    );
+    static_assert(
+        valueDimensionAtCompileTime<PathTag<Path>> == valueDimensionAtCompileTime<PathTag<Mean>>
+            && maxValueDimensionAtCompileTime<PathTag<Path>> == maxValueDimensionAtCompileTime<PathTag<Mean>>,
+        "the mean an OrnsteinUhlenbeck model reverts to must have the size of its block"
+    );
+    static_assert(
+        !std::is_same_v<PathTag<Path>, PathTag<Mean>>,
+        "the mean an OrnsteinUhlenbeck model reverts to must end in another tag than its block, since the model "
+        "reads each under its last tag"
+    );
+
+    using Step = OrnsteinUhlenbeckMeanStep<Scalar, PathTag<Path>, PathTag<Mean>>;  ///< \f$ \phi x + (1 - \phi) m \f$
+    using ReadsType = ReadsOf<Path, Mean>;                                         ///< the block and the mean
+    using Affine = AffineIn<PathTag<Path>, PathTag<Mean>>;                         ///< in both
+};
+
+}  // namespace internal
+
+/** \ingroup Models
+ * \brief An Ornstein-Uhlenbeck (first-order Gauss-Markov) process on each coordinate of the block
+ * named by \a Path, such as a slowly varying sensor bias, about zero or about a mean.
  *
  * With time constant \f$ \tau \f$ and stationary variance \f$ \sigma^2 \f$, a step
  * \f$ \Delta t \f$ gives \f$ x' = \phi x \f$ with \f$ \phi = e^{-\Delta t / \tau} \f$ and noise
@@ -1385,22 +1502,41 @@ StationaryVariance(Value) -> StationaryVariance<internal::DeducedScalar<Value>>;
  * numbers of one type they would swap silently. Each coordinate of the block takes the same
  * \f$ \tau \f$ and \f$ \sigma^2 \f$; coordinates that differ are blocks of their own (decisions.md
  * [continuous-time-noise]).
+ *
+ * About a mean, <tt>OrnsteinUhlenbeck<Bias, RevertingTo<Offset>>{TimeConstant{60.0},
+ * StationaryVariance{0.25}}</tt> gives \f$ x' = m + \phi (x - m) = \phi x + (1 - \phi) m \f$ with
+ * the same noise, so that \f$ \sigma^2 \f$ is the stationary variance about \f$ m \f$, such as a
+ * bias that wanders about an unknown constant offset or a rate that returns to a commanded one.
+ * The mean \f$ m \f$ is the block that \a Second names (RevertingTo), read from the state where
+ * the state has it and otherwise an input of the call. The model reads both blocks, writes the
+ * first, and is affine in both, with the Jacobian \f$ [\phi I, (1 - \phi) I] \f$. The block and the
+ * mean are linear spaces of one size, ending in different tags, and \a Scalar_ follows the
+ * RevertingTo, \c double by default. A block whose values do not add, such as a heading that
+ * reverts the short way round, is a function of the user's: off a line, \f$ \sigma^2 (1 - \phi^2) \f$
+ * is not the exact noise of the step.
  */
-template <typename Path, RealScalar Scalar_ = double>
+template <
+    typename Path,
+    typename Second = double,
+    RealScalar Scalar_ = typename internal::OrnsteinUhlenbeckScalar<Second>::type>
+    requires(RealScalar<Second> && std::is_same_v<Second, Scalar_>) || internal::isRevertingTo<Second>
 class OrnsteinUhlenbeck
     : public ProcessFunction<
-          internal::OrnsteinUhlenbeckStep<Scalar_>,
-          internal::ReadsOne<Path>,
+          typename internal::OrnsteinUhlenbeckForm<Path, Second, Scalar_>::Step,
+          typename internal::OrnsteinUhlenbeckForm<Path, Second, Scalar_>::ReadsType,
           internal::WritesOf<Path>,
-          AffineIn<internal::PathTag<Path>>,
+          typename internal::OrnsteinUhlenbeckForm<Path, Second, Scalar_>::Affine,
           internal::DiscreteNoise<internal::OrnsteinUhlenbeckNoise<Scalar_>>>
 {
+    /** The step, reads(), and affineIn() of the form, about zero or about a mean. */
+    using Form = internal::OrnsteinUhlenbeckForm<Path, Second, Scalar_>;
+
     /** The model this is. */
     using Base = ProcessFunction<
-        internal::OrnsteinUhlenbeckStep<Scalar_>,
-        internal::ReadsOne<Path>,
+        typename Form::Step,
+        typename Form::ReadsType,
         internal::WritesOf<Path>,
-        AffineIn<internal::PathTag<Path>>,
+        typename Form::Affine,
         internal::DiscreteNoise<internal::OrnsteinUhlenbeckNoise<Scalar_>>>;
 
 public:
@@ -1411,10 +1547,10 @@ public:
     /** Time constant \a timeConstant and stationary variance \a variance. */
     OrnsteinUhlenbeck(TimeConstant<Scalar_> timeConstant, StationaryVariance<Scalar_> variance)
         : Base{
-              internal::OrnsteinUhlenbeckStep<Scalar_>{timeConstant.value},
-              internal::ReadsOne<Path>{},
+              typename Form::Step{timeConstant.value},
+              typename Form::ReadsType{},
               internal::WritesOf<Path>{},
-              AffineIn<internal::PathTag<Path>>{},
+              typename Form::Affine{},
               internal::DiscreteNoise<internal::OrnsteinUhlenbeckNoise<Scalar_>>{
                   internal::OrnsteinUhlenbeckNoise<Scalar_>{timeConstant.value, variance.value}
               }

@@ -1339,3 +1339,4 @@ resolve.
 | 17zc | A function takes its scalar as a template parameter, `zeros<T>(out)` replaces `vectorIn()`, and the examples name the steps their models apply | [function-scalars] |
 | 17ze | A measurement per value of a mode axis, `switchingMeasurement<Path>()`, for the IMM's update | [imm] |
 | 17zs | One spelling for what depends on the mode, `byMode<Axis>(when<Value>(part), ...)`: noise by mode axis, a measurement per value, nested, in every filter that holds hybrids; a hybrid filter takes the chain and the motion, `ImmFilter{chain, motion, prior}` | [by-mode], [switching-models], [imm] |
+| 17zv | `OrnsteinUhlenbeck<B, RevertingTo<M>>`, an Ornstein-Uhlenbeck block about a mean read from another block | [continuous-time-noise] |
