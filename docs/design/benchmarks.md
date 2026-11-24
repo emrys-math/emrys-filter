@@ -136,6 +136,15 @@ library. Since 2026-11-23 both substitute through the factor themselves instead,
 of at most 24, since Eigen's solve of a small vector turned out slow in time, and both factorize
 $S$ without square roots, a column at a time, as [own-cholesky] has it (claim 9, below).
 
+That reference measures the library's overhead, but it is not what a user of Eigen writes, who
+factorizes $S$ by `Eigen::LLT` and solves by its `solve()`. So the ranging and attitude hand code
+also has that form (`Factorization::EigenLlt` in each `scenario.h`), which differs from the first
+in the factorization and the solve alone, agrees with the library to the same tolerance, and
+allocates nothing; each runner times the library against both, and the results page gives both
+ratios. On 2026-11-23 the library's ranging EKF took 0.38 to 0.84 of its time and its attitude EKF
+1.13 and 1.19 times it, where against the first reference they took 0.89 to 1.74 and 1.51 and
+1.53 times.
+
 The library's update also moved its result, with the innovation's residual and $S$, into a
 `std::expected` and out again, and each move of a fixed-size matrix is a copy, which at 3D with
 24 anchors is a 24×24 $S$ copied several times. The update is now built where it is returned

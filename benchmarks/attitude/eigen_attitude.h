@@ -5,13 +5,15 @@
 // mean, a 6×6 covariance over the attitude error and the bias, an analytic transition, fixed sizes,
 // noalias() products, only the attitude columns of the covariance in the update, and fixed-size
 // derivative vectors for autodiff. It takes the library's covariance update form and
-// factorization (P - K Pxy^T, with a Cholesky factor of S and the gain solved a row at a time) and
-// its exact reset, the right Jacobian of SO(3) at the correction, where Markley leaves the
-// covariance as it is and Solà keeps the reset to first order, so the two agree to rounding.
-// Compare emrys_attitude.h.
+// factorization (P - K Pxy^T, with a Cholesky factorization of S without square roots and the gain
+// by substitution) and its exact reset, the right Jacobian of SO(3) at the correction, where
+// Markley leaves the covariance as it is and Solà keeps the reset to first order, so the two agree
+// to rounding. With Factorization::EigenLlt it factorizes S by Eigen's LLT and solves for the gain
+// by its solve() instead, as a user of Eigen writes it. Compare emrys_attitude.h.
 
 #include "scenario.h"
 
+#include <Eigen/Cholesky>
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 #include <unsupported/Eigen/AutoDiff>
@@ -21,8 +23,9 @@
 namespace Orientation
 {
 
-/// The attitude EKF in plain Eigen, linearizing the reference vectors as \a Kind says.
-template <Jacobian Kind>
+/// The attitude EKF in plain Eigen, linearizing the reference vectors as \a Kind says and
+/// factorizing the innovation covariance as \a F says.
+template <Jacobian Kind, Factorization F = Factorization::WrittenOut>
 class EigenAttitude
 {
 public:
@@ -116,47 +119,55 @@ private:
         Matrix3 innovationCov = variance * Matrix3::Identity();
         innovationCov.noalias() += h * cross.topRows<3>();
 
-        // The Cholesky factorization of S without square roots, S = L D L^T with L unit lower
-        // triangular, a column at a time, as the library takes it
-        // (CholeskyFactorization), since Eigen's LLT of a matrix this small takes
-        // several times as long, and since each step of the filter waits on this one: column k of
-        // L D is column k of S less L(k, j) times each column j before it, and the column after
-        // it waits on one division. Each column is padded with a zero to two packets, so that
-        // each step is one operation on a whole column.
-        auto unscaled = Eigen::Matrix<double, 4, 3>{};
-        auto unit = Eigen::Matrix<double, 4, 3>{};
-        auto reciprocal = Eigen::Vector3d{};
-        for (int k = 0; k < 3; ++k)
-        {
-            Eigen::Vector4d column = Eigen::Vector4d::Zero();
-            column.head<3>() = innovationCov.col(k);
-            for (int j = 0; j < k; ++j)
-            {
-                column -= (unscaled(k, j) * reciprocal(j)) * unscaled.col(j);
-            }
-            reciprocal(k) = 1 / column(k);
-            unscaled.col(k) = column;
-            unit.col(k) = column * reciprocal(k);
-        }
-
-        // The gain Pxy S^-1 by substitution, as the library solves it: forward through L, a
-        // multiplication by the reciprocals of the pivots, and backward through L^T. Column r of
-        // the gain holds unknown r of every row.
         auto gain = Eigen::Matrix<double, 6, 3>{};
-        for (int r = 0; r < 3; ++r)
+        if constexpr (F == Factorization::EigenLlt)
         {
-            gain.col(r) = cross.col(r);
-            for (int c = 0; c < r; ++c)
-            {
-                gain.col(r) -= unit(r, c) * gain.col(c);
-            }
+            // The gain Pxy S^-1 as a user of Eigen writes it: S^-1 Pxy^T by Eigen's LLT, transposed.
+            gain = Eigen::LLT<Matrix3>{innovationCov}.solve(cross.transpose()).transpose();
         }
-        for (int r = 2; r >= 0; --r)
+        else
         {
-            gain.col(r) *= reciprocal(r);
-            for (int c = r + 1; c < 3; ++c)
+            // The Cholesky factorization of S without square roots, S = L D L^T with L unit lower
+            // triangular, a column at a time, as the library takes it
+            // (CholeskyFactorization), since Eigen's LLT of a matrix this small takes
+            // several times as long, and since each step of the filter waits on this one: column k of
+            // L D is column k of S less L(k, j) times each column j before it, and the column after
+            // it waits on one division. Each column is padded with a zero to two packets, so that
+            // each step is one operation on a whole column.
+            auto unscaled = Eigen::Matrix<double, 4, 3>{};
+            auto unit = Eigen::Matrix<double, 4, 3>{};
+            auto reciprocal = Eigen::Vector3d{};
+            for (int k = 0; k < 3; ++k)
             {
-                gain.col(r) -= unit(c, r) * gain.col(c);
+                Eigen::Vector4d column = Eigen::Vector4d::Zero();
+                column.head<3>() = innovationCov.col(k);
+                for (int j = 0; j < k; ++j)
+                {
+                    column -= (unscaled(k, j) * reciprocal(j)) * unscaled.col(j);
+                }
+                reciprocal(k) = 1 / column(k);
+                unscaled.col(k) = column;
+                unit.col(k) = column * reciprocal(k);
+            }
+
+            // The gain Pxy S^-1 by substitution, as the library solves it: forward through L, a
+            // multiplication by the reciprocals of the pivots, and backward through L^T. Column r of
+            // the gain holds unknown r of every row.
+            for (int r = 0; r < 3; ++r)
+            {
+                gain.col(r) = cross.col(r);
+                for (int c = 0; c < r; ++c)
+                {
+                    gain.col(r) -= unit(r, c) * gain.col(c);
+                }
+            }
+            for (int r = 2; r >= 0; --r)
+            {
+                gain.col(r) *= reciprocal(r);
+                for (int c = r + 1; c < 3; ++c)
+                {
+                    gain.col(r) -= unit(c, r) * gain.col(c);
+                }
             }
         }
         auto correction = Vector6{};

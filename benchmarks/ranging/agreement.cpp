@@ -40,22 +40,20 @@ lowerNorm(Eigen::MatrixBase<Derived> const & difference)
     return difference.template cast<double>().template triangularView<Eigen::Lower>().toDenseMatrix().norm();
 }
 
-// Both implementations, driven through the same simulated run, agree at every step. They compute
-// the same products in nearly the same order, so they differ by rounding; agreementTolerance, 1e-9
-// relative to the size of the state and covariance in double and 1e-4 in float, leaves room for
-// rounding accumulated over 500 steps and nothing more, since a modeling difference, such as a
-// wrong sign or a missed term, is of order one. The worst differences seen are 1e-14 in double and
-// 4e-6 in float. The covariance is compared on its lower triangle.
-TYPED_TEST(RangingTest, ImplementationsAgree)
+/// Drives the EmrysFilter EKF of case \a C and the plain-Eigen one that factorizes as \a F through
+/// the same simulated run, and asserts that they agree at every step.
+template <typename C, Ranging::Factorization F>
+void
+expectAgreement()
 {
-    constexpr int D = TypeParam::Dimension;
-    constexpr int A = TypeParam::AnchorCount;
-    using Scalar = typename TypeParam::Scalar;
+    constexpr int D = C::Dimension;
+    constexpr int A = C::AnchorCount;
+    using Scalar = typename C::Scalar;
     auto const scenario = Ranging::makeScenario<D, A>();
     auto const ranges = Ranging::rangesIn<Scalar>(Ranging::simulate(scenario, 500, 1));
     double const tolerance = Ranging::agreementTolerance<Scalar>;
-    auto emrys = EmrysRanging<D, A, TypeParam::Kind, Scalar>{scenario};
-    auto eigen = EigenRanging<D, A, TypeParam::Kind, Scalar>{scenario};
+    auto emrys = EmrysRanging<D, A, C::Kind, Scalar>{scenario};
+    auto eigen = EigenRanging<D, A, C::Kind, Scalar, F>{scenario};
     for (std::size_t k = 0; k < ranges.size(); ++k)
     {
         emrys.predict();
@@ -69,6 +67,25 @@ TYPED_TEST(RangingTest, ImplementationsAgree)
         ASSERT_LT(lowerNorm(emrys.state().covarianceLower() - eigen.covarianceLower()), tolerance * covScale)
             << "at step " << k;
     }
+}
+
+// Both implementations, driven through the same simulated run, agree at every step. They compute
+// the same products in nearly the same order, so they differ by rounding; agreementTolerance, 1e-9
+// relative to the size of the state and covariance in double and 1e-4 in float, leaves room for
+// rounding accumulated over 500 steps and nothing more, since a modeling difference, such as a
+// wrong sign or a missed term, is of order one. The worst differences seen are 1e-14 in double and
+// 4e-6 in float. The covariance is compared on its lower triangle.
+TYPED_TEST(RangingTest, ImplementationsAgree)
+{
+    expectAgreement<TypeParam, Ranging::Factorization::WrittenOut>();
+}
+
+// So does the plain-Eigen EKF that factorizes the innovation covariance by Eigen's LLT and solves
+// for the gain by its solve(), which differs from the library's factorization without square roots
+// by rounding alone.
+TYPED_TEST(RangingTest, ImplementationsAgreeByEigensFactorization)
+{
+    expectAgreement<TypeParam, Ranging::Factorization::EigenLlt>();
 }
 
 // A float EKF stays within float's precision of the double one over the same run: 1e-4 relative to

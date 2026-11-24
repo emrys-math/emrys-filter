@@ -7,19 +7,28 @@
 // and factorization (P - K Pxy^T on a covariance mirrored from its lower triangle, with a Cholesky
 // factorization of S without square roots, by whole columns, and the gain by substitution), so the two agree to
 // rounding, in double or in float. Without the mirror the two triangles drift
-// apart by rounding, which in float costs a tenth of the filter's accuracy. Compare
-// emrys_ranging.h.
+// apart by rounding, which in float costs a tenth of the filter's accuracy. With
+// Factorization::EigenLlt it factorizes S by Eigen's LLT and solves for the gain by its solve()
+// instead, as a user of Eigen writes it, and agrees with the library to rounding all the same.
+// Compare emrys_ranging.h.
 
 #include "scenario.h"
 
+#include <Eigen/Cholesky>
 #include <Eigen/Core>
 #include <unsupported/Eigen/AutoDiff>
 
 namespace Ranging
 {
 
-/// The ranging EKF in plain Eigen in \a Scalar, linearizing the ranges as \a Kind says.
-template <int Dimension, int AnchorCount, Jacobian Kind, typename Scalar = double>
+/// The ranging EKF in plain Eigen in \a Scalar, linearizing the ranges as \a Kind says and
+/// factorizing the innovation covariance as \a F says.
+template <
+    int Dimension,
+    int AnchorCount,
+    Jacobian Kind,
+    typename Scalar = double,
+    Factorization F = Factorization::WrittenOut>
 class EigenRanging
 {
 public:
@@ -67,62 +76,71 @@ public:
         RangeMatrix innovationCov = m_rangeNoise;
         innovationCov.noalias() += h * cross.template topRows<Dimension>();
 
-        // The Cholesky factorization of S without square roots, S = L D L^T with L unit lower
-        // triangular, a column at a time, as the library takes it
-        // (CholeskyFactorization), since Eigen's LLT of a matrix this small takes
-        // several times as long, and since each step of the filter waits on this one: column k of
-        // L D is column k of S less L(k, j) times each column j before it, and the column after
-        // it waits on one division, where with square roots it would wait on a root and then a
-        // division. Each step is one operation on a whole column, so what it leaves above the
-        // diagonal is never read. The columns are padded with zeros to a multiple of 16 bytes,
-        // Eigen's smallest packet: it vectorizes a column of six floats from wherever its address
-        // lets a packet start, and one column's stores are then not the next one's loads.
-        constexpr int Lanes = int(16 / sizeof(Scalar));
-        constexpr int PaddedAnchors = (AnchorCount + Lanes - 1) / Lanes * Lanes;
-        using FactorColumn = Eigen::Matrix<Scalar, PaddedAnchors, 1>;
-        auto unscaled = Eigen::Matrix<Scalar, PaddedAnchors, AnchorCount>{};
-        auto unit = Eigen::Matrix<Scalar, PaddedAnchors, AnchorCount>{};
-        auto reciprocal = Ranges{};
-        for (int k = 0; k < AnchorCount; ++k)
+        auto gain = Eigen::Matrix<Scalar, StateSize, AnchorCount>{};
+        if constexpr (F == Factorization::EigenLlt)
         {
-            FactorColumn column = FactorColumn::Zero();
-            column.template head<AnchorCount>() = innovationCov.col(k);
-            for (int j = 0; j < k; ++j)
-            {
-                column -= (unscaled(k, j) * reciprocal(j)) * unscaled.col(j);
-            }
-            reciprocal(k) = 1 / column(k);
-            unscaled.col(k) = column;
-            unit.col(k) = column * reciprocal(k);
+            // The gain Pxy S^-1 as a user of Eigen writes it: S^-1 Pxy^T by Eigen's LLT, transposed.
+            gain = Eigen::LLT<RangeMatrix>{innovationCov}.solve(cross.transpose()).transpose();
         }
+        else
+        {
+            // The Cholesky factorization of S without square roots, S = L D L^T with L unit lower
+            // triangular, a column at a time, as the library takes it
+            // (CholeskyFactorization), since Eigen's LLT of a matrix this small takes
+            // several times as long, and since each step of the filter waits on this one: column k of
+            // L D is column k of S less L(k, j) times each column j before it, and the column after
+            // it waits on one division, where with square roots it would wait on a root and then a
+            // division. Each step is one operation on a whole column, so what it leaves above the
+            // diagonal is never read. The columns are padded with zeros to a multiple of 16 bytes,
+            // Eigen's smallest packet: it vectorizes a column of six floats from wherever its address
+            // lets a packet start, and one column's stores are then not the next one's loads.
+            constexpr int Lanes = int(16 / sizeof(Scalar));
+            constexpr int PaddedAnchors = (AnchorCount + Lanes - 1) / Lanes * Lanes;
+            using FactorColumn = Eigen::Matrix<Scalar, PaddedAnchors, 1>;
+            auto unscaled = Eigen::Matrix<Scalar, PaddedAnchors, AnchorCount>{};
+            auto unit = Eigen::Matrix<Scalar, PaddedAnchors, AnchorCount>{};
+            auto reciprocal = Ranges{};
+            for (int k = 0; k < AnchorCount; ++k)
+            {
+                FactorColumn column = FactorColumn::Zero();
+                column.template head<AnchorCount>() = innovationCov.col(k);
+                for (int j = 0; j < k; ++j)
+                {
+                    column -= (unscaled(k, j) * reciprocal(j)) * unscaled.col(j);
+                }
+                reciprocal(k) = 1 / column(k);
+                unscaled.col(k) = column;
+                unit.col(k) = column * reciprocal(k);
+            }
 
-        // The gain Pxy S^-1 by substitution, as the library solves it: forward through L, a
-        // multiplication by the reciprocals of the pivots, and backward through L^T. Column r of
-        // the gain holds unknown r of every row, so each step is one operation on whole columns,
-        // padded as the factor's are.
-        constexpr int Padded = (StateSize + Lanes - 1) / Lanes * Lanes;
-        using PaddedColumn = Eigen::Matrix<Scalar, Padded, 1>;
-        auto work = Eigen::Matrix<Scalar, Padded, AnchorCount>{};
-        for (int r = 0; r < AnchorCount; ++r)
-        {
-            PaddedColumn unknown = PaddedColumn::Zero();
-            unknown.template head<StateSize>() = cross.col(r);
-            for (int c = 0; c < r; ++c)
+            // The gain Pxy S^-1 by substitution, as the library solves it: forward through L, a
+            // multiplication by the reciprocals of the pivots, and backward through L^T. Column r of
+            // the gain holds unknown r of every row, so each step is one operation on whole columns,
+            // padded as the factor's are.
+            constexpr int Padded = (StateSize + Lanes - 1) / Lanes * Lanes;
+            using PaddedColumn = Eigen::Matrix<Scalar, Padded, 1>;
+            auto work = Eigen::Matrix<Scalar, Padded, AnchorCount>{};
+            for (int r = 0; r < AnchorCount; ++r)
             {
-                unknown -= unit(r, c) * work.col(c);
+                PaddedColumn unknown = PaddedColumn::Zero();
+                unknown.template head<StateSize>() = cross.col(r);
+                for (int c = 0; c < r; ++c)
+                {
+                    unknown -= unit(r, c) * work.col(c);
+                }
+                work.col(r) = unknown;
             }
-            work.col(r) = unknown;
-        }
-        for (int r = AnchorCount - 1; r >= 0; --r)
-        {
-            PaddedColumn unknown = work.col(r) * reciprocal(r);
-            for (int c = r + 1; c < AnchorCount; ++c)
+            for (int r = AnchorCount - 1; r >= 0; --r)
             {
-                unknown -= unit(c, r) * work.col(c);
+                PaddedColumn unknown = work.col(r) * reciprocal(r);
+                for (int c = r + 1; c < AnchorCount; ++c)
+                {
+                    unknown -= unit(c, r) * work.col(c);
+                }
+                work.col(r) = unknown;
             }
-            work.col(r) = unknown;
+            gain = work.template topRows<StateSize>();
         }
-        Eigen::Matrix<Scalar, StateSize, AnchorCount> const gain = work.template topRows<StateSize>();
         m_mean.noalias() += gain * residual;
         m_cov.template triangularView<Eigen::StrictlyUpper>() = m_cov.transpose();
         m_cov.noalias() -= gain * cross.transpose();

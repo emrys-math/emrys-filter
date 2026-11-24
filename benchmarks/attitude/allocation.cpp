@@ -27,7 +27,8 @@ class AttitudeAllocation : public ::testing::Test
 
 TYPED_TEST_SUITE(AttitudeAllocation, Orientation::Cases);
 
-// After one step to warm up, twenty steps of each implementation, a prediction and two updates
+// After one step to warm up, twenty steps of each implementation, the plain-Eigen one with either
+// factorization, a prediction and two updates
 // each, make no heap allocation: Eigen's assertion catches its own, and the replaced operator new
 // counts the rest.
 TYPED_TEST(AttitudeAllocation, StepsDoNotAllocate)
@@ -36,10 +37,13 @@ TYPED_TEST(AttitudeAllocation, StepsDoNotAllocate)
     auto const run = Orientation::simulate(scenario, 21, 1);
     auto emrys = Orientation::EmrysAttitude<TypeParam::Kind>{scenario};
     auto eigen = Orientation::EigenAttitude<TypeParam::Kind>{scenario};
+    auto eigenLlt = Orientation::EigenAttitude<TypeParam::Kind, Orientation::Factorization::EigenLlt>{scenario};
     emrys.predict(run.gyro[0]);
     emrys.update(run.gravity[0], run.magneticField[0]);
     eigen.predict(run.gyro[0]);
     eigen.update(run.gravity[0], run.magneticField[0]);
+    eigenLlt.predict(run.gyro[0]);
+    eigenLlt.update(run.gravity[0], run.magneticField[0]);
 
     Benchmark::heapAllocations = 0;
     Eigen::internal::set_is_malloc_allowed(false);
@@ -50,6 +54,8 @@ TYPED_TEST(AttitudeAllocation, StepsDoNotAllocate)
         emrys.update(run.gravity[k], run.magneticField[k]);
         eigen.predict(run.gyro[k]);
         eigen.update(run.gravity[k], run.magneticField[k]);
+        eigenLlt.predict(run.gyro[k]);
+        eigenLlt.update(run.gravity[k], run.magneticField[k]);
     }
     Benchmark::countingHeap = false;
     Eigen::internal::set_is_malloc_allowed(true);

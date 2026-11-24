@@ -38,19 +38,16 @@ angleBetween(Scenario::StateVector const & state, Eigen::Quaterniond const & att
     return Emrys::UnitQuaternion::logarithm(attitude.conjugate() * q).norm();
 }
 
-// Both implementations, driven through the same simulated run, agree at every step. They compute
-// the same quantities, the library differentiating its process model where the hand-rolled filter
-// writes its transition, so they differ by rounding; 1e-9, in radians for the attitude and relative
-// to the size of the bias and the covariance, leaves room for rounding accumulated over 1000 steps
-// and nothing more, since a modeling difference, such as a wrong sign, a transposed rotation, or a
-// missed reset, is of the order of the quantity. The covariance is compared on its lower triangle,
-// the part the library guarantees.
-TYPED_TEST(AttitudeTest, ImplementationsAgree)
+/// Drives the EmrysFilter EKF of case \a C and the plain-Eigen one that factorizes as \a F through
+/// the same simulated run, and asserts that they agree at every step.
+template <typename C, Orientation::Factorization F>
+void
+expectAgreement()
 {
     auto const scenario = Orientation::makeScenario();
     auto const run = Orientation::simulate(scenario, 1000, 1);
-    auto emrys = EmrysAttitude<TypeParam::Kind>{scenario};
-    auto eigen = EigenAttitude<TypeParam::Kind>{scenario};
+    auto emrys = EmrysAttitude<C::Kind>{scenario};
+    auto eigen = EigenAttitude<C::Kind, F>{scenario};
     for (std::size_t k = 0; k < run.gyro.size(); ++k)
     {
         emrys.predict(run.gyro[k]);
@@ -64,6 +61,26 @@ TYPED_TEST(AttitudeTest, ImplementationsAgree)
             << "at step " << k;
         ASSERT_LT(covError.norm(), 1e-9 * eigen.covarianceLower().norm()) << "at step " << k;
     }
+}
+
+// Both implementations, driven through the same simulated run, agree at every step. They compute
+// the same quantities, the library differentiating its process model where the hand-rolled filter
+// writes its transition, so they differ by rounding; 1e-9, in radians for the attitude and relative
+// to the size of the bias and the covariance, leaves room for rounding accumulated over 1000 steps
+// and nothing more, since a modeling difference, such as a wrong sign, a transposed rotation, or a
+// missed reset, is of the order of the quantity. The covariance is compared on its lower triangle,
+// the part the library guarantees.
+TYPED_TEST(AttitudeTest, ImplementationsAgree)
+{
+    expectAgreement<TypeParam, Orientation::Factorization::WrittenOut>();
+}
+
+// So does the plain-Eigen EKF that factorizes the innovation covariance by Eigen's LLT and solves
+// for the gain by its solve(), which differs from the library's factorization without square roots
+// by rounding alone.
+TYPED_TEST(AttitudeTest, ImplementationsAgreeByEigensFactorization)
+{
+    expectAgreement<TypeParam, Orientation::Factorization::EigenLlt>();
 }
 
 // The EmrysFilter EKF is consistent: over 50 independent runs, the average NEES at each checked

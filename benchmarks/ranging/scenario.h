@@ -25,6 +25,16 @@ enum class Jacobian
     AutoDiff
 };
 
+/// How the plain-Eigen EKF factorizes the innovation covariance and solves for the gain: written
+/// out as the library does it, without square roots, so that the pair measures the library's
+/// overhead alone, or by Eigen's LLT and its solve(), as a user of Eigen writes it, so that the
+/// pair measures what the library gives that user.
+enum class Factorization
+{
+    WrittenOut,
+    EigenLlt
+};
+
 /// Which Kalman filter an implementation runs, for the pairs against mherb/kalman, which has these
 /// four: the extended and the unscented, each in the covariance form or the square-root form.
 enum class FilterKind

@@ -1,11 +1,13 @@
 // The ranging benchmark: times the EmrysFilter EKF of emrys_ranging.h against the plain-Eigen EKF
 // of eigen_ranging.h, over planar and spatial cases with growing anchor counts, both
 // linearizations, and double and float, and reports the ratio of their time per predict-update
-// step.
+// step. It does so twice: against the plain-Eigen EKF that factorizes the innovation covariance as
+// the library does, which measures the library's overhead, and then against the one that
+// factorizes it by Eigen's LLT, as a user of Eigen writes it.
 //
-// Each case first runs both filters through the same simulated run and checks that they agree, as
-// the agreement test does, and stops if they don't: a timing of two different filters means
-// nothing. It then times batches of steps through the pair driver of harness.h, alternating
+// Each case first runs the three filters through the same simulated run and checks that they
+// agree, as the agreement test does, and stops if they don't: a timing of two different filters
+// means nothing. It then times batches of steps through the pair driver of harness.h, alternating
 // between the two filters, and reports the median, 99th percentile, and worst batch as nanoseconds
 // per step.
 //
@@ -26,7 +28,9 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdio>
+#include <string>
 #include <type_traits>
+#include <vector>
 
 namespace
 {
@@ -34,6 +38,7 @@ namespace
 using Benchmark::Options;
 using Ranging::EigenRanging;
 using Ranging::EmrysRanging;
+using Ranging::Factorization;
 using Ranging::Jacobian;
 
 /// The steps in a simulated run; a timed filter starts over from the initial estimate at its end.
@@ -57,18 +62,50 @@ covOf(EmrysRanging<D, A, K, S> const & filter)
     return filter.state().covarianceLower();
 }
 
-template <int D, int A, Jacobian K, typename S>
+template <int D, int A, Jacobian K, typename S, Factorization F>
 [[nodiscard]] auto const &
-meanOf(EigenRanging<D, A, K, S> const & filter)
+meanOf(EigenRanging<D, A, K, S, F> const & filter)
 {
     return filter.mean();
 }
 
-template <int D, int A, Jacobian K, typename S>
+template <int D, int A, Jacobian K, typename S, Factorization F>
 [[nodiscard]] auto const &
-covOf(EigenRanging<D, A, K, S> const & filter)
+covOf(EigenRanging<D, A, K, S, F> const & filter)
 {
     return filter.covarianceLower();
+}
+
+/// A row of the second table, against the plain-Eigen EKF with Eigen's LLT, printed after the
+/// first.
+struct Row
+{
+    std::string label;             ///< the case
+    Benchmark::PairTiming timing;  ///< its timing
+};
+
+/// The rows of the second table, in the order of their cases.
+std::vector<Row> lltRows;
+
+/// Whether \a eigen ended the run where \a emrys did, to agreementTolerance; reports the case
+/// and the differences when it did not.
+template <typename Scalar, typename Library, typename Reference>
+[[nodiscard]] bool
+agree(char const * label, Library const & emrys, Reference const & eigen)
+{
+    auto const covDifference = (covOf(emrys) - covOf(eigen)).template cast<double>().eval();
+    double const meanError =
+        (meanOf(emrys) - meanOf(eigen)).template cast<double>().norm() / std::max(1.0, double(meanOf(eigen).norm()));
+    double const covError = covDifference.template triangularView<::Eigen::Lower>().toDenseMatrix().norm()
+                          / std::max(1.0, double(covOf(eigen).norm()));
+    Benchmark::consume(double(meanOf(eigen).sum()));
+    double const tolerance = Ranging::agreementTolerance<Scalar>;
+    if (meanError < tolerance && covError < tolerance)
+    {
+        return true;
+    }
+    std::printf("%s: the filters disagree (mean %.3g, covariance %.3g relative)\n", label, meanError, covError);
+    return false;
 }
 
 /// The name of a linearization, for the table.
@@ -86,7 +123,8 @@ nameOf()
     return std::is_same_v<Scalar, float> ? "float" : "double";
 }
 
-/// Benchmarks one case and prints its row, or reports that the filters disagree and returns false.
+/// Benchmarks one case, prints its row of the first table and keeps its row of the second, or
+/// reports that the filters disagree and returns false.
 template <int D, int A, Jacobian K, typename Scalar>
 [[nodiscard]] bool
 benchmarkCase(Options const & options)
@@ -99,35 +137,29 @@ benchmarkCase(Options const & options)
     auto const makeEigen = [&] {
         return EigenRanging<D, A, K, Scalar>{scenario};
     };
+    auto const makeEigenLlt = [&] {
+        return EigenRanging<D, A, K, Scalar, Factorization::EigenLlt>{scenario};
+    };
     auto const step = [&](auto & filter, std::size_t k) {
         filter.predict();
         filter.update(ranges[k]);
     };
+    char label[LabelWidth + 1];
+    std::snprintf(label, sizeof label, "%dD %3d   %-8s  %-6s", D, A, nameOf(K), nameOf<Scalar>());
 
     // The agreement pass: one pass of each filter over the whole run, then a comparison.
     {
         auto emrys = makeEmrys();
         auto eigen = makeEigen();
+        auto eigenLlt = makeEigenLlt();
         Benchmark::runSteps(emrys, step, 0, TrajectoryLength);
         Benchmark::runSteps(eigen, step, 0, TrajectoryLength);
-        auto const covDifference = (covOf(emrys) - covOf(eigen)).template cast<double>().eval();
-        double const meanError = (meanOf(emrys) - meanOf(eigen)).template cast<double>().norm()
-                               / std::max(1.0, double(meanOf(eigen).norm()));
-        double const covError = covDifference.template triangularView<Eigen::Lower>().toDenseMatrix().norm()
-                              / std::max(1.0, double(covOf(eigen).norm()));
-        Benchmark::consume(double(meanOf(emrys).sum() + meanOf(eigen).sum()));
-        double const tolerance = Ranging::agreementTolerance<Scalar>;
-        if (!(meanError < tolerance && covError < tolerance))
+        Benchmark::runSteps(eigenLlt, step, 0, TrajectoryLength);
+        Benchmark::consume(double(meanOf(emrys).sum()));
+        bool const agrees = agree<Scalar>(label, emrys, eigen);
+        bool const agreesByLlt = agree<Scalar>(label, emrys, eigenLlt);
+        if (!(agrees && agreesByLlt))
         {
-            std::printf(
-                "%dD, %2d anchors, %s, %s: the filters disagree (mean %.3g, covariance %.3g relative)\n",
-                D,
-                A,
-                nameOf(K),
-                nameOf<Scalar>(),
-                meanError,
-                covError
-            );
             return false;
         }
     }
@@ -138,12 +170,14 @@ benchmarkCase(Options const & options)
 
     auto emrys = Benchmark::Replay{makeEmrys, step, TrajectoryLength};
     auto eigen = Benchmark::Replay{makeEigen, step, TrajectoryLength};
+    auto eigenLlt = Benchmark::Replay{makeEigenLlt, step, TrajectoryLength};
     Benchmark::PairTiming const timing = Benchmark::timePair(options, emrys, eigen);
-    Benchmark::consume(double(meanOf(emrys.filter()).sum() + meanOf(eigen.filter()).sum()));
-
-    char label[LabelWidth + 1];
-    std::snprintf(label, sizeof label, "%dD %3d   %-8s  %-6s", D, A, nameOf(K), nameOf<Scalar>());
+    Benchmark::PairTiming const lltTiming = Benchmark::timePair(options, emrys, eigenLlt);
+    Benchmark::consume(
+        double(meanOf(emrys.filter()).sum() + meanOf(eigen.filter()).sum() + meanOf(eigenLlt.filter()).sum())
+    );
     Benchmark::printRow(label, LabelWidth, timing);
+    lltRows.push_back(Row{label, lltTiming});
     return true;
 }
 
@@ -185,5 +219,14 @@ main(int argc, char ** argv)
     ok = benchmarkSize<3, 6>(options) && ok;
     ok = benchmarkSize<3, 12>(options) && ok;
     ok = benchmarkSize<3, 24>(options) && ok;
+    if (!options.count)
+    {
+        std::printf("\nAgainst the plain-Eigen EKF that factorizes the innovation covariance by Eigen's LLT.\n\n");
+        Benchmark::printColumns("case     Jacobian  scalar", LabelWidth, "Eigen, LLT");
+        for (Row const & row : lltRows)
+        {
+            Benchmark::printRow(row.label.c_str(), LabelWidth, row.timing);
+        }
+    }
     return ok ? 0 : 1;
 }

@@ -27,7 +27,8 @@ class RangingAllocation : public ::testing::Test
 
 TYPED_TEST_SUITE(RangingAllocation, Ranging::Cases);
 
-// After one step to warm up, twenty predict-update steps of each implementation make no heap
+// After one step to warm up, twenty predict-update steps of each implementation, the plain-Eigen
+// one with either factorization, make no heap
 // allocation: Eigen's assertion catches its own, and the replaced operator new counts the rest.
 TYPED_TEST(RangingAllocation, StepsDoNotAllocate)
 {
@@ -38,10 +39,13 @@ TYPED_TEST(RangingAllocation, StepsDoNotAllocate)
     auto const ranges = Ranging::rangesIn<Scalar>(Ranging::simulate(scenario, 21, 1));
     auto emrys = Ranging::EmrysRanging<D, A, TypeParam::Kind, Scalar>{scenario};
     auto eigen = Ranging::EigenRanging<D, A, TypeParam::Kind, Scalar>{scenario};
+    auto eigenLlt = Ranging::EigenRanging<D, A, TypeParam::Kind, Scalar, Ranging::Factorization::EigenLlt>{scenario};
     emrys.predict();
     emrys.update(ranges[0]);
     eigen.predict();
     eigen.update(ranges[0]);
+    eigenLlt.predict();
+    eigenLlt.update(ranges[0]);
 
     Benchmark::heapAllocations = 0;
     Eigen::internal::set_is_malloc_allowed(false);
@@ -52,6 +56,8 @@ TYPED_TEST(RangingAllocation, StepsDoNotAllocate)
         emrys.update(ranges[k]);
         eigen.predict();
         eigen.update(ranges[k]);
+        eigenLlt.predict();
+        eigenLlt.update(ranges[k]);
     }
     Benchmark::countingHeap = false;
     Eigen::internal::set_is_malloc_allowed(true);

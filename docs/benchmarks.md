@@ -1,31 +1,48 @@
 # Benchmarks
 
-Each benchmark solves one problem twice: once with EmrysFilter, and once in plain Eigen as a careful
-user would write it by hand. Every number is the library's cost divided by the hand code's, so 1.00
-means the same cost, above 1 the library costs more, and below 1 it costs less.
+Each benchmark solves one problem with EmrysFilter and in plain Eigen as a careful user would write
+it by hand. Every number is the library's cost divided by the hand code's, so 1.00 means the same
+cost, above 1 the library costs more, and below 1 it costs less.
+
+The EKFs have two hand-written references, which differ only in how they factorize the innovation
+covariance and solve for the gain. *Hand code* does it as the library does, with a Cholesky
+factorization without square roots written out a column at a time, so that the ratio measures the
+library's overhead alone. *Hand code with Eigen's LLT* does it as a user of Eigen writes it,
+`Eigen::LLT<Matrix>{S}.solve(Pxy.transpose()).transpose()`, so that the ratio measures what the
+library gives that user.
 [design/benchmarks.md](design/benchmarks.md) explains which claim each benchmark backs, why the
 reference is hand-written code, and what is still to be measured.
 
 ## Summary
 
-| Problem | Instructions per step | Time per step, Windows | Time per step, Linux |
-|---|---|---|---|
-| Ranging EKF, 2D, 4 anchors | 1.80–1.89 | 1.15–1.68 | 1.16–1.71 |
-| Ranging EKF, 2D, 8 anchors | 1.24–1.31 | 1.02–1.44 | 1.12–1.36 |
-| Ranging EKF, 3D, 6 anchors | 1.30–1.33 | 1.11–1.21 | 1.24–1.49 |
-| Ranging EKF, 12 or more anchors | 0.72–0.87 | 0.91–0.97 | 0.87–1.11 |
-| Attitude EKF, analytic Jacobians | 1.56 | 1.15 | 1.21 |
-| Attitude EKF, autodiff | 1.52 | 1.32 | 1.29 |
-| Particle filter, 2D | 1.08–1.11 | 1.10–1.18 | 1.00–1.04 |
-| Particle filter, 3D | 1.05–1.11 | 1.25–1.40 | 1.02–1.12 |
+| Problem | Instructions per step | Time per step, Windows | Time per step, Linux | Time per step, Linux, against hand code with Eigen's LLT |
+|---|---|---|---|---|
+| Ranging EKF, 2D, 4 anchors | 1.80–1.89 | 1.15–1.68 | 1.16–1.74 | 0.43–0.66 |
+| Ranging EKF, 2D, 8 anchors | 1.24–1.31 | 1.02–1.44 | 1.12–1.35 | 0.38–0.49 |
+| Ranging EKF, 3D, 6 anchors | 1.30–1.33 | 1.11–1.21 | 1.23–1.45 | 0.66–0.84 |
+| Ranging EKF, 12 or more anchors | 0.72–0.87 | 0.91–0.97 | 0.89–1.10 | 0.40–0.62 |
+| Attitude EKF, analytic Jacobians | 1.56 | 1.15 | 1.51 | 1.13 |
+| Attitude EKF, autodiff | 1.52 | 1.32 | 1.53 | 1.19 |
+| Particle filter, 2D | 1.08–1.11 | 1.10–1.18 | 1.00–1.04 | |
+| Particle filter, 3D | 1.05–1.11 | 1.25–1.40 | 1.02–1.12 | |
 
 A range covers every case of its row: `double` and `float`, analytic and automatic Jacobians, and
 for the particle filter its likelihoods, and in its times every particle count. Neither side
-allocates on the heap during a step, in any case.
+allocates on the heap during a step, in any case. The particle filter factorizes no innovation
+covariance, so it has one reference.
 
-The instruction column, and the Linux times of the ranging rows, were measured on 2026-11-23 at the
-commit *Make the Cholesky factorization public and the Gaussian's own*. The other times are of
-2026-11-08 and have not been taken again since. Four commits of 2026-11-23 before that one make
+Against hand code with Eigen's LLT the library's ranging EKF takes 0.38 to 0.84 of the time and
+0.23 to 0.63 of the instructions. Its attitude EKF takes 0.73 and 0.86 of that hand code's
+instructions but 1.13 and 1.19 times its time: there the hand code's two 3×3 factorizations per
+step are a small part of it, and the library's overhead, which the column before measures, is the
+larger.
+
+The instruction column, the Linux times of the ranging and attitude rows, and the last column were
+measured on 2026-11-23 at the commit *Time the library against hand code that factorizes by Eigen's LLT too*, which changes no header of the library
+from the commit *Make the Cholesky factorization public and the Gaussian's own* in any step these
+benchmarks take. The other times are of 2026-11-08 and have not been taken again since; the
+attitude EKF's Linux ratios of that date were 1.21 and 1.29, against 1.51 and 1.53 now, since the
+hand code gained more from the commits below than the library did. Four commits of 2026-11-23 make
 the steps of both sides shorter: *Stop building a step's Jacobian where nothing reads it*,
 *Substitute through the gain's Cholesky factor in place of Eigen's solve*,
 *Factorize the innovation covariance by the library's own Cholesky factorization*, and
@@ -37,8 +54,9 @@ while both sides got faster: the nanoseconds are under each table.
 
 - **The same algorithm on both sides.** The hand code uses fixed-size matrices, `noalias()`, the
   library's update form $P - K P_{xy}^T$, the library's Cholesky factorization of the innovation
-  covariance and its substitution for the gain, written out, and the library's order of operations. The difference measured is the library's overhead, not a
-  difference of algorithm.
+  covariance and its substitution for the gain, written out, and the library's order of
+  operations. The difference measured is the library's overhead, not a difference of algorithm.
+  The hand code with Eigen's LLT differs from it in the factorization and the solve alone.
 - **Agreement before timing.** The two sides must agree in state and covariance to 1e-9 in
   `double` (1e-4 relative in `float`) over hundreds of steps, both must pass a NEES consistency
   test over 50 runs, and neither may allocate during a step. These are tests that run in every CI
@@ -87,22 +105,46 @@ by every range.
 
 | Time per step, Linux | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
 |---|---|---|---|---|---|---|
-| `double`, analytic | 1.31 | 1.18 | 0.91 | 1.24 | 0.94 | 1.09 |
-| `double`, autodiff | 1.40 | 1.13 | 0.94 | 1.30 | 0.96 | 1.11 |
-| `float`, analytic | 1.16 | 1.12 | 0.90 | 1.49 | 0.87 | 0.95 |
-| `float`, autodiff | 1.71 | 1.36 | 0.94 | 1.49 | 0.90 | 0.99 |
+| `double`, analytic | 1.29 | 1.18 | 0.90 | 1.23 | 0.93 | 1.08 |
+| `double`, autodiff | 1.40 | 1.12 | 0.94 | 1.30 | 0.95 | 1.10 |
+| `float`, analytic | 1.16 | 1.12 | 0.92 | 1.43 | 0.89 | 0.96 |
+| `float`, autodiff | 1.74 | 1.35 | 0.95 | 1.45 | 0.91 | 1.00 |
+
+Against hand code with Eigen's LLT:
+
+| Instructions per step | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
+|---|---|---|---|---|---|---|
+| `double`, analytic | 0.29 | 0.28 | 0.38 | 0.44 | 0.37 | 0.62 |
+| `double`, autodiff | 0.32 | 0.33 | 0.39 | 0.50 | 0.39 | 0.63 |
+| `float`, analytic | 0.25 | 0.23 | 0.32 | 0.35 | 0.29 | 0.33 |
+| `float`, autodiff | 0.32 | 0.27 | 0.32 | 0.40 | 0.30 | 0.34 |
+
+| Time per step, Linux | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
+|---|---|---|---|---|---|---|
+| `double`, analytic | 0.53 | 0.49 | 0.46 | 0.66 | 0.45 | 0.61 |
+| `double`, autodiff | 0.58 | 0.49 | 0.47 | 0.72 | 0.46 | 0.62 |
+| `float`, analytic | 0.43 | 0.38 | 0.40 | 0.84 | 0.46 | 0.44 |
+| `float`, autodiff | 0.66 | 0.47 | 0.40 | 0.84 | 0.48 | 0.47 |
+
+Each ratio is of one run of the runner, which times the library against both references in
+interleaved batches; over three runs a time ratio moved by at most 0.15 against hand code and 0.08
+against hand code with Eigen's LLT.
 
 | Time per step, Linux, `double`, analytic | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
 |---|---|---|---|---|---|---|
-| Hand code | 52 ns | 119 ns | 428 ns | 126 ns | 370 ns | 996 ns |
-| EmrysFilter | 68 ns | 140 ns | 390 ns | 156 ns | 349 ns | 1,090 ns |
-| Hand code, with Eigen's factorization | 98 ns | 205 ns | 636 ns | 151 ns | 505 ns | 1,203 ns |
-| EmrysFilter, with Eigen's factorization | 115 ns | 237 ns | 579 ns | 184 ns | 473 ns | 1,298 ns |
-| Hand code, with Eigen's solve too | 147 ns | 500 ns | 833 ns | 349 ns | 749 ns | 1,756 ns |
-| EmrysFilter, with Eigen's solve too | 167 ns | 549 ns | 795 ns | 385 ns | 698 ns | 1,880 ns |
+| Hand code | 55 ns | 119 ns | 432 ns | 126 ns | 391 ns | 1,052 ns |
+| EmrysFilter | 71 ns | 141 ns | 389 ns | 155 ns | 362 ns | 1,138 ns |
+| Hand code with Eigen's LLT | 126 ns | 286 ns | 890 ns | 237 ns | 799 ns | 1,861 ns |
+| Earlier: hand code, with Eigen's factorization | 98 ns | 205 ns | 636 ns | 151 ns | 505 ns | 1,203 ns |
+| Earlier: EmrysFilter, with Eigen's factorization | 115 ns | 237 ns | 579 ns | 184 ns | 473 ns | 1,298 ns |
+| Earlier: hand code, with Eigen's solve too | 147 ns | 500 ns | 833 ns | 349 ns | 749 ns | 1,756 ns |
+| Earlier: EmrysFilter, with Eigen's solve too | 167 ns | 549 ns | 795 ns | 385 ns | 698 ns | 1,880 ns |
 
-At 2D with 4 anchors in `double` with analytic Jacobians, the hand code takes 401 instructions and
-the library 723. The tables were measured on 2026-11-23. The commit
+At 2D with 4 anchors in `double` with analytic Jacobians, the hand code takes 401 instructions, the
+library 723, and the hand code with Eigen's LLT 2,531. The first three rows of nanoseconds are of
+the commit *Time the library against hand code that factorizes by Eigen's LLT too*. The four earlier rows are of the two commits before the one
+named next, with Eigen's factorization and then also Eigen's solve, a row at a time, on both
+sides. The commit
 *Factorize the innovation covariance by the library's own Cholesky factorization*
 replaced Eigen's Cholesky factorization of the innovation covariance, on both sides, by one written
 out without square roots, and the commit before it replaced Eigen's solve for the Kalman gain by a
@@ -125,15 +167,24 @@ A unit quaternion attitude and a gyroscope bias, predicted by a 100 Hz gyroscope
 gravity and a magnetic field. The hand code is the multiplicative EKF of Markley (2003) with a
 6×6 error covariance and a covariance reset.
 
-| Per step | Hand code, instructions | EmrysFilter, instructions | Ratio | Hand code, Windows | EmrysFilter, Windows |
+| Instructions per step | Hand code | Hand code with Eigen's LLT | EmrysFilter | Ratio | Ratio, against Eigen's LLT |
 |---|---|---|---|---|---|
-| Analytic measurement Jacobians | 3,439 | 5,364 | 1.56 | 314 ns | 362 ns |
-| Autodiff measurement Jacobians | 5,011 | 7,622 | 1.52 | 375 ns | 495 ns |
+| Analytic measurement Jacobians | 3,433 | 7,323 | 5,364 | 1.56 | 0.73 |
+| Autodiff measurement Jacobians | 5,015 | 8,897 | 7,622 | 1.52 | 0.86 |
+
+| Time per step, Linux | Hand code | Hand code with Eigen's LLT | EmrysFilter | Ratio | Ratio, against Eigen's LLT |
+|---|---|---|---|---|---|
+| Analytic measurement Jacobians | 266 ns | 374 ns | 402 ns, 423 ns | 1.51 | 1.13 |
+| Autodiff measurement Jacobians | 338 ns | 457 ns | 517 ns, 544 ns | 1.53 | 1.19 |
+
+EmrysFilter's two times are those of its run against each reference. On Windows on 2026-11-08 the
+hand code took 314 and 375 ns and the library 362 and 495 ns.
 
 The instruction counts are of 2026-11-23. Three commits of that day cut them: before the first the
 library took 7,281 and 9,439, the second took about 120 off both sides, and the third, which
 replaced the factorization, about 540 off both sides, which raises the ratio. This page gave 4,830 and 7,186 for the library at first (1.18 and 1.27), which no commit
-since the launch reproduces. The times are of 2026-11-08 and have not been taken again.
+since the launch reproduces. The times on Linux are of 2026-11-23, at the commit
+*Time the library against hand code that factorizes by Eigen's LLT too*.
 
 ## Particle filter
 
@@ -154,7 +205,7 @@ weights to 1e-9 over 300 steps. Instructions are counted at 1000 particles.
 The instructions are of 2026-11-23. Before the commit of that day that stopped building unread
 Jacobians, each particle's step also built and discarded the process model's Jacobian, and the library took 2,800
 to 2,880 instructions in 3D; this page gave 1,397 at first for its own likelihood in 3D, against
-the hand code's 1,347. The commit named under the summary took 5 to 19 instructions off the
+the hand code's 1,347. The commit *Make the Cholesky factorization public and the Gaussian's own* took 5 to 19 instructions off the
 rows that draw their noise from a Gaussian, whose samplers now multiply by a factor the Gaussian
 keeps. The times are of 2026-11-08 and have not been taken again.
 
@@ -193,7 +244,7 @@ ratio therefore compares two steps that do not compute the same estimate;
 each library give the cause. TinyEKF and OpenCV run in `float` unless told otherwise, so their
 marked rows are the ones their users get by default.
 
-Measured on 2026-11-23 at the commit named under the summary, with Ubuntu 26.04 under WSL2 on an
+Measured on 2026-11-23 at the commit *Make the Cholesky factorization public and the Gaussian's own*, with Ubuntu 26.04 under WSL2 on an
 Intel Core i9-13900F, Clang 21.1.8 with `-march=x86-64-v3`, each runner pinned to one CPU by
 `taskset` at normal priority, the median of 2000 batches; instructions by Callgrind as above.
 
@@ -364,7 +415,7 @@ release on, each table names its commit.
 
 - **Instructions:** 2026-11-23, Clang 21.1.8 with `-march=x86-64-v3`, Callgrind under Ubuntu 26.04
   in WSL2.
-- **Time, the ranging EKF on Linux and the other libraries:** 2026-11-23, Intel Core i9-13900F,
+- **Time, the ranging and attitude EKFs on Linux and the other libraries:** 2026-11-23, Intel Core i9-13900F,
   Ubuntu 26.04 under WSL2 with Clang 21.1.8 and `-march=x86-64-v3`, pinned to one CPU at normal
   priority.
 - **Time, the rest:** 2026-11-08, Intel Core i9-13900F. Windows 11 with Clang 21.1.0 and no

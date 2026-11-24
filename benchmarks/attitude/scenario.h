@@ -29,6 +29,16 @@ enum class Jacobian
     AutoDiff
 };
 
+/// How the plain-Eigen EKF factorizes the innovation covariance and solves for the gain: written
+/// out as the library does it, without square roots, so that the pair measures the library's
+/// overhead alone, or by Eigen's LLT and its solve(), as a user of Eigen writes it, so that the
+/// pair measures what the library gives that user.
+enum class Factorization
+{
+    WrittenOut,
+    EigenLlt
+};
+
 /// The problem's reference vectors, noise levels, and initial estimate. The state is the attitude,
 /// a unit quaternion (x, y, z, w) that takes body-frame vectors to the world frame, then the
 /// gyroscope's bias; its differences are a body-frame rotation vector, then the bias.
