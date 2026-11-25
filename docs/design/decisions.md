@@ -435,15 +435,15 @@ filters didn't say which kind it came from; a filter names itself and nests its 
 **Rule.** `batched(f)` marks a model's, log-likelihood's, or transform's function as taking the
 points as the columns of a matrix `X` and writing into a last argument `Y` that the library sizes
 once (`h(in, out, X, Y)`); column $j$ of the result depends only on column $j$ of the inputs. The
-mark names the Jacobians the function gives, whose storage is sized before the call: none or
-`jacobians::perColumn()`; `wantsJacobian<Name>(Y)` says which blocks the method uses, and it writes
-`values(Y)` and `jacobian<Name>(Y, j)`, or once `jacobian<Name>(Y)` for a block `affineIn()` names
-`shared(path<Name>)`, free functions as `block<Name>()` is. Unmarked, a needed Jacobian comes by autodiff: of one column for `Linearized` and the iterated updates, and of the whole batch, in duals seeded on the blocks used,
-where every point's is needed [affine-coordinates], [likelihood-measurements]. The library calls a
-batched function once per sigma-point set and per particle set or chunk [execution-policies].
-`on()` keeps its model's mark; `compose()` calls each batched part once over its rows, `onEach()` a
-batched model once per repetition, and neither writes a Jacobian, so a method differentiates them.
-A user's space whose `normalize()`, `plus()`, or `minus()` can't take columns is not a `Space`.
+mark, none or `jacobians::perColumn()`, names the Jacobians it gives: `wantsJacobian<Name>(Y)` says
+which blocks the method uses, and it writes `values(Y)` and `jacobian<Name>(Y, j)`, or once
+`jacobian<Name>(Y)` for a block `affineIn()` names `shared(path<Name>)`. Unmarked, a needed Jacobian
+comes by autodiff, of one column for `Linearized` and the iterated updates, and of the whole batch
+where every point's is needed [affine-coordinates], [likelihood-measurements]; the library calls it
+once per sigma-point set and per particle set or chunk [execution-policies]. `on()` keeps its
+model's mark; `compose()` calls each batched part once and `onEach()` once per repetition,
+forwarding the Jacobians the parts write, or differentiated where one writes none. A user's space
+whose `normalize()`, `plus()`, or `minus()` can't take columns is not a `Space`.
 
 **Why.** Evaluating at many points can cost more than the arithmetic: a lock, a table lookup, a GPU
 dispatch, or a call into another runtime has a fixed cost per call, which a batch pays once. Jacobians
@@ -458,7 +458,7 @@ A Jacobian argument, which an argument count can't tell from one more space. One
 **Evidence.** Tests that count calls or compare with the per-point form; negative compile tests.
 
 **Where.** `Models/Batched.h`, `Transform::evaluateEach()`, the resolvers' `ResolvedFunction`,
-`ProcessStep`, `ModelTransform`, and `PinnedMeasurement`, and `Composition` in `Models/Placement.h`.
+`ProcessStep`, `ModelTransform`, `PinnedMeasurement`, `Composition`, and `EachStep` in `Placement.h`.
 
 ### params-and-density
 

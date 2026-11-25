@@ -866,12 +866,16 @@ public:
     /// whether the placed function takes a batch, as the model's does (decisions.md [batched-functions])
     static constexpr bool TakesBatches = takesBatches<Inner>;
 
-    /** The placed function writes no Jacobian in a batch: a method that needs one differentiates it. */
-    using MarkType = NoJacobians;
+    /** The Jacobians the placed function writes in a batch: the model's, forwarded, where its batched
+     * function writes them, and otherwise none, so that a method differentiates it (decisions.md
+     * [batched-functions]).
+     */
+    using MarkType = BatchMarkOrNone<Inner>;
 
     /** Writes into \a y the step of a batch \a x, a column per point in the placed input space
      * \a in, into the placed output space \a out over \a dt: the model's batched function called once
-     * per repetition over that repetition's columns, as the decision on batched functions has it
+     * per repetition over that repetition's columns, as the decision on batched functions has it, and
+     * asked, where it writes its Jacobians, for those of the blocks \a y wants
      */
     template <typename In, typename Out, typename X, typename TimeScalar, typename Y>
     void
@@ -880,6 +884,7 @@ public:
     {
         using T = typename X::Scalar;
         using InnerVector = typename Moments<InnerIn, T>::VectorType;
+        constexpr bool Forwards = !std::is_same_v<typename YMark<Y>::type, NoJacobians>;
         using XI = MatrixOf<
             T,
             valueDimensionAtCompileTime<InnerIn>,
@@ -906,6 +911,10 @@ public:
         yi.resize(valueDimension(innerOut), points);
         auto column = InnerVector{};
         column.resize(valueDimension(innerIn));
+        if constexpr (Forwards)
+        {
+            zeroWantedJacobians<InputBlocks<In>>(y, points);
+        }
         for (Eigen::Index i = 0; i < repetitions; ++i)
         {
             for (Eigen::Index j = 0; j < points; ++j)
@@ -916,7 +925,14 @@ public:
                 }(std::make_index_sequence<P::ItemCount>{});
                 xi.col(j) = column;
             }
-            callBatched(m_model.function(), innerIn, innerOut, xi, yi, dt);
+            if constexpr (Forwards)
+            {
+                forwardRepetition(out, i, innerIn, innerOut, xi, yi, y, dt);
+            }
+            else
+            {
+                callBatched(m_model.function(), innerIn, innerOut, xi, yi, dt);
+            }
             [&]<std::size_t... W>(std::index_sequence<W...>) {
                 ((values.middleRows(
                       outRows.start + i * BlockSize + blockRows<WritePathAt<Model, W>>(Block{}).start,
@@ -955,6 +971,101 @@ public:
     }
 
 private:
+
+    /** The block of the placed input that item \a K of one repetition's input is read from: the
+     * repeated block for a block of the repetition, and the name it is given under otherwise.
+     */
+    template <std::size_t K>
+    using WholeName =
+        std::conditional_t<P::template kind<K>() == EachKind::state, RepeatedTag, typename P::template NewName<K>>;
+
+    /** Steps repetition \a i at its batch \a xi into its values \a yi over \a dt, asking the model's
+     * batched function for the Jacobians of its blocks whose blocks of the placed input \a y wants,
+     * and writes them into \a y's rows of the repetition over the placed output \a out: a block of
+     * the repetition into its columns of the repeated block, a repeated input into its repetition's
+     * columns, and an input of the call into all of its columns.
+     */
+    template <typename Out, typename XI, typename YI, typename Y, typename TimeScalar>
+    void
+    forwardRepetition(
+        Out const & out,
+        Eigen::Index i,
+        InnerIn const & innerIn,
+        InnerOut const & innerOut,
+        XI const & xi,
+        YI & yi,
+        Y & y,
+        TimeScalar dt
+    ) const
+    {
+        using T = typename XI::Scalar;
+        using InnerBlocks = InputBlocks<InnerIn>;
+        constexpr std::size_t IK = std::tuple_size_v<InnerBlocks>;
+        Eigen::Index const points = xi.cols();
+        auto wanted = std::array<bool, IK>{};
+        [&]<std::size_t... K>(std::index_sequence<K...>) {
+            ((wanted[blockPosition<typename P::template InnerItem<K>::NameType, InnerBlocks>] =
+                  Emrys::wantsJacobian<WholeName<K>>(y)),
+             ...);
+        }(std::make_index_sequence<P::ItemCount>{});
+        std::array<Eigen::Index, IK> offsets{};
+        Eigen::Index w = 0;
+        [&]<std::size_t... B>(std::index_sequence<B...>) {
+            ((offsets[B] = w, w += wanted[B] ? inputBlockRows<std::tuple_element_t<B, InnerBlocks>>(innerIn).size : 0),
+             ...);
+        }(std::make_index_sequence<IK>{});
+        using PJ = MatrixOf<
+            T,
+            valueDimensionAtCompileTime<DifferenceSpace<InnerOut>>,
+            Eigen::Dynamic,
+            maxValueDimensionAtCompileTime<DifferenceSpace<InnerOut>>,
+            Eigen::Dynamic>;
+        auto pj = PJ{};
+        pj.resize(differenceDimension(innerOut), w * points);
+        callBatchedWithJacobians(m_model.function(), innerIn, innerOut, xi, wanted, std::array<bool, IK>{}, yi, pj, dt);
+        Eigen::Index const firstRow = differenceBlockRows<RepeatedTag>(out).start + i * BlockDifferenceSize;
+        // The repetition's rows, by block it writes: a fold of its own, apart from the items'.
+        auto const writeRows = [&](auto && target, Eigen::Index column, Eigen::Index from, Eigen::Index size) {
+            [&]<std::size_t... W>(std::index_sequence<W...>) {
+                (
+                    [&] {
+                        BlockRows const innerRows = differenceBlockRows<WriteNameAt<Model, W>>(innerOut);
+                        Eigen::Index const row = firstRow + differenceBlockRows<WritePathAt<Model, W>>(Block{}).start;
+                        target.block(row, column, innerRows.size, size) =
+                            pj.block(innerRows.start, from, innerRows.size, size);
+                    }(),
+                    ...
+                );
+            }(std::make_index_sequence<writeCount<Model>>{});
+        };
+        [&]<std::size_t... K>(std::index_sequence<K...>) {
+            (
+                [&] {
+                    using Item = typename P::template InnerItem<K>;
+                    constexpr std::size_t b = blockPosition<typename Item::NameType, InnerBlocks>;
+                    if (!wanted[b])
+                    {
+                        return;
+                    }
+                    Eigen::Index const size = inputBlockRows<typename Item::NameType>(innerIn).size;
+                    Eigen::Index column = 0;
+                    if constexpr (P::template kind<K>() == EachKind::state)
+                    {
+                        column = i * BlockDifferenceSize + differenceBlockRows<typename Item::PathType>(Block{}).start;
+                    }
+                    else if constexpr (P::template kind<K>() == EachKind::repeated)
+                    {
+                        column = i * size;
+                    }
+                    for (Eigen::Index j = 0; j < points; ++j)
+                    {
+                        writeRows(Emrys::jacobian<WholeName<K>>(y, j), column, j * w + offsets[b], size);
+                    }
+                }(),
+                ...
+            );
+        }(std::make_index_sequence<P::ItemCount>{});
+    }
 
     /** Writes item \a K of repetition \a i's input into \a xi, from \a x over \a in. */
     template <std::size_t K, typename In, typename X, typename XI>
@@ -1273,8 +1384,10 @@ public:
     /// whether the whole takes a batch: a model's function does (decisions.md [batched-functions])
     static constexpr bool TakesBatches = anyTakesBatches<Models...>;
 
-    /** The whole writes no Jacobian in a batch: a method that needs one differentiates it. */
-    using MarkType = NoJacobians;
+    /** The Jacobians the whole writes in a batch: the parts', forwarded, where every part gives its
+     * own, and otherwise none, so that a method differentiates it (decisions.md [batched-functions]).
+     */
+    using MarkType = MeasurementPartsMark<Models...>;
 
     /** Writes into \a y the measurement of a batch \a x, a column per point in the whole's input space
      * \a in, in \a out: each batched model called once over its columns, and each other model at each

@@ -1196,7 +1196,7 @@ transformResult(FactoredAt<AffineSize, AffineMaxSize, Points> const & method, Pr
         {
             constexpr int Count = RestSize == Eigen::Dynamic ? Eigen::Dynamic : 2 * RestSize + 1;
             constexpr int MaxCount = RestMaxSize == Eigen::Dynamic ? Eigen::Dynamic : 2 * RestMaxSize + 1;
-            using Jacobians = MatrixOf<
+            using Jacobians = StackOrHeapMatrix<
                 Scalar,
                 OutputSize,
                 sizeProduct<AffineSize, Count>,
@@ -1281,7 +1281,7 @@ transformResult(FactoredAt<AffineSize, AffineMaxSize, Points> const & method, Pr
             using Unit = UnitPoints<Scalar, RuleOf<Points>, RestSize, RestMaxSize>;
             using RestSpread = MatrixOf<Scalar, RestSize, Unit::Count, RestMaxSize, Unit::MaxCount>;
             using AffineSpread = MatrixOf<Scalar, AffineSize, Unit::Count, AffineMaxSize, Unit::MaxCount>;
-            using Jacobians = MatrixOf<
+            using Jacobians = StackOrHeapMatrix<
                 Scalar,
                 OutputSize,
                 sizeProduct<AffineSize, Unit::Count>,

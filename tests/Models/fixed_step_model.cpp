@@ -350,7 +350,8 @@ TYPED_TEST(FixedStepMethodTest, OrnsteinUhlenbeckAboutAMeanPredictsAsTheContinuo
 
 // A process model whose function writes its Jacobians by block, writesJacobians() ([returned-jacobians]),
 // predicts under Linearized as the closed form F P F', and a step that reads its value alone,
-// propagate(), asks it for no Jacobian.
+// propagate(), asks it for no Jacobian. It lives here, not in models.cpp, where MSVC 19.50 crashes
+// (C1001) on such a model.
 TEST(FixedStepModel, AFunctionWritesTheJacobiansAskedFor)
 {
     using Track = Composite<Position, Velocity>;

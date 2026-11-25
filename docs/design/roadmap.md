@@ -664,155 +664,27 @@ Done when: decided, and if built, the examples whose models are steps (`consider
 `attitude.cpp`, `unicycle.cpp`) use it, and a test shows a step model predicts as its value form does
 under every method.
 
-## 17zt. Affine maps and Jacobians by block — in progress
+## 17zw. What affine maps and Jacobians by block left — not started
 
-A function that returns `withJacobian(y, J)` [returned-jacobians] computes its whole Jacobian at
-every sigma point, where the factored transform reads the affine columns alone [affine-coordinates]
-and a transform with nothing affine reads none. And a block whose coefficient does not depend on
-the rest, $y = g(x_n) + H x_a + c$ with $H$ constant, as a bias has, needs no Jacobian per point at
-all, which nothing can say. The names below are placeholders but `affineIn()` and `on<>()`.
+Step 17zt built the constant items of `affineIn()`, the models without a function, the Jacobians a
+function writes by block, and `shared(path<Name>)` [affine-coordinates], [returned-jacobians],
+[batched-functions]. Each item below passes its test on the three compilers.
 
-Decided (2026-11-23), not built:
+- The factored transform carries a constant item beside a function exactly at each point; add its
+  moments once in closed form instead, as a model without a function has them. A test counts the
+  columns computed against the same model written as a function.
+- A batched function takes no constant items (`ConstantAffineFunction` refuses one). Give it them,
+  with the constant's columns added to the columns `jacobian<Name>(y, j)` writes.
+- The update given a block asks a function for every block; ask it for the blocks conditioned on
+  alone, as the factored transform asks for the factored ones.
+- A composition of functions at a point asks its parts for every block in the factored transform,
+  where the batched path asks each part for the blocks wanted; ask by point the same way.
+- `transform()` of a function asks for a `shared()` block at every point; ask at the first alone,
+  as a model's factored transform does (`FactoredAt::shared`).
+- `onEach()` refuses a model whose `affineIn()` names `shared(path<Name>)`; take it, the block
+  written once per repetition.
 
-- A constant affine part is given to `affineIn()`, and the function neither reads those inputs nor
-  computes their term: `on<Name>(H)` for an input's columns, over every row of the output, and
-  `offset(on<Block>(c)...)` for the constant term by block of the output, as the noise policies
-  name the output's blocks, or `offset(c)` for the whole output. An output block without an offset
-  has none. An item `path<Name>` keeps its meaning, $H(x_n)$ from the function at each point, and
-  the two kinds mix:
-
-  ```cpp
-  Emrys::affineIn(
-      Emrys::path<Velocity>,                                    // H(x_n), from the function
-      Emrys::on<Bias>(Hb),                                      // constant, given here
-      Emrys::offset(Emrys::on<Range>(cr), Emrys::on<Bearing>(cb)))
-  ```
-
-  A sigma-point method spreads its points over what the function reads and adds the constant
-  part's moments in closed form, once; `Linearized` takes $H$ as those columns of its Jacobian. With
-  a function, $H x_a + c$ is a difference of the output, applied with `plus()`.
-- The function is optional: without one, `affineIn()` is the whole map, and $c$ a point of the
-  output block's values. This holds in `measurementModel()`, `processModel()`, and `transform()`
-  alike.
-- The matrix forms go, replaced by the model without a function: `measurementModel(H, reads(...),
-  ...)`, `Columns{on<Block>(H)...}` [linear-sensors], and `processModel(F, noise)`
-  [whole-state-models]. `onEach<Block>(H)` stays, as an item of `affineIn()`.
-- A constant $H$ given by block of the output as well as by input waits for a case that needs it.
-- A process model with a constant item holds one step, so only `fixedStep(model, dt)`
-  [fixed-step-models] takes it: `predict(dt)` with such a model does not compile, and the message
-  names `fixedStep()`. The matrix form's function never read the step, so `predict(dt)` moved the
-  state by the step $F$ was made for, whatever `dt` said. A measurement model and `transform()`
-  have no step and are not held to this. A constant part that follows a variable step is a
-  function, as now.
-- `additiveNoise(Q)` on a process model is a $Q$ of one step too, and is held to `fixedStep()` by
-  the same rule: `predict(dt)` refuses a process model with it, and `continuousNoise()` is the
-  noise of a variable step. A measurement model's `additiveNoise()` is not touched. Built as stage
-  1 (2026-11-24): `ResolvedProcess::noise(dt)`, which every prediction over a given step takes,
-  refuses `internal::holdsOneStep`.
-- Built as stage 2 (2026-11-24), the constant items beside a function: `affineIn()` returns
-  `AffineConstants`, and `measurementModel()` and `processModel()` rewrite it into an ordinary
-  model, each constant name added to `reads()` and `AffineIn<...>`, and the function wrapped in
-  `internal::ConstantAffineFunction` (`Models/AffineConstants.h`), which calls it on its own items
-  and adds $H x + c$ by `plus()` and $H$ to a returned Jacobian. The factored transform then carries
-  the constant columns exactly at each point; it does not yet add them once in closed form, which
-  stage 3's model without a function will need. A batched function takes no constant items.
-- Built as stage 3 (2026-11-24), the models without a function: the policies-only
-  `measurementModel()` and a new policies-only `processModel()` take `AffineMatrix` (`affineIn(F)`)
-  to the matrix forms, constant items without an offset to `Columns`, and an offset, or a process
-  model, to `ConstantAffineFunction<NoAffineFunction, ...>`, which returns $c \boxplus H x$ with $H$
-  as its Jacobian and is an `isLinearFunction`. `transform(method, affineIn(...), ...)` makes the
-  model.
-- Built as stage 4 (2026-11-24): `measurementModel(H, ...)`, `measurementModel(Columns, ...)`, and
-  `processModel(F, ...)` are `internal::measurementModelOfMatrix()`, `measurementModelOfColumns()`,
-  and `processModelOfMatrix()`, and `Columns` is internal; `LinearStep` holds one step. Every test,
-  example, document, and skill writes `affineIn()`; the benchmarks wrote no matrix form.
-- Built as stage 5 (2026-11-24): `values(y)`, `wantsJacobian<Name>(y)`, `wantsJacobians(y)`,
-  `jacobian<Name>(y, j)`, `jacobian<Name>(y)`, `jacobian(y, j)`, and `jacobian(y)` in `Batched.h`
-  replace `BatchedOutput`'s members, which are private, reached by `internal::BatchedOutputAccess`.
-  Stage 6 gives the output of a function at a point the same functions.
-- Built as stage 6 (2026-11-24): `writesJacobians(f)` (the user chose the name), `PointOutput`, and
-  `value()`, `wantsJacobian<Name>()`, `wantsJacobians()`, `jacobian<Name>()`, `jacobian()` in
-  `Models/PointOutput.h`; `internal::WritesJacobians` is read as the returned `WithJacobian`, now
-  internal, so the methods, compositions, and placements are unchanged. A `PointOutput` holds a
-  wanted flag per block: a value-only step wants none (`callValueForm()`, `ResolvedFunction::values()`,
-  `Composition` and `PlacedStep` `valueAt()`), and the factored transform the factored blocks alone
-  (`Transform::returnedFactored()`, `evaluateFactored()`, `propagateFactored()`, `factoredBlocks()`);
-  `wantsJacobians(y)` says some block is wanted, so a function that writes its Jacobian whole always
-  gives what was asked. A composition still asks its parts for every block in the factored
-  transform. Left: the conditioned blocks alone in the update given a block. MSVC 19.50 crashed
-  (C1001) on a `writesJacobians()` process model built in `tests/Models/models.cpp`, which compiles
-  in `fixed_step_model.cpp`, where the test is.
-- Built as stage 7 (2026-11-25): `shared(path<Name>)` (`SharedItem`) in `affineIn()`, which gives the
-  model a `SharedJacobians` policy beside its `AffineIn` (`AffineWithShared`, split by the factories);
-  compositions keep a name every part reading it shares, placements rename it, and `onEach()` refuses
-  it. A batched function writes a shared block once, `jacobian<Name>(y)`, into storage
-  `callBatchedWithJacobians()` copies to every column; `jacobians::shared()` is gone. The factored
-  transform asks a function at a point for shared blocks at its first point alone (`FactoredAt::shared`,
-  `affineShared()`); `transform()` of a function does not yet.
-
-The Jacobian a function writes, decided (2026-11-23), not built:
-
-- One protocol for a function at a point and a batched one [batched-functions], which today
-  differ. A function that knows its Jacobian takes the output last and writes the blocks the
-  method wants, in place:
-
-  ```cpp
-  [](auto const & in, auto const & out, auto const & x, auto & y) {
-      auto const A = coupling(Emrys::block<Position>(in, x));
-      Emrys::value(y) = g(Emrys::block<Position>(in, x)) + A * Emrys::block<Velocity>(in, x);
-      if (Emrys::wantsJacobian<Velocity>(y)) { Emrys::jacobian<Velocity>(y) = A; }
-      if (Emrys::wantsJacobian<Position>(y)) { Emrys::jacobian<Position>(y) = /* ... */; }
-  }
-  ```
-
-  - The method wants every block for `Linearized` and the iterated updates, the affine ones
-    for a factored sigma-point transform, none for an unfactored one, and the blocks
-    conditioned on for the update given a block. The flags are run-time ones, as
-    `BatchedOutput`'s are. A marked function writes every block asked for, so nothing is
-    differentiated a second time, which was the reason for all or none, and
-    `withJacobian(y, J)` goes.
-  - One spelling for both: free functions, `wantsJacobian<Name>(y)` and `jacobian<Name>(y)`
-    or `jacobian<Name>(y, j)` for column `j` of a batch, as `block<Name>(in, x)` is one, where
-    the members need `y.template jacobian<Name>(j)` in a generic lambda; and one mark from
-    `jacobians::`, for a function at a point as for `batched(f, mark)`.
-  - `jacobians::shared()` marks the whole function, so one block cannot be written per point
-    and another once. A Jacobian that is the same at every point of a call is a property of
-    an affine block, so it is said by name in `affineIn()`, as `affineIn(path<Velocity>,
-    shared(path<Scale>))`, and the function is asked for that block once per call. That is the
-    form for an $H$ known only at the call: one that depends on a sure input
-    [prediction-inputs], or on the step of a process model whose step varies, as
-    `tests/Models/batched.cpp` writes `dt * top + bottom` now. An affine block is then said
-    three ways, by when its $H$ is known: `on<Name>(H)` when the model is made, `shared()`
-    at the call, and `path<Name>` at each point.
-  - `compose()` and `onEach()` pass each part a view of its blocks of `y`, so they forward
-    Jacobians on the batched path too, where today a method differentiates them.
-
-  Its cost, accepted: a model used with `Linearized` alone is wordier, and every built-in model,
-  test, and example that returns or writes a Jacobian changes.
-
-In order, each a commit that passes the `land` checks, with its decisions, `usage.md`, and
-`CHANGELOG.md` in it.
-
-8. **Compositions forward Jacobians on the batched path.**
-
-MSVC cannot run in a Linux session: stage 1 and stage 3 touch what the filters' deduction guides
-bind, so each needs the `msvc` workflow before it goes onto `next`.
-
-`mherb-benchmark` is on `next`, so stages 4 and 6 port the benchmarks' `processModel()`,
-`measurementModel()`, and `withJacobian()` with the rest. The step is built on 17zu and 17zv (the
-branches `repeated-selections` and `ou-mean`): stage 4 moves 17zu's
-`Columns{onEach(path<Landmarks>[seen], h), ...}` into `affineIn()`, and stage 6 moves
-`OrnsteinUhlenbeck`'s step about a mean with the other built-in models.
-
-When built, [affine-coordinates], [returned-jacobians], [linear-sensors], [whole-state-models], and
-[transform-policies] change in the same commits, with `usage.md`, `choosing.md`, the skills, the
-examples, and `CHANGELOG.md` saying what to write instead of each removed form.
-
-Done when: the eight stages are built; the constant part passes a test under every method
-against the same model written as a function, in a model of each kind and in `transform()`, with a
-count of the function's calls and of its Jacobian's blocks written; the matrix forms are gone;
-`predict(dt)` refuses a process model with a constant item or `additiveNoise()`, each with a
-negative compile test; and the `pr` checks pass.
+Done when: each item passes its test on all three compilers.
 
 ## 19. GPU backend — deferred
 
@@ -1458,4 +1330,5 @@ resolve.
 | 17zc | A function takes its scalar as a template parameter, `zeros<T>(out)` replaces `vectorIn()`, and the examples name the steps their models apply | [function-scalars] |
 | 17ze | A measurement per value of a mode axis, `switchingMeasurement<Path>()`, for the IMM's update | [imm] |
 | 17zs | One spelling for what depends on the mode, `byMode<Axis>(when<Value>(part), ...)`: noise by mode axis, a measurement per value, nested, in every filter that holds hybrids; a hybrid filter takes the chain and the motion, `ImmFilter{chain, motion, prior}` | [by-mode], [switching-models], [imm] |
+| 17zt | Constant items `on<Name>(H)` and `offset()` in `affineIn()`, models without a function in place of the matrix forms, functions that write their Jacobians by block (`writesJacobians()`, `BatchedOutput`'s free functions), `shared(path<Name>)`, and compositions that forward their parts' Jacobians in a batch | [affine-coordinates], [returned-jacobians], [linear-sensors], [whole-state-models], [transform-policies], [batched-functions], [fixed-step-models] |
 | 17zv | `OrnsteinUhlenbeck<B, RevertingTo<M>>`, an Ornstein-Uhlenbeck block about a mean read from another block | [continuous-time-noise] |

@@ -2423,6 +2423,202 @@ template <typename... Models>
 inline constexpr bool anyTakesBatches =
     (takesBatches<std::remove_cvref_t<decltype(std::declval<Models const &>().function())>> || ...);
 
+/** Whether the part \a Model gives its Jacobian in a batch, called with \a Extra after its input: a
+ * batched function marked to write it, or a function at a point that returns it, which a composition
+ * then forwards (decisions.md [batched-functions]).
+ */
+template <typename Model, typename... Extra>
+inline constexpr bool givesBatchJacobians = [] {
+    using F = typename Model::FunctionType;
+    if constexpr (takesBatches<F>)
+    {
+        return !std::is_same_v<BatchMark<F>, NoJacobians>;
+    }
+    else
+    {
+        return returnsJacobianWith<Model, double, Extra...>;
+    }
+}();
+
+/** The mark of the Jacobians a composition of \a Models writes in a batch, called with \a Extra after
+ * each input: jacobians::PerColumn when every part gives its own, forwarded, and NoJacobians otherwise.
+ */
+template <typename Extra, typename... Models>
+using PartsMark = std::conditional_t<(givesBatchJacobians<Models, Extra> && ...), jacobians::PerColumn, NoJacobians>;
+
+/** The same for parts called with nothing after their input, as a measurement model's are. */
+template <typename... Models>
+using MeasurementPartsMark =
+    std::conditional_t<(givesBatchJacobians<Models> && ...), jacobians::PerColumn, NoJacobians>;
+
+/** The mark of the BatchedOutput \a Y, as \c type: NoJacobians for anything else. */
+template <typename Y>
+struct YMark
+{
+    using type = NoJacobians;  ///< none
+};
+
+/// \cond INTERNAL_SPECIALIZATIONS
+/** A BatchedOutput's. */
+template <typename In, typename Out, typename Scalar, typename Mark>
+struct YMark<BatchedOutput<In, Out, Scalar, Mark>>
+{
+    using type = Mark;  ///< its mark
+};
+
+/// \endcond
+
+/** Zeroes the Jacobian of each block of \a Blocks, the blocks of its input as a tuple type, that the
+ * BatchedOutput \a y of \a count columns wants: once for a block it shares, and at each column
+ * otherwise, so that the rows no part or repetition writes are zero.
+ */
+template <typename Blocks, typename Y>
+void
+zeroWantedJacobians(Y & y, Eigen::Index count)
+{
+    [&]<typename... Names>(std::tuple<Names...> *) {
+        (
+            [&] {
+                if (Emrys::wantsJacobian<Names>(y))
+                {
+                    if (BatchedOutputAccess::sharedBlock<Names>(y))
+                    {
+                        Emrys::jacobian<Names>(y).setZero();
+                    }
+                    else
+                    {
+                        for (Eigen::Index j = 0; j < count; ++j)
+                        {
+                            Emrys::jacobian<Names>(y, j).setZero();
+                        }
+                    }
+                }
+            }(),
+            ...
+        );
+    }(static_cast<Blocks *>(nullptr));
+}
+
+/** Steps the part \a Part of a composition at the batch \a px, a column per point in its input space
+ * \a pin, into its values \a py over its output \a pout, and writes its Jacobian in the blocks the
+ * whole's output \a y wants into \a y's rows of the part's output: a batched part asked for those
+ * blocks in one call (callBatchedWithJacobians()), and any other at each column (decisions.md
+ * [batched-functions]). A block the whole shares is written once, from the first column.
+ */
+template <
+    typename Part,
+    typename F,
+    typename In,
+    typename Out,
+    typename PIn,
+    typename POut,
+    typename PX,
+    typename PY,
+    typename Y,
+    typename... Extra>
+void
+stepPartJacobians(
+    F const & function,
+    [[maybe_unused]] In const & in,
+    Out const & out,
+    PIn const & pin,
+    POut const & pout,
+    PX const & px,
+    PY & py,
+    Y & y,
+    Extra const &... extra
+)
+{
+    using T = typename PX::Scalar;
+    using PBlocks = InputBlocks<PIn>;
+    constexpr std::size_t PK = std::tuple_size_v<PBlocks>;
+    Eigen::Index const count = px.cols();
+    Eigen::Index const pm = differenceDimension(pout);
+    auto wanted = std::array<bool, PK>{};
+    auto shared = std::array<bool, PK>{};
+    std::array<Eigen::Index, PK> offsets{};
+    Eigen::Index pw = 0;
+    [&]<std::size_t... B>(std::index_sequence<B...>) {
+        using SharedPolicy = typename Part::template Policy<PolicyKind::sharedJacobians>;
+        ((wanted[B] = Emrys::wantsJacobian<std::tuple_element_t<B, PBlocks>>(y),
+          shared[B] = sharedNames<SharedPolicy, std::tuple_element_t<B, PBlocks>>,
+          offsets[B] = pw,
+          pw += wanted[B] ? inputBlockRows<std::tuple_element_t<B, PBlocks>>(pin).size : 0),
+         ...);
+    }(std::make_index_sequence<PK>{});
+    using PJ = MatrixOf<
+        T,
+        valueDimensionAtCompileTime<DifferenceSpace<POut>>,
+        Eigen::Dynamic,
+        maxValueDimensionAtCompileTime<DifferenceSpace<POut>>,
+        Eigen::Dynamic>;
+    auto pj = PJ{};
+    pj.resize(pm, pw * count);
+    if constexpr (takesBatches<F>)
+    {
+        callBatchedWithJacobians(function, pin, pout, px, wanted, shared, py, pj, extra...);
+    }
+    else
+    {
+        for (Eigen::Index j = 0; j < count; ++j)
+        {
+            typename Moments<PIn, T>::VectorType const column = px.col(j);
+            auto returned = vectorReturned(callForm(function, pin, pout, column, extra...));
+            py.col(j) = valueOf(returned);
+            [&]<std::size_t... B>(std::index_sequence<B...>) {
+                (
+                    [&] {
+                        if (wanted[B])
+                        {
+                            BlockRows const columns = inputBlockRows<std::tuple_element_t<B, PBlocks>>(pin);
+                            pj.middleCols(j * pw + offsets[B], columns.size) =
+                                returned.jacobian.middleCols(columns.start, columns.size).template cast<T>();
+                        }
+                    }(),
+                    ...
+                );
+            }(std::make_index_sequence<PK>{});
+        }
+    }
+    // The part's rows of the whole's Jacobian, by block of the part's output.
+    [&]<std::size_t... B>(std::index_sequence<B...>) {
+        (
+            [&] {
+                using Name = std::tuple_element_t<B, PBlocks>;
+                if (!wanted[B])
+                {
+                    return;
+                }
+                Eigen::Index const size = inputBlockRows<Name>(pin).size;
+                // Read before the fold over Rows below, which would otherwise expand B along with Rows.
+                Eigen::Index const offset = offsets[B];
+                bool const once = BatchedOutputAccess::sharedBlock<Name>(y);
+                for (Eigen::Index j = 0; j < (once ? 1 : count); ++j)
+                {
+                    auto target = [&] {
+                        if (once)
+                        {
+                            return Emrys::jacobian<Name>(y);
+                        }
+                        return Emrys::jacobian<Name>(y, j);
+                    }();
+                    [&]<typename... Rows>(std::tuple<Rows...> *) {
+                        ((target.middleRows(differenceBlockRows<Rows>(out).start, differenceBlockRows<Rows>(out).size) =
+                              pj.block(
+                                  differenceBlockRows<Rows>(pout).start,
+                                  j * pw + offset,
+                                  differenceBlockRows<Rows>(pout).size,
+                                  size
+                              )),
+                         ...);
+                    }(static_cast<CompositeBlocks<POut> *>(nullptr));
+                }
+            }(),
+            ...
+        );
+    }(std::make_index_sequence<PK>{});
+}
+
 /** Writes into \a y, the BatchedOutput of the whole, the models \a parts side by side at a batch
  * \a x, a column per point in the whole's input space \a in, into the whole's output space \a out,
  * each called with \a extra after its input (decisions.md [batched-functions]): each part's input
@@ -2447,6 +2643,12 @@ stepPartsBatch(
     Eigen::Index const count = x.cols();
     auto & values = Emrys::values(y);
     values.setZero();
+    using WholeBlocks = InputBlocks<In>;
+    constexpr bool Forwards = !std::is_same_v<typename YMark<Y>::type, NoJacobians>;
+    if constexpr (Forwards)
+    {
+        zeroWantedJacobians<WholeBlocks>(y, count);
+    }
     [&]<std::size_t... I>(std::index_sequence<I...>) {
         (
             [&] {
@@ -2468,7 +2670,11 @@ stepPartsBatch(
                 auto py = PY{};
                 py.resize(valueDimension(pout), count);
                 auto const & function = std::get<I>(parts).function();
-                if constexpr (takesBatches<std::remove_cvref_t<decltype(function)>>)
+                if constexpr (Forwards)
+                {
+                    stepPartJacobians<Part>(function, in, out, pin, pout, px, py, y, extra...);
+                }
+                else if constexpr (takesBatches<std::remove_cvref_t<decltype(function)>>)
                 {
                     callBatched(function, pin, pout, px, py, extra...);
                 }
@@ -2774,8 +2980,10 @@ public:
     /// whether the whole takes a batch: a part's function does (decisions.md [batched-functions])
     static constexpr bool TakesBatches = internal::anyTakesBatches<Models...>;
 
-    /** The whole writes no Jacobian in a batch: a method that needs one differentiates it. */
-    using MarkType = internal::NoJacobians;
+    /** The Jacobians the whole writes in a batch: the parts', forwarded, where every part gives its
+     * own, and otherwise none, so that a method differentiates it (decisions.md [batched-functions]).
+     */
+    using MarkType = internal::PartsMark<double, Models...>;
 
     /** Writes into \a y the whole's step of a batch \a x, a column per point in the input space
      * \a in, into the output space \a out over \a dt: each batched part called once over its

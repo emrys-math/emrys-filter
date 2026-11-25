@@ -329,6 +329,8 @@ struct BatchedOutputAccess;
 template <typename In, typename Out, typename Scalar_, typename Mark>
 class BatchedOutput
 {
+    friend struct internal::BatchedOutputAccess;
+
     /** The blocks of the input, as a tuple type. */
     using Blocks = internal::InputBlocks<In>;
 
@@ -411,8 +413,6 @@ public:
     renamed(In2 const & in);
 
 private:
-
-    friend struct internal::BatchedOutputAccess;
 
     /** \returns the values, a column per point, for the function to write */
     [[nodiscard]] ValuesType &
@@ -631,6 +631,14 @@ struct BatchedOutputAccess
     wantsJacobians(Y const & y)
     {
         return y.wantsJacobians();
+    }
+
+    /** \returns whether \a y holds the Jacobian of the block \a Name once, the same at every column */
+    template <typename Name, typename Y>
+    [[nodiscard]] static bool
+    sharedBlock(Y const & y)
+    {
+        return y.m_sharedFlags[blockPosition<Name, typename Y::Blocks>];
     }
 
     /** \returns the Jacobian of \a y in the block \a Name, or the whole one where \a Name is void,
@@ -889,7 +897,8 @@ callBatchedWithJacobians(
     if constexpr (!std::is_same_v<Mark, NoJacobians>)
     {
         using Output = BatchedOutput<In, Out, T, Mark>;
-        // A shared block's Jacobian is written once, for one column, and then copied to every column.
+        // A shared block's Jacobian is written once, for one column, and then copied to every column;
+        // over one column it is that column's, written in place.
         using Once = MatrixOf<
             T,
             valueDimensionAtCompileTime<DifferenceSpace<Out>>,
@@ -899,14 +908,15 @@ callBatchedWithJacobians(
         bool anyShared = false;
         for (std::size_t b = 0; b < K; ++b)
         {
-            anyShared = anyShared || (wanted[b] && shared[b]);
+            anyShared = anyShared || (wanted[b] && shared[b] && count != 1);
         }
         auto once = Once{};
         once.resize(m, anyShared ? w : 0);
         auto output = Output{
             typename Output::ValuesType{y.data(), y.rows(), count},
             typename Output::JacobiansType{jacobians.data(), m, w * count},
-            typename Output::JacobiansType{once.data(), m, once.cols()},
+            count == 1 ? typename Output::JacobiansType{jacobians.data(), m, w}
+                       : typename Output::JacobiansType{once.data(), m, once.cols()},
             in,
             wanted,
             shared

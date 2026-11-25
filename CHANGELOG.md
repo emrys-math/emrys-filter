@@ -152,6 +152,10 @@ instead.
 
 ### Changed
 
+- `compose()` and `onEach()` forward the Jacobians their batched parts write, each part's or
+  repetition's into its rows, so a method no longer differentiates a composition whose parts are all
+  marked `batched(f, jacobians::perColumn())`, or a part at a point that writes its Jacobian. A
+  composition with any part that writes none is differentiated, as before.
 - The mark `jacobians::shared()` is gone: a Jacobian the same at every point of a call is a block's,
   named `shared(path<Name>)` in `affineIn()`. Write `batched(f, jacobians::perColumn())` with
   `affineIn(shared(path<Name>)...)` for `batched(f, jacobians::shared())`, and `jacobian<Name>(y)`,
@@ -335,6 +339,10 @@ instead.
 
 ### Fixed
 
+- The factored unscented transform of a bounded input affine in many coordinates compiles: it held
+  the Jacobians of every sigma point on the stack at their largest, which over a repeated block of
+  at most four 4-coordinate repetitions passed Eigen's limit. It holds them on the heap where they
+  would.
 - A program that includes `Models/Methods.h` builds with `-Wunused-parameter -Werror` and
   `NDEBUG` again: the sigma-point axes given a root read their argument only in an assertion.
 - `ParticleFilter::predict()` under a parallel policy no longer races: each particle's move

@@ -135,6 +135,25 @@ inline constexpr int sizeSum = (false || ... || (Sizes == Eigen::Dynamic)) ? Eig
 template <int A, int B>
 inline constexpr int sizeProduct = A == Eigen::Dynamic || B == Eigen::Dynamic ? Eigen::Dynamic : A * B;
 
+/** Whether a matrix of \a Scalar at most \a MaxRows by \a MaxCols, both fixed, is larger than Eigen
+ * holds on the stack, \c EIGEN_STACK_ALLOCATION_LIMIT bytes (no limit where it is 0).
+ */
+template <typename Scalar, int MaxRows, int MaxCols>
+inline constexpr bool exceedsStack = EIGEN_STACK_ALLOCATION_LIMIT != 0 && MaxRows != Eigen::Dynamic
+                                  && MaxCols != Eigen::Dynamic
+                                  && std::size_t(MaxRows) * std::size_t(MaxCols) * sizeof(Scalar)
+                                         > std::size_t(EIGEN_STACK_ALLOCATION_LIMIT);
+
+/** MatrixOf<Scalar, Rows, Cols, MaxRows, MaxCols>, or a matrix of dynamic size on the heap where that
+ * one's largest exceeds the stack (exceedsStack): the Jacobians of every sigma point over a bounded
+ * input affine in many coordinates.
+ */
+template <typename Scalar, int Rows, int Cols, int MaxRows, int MaxCols>
+using StackOrHeapMatrix = std::conditional_t<
+    exceedsStack<Scalar, MaxRows, MaxCols>,
+    Eigen::Matrix<Scalar, Eigen::Dynamic, Eigen::Dynamic>,
+    MatrixOf<Scalar, Rows, Cols, MaxRows, MaxCols>>;
+
 /** \returns the root \a axes take of the uncertain input \a input, as the axes return it, a root or,
  * when they can fail, a \c std::expected of one (decisions.md [sigma-point-axes]): from the input's
  * own root as a factor where it holds one (a \c root() member, as the square-root forms' read blocks

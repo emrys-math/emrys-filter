@@ -23,6 +23,7 @@
 
 #include <gtest/gtest.h>
 
+
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -124,6 +125,7 @@ std::atomic<int> rangeCalls{0};
 std::atomic<int> rangeColumns{0};
 std::atomic<int> stepCalls{0};
 std::atomic<int> stepColumns{0};
+std::atomic<int> dualStepCalls{0};  // calls of a batched step in dual numbers, by a method differentiating it
 
 // The additive noise of a range.
 GaussianParams<Linear<1>>
@@ -210,6 +212,10 @@ batchedVelocityModel(Mark... mark)
                 using T = typename std::remove_cvref_t<decltype(x)>::Scalar;
                 ++stepCalls;
                 stepColumns += int(x.cols());
+                if constexpr (!std::is_same_v<T, double>)
+                {
+                    ++dualStepCalls;
+                }
                 Emrys::block<Position>(out, Emrys::values(y)) =
                     Emrys::block<Position>(in, x) + T(dt) * Emrys::block<Velocity>(in, x);
                 Emrys::block<Velocity>(out, Emrys::values(y)) = Emrys::block<Velocity>(in, x);
@@ -245,6 +251,48 @@ batchedVelocityModel(Mark... mark)
                 return Emrys::affineIn();
             }
         }()
+    );
+}
+
+// The same model batched with jacobians::perColumn(), writing its Jacobian at each column: affineIn()
+// names its blocks without shared().
+auto
+columnVelocityModel()
+{
+    return Emrys::processModel(
+        Emrys::batched(
+            [](auto const & in, auto const & out, auto const & x, double dt, auto & y) {
+                using T = typename std::remove_cvref_t<decltype(x)>::Scalar;
+                if constexpr (!std::is_same_v<T, double>)
+                {
+                    ++dualStepCalls;
+                }
+                Emrys::block<Position>(out, Emrys::values(y)) =
+                    Emrys::block<Position>(in, x) + T(dt) * Emrys::block<Velocity>(in, x);
+                Emrys::block<Velocity>(out, Emrys::values(y)) = Emrys::block<Velocity>(in, x);
+                Eigen::Matrix<double, 4, 2> position = Eigen::Matrix<double, 4, 2>::Zero();
+                position.topRows<2>().setIdentity();
+                Eigen::Matrix<double, 4, 2> velocity = Eigen::Matrix<double, 4, 2>::Zero();
+                velocity.topRows<2>() = dt * Eigen::Matrix2d::Identity();
+                velocity.bottomRows<2>().setIdentity();
+                for (Eigen::Index j = 0; j < x.cols(); ++j)
+                {
+                    if (Emrys::wantsJacobian<Position>(y))
+                    {
+                        Emrys::jacobian<Position>(y, j) = position.cast<T>();
+                    }
+                    if (Emrys::wantsJacobian<Velocity>(y))
+                    {
+                        Emrys::jacobian<Velocity>(y, j) = velocity.cast<T>();
+                    }
+                }
+            },
+            jacobians::perColumn()
+        ),
+        Emrys::reads(Emrys::path<Position>, Emrys::path<Velocity>),
+        Emrys::writes(Emrys::path<Position>, Emrys::path<Velocity>),
+        Emrys::continuousNoise(Emrys::on<Velocity>(0.05)),
+        Emrys::affineIn(Emrys::path<Position>, Emrys::path<Velocity>)
     );
 }
 
@@ -856,6 +904,43 @@ TEST(Batched, ACompositionCallsItsBatchedPartOncePerTransform)
     expectSameGaussian(predicted, expected);
 }
 
+// A composition of batched parts that write their Jacobians forwards them ([batched-functions]): it is
+// never differentiated, under Linearized or the factored unscented transform, and predicts as the
+// composition of per-point parts does, whether its parts write each block once, shared, or at each
+// column.
+TEST(Batched, ACompositionForwardsItsPartsJacobians)
+{
+    auto const prior = spreadPrior(Formation{});
+    auto const byPoint = Emrys::compose(Emrys::on<Lead>(velocityModel()), Emrys::on<Wing>(velocityModel()));
+    auto const check = [&](auto const & byBatch) {
+        static_assert(std::is_same_v<
+                      Emrys::internal::BatchMark<typename std::remove_cvref_t<decltype(byBatch)>::FunctionType>,
+                      jacobians::PerColumn>);
+        auto const method = [&](auto const & m, char const * name) {
+            SCOPED_TRACE(name);
+            dualStepCalls = 0;
+            auto const predicted = Emrys::predict(m, prior, byBatch, 0.5);
+            EXPECT_EQ(dualStepCalls, 0);
+            expectSameGaussian(predicted, Emrys::predict(m, prior, byPoint, 0.5));
+        };
+        method(Emrys::methods::linearized(), "linearized");
+        method(Emrys::methods::unscented(), "unscented");
+    };
+    {
+        SCOPED_TRACE("shared");
+        check(
+            Emrys::compose(
+                Emrys::on<Lead>(batchedVelocityModel(jacobians::perColumn())),
+                Emrys::on<Wing>(batchedVelocityModel(jacobians::perColumn()))
+            )
+        );
+    }
+    {
+        SCOPED_TRACE("per column");
+        check(Emrys::compose(Emrys::on<Lead>(columnVelocityModel()), Emrys::on<Wing>(columnVelocityModel())));
+    }
+}
+
 // onEach() calls a batched model once per repetition over the transform's points: three escorts and a
 // lead, sixteen coordinates, so three calls of 2 * 16 + 1 columns each. The flight's size is a run-time
 // count, so the transform first sizes its output by the function at the mean, a call of one column per
@@ -874,6 +959,30 @@ TEST(Batched, OnEachCallsABatchedModelOncePerRepetition)
     EXPECT_EQ(stepCalls, 3 + 3);
     EXPECT_EQ(stepColumns, 3 * 33 + 3);
     expectSameGaussian(predicted, expected);
+}
+
+// onEach() forwards the Jacobians its batched model writes, each repetition's into its rows of the
+// repeated block ([batched-functions]): the flight is never differentiated, and predicts as the
+// per-point models do.
+TEST(Batched, OnEachForwardsItsModelsJacobians)
+{
+    auto const flight = Flight{Lead{}, Escorts{Craft{}, 3}};
+    auto const prior = spreadPrior(flight);
+    auto const byPoint = Emrys::compose(Emrys::on<Lead>(velocityModel()), Emrys::onEach<Escorts>(velocityModel()));
+    auto const byBatch =
+        Emrys::compose(Emrys::on<Lead>(columnVelocityModel()), Emrys::onEach<Escorts>(columnVelocityModel()));
+    static_assert(
+        std::is_same_v<Emrys::internal::BatchMark<typename decltype(byBatch)::FunctionType>, jacobians::PerColumn>
+    );
+    auto const check = [&](auto const & method, char const * name) {
+        SCOPED_TRACE(name);
+        dualStepCalls = 0;
+        auto const predicted = Emrys::predict(method, prior, byBatch, 0.5);
+        EXPECT_EQ(dualStepCalls, 0);
+        expectSameGaussian(predicted, Emrys::predict(method, prior, byPoint, 0.5));
+    };
+    check(Emrys::methods::linearized(), "linearized");
+    check(Emrys::methods::unscented(), "unscented");
 }
 
 // A measurement model placed on a block calls its batched function once over the transform's points,
