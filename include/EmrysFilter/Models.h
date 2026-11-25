@@ -117,8 +117,9 @@
  * [batched-functions]). Column \f$ j \f$ of what it writes depends only on column \f$ j \f$ of \c X.
  * The library calls it once per particle set or chunk and once per sigma-point set, and through
  * on(), compose(), and onEach() as through the model itself. A method that needs its Jacobian takes
- * it from the function, marked batched(f, jacobians::perColumn()) or batched(f, jacobians::shared())
- * and writing <tt>jacobian<Name>(Y, j)</tt> for the blocks <tt>wantsJacobian<Name>(Y)</tt> names,
+ * it from the function, marked batched(f, jacobians::perColumn()) and writing
+ * <tt>jacobian<Name>(Y, j)</tt> for the blocks <tt>wantsJacobian<Name>(Y)</tt> names, once
+ * <tt>jacobian<Name>(Y)</tt> for a block affineIn() names shared(path<Name>),
  * or differentiates it in dual numbers, for which the function takes \c X as <tt>auto const &</tt>:
  *
  * \code

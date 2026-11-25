@@ -3,7 +3,7 @@
 /** \file
  * Batched functions (decisions.md [batched-functions]): batched(), the mark that a function takes every point at
  * once, as the columns of a matrix, and writes one output; the marks of the Jacobians it writes,
- * jacobians::perColumn() and jacobians::shared(); and BatchedOutput, the output the library provides, sized once
+ * jacobians::perColumn(); and BatchedOutput, the output the library provides, sized once
  * for the batch and for the blocks whose Jacobians it uses. Read Policies.h next.
  */
 
@@ -40,13 +40,6 @@ struct PerColumn
 {};
 
 /** \ingroup Models
- * \brief The mark that a batched function writes one Jacobian for every column, by block of its
- * input: <tt>Y.jacobian<Name>()</tt>, for a function linear in its input, made by shared().
- */
-struct Shared
-{};
-
-/** \ingroup Models
  * \returns the mark that a batched function writes one Jacobian per column (see PerColumn)
  */
 [[nodiscard]] constexpr PerColumn
@@ -55,15 +48,6 @@ perColumn()
     return {};
 }
 
-/** \ingroup Models
- * \returns the mark that a batched function writes one Jacobian for every column, which is the
- * user's contract that the function is linear in its input (see Shared)
- */
-[[nodiscard]] constexpr Shared
-shared()
-{
-    return {};
-}
 
 }  // namespace jacobians
 
@@ -85,8 +69,6 @@ inline constexpr bool isBatchedMark<NoJacobians>{true};
 template <>
 inline constexpr bool isBatchedMark<jacobians::PerColumn>{true};
 
-template <>
-inline constexpr bool isBatchedMark<jacobians::Shared>{true};
 
 /// \endcond
 
@@ -106,8 +88,7 @@ concept JacobianMark =
  * one output \c Y, a BatchedOutput the library provides, last.
  *
  * \tparam F     the function
- * \tparam Mark  the Jacobians it writes: internal::NoJacobians, jacobians::PerColumn, or
- *               jacobians::Shared
+ * \tparam Mark  the Jacobians it writes: internal::NoJacobians or jacobians::PerColumn
  *
  * \sa batched()
  */
@@ -252,7 +233,7 @@ batched(F && function)
 
 /** \ingroup Models
  * \returns \a function marked as taking every point at once and writing the Jacobians \a mark
- * says, jacobians::perColumn() or jacobians::shared() (see Batched)
+ * says, jacobians::perColumn() (see Batched)
  */
 template <typename F, JacobianMark Mark>
     requires(!internal::isBatched<std::remove_cvref_t<F>> && !MatrixExpression<F>)
@@ -323,14 +304,13 @@ inputBlockRows(In const & in)
  * provides and sizes once before the call.
  *
  * The function writes <tt>values(y)</tt> whole. Where its mark gives Jacobians, it writes
- * <tt>jacobian<Name>(y, j)</tt> (jacobians::perColumn()) or <tt>jacobian<Name>(y)</tt>
- * (jacobians::shared()) for each block \c Name of its input for which <tt>wantsJacobian<Name>(y)</tt>
- * is true on this call: the columns of the Jacobian for the block that reads() names \c Name. The
- * storage holds only those blocks, so a block not wanted is not written. A function of a model
- * without tags writes <tt>jacobian(y, j)</tt> or <tt>jacobian(y)</tt>, the Jacobian over its whole
- * input, when <tt>wantsJacobians(y)</tt> says every block is wanted (decisions.md [whole-state-models]).
- * The functions are free ones, as block() is, so a generic function calls them without
- * <tt>.template</tt>.
+ * <tt>jacobian<Name>(y, j)</tt> for each column, or <tt>jacobian<Name>(y)</tt> once for a block the
+ * model's affineIn() names shared(path<Name>), for each block \c Name of its input for which
+ * <tt>wantsJacobian<Name>(y)</tt> is true on this call: the columns of the Jacobian for the block that reads() names \c
+ * Name. The storage holds only those blocks, so a block not wanted is not written. A function of a model without tags
+ * writes <tt>jacobian(y, j)</tt> or <tt>jacobian(y)</tt>, the Jacobian over its whole input, when
+ * <tt>wantsJacobians(y)</tt> says every block is wanted (decisions.md [whole-state-models]). The functions are free
+ * ones, as block() is, so a generic function calls them without <tt>.template</tt>.
  *
  * \tparam In       the function's input space, a Composite of the names reads() gives, or the
  *                  state's space for a whole-state model, which is its own one block
@@ -377,8 +357,8 @@ public:
 
     /** The output over the values \a values and the Jacobians' storage \a jacobians, of the
      * function's input \a in, with the Jacobian of block \a k wanted where \a wanted says. The
-     * storage holds the wanted blocks' columns side by side, once per column of the values under
-     * jacobians::perColumn() and once under jacobians::shared(). \a in outlives this.
+     * storage holds the wanted blocks' columns side by side, once per column of the values. \a in
+     * outlives this.
      */
     BatchedOutput(
         ValuesType values,
@@ -386,9 +366,27 @@ public:
         In const & in,
         std::array<bool, BlockCount> const & wanted
     )
+        : BatchedOutput{values, jacobians, JacobiansType{nullptr, jacobians.rows(), 0}, in, wanted, {}}
+    {}
+
+    /** The output as above, with the blocks that \a shared marks written once, into \a sharedJacobians,
+     * which holds the wanted blocks' columns side by side for one column: a block whose Jacobian is the
+     * same at every column, which the model's affineIn() names shared(path<Name>) (decisions.md
+     * [affine-coordinates]).
+     */
+    BatchedOutput(
+        ValuesType values,
+        JacobiansType jacobians,
+        JacobiansType sharedJacobians,
+        In const & in,
+        std::array<bool, BlockCount> const & wanted,
+        std::array<bool, BlockCount> const & shared
+    )
         : m_values{values}
         , m_jacobians{jacobians}
+        , m_shared{sharedJacobians}
         , m_in{in}
+        , m_sharedFlags{shared}
     {
         Eigen::Index offset = 0;
         [&]<std::size_t... K>(std::index_sequence<K...>) {
@@ -398,8 +396,8 @@ public:
         }(std::make_index_sequence<BlockCount>{});
         m_wantedColumns = offset;
         EMRYS_FILTER_ASSERT(
-            m_jacobians.cols() == (std::is_same_v<Mark, jacobians::PerColumn> ? values.cols() : 1) * m_wantedColumns
-            && "the Jacobians' storage holds the wanted blocks' columns for each column, or once"
+            (std::is_same_v<Mark, internal::NoJacobians> || m_jacobians.cols() == values.cols() * m_wantedColumns)
+            && "the Jacobians' storage holds the wanted blocks' columns for each column"
         );
     }
 
@@ -457,26 +455,8 @@ private:
     jacobian(Eigen::Index j)
     {
         checkWhole();
-        static_assert(
-            !std::is_same_v<Mark, jacobians::Shared>,
-            "under jacobians::shared(), a batched function writes its whole Jacobian once for every column, jacobian()"
-        );
         EMRYS_FILTER_ASSERT(j >= 0 && j < m_values.cols() && "the column must be one of the batch");
         return wholeColumns(j * m_wantedColumns);
-    }
-
-    /** \returns the Jacobian of every column over the whole input, writable, under jacobians::shared(),
-     * when wantsJacobians() says every block is wanted
-     */
-    [[nodiscard]] auto
-    jacobian()
-    {
-        checkWhole();
-        static_assert(
-            !std::is_same_v<Mark, jacobians::PerColumn>,
-            "under jacobians::perColumn(), a batched function writes its whole Jacobian once per column, jacobian(j)"
-        );
-        return wholeColumns(0);
     }
 
     /** \returns the Jacobian of column \a j in the block named \a Name, writable: its rows are the
@@ -488,27 +468,40 @@ private:
     jacobian(Eigen::Index j)
     {
         checkJacobian<Name>();
-        static_assert(
-            !std::is_same_v<Mark, jacobians::Shared>,
-            "a batched function marked jacobians::shared() writes one Jacobian for every column, jacobian<Name>()"
+        // Over one column a shared block's Jacobian is that column's, so either form writes it.
+        [[maybe_unused]] bool const shared =
+            m_sharedFlags[internal::blockPosition<Name, Blocks>] && m_values.cols() != 1;
+        EMRYS_FILTER_ASSERT(
+            !shared && "a block whose Jacobian is shared() is written once, jacobian<Name>(y), not per column"
         );
         EMRYS_FILTER_ASSERT(j >= 0 && j < m_values.cols() && "the column must be one of the batch");
-        return columnsOf<Name>(j * m_wantedColumns);
+        return internal::middleColsOf<valueDimensionAtCompileTime<DifferenceSpace<Name>>>(
+            m_jacobians,
+            j * m_wantedColumns + offsetOf<Name>(),
+            internal::inputBlockRows<Name>(m_in).size
+        );
     }
 
-    /** \returns the Jacobian of every column in the block named \a Name, writable, under
-     * jacobians::shared(), for a block wantsJacobian() says is wanted
+    /** \returns the Jacobian of every column in the block named \a Name, writable, for a block that
+     * the model's affineIn() names shared(path<Name>), the same at every column, and that
+     * wantsJacobian() says is wanted
      */
     template <typename Name>
     [[nodiscard]] auto
     jacobian()
     {
         checkJacobian<Name>();
-        static_assert(
-            !std::is_same_v<Mark, jacobians::PerColumn>,
-            "a batched function marked jacobians::perColumn() writes one Jacobian per column, jacobian<Name>(j)"
+        [[maybe_unused]] bool const shared = m_sharedFlags[internal::blockPosition<Name, Blocks>];
+        EMRYS_FILTER_ASSERT(
+            shared
+            && "a batched function writes a block's Jacobian once, jacobian<Name>(y), only where affineIn() names it "
+               "shared(path<Name>)"
         );
-        return columnsOf<Name>(0);
+        return internal::middleColsOf<valueDimensionAtCompileTime<DifferenceSpace<Name>>>(
+            m_shared,
+            offsetOf<Name>(),
+            internal::inputBlockRows<Name>(m_in).size
+        );
     }
 
     /** renamed() of the output */
@@ -526,8 +519,10 @@ private:
         return Renamed{
             typename Renamed::ValuesType{m_values.data(), m_values.rows(), m_values.cols()},
             typename Renamed::JacobiansType{m_jacobians.data(), m_jacobians.rows(), m_jacobians.cols()},
+            typename Renamed::JacobiansType{m_shared.data(), m_shared.rows(), m_shared.cols()},
             in,
-            wanted
+            wanted,
+            m_sharedFlags
         };
     }
 
@@ -553,23 +548,19 @@ private:
     {
         static_assert(
             !std::is_same_v<Mark, internal::NoJacobians>,
-            "a batched function marked without Jacobians writes none: mark it batched(f, jacobians::perColumn()) "
-            "or batched(f, jacobians::shared())"
+            "a batched function marked without Jacobians writes none: mark it batched(f, jacobians::perColumn())"
         );
         checkName<Name>();
     }
 
-    /** \returns the columns of the block named \a Name in the Jacobians' storage, from column
-     * \a start on
-     */
+    /** \returns the first column of the block named \a Name among the wanted blocks' */
     template <typename Name>
-    [[nodiscard]] auto
-    columnsOf(Eigen::Index start)
+    [[nodiscard]] Eigen::Index
+    offsetOf() const
     {
         Eigen::Index const offset = m_offsets[internal::blockPosition<Name, Blocks>];
         EMRYS_FILTER_ASSERT(offset >= 0 && "write only the Jacobians wantsJacobian() says are wanted");
-        constexpr int Cols = valueDimensionAtCompileTime<DifferenceSpace<Name>>;
-        return internal::middleColsOf<Cols>(m_jacobians, start + offset, internal::inputBlockRows<Name>(m_in).size);
+        return offset;
     }
 
     /** A compile-time error unless the function's mark gives Jacobians. */
@@ -578,8 +569,8 @@ private:
     {
         static_assert(
             !std::is_same_v<Mark, internal::NoJacobians>,
-            "a batched function marked without Jacobians writes none: mark it batched(f, jacobians::perColumn()) "
-            "or batched(f, jacobians::shared())"
+            "a batched function with no mark of its Jacobians has no whole Jacobian to write: mark it "
+            "batched(f, jacobians::perColumn())"
         );
     }
 
@@ -596,8 +587,10 @@ private:
     }
 
     ValuesType m_values;                               ///< the values
-    JacobiansType m_jacobians;                         ///< the wanted blocks' Jacobians
+    JacobiansType m_jacobians;                         ///< the wanted blocks' Jacobians, per column
+    JacobiansType m_shared;                            ///< the shared blocks' Jacobians, once
     In const & m_in;                                   ///< the function's input space
+    std::array<bool, BlockCount> m_sharedFlags{};      ///< whether each block's Jacobian is shared
     std::array<Eigen::Index, BlockCount> m_offsets{};  ///< each block's first column among the wanted, or -1
     Eigen::Index m_wantedColumns = 0;                  ///< the columns of the wanted blocks, side by side
 };
@@ -718,14 +711,19 @@ jacobian(BatchedOutput<In, Out, Scalar_, Mark> & y, Eigen::Index j)
 }
 
 /** \ingroup Models
- * \returns the Jacobian of every column of \a y in the block named \a Name, writable, under
- * jacobians::shared(), for a block wantsJacobian<Name>(y) says is wanted; without \a Name, over the
- * whole input
+ * \returns the Jacobian of every column of \a y in the block named \a Name, writable, for a block the
+ * model's affineIn() names shared(path<Name>), the same at every column, and wantsJacobian<Name>(y) says
+ * is wanted
  */
 template <typename Name = void, typename In, typename Out, typename Scalar_, typename Mark>
 [[nodiscard]] auto
 jacobian(BatchedOutput<In, Out, Scalar_, Mark> & y)
 {
+    static_assert(
+        !std::is_void_v<Name>,
+        "a batched function writes its whole Jacobian per column, jacobian(y, j); a block's Jacobian that is the "
+        "same at every column is named shared(path<Name>) in affineIn() and written jacobian<Name>(y)"
+    );
     return internal::BatchedOutputAccess::jacobian<Name>(y);
 }
 
@@ -757,11 +755,17 @@ Batched<F, Mark>::operator()(In const & in, Out const & out, X const & x, Rest c
         jacobian.setZero(differenceDimension(out), differenceDimension(in));
         wanted.fill(true);
     }
+    // At one point, a block whose Jacobian the model shares is written once into the same storage as
+    // the point's, so the function writes it either way.
+    auto shared = std::array<bool, std::tuple_size_v<internal::InputBlocks<In>>>{};
+    shared.fill(true);
     auto y = Output{
         typename Output::ValuesType{value.data(), value.rows(), 1},
         typename Output::JacobiansType{jacobian.data(), differenceDimension(out), GivesJacobians ? jacobian.cols() : 0},
+        typename Output::JacobiansType{jacobian.data(), differenceDimension(out), GivesJacobians ? jacobian.cols() : 0},
         in,
-        wanted
+        wanted,
+        shared
     };
     internal::callForm(function, in, out, x, rest..., y);
     if constexpr (GivesJacobians)
@@ -847,9 +851,9 @@ inline constexpr bool batchTakesDuals = functionForm<
  * per difference coordinate of the output. \a y and \a jacobians are plain matrices, whose columns
  * are contiguous.
  *
- * A function marked jacobians::perColumn() writes them in place, and one marked jacobians::shared()
- * writes one that is copied to every column. A function without a mark is differentiated: it is
- * called once in dual numbers whose derivatives are seeded on the wanted blocks, which must be
+ * A function marked jacobians::perColumn() writes them in place, and a block that the model shares,
+ * shared(path<Name>) in affineIn(), once, copied to every column (\a shared). A function without a mark is
+ * differentiated: it is called once in dual numbers whose derivatives are seeded on the wanted blocks, which must be
  * linear, and its Jacobian is that of its output's difference from its value, as Linearized takes it.
  */
 template <typename F, typename In, typename Out, typename X, std::size_t K, typename Y, typename J, typename... Rest>
@@ -860,6 +864,7 @@ callBatchedWithJacobians(
     Out const & out,
     X const & x,
     std::array<bool, K> const & wanted,
+    std::array<bool, K> const & shared,
     Y & y,
     J & jacobians,
     Rest const &... rest
@@ -884,32 +889,48 @@ callBatchedWithJacobians(
     if constexpr (!std::is_same_v<Mark, NoJacobians>)
     {
         using Output = BatchedOutput<In, Out, T, Mark>;
-        constexpr bool PerColumn = std::is_same_v<Mark, jacobians::PerColumn>;
-        // A shared Jacobian is written once, beside the values, and then copied to every column.
-        using Shared = MatrixOf<
+        // A shared block's Jacobian is written once, for one column, and then copied to every column.
+        using Once = MatrixOf<
             T,
             valueDimensionAtCompileTime<DifferenceSpace<Out>>,
             Eigen::Dynamic,
             maxValueDimensionAtCompileTime<DifferenceSpace<Out>>,
             maxValueDimensionAtCompileTime<DifferenceSpace<In>>>;
-        auto shared = Shared{};
-        if constexpr (!PerColumn)
+        bool anyShared = false;
+        for (std::size_t b = 0; b < K; ++b)
         {
-            shared.resize(m, w);
+            anyShared = anyShared || (wanted[b] && shared[b]);
         }
+        auto once = Once{};
+        once.resize(m, anyShared ? w : 0);
         auto output = Output{
             typename Output::ValuesType{y.data(), y.rows(), count},
-            typename Output::JacobiansType{PerColumn ? jacobians.data() : shared.data(), m, PerColumn ? w * count : w},
+            typename Output::JacobiansType{jacobians.data(), m, w * count},
+            typename Output::JacobiansType{once.data(), m, once.cols()},
             in,
-            wanted
+            wanted,
+            shared
         };
         callForm(batchBody(batched), in, out, x, rest..., output);
-        if constexpr (!PerColumn)
+        if (anyShared)
         {
-            for (Eigen::Index j = 0; j < count; ++j)
-            {
-                jacobians.middleCols(j * w, w) = shared;
-            }
+            Eigen::Index offset = 0;
+            [&]<std::size_t... B>(std::index_sequence<B...>) {
+                (
+                    [&] {
+                        Eigen::Index const size = inputBlockRows<std::tuple_element_t<B, Blocks>>(in).size;
+                        if (wanted[B] && shared[B])
+                        {
+                            for (Eigen::Index j = 0; j < count; ++j)
+                            {
+                                jacobians.middleCols(j * w + offset, size) = once.middleCols(offset, size);
+                            }
+                        }
+                        offset += wanted[B] ? size : 0;
+                    }(),
+                    ...
+                );
+            }(std::make_index_sequence<K>{});
         }
     }
     else
@@ -920,8 +941,7 @@ callBatchedWithJacobians(
         static_assert(
             batchTakesDuals<BatchBody<F>, In, Out, Dual, Rest...>,
             "a batched function whose Jacobian a method uses is differentiated in dual numbers, so it takes X as "
-            "auto const & and writes Y in X's scalar; or it writes its Jacobians, batched(f, jacobians::perColumn()) "
-            "or batched(f, jacobians::shared())"
+            "auto const & and writes Y in X's scalar; or it writes its Jacobians, batched(f, jacobians::perColumn())"
         );
         using DualX = MatrixOf<
             Dual,

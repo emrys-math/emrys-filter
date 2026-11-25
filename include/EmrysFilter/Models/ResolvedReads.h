@@ -969,15 +969,17 @@ public:
      * one flag per block in order: the items factored out (itemFactored()); every block of a
      * whole-state model's input, which is its one block
      */
-    template <std::size_t Blocks>
+    template <std::size_t Blocks, bool Shared = true>
     [[nodiscard]] static constexpr std::array<bool, Blocks>
     factoredBlocks()
     {
         std::array<bool, Blocks> wanted{};
         if constexpr (Blocks == ItemCount)
         {
+            using SharedPolicy = typename Model::template Policy<PolicyKind::sharedJacobians>;
             [&]<std::size_t... I>(std::index_sequence<I...>) {
-                ((wanted[I] = itemFactored<I>()), ...);
+                ((wanted[I] = itemFactored<I>() && (Shared || !sharedNames<SharedPolicy, typename Item<I>::NameType>)),
+                 ...);
             }(std::make_index_sequence<ItemCount>{});
         }
         else
@@ -985,6 +987,25 @@ public:
             wanted.fill(true);
         }
         return wanted;
+    }
+
+    /** \returns which blocks of the function's input the model shares the Jacobian of, the same at
+     * every point of one call, one flag per block in order: the items its affineIn() names
+     * shared(path<Name>); none of a whole-state model's input
+     */
+    template <std::size_t Blocks>
+    [[nodiscard]] static constexpr std::array<bool, Blocks>
+    sharedBlocks()
+    {
+        std::array<bool, Blocks> shared{};
+        if constexpr (Blocks == ItemCount)
+        {
+            using Shared = typename Model::template Policy<PolicyKind::sharedJacobians>;
+            [&]<std::size_t... I>(std::index_sequence<I...>) {
+                ((shared[I] = sharedNames<Shared, typename Item<I>::NameType>), ...);
+            }(std::make_index_sequence<ItemCount>{});
+        }
+        return shared;
     }
 
     /** \returns the difference dimension of the items factored out, or Eigen::Dynamic: a function rather
@@ -1074,6 +1095,44 @@ public:
                 ...
             );
         }(std::make_index_sequence<ItemCount>{});
+        return result;
+    }
+
+    /** \returns for each coordinate affineCoordinates() gives, 1 where it is of an item whose
+     * Jacobian the model shares (sharedBlocks()), and 0 otherwise; empty where none is
+     */
+    [[nodiscard]] IndexVector<affineSize(), affineMaxSize()>
+    affineShared() const
+    {
+        using SharedPolicy = typename Model::template Policy<PolicyKind::sharedJacobians>;
+        auto result = IndexVector<affineSize(), affineMaxSize()>{};
+        constexpr bool Any = []<std::size_t... I>(std::index_sequence<I...>) {
+            return ((itemFactored<I>() && sharedNames<SharedPolicy, typename Item<I>::NameType>) || ... || false);
+        }(std::make_index_sequence<ItemCount>{});
+        if constexpr (Any)
+        {
+            Eigen::Index count = 0;
+            [&]<std::size_t... I>(std::index_sequence<I...>) {
+                ((count += itemFactored<I>() ? m_differenceRows[I].size : 0), ...);
+            }(std::make_index_sequence<ItemCount>{});
+            result.resize(count);
+            Eigen::Index next = 0;
+            [&]<std::size_t... I>(std::index_sequence<I...>) {
+                (
+                    [&] {
+                        if constexpr (itemFactored<I>())
+                        {
+                            constexpr bool shared = sharedNames<SharedPolicy, typename Item<I>::NameType>;
+                            for (Eigen::Index r = 0; r < m_differenceRows[I].size; ++r)
+                            {
+                                result(next++) = shared ? 1 : 0;
+                            }
+                        }
+                    }(),
+                    ...
+                );
+            }(std::make_index_sequence<ItemCount>{});
+        }
         return result;
     }
 

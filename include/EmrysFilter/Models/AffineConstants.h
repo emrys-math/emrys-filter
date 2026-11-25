@@ -546,6 +546,42 @@ modelOfAffineMap(Make const & make, Affine const & affine, std::tuple<Others...>
     }(static_cast<typename Affine::ConstantNames *>(nullptr));
 }
 
+/** Whether one of \a Policies is affineIn() with shared() items. */
+template <typename... Policies>
+inline constexpr bool hasAffineShared = (isAffineWithShared<std::remove_cvref_t<Policies>> || ... || false);
+
+/** \returns \a policy as the tuple of the policies a model takes of it: an affineIn() with shared()
+ * items as its affineIn() and its SharedJacobians, any other as it is
+ */
+template <typename Policy>
+[[nodiscard]] auto
+splitShared(Policy const & policy)
+{
+    if constexpr (isAffineWithShared<Policy>)
+    {
+        return std::tuple{policy.affine, policy.shared};
+    }
+    else
+    {
+        return std::tuple<Policy>{policy};
+    }
+}
+
+/** \returns \a make called with \a function and \a policies, an affineIn() with shared() items given
+ * as its affineIn() and its SharedJacobians
+ */
+template <typename Make, typename F, typename... Policies>
+[[nodiscard]] auto
+withSharedSplit(Make const & make, F && function, Policies const &... policies)
+{
+    return std::apply(
+        [&](auto const &... split) {
+            return make(std::forward<F>(function), split...);
+        },
+        std::tuple_cat(splitShared(policies)...)
+    );
+}
+
 }  // namespace internal
 
 }  // namespace Emrys

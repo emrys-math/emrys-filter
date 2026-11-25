@@ -198,8 +198,8 @@ velocityModel()
     );
 }
 
-// The same model batched, without Jacobians or, given jacobians::shared(), with the one Jacobian
-// of the linear step.
+// The same model batched, without Jacobians or, given jacobians::perColumn(), with the one Jacobian
+// of the linear step, written once: the model's affineIn() names both blocks shared(path<Name>).
 template <typename... Mark>
 auto
 batchedVelocityModel(Mark... mark)
@@ -234,7 +234,17 @@ batchedVelocityModel(Mark... mark)
         ),
         Emrys::reads(Emrys::path<Position>, Emrys::path<Velocity>),
         Emrys::writes(Emrys::path<Position>, Emrys::path<Velocity>),
-        Emrys::continuousNoise(Emrys::on<Velocity>(0.05))
+        Emrys::continuousNoise(Emrys::on<Velocity>(0.05)),
+        [] {
+            if constexpr (sizeof...(Mark) > 0)
+            {
+                return Emrys::affineIn(Emrys::shared(Emrys::path<Position>), Emrys::shared(Emrys::path<Velocity>));
+            }
+            else
+            {
+                return Emrys::affineIn();
+            }
+        }()
     );
 }
 
@@ -280,8 +290,9 @@ batchedForcedModel(Policies... policies)
     );
 }
 
-// The forced model batched with the one Jacobian of its linear step, given jacobians::shared(), each
-// block's written where it is wanted.
+// The forced model batched with the one Jacobian of its linear step, marked jacobians::perColumn() and
+// written once for the blocks the affineIn() it is given names shared(path<Name>), each block's written
+// where it is wanted.
 template <typename... Policies>
 auto
 batchedForcedModelWithJacobians(Policies... policies)
@@ -313,7 +324,7 @@ batchedForcedModelWithJacobians(Policies... policies)
                     Emrys::jacobian<SpecificForce>(y) = (dt * bottom).cast<T>();
                 }
             },
-            jacobians::shared()
+            jacobians::perColumn()
         ),
         Emrys::reads(Emrys::path<Position>, Emrys::path<Velocity>, Emrys::path<SpecificForce>),
         Emrys::writes(Emrys::path<Position>, Emrys::path<Velocity>),
@@ -410,7 +421,6 @@ expectSameGaussian(A const & a, B const & b)
 }  // namespace
 
 static_assert(Emrys::JacobianMark<jacobians::PerColumn>);
-static_assert(Emrys::JacobianMark<jacobians::Shared>);
 static_assert(!Emrys::JacobianMark<Emrys::internal::NoJacobians>);
 static_assert(!Emrys::Batched<int>::GivesJacobians);
 static_assert(decltype(Emrys::batched([] {}, jacobians::perColumn()))::PerColumn);
@@ -526,12 +536,16 @@ TEST(Batched, OutputLaysOutTheWantedJacobiansByBlock)
     EXPECT_EQ(storage, expected);
     EXPECT_EQ(values, (Eigen::Matrix<double, 3, 2>::Constant(4.0)));
 
+    // A block whose Jacobian the model shares is written once, into storage for one column.
     auto shared = Eigen::Matrix<double, 3, 1>{Eigen::Matrix<double, 3, 1>::Zero()};
-    using Shared = Emrys::BatchedOutput<In, Linear<3>, double, jacobians::Shared>;
+    auto perColumn = Eigen::Matrix<double, 3, 2>{Eigen::Matrix<double, 3, 2>::Zero()};
+    using Shared = Emrys::BatchedOutput<In, Linear<3>, double, jacobians::PerColumn>;
     auto z = Shared{
         Shared::ValuesType{values.data(), 3, 2},
+        Shared::JacobiansType{perColumn.data(), 3, 2},
         Shared::JacobiansType{shared.data(), 3, 1},
         in,
+        {false, true, false},
         {false, true, false}
     };
     EXPECT_FALSE(Emrys::wantsJacobian<Position>(z));
@@ -641,17 +655,19 @@ TEST(Batched, FactoredTransformCallsAProcessModelOncePerPrediction)
     check(Emrys::methods::cubature(), 4);
 }
 
-// The factored transform takes the Jacobians a batched function marked jacobians::shared() writes, in
-// one call with the factored blocks wanted, and predicts as the per-point form does: the identity on
-// Velocity, which the step reads, factors out, and writes, comes from the function's rows.
+// The factored transform takes the Jacobians a batched function writes once for the blocks its affineIn()
+// names shared(path<Name>), in one call with the factored blocks wanted, and predicts as the per-point form does: the
+// identity on Velocity, which the step reads, factors out, and writes, comes from the function's rows.
 TEST(Batched, FactoredTransformTakesTheJacobiansAFunctionWrites)
 {
     auto const prior = makePrior();
     auto const affine = Emrys::affineIn(Emrys::path<Velocity>, Emrys::path<SpecificForce>);
+    auto const shared =
+        Emrys::affineIn(Emrys::shared(Emrys::path<Velocity>), Emrys::shared(Emrys::path<SpecificForce>));
     auto const check = [&](auto const & method) {
         stepCalls = 0;
         auto const predicted =
-            Emrys::predict(method, prior, batchedForcedModelWithJacobians(affine), 0.5, accelerometerReading());
+            Emrys::predict(method, prior, batchedForcedModelWithJacobians(shared), 0.5, accelerometerReading());
         EXPECT_EQ(stepCalls, 1);
         expectSameGaussian(predicted, Emrys::predict(method, prior, forcedModel(affine), 0.5, accelerometerReading()));
     };
@@ -886,7 +902,7 @@ TEST(Batched, ProcessModelMatchesItsPerPointFormUnderEveryMethod)
     auto const check = [&](auto const & method) {
         auto const expected = Emrys::predict(method, prior, velocityModel(), 0.5);
         expectSameGaussian(Emrys::predict(method, prior, batchedVelocityModel(), 0.5), expected);
-        expectSameGaussian(Emrys::predict(method, prior, batchedVelocityModel(jacobians::shared()), 0.5), expected);
+        expectSameGaussian(Emrys::predict(method, prior, batchedVelocityModel(jacobians::perColumn()), 0.5), expected);
     };
     check(Emrys::methods::linearized());
     check(Emrys::methods::unscented());

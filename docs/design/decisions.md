@@ -435,10 +435,10 @@ filters didn't say which kind it came from; a filter names itself and nests its 
 **Rule.** `batched(f)` marks a model's, log-likelihood's, or transform's function as taking the
 points as the columns of a matrix `X` and writing into a last argument `Y` that the library sizes
 once (`h(in, out, X, Y)`); column $j$ of the result depends only on column $j$ of the inputs. The
-mark names the Jacobians the function gives, whose storage is sized before the call: none,
-`jacobians::perColumn()`, or `jacobians::shared()` for a linear function; `wantsJacobian<Name>(Y)`
-says which blocks the method uses, and it writes `values(Y)` and `jacobian<Name>(Y, j)`, free
-functions as `block<Name>()` is. Unmarked, a needed Jacobian comes by autodiff: of one column for `Linearized` and the iterated updates, and of the whole batch, in duals seeded on the blocks used,
+mark names the Jacobians the function gives, whose storage is sized before the call: none or
+`jacobians::perColumn()`; `wantsJacobian<Name>(Y)` says which blocks the method uses, and it writes
+`values(Y)` and `jacobian<Name>(Y, j)`, or once `jacobian<Name>(Y)` for a block `affineIn()` names
+`shared(path<Name>)`, free functions as `block<Name>()` is. Unmarked, a needed Jacobian comes by autodiff: of one column for `Linearized` and the iterated updates, and of the whole batch, in duals seeded on the blocks used,
 where every point's is needed [affine-coordinates], [likelihood-measurements]. The library calls a
 batched function once per sigma-point set and per particle set or chunk [execution-policies].
 `on()` keeps its model's mark; `compose()` calls each batched part once over its rows, `onEach()` a
@@ -2134,7 +2134,7 @@ $y = g(x_n) + H(x_n) \, x_a$. A sigma-point method spreads its points over $x_n$
 point $x_a$ given $x_n$ is Gaussian and goes through $f$ exactly, adding $H P_{a|n} H^T$, with $H$
 from the returned Jacobian or automatic differentiation in the affine coordinates, one call per
 point. A coordinate is factored out where it is a linear block of the state or an uncertain input;
-a `sure` input is skipped, and a block that is not linear is treated as nonlinear. `on<Name>(H)` and
+a `sure` input is skipped, and a block that is not linear is treated as nonlinear. `shared(path<Name>)` is a block whose $H$ is the same at every point of a call, asked for once. `on<Name>(H)` and
 `offset(...)` give a constant part $H x + c$ the function leaves out, read as affine and added by `plus()`, which holds a process model to one step [fixed-step-models]; a composition's affine set is the names every part reading them declares. `Linearized`, `Iterated`,
 the square-root and information steps, the update given a block, and the Rao-Blackwellized
 prediction ignore the declaration.

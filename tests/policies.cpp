@@ -210,9 +210,7 @@ static_assert(ExecutionPolicy<decltype(execution::sequential)>);
 
 // The marks of a batched function's Jacobians [batched-functions].
 static_assert(JacobianMark<jacobians::PerColumn>);
-static_assert(JacobianMark<jacobians::Shared>);
 static_assert(JacobianMark<decltype(jacobians::perColumn())>);
-static_assert(JacobianMark<decltype(jacobians::shared())>);
 
 // A factory's result is the type beside it, with its defaults.
 static_assert(std::same_as<decltype(methods::linearized()), methods::Linearized>);

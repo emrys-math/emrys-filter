@@ -862,7 +862,18 @@ template <typename F, typename... Policies>
 [[nodiscard]] auto
 processModel(F && function, Policies &&... policies)
 {
-    if constexpr (internal::hasAffineConstants<Policies...>)
+    if constexpr (internal::hasAffineShared<Policies...>)
+    {
+        // shared() items of affineIn() are a policy of their own (decisions.md [affine-coordinates]).
+        return internal::withSharedSplit(
+            [](auto && made, auto const &... split) {
+                return processModel(std::forward<decltype(made)>(made), split...);
+            },
+            std::forward<F>(function),
+            policies...
+        );
+    }
+    else if constexpr (internal::hasAffineConstants<Policies...>)
     {
         // Constant items of affineIn() become inputs read and factored as any affine one, and the
         // function adds their term (Models/AffineConstants.h); the model then holds one step.
@@ -1974,6 +1985,47 @@ struct AffineUnion<AffineIn<Kept...>, std::tuple<Models...>, First, Rest...>
 
 /// \endcond
 
+/** Whether \a Model shares the Jacobian of the block it reads under \a Name, or doesn't read it. */
+template <typename Model, typename Name>
+inline constexpr bool modelShares =
+    !modelReads<Model, Name> || sharedNames<typename Model::template Policy<PolicyKind::sharedJacobians>, Name>;
+
+/** The names among \a Names whose Jacobian every one of \a Models reading them shares, as a
+ * SharedJacobians: the shared set of a composition (decisions.md [affine-coordinates]).
+ */
+template <typename Acc, typename Models, typename... Names>
+struct SharedUnion
+{
+    using type = Acc;  ///< the shared names
+};
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename... Kept, typename... Models, typename First, typename... Rest>
+struct SharedUnion<SharedJacobians<Kept...>, std::tuple<Models...>, First, Rest...>
+{
+    static constexpr bool shared = (modelShares<Models, First> && ...) && (modelReads<Models, First> || ...);
+
+    using type = typename SharedUnion<
+        std::conditional_t<shared, SharedJacobians<Kept..., First>, SharedJacobians<Kept...>>,
+        std::tuple<Models...>,
+        Rest...>::type;
+};
+
+/// \endcond
+
+/** The shared set of \a Models over the union reads \a Union, a Reads. */
+template <typename Union, typename Models>
+struct SharedOf;
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename... Items, typename Models>
+struct SharedOf<Reads<Items...>, Models>
+{
+    using type = typename SharedUnion<SharedJacobians<>, Models, typename Items::NameType...>::type;
+};
+
+/// \endcond
+
 /** The affine set of \a Models over the union reads \a Union, a Reads. */
 template <typename Union, typename Models>
 struct AffineOf;
@@ -2600,10 +2652,16 @@ public:
     /** The affineIn() of the whole. */
     using AffinePolicy = typename internal::AffineOf<ReadsPolicy, std::tuple<Models...>>::type;
 
-    /** Whether the policy of kind \a K is one the whole has: reads(), writes(), and affineIn(). */
+    /** The names whose Jacobian the whole shares: those every part reading them shares. */
+    using SharedPolicy = typename internal::SharedOf<ReadsPolicy, std::tuple<Models...>>::type;
+
+    /** Whether the policy of kind \a K is one the whole has: reads(), writes(), affineIn(), and the
+     * names shared where any are.
+     */
     template <internal::PolicyKind K>
     static constexpr bool has =
-        K == internal::PolicyKind::reads || K == internal::PolicyKind::writes || K == internal::PolicyKind::affineIn;
+        K == internal::PolicyKind::reads || K == internal::PolicyKind::writes || K == internal::PolicyKind::affineIn
+        || (K == internal::PolicyKind::sharedJacobians && SharedPolicy::Count > 0);
 
     /** The policy of kind \a K, or internal::NoPolicy. */
     template <internal::PolicyKind K>
@@ -2613,7 +2671,13 @@ public:
         std::conditional_t<
             K == internal::PolicyKind::writes,
             WritesPolicy,
-            std::conditional_t<K == internal::PolicyKind::affineIn, AffinePolicy, internal::NoPolicy>>>;
+            std::conditional_t<
+                K == internal::PolicyKind::affineIn,
+                AffinePolicy,
+                std::conditional_t<
+                    K == internal::PolicyKind::sharedJacobians && SharedPolicy::Count != 0,
+                    SharedPolicy,
+                    internal::NoPolicy>>>>;
 
     /** The paths of the blocks written, a TagPaths. */
     using WritePaths = typename WritesPolicy::PathList;
@@ -3187,7 +3251,7 @@ public:
     /** \returns propagate() with a function marked writesJacobians() asked for the Jacobian of the
      * blocks the factored transform reads alone (factoredBlocks()), zero in the others' columns
      */
-    template <typename State, typename TimeScalar, typename... Inputs>
+    template <bool Shared = true, typename State, typename TimeScalar, typename... Inputs>
     [[nodiscard]] auto
     propagateFactored(State const & state, TimeScalar dt, Inputs const &... inputs) const
     {
@@ -3201,7 +3265,7 @@ public:
             Eigen::Index{0},
             std::tuple<Inputs const &...>{inputs...}
         );
-        constexpr auto wanted = Base::template factoredBlocks<std::tuple_size_v<InputBlocks<In>>>();
+        constexpr auto wanted = Base::template factoredBlocks<std::tuple_size_v<InputBlocks<In>>, Shared>();
         auto result = vectorReturned(callWantedForm(model().function(), wanted, m_in, m_out, x, dt));
         using Result = std::remove_cvref_t<decltype(result)>;
         auto y = scattered(state, valueOf(result));
@@ -3322,7 +3386,17 @@ public:
             J::MaxColsAtCompileTime>;
         auto outJacobians = OutJacobians{};
         outJacobians.resize(differenceDimension(m_out), l * count);
-        callBatchedWithJacobians(model().function(), m_in, m_out, x, wanted, values, outJacobians, dt);
+        callBatchedWithJacobians(
+            model().function(),
+            m_in,
+            m_out,
+            x,
+            wanted,
+            Base::template sharedBlocks<std::tuple_size_v<InputBlocks<In>>>(),
+            values,
+            outJacobians,
+            dt
+        );
         scatterColumns(y, states, values);
         if constexpr (Whole)
         {
@@ -3737,6 +3811,7 @@ public:
     /** The step for one call that gives the next state with the Jacobian of the blocks the factored
      * transform reads alone.
      */
+    template <bool Shared>
     struct Factored
     {
         R const & resolved;  ///< the resolved model
@@ -3747,14 +3822,15 @@ public:
         [[nodiscard]] auto
         operator()(X const & x, Inputs const &... inputs) const
         {
-            return resolved.propagateFactored(x, dt, inputs...);
+            return resolved.template propagateFactored<Shared>(x, dt, inputs...);
         }
     };
 
     /** \returns the step whose call asks a function marked writesJacobians() for the Jacobian of the
-     * blocks the factored transform reads alone
+     * blocks the factored transform reads alone, and without \a Shared not the shared ones either
      */
-    [[nodiscard]] Factored
+    template <bool Shared = true>
+    [[nodiscard]] Factored<Shared>
     factored() const
     {
         return {m_resolved, m_dt};
@@ -3973,7 +4049,8 @@ transformStep(Method const & method, SpaceType const & space, Prior const & prio
             {
                 auto const factored = FactoredAt<R::affineSize(), R::affineMaxSize(), Method>{
                     method,
-                    resolved.template affineCoordinates<true>()
+                    resolved.template affineCoordinates<true>(),
+                    resolved.affineShared()
                 };
                 return transformBy(factored, f, space, prior, inputs...);
             }
@@ -4134,7 +4211,8 @@ linearizeStepAbout(
                 {
                     auto const factored = FactoredAt<R::affineSize(), R::affineMaxSize(), Method>{
                         method,
-                        resolved.template affineCoordinates<true>()
+                        resolved.template affineCoordinates<true>(),
+                        resolved.affineShared()
                     };
                     return linearizeAbout(factored, f, space, space, base, about, inputs...);
                 }

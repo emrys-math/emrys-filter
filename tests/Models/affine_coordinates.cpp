@@ -908,3 +908,58 @@ TEST(AffineCoordinates, AFunctionIsAskedForTheJacobiansTheMethodReads)
         1e-12
     );
 }
+
+// A block whose Jacobian is the same at every point of a call, shared(path<Name>) in affineIn(), is asked
+// for at the first point of a factored transform alone ([affine-coordinates]): s + v^3 is affine in the
+// scale with coefficient one, and the update agrees with the model that asks for it at every point.
+TEST(AffineCoordinates, ASharedJacobianIsAskedForOncePerCall)
+{
+    using Pair = Composite<Scale, Value>;
+    auto const prior =
+        GaussianParams<Pair>{Pair{}, Eigen::Vector2d{2.0, 0.5}, Eigen::Matrix2d{{0.3, 0.05}, {0.05, 0.2}}};
+    Eigen::Matrix<double, 1, 1> const z{1.4};
+    auto const model = [](Asked & asked, auto const & affine) {
+        return measurementModel(
+            Emrys::writesJacobians([&asked](auto const & in, auto const &, auto const & x, auto & y) {
+                ++asked.calls;
+                double const s = block<Scale>(in, x)(0);
+                double const v = block<Value>(in, x)(0);
+                Emrys::value(y) = Eigen::Matrix<double, 1, 1>{s + v * v * v};
+                if (Emrys::wantsJacobian<Scale>(y))
+                {
+                    ++asked.scale;
+                    Emrys::jacobian<Scale>(y) = Eigen::Matrix<double, 1, 1>{1.0};
+                }
+                if (Emrys::wantsJacobian<Value>(y))
+                {
+                    ++asked.value;
+                    Emrys::jacobian<Value>(y) = Eigen::Matrix<double, 1, 1>{3.0 * v * v};
+                }
+            }),
+            reads(path<Scale>, path<Value>),
+            affine,
+            outputSpace(Linear<1>{}),
+            additiveNoise(
+                GaussianParams<Linear<1>>{Eigen::Matrix<double, 1, 1>::Zero(), Eigen::Matrix<double, 1, 1>{0.1}}
+            )
+        );
+    };
+
+    Asked shared;
+    auto const x = update(prior, observe(methods::unscented(), model(shared, affineIn(Emrys::shared(path<Scale>))), z));
+    ASSERT_TRUE(x);
+    EXPECT_GT(shared.calls, 1);
+    EXPECT_EQ(shared.scale, 1);
+    EXPECT_EQ(shared.value, 0);
+
+    Asked each;
+    auto const y = update(prior, observe(methods::unscented(), model(each, affineIn(path<Scale>)), z));
+    ASSERT_TRUE(y);
+    EXPECT_EQ(each.scale, each.calls);
+    EXPECT_EQ(each.calls, shared.calls);
+    EXPECT_LT((x->branches.front().posterior.mean() - y->branches.front().posterior.mean()).norm(), 1e-12);
+    EXPECT_LT(
+        (x->branches.front().posterior.covarianceLower() - y->branches.front().posterior.covarianceLower()).norm(),
+        1e-12
+    );
+}

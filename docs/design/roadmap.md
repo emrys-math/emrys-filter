@@ -742,6 +742,13 @@ Decided (2026-11-23), not built:
   transform. Left: the conditioned blocks alone in the update given a block. MSVC 19.50 crashed
   (C1001) on a `writesJacobians()` process model built in `tests/Models/models.cpp`, which compiles
   in `fixed_step_model.cpp`, where the test is.
+- Built as stage 7 (2026-11-25): `shared(path<Name>)` (`SharedItem`) in `affineIn()`, which gives the
+  model a `SharedJacobians` policy beside its `AffineIn` (`AffineWithShared`, split by the factories);
+  compositions keep a name every part reading it shares, placements rename it, and `onEach()` refuses
+  it. A batched function writes a shared block once, `jacobian<Name>(y)`, into storage
+  `callBatchedWithJacobians()` copies to every column; `jacobians::shared()` is gone. The factored
+  transform asks a function at a point for shared blocks at its first point alone (`FactoredAt::shared`,
+  `affineShared()`); `transform()` of a function does not yet.
 
 The Jacobian a function writes, decided (2026-11-23), not built:
 
@@ -786,8 +793,6 @@ The Jacobian a function writes, decided (2026-11-23), not built:
 In order, each a commit that passes the `land` checks, with its decisions, `usage.md`, and
 `CHANGELOG.md` in it.
 
-7. **`shared()` by name in `affineIn()`,** in place of the mark `jacobians::shared()`, asked for
-   once per call in both forms.
 8. **Compositions forward Jacobians on the batched path.**
 
 MSVC cannot run in a Linux session: stage 1 and stage 3 touch what the filters' deduction guides

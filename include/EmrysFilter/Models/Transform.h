@@ -905,7 +905,7 @@ transformRoot(methods::Spread<Rule, A> const & method, Problem const & problem)
  * of the Jacobian \a f returns, or by automatic differentiation in those coordinates alone
  * (decisions.md [affine-coordinates])
  */
-template <typename Problem, typename X, typename Affine, typename Columns>
+template <bool Shared = true, typename Problem, typename X, typename Affine, typename Columns>
 [[nodiscard]] typename Problem::template OutputVector<typename Problem::Scalar>
 valueWithAffineJacobian(Problem const & problem, X const & x, Affine const & affine, Columns && columns)
 {
@@ -917,7 +917,7 @@ valueWithAffineJacobian(Problem const & problem, X const & x, Affine const & aff
     {
         // The function is asked for the Jacobian of the blocks factored out alone (decisions.md
         // [returned-jacobians]).
-        auto returned = problem.template returnedFactored<Scalar>(x);
+        auto returned = problem.template returnedFactored<Scalar, Shared>(x);
         using Blocks = decltype(returned.jacobian);
         problem.forEachUncertain([&]<std::size_t I>(auto const & input) {
             auto const & block = [&]() -> auto const & {
@@ -1022,7 +1022,8 @@ evaluateWithAffineJacobians(
     Eigen::Index count,
     ShiftAt const & shiftAt,
     Outputs & outputs,
-    Jacobians & jacobians
+    Jacobians & jacobians,
+    Affine const & shared = Affine{}
 )
 {
     using Index = Eigen::Index;
@@ -1041,17 +1042,41 @@ evaluateWithAffineJacobians(
     }
     else
     {
+        // A block whose Jacobian is shared, the same at every point of the call, is asked for at the first
+        // point alone and its columns copied to the others (decisions.md [affine-coordinates]).
+        bool const anyShared = shared.size() > 0 && shared.maxCoeff() > 0;
         for (Index k = 0; k < count; ++k)
         {
-            auto const y = valueWithAffineJacobian(
-                problem,
-                problem.plusInputs(mu, shiftAt(k)),
-                affine,
-                jacobians.middleCols(k * l, l)
-            );
+            auto const y = [&] {
+                if (k == 0 || !anyShared)
+                {
+                    return valueWithAffineJacobian(
+                        problem,
+                        problem.plusInputs(mu, shiftAt(k)),
+                        affine,
+                        jacobians.middleCols(k * l, l)
+                    );
+                }
+                return valueWithAffineJacobian<false>(
+                    problem,
+                    problem.plusInputs(mu, shiftAt(k)),
+                    affine,
+                    jacobians.middleCols(k * l, l)
+                );
+            }();
             if (k == 0)
             {
                 outputs.resize(y.size(), count);
+            }
+            else if (anyShared)
+            {
+                for (Index j = 0; j < l; ++j)
+                {
+                    if (shared(j) != 0)
+                    {
+                        jacobians.col(k * l + j) = jacobians.col(j);
+                    }
+                }
             }
             outputs.col(k) = y;
         }
@@ -1220,7 +1245,7 @@ transformResult(FactoredAt<AffineSize, AffineMaxSize, Points> const & method, Pr
             auto jacobians = Jacobians{};
             jacobians.resize(m, l * (2 * n + 1));
             auto outputs = typename Problem::template OutputSamples<Count, MaxCount>{};
-            evaluateWithAffineJacobians(problem, mu, affine, 2 * n + 1, shiftAt, outputs, jacobians);
+            evaluateWithAffineJacobians(problem, mu, affine, 2 * n + 1, shiftAt, outputs, jacobians, method.shared);
             auto pointWeights = PointWeights{};
             pointWeights.resize(2 * n + 1);
             pointWeights(0) = weights.center;
@@ -1279,7 +1304,7 @@ transformResult(FactoredAt<AffineSize, AffineMaxSize, Points> const & method, Pr
                 shift(affine) = affineSpread.col(j);
                 return shift;
             };
-            evaluateWithAffineJacobians(problem, mu, affine, count, shiftAt, outputs, jacobians);
+            evaluateWithAffineJacobians(problem, mu, affine, count, shiftAt, outputs, jacobians, method.shared);
             auto points = pointMoments(problem, unit.points, unit.weights, unit.reference, outputs, restRoot);
             auto [whitened, omega] = affineParts(jacobians, unit.weights);
             return std::tuple{
@@ -2188,8 +2213,13 @@ public:
         [&]<std::size_t... I>(std::index_sequence<I...>) {
             ((wanted[I] = itemFactored<I>()), ...);
         }(std::make_index_sequence<ItemCount>{});
+        auto shared = std::array<bool, std::tuple_size_v<InputBlocks<In>>>{};
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+            using Shared = typename Model::template Policy<PolicyKind::sharedJacobians>;
+            ((shared[I] = sharedNames<Shared, typename Item<I>::NameType>), ...);
+        }(std::make_index_sequence<ItemCount>{});
         auto const x = gatherColumns<Y>(y.cols(), args...);
-        callBatchedWithJacobians(m_model.function(), m_in, m_out, x, wanted, y, jacobians);
+        callBatchedWithJacobians(m_model.function(), m_in, m_out, x, wanted, shared, y, jacobians);
     }
 
     /** \returns the inputs of a batch of \a count points, a column each in the input space, as many

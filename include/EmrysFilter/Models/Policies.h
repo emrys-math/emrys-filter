@@ -802,6 +802,113 @@ struct AffineConstants<AffineIn<Points...>, Offset, Constants...>
 };
 
 /** \ingroup Models
+ * \brief The names of a model's affineIn() whose Jacobian is the same at every point of one call
+ * (decisions.md [affine-coordinates]): a coefficient \f$ H \f$ known only at the call, which depends on
+ * a sure input or on a process model's step, so the function is asked for it once per call and the
+ * method reads it for every point. affineIn() makes it of its shared() items.
+ *
+ * \tparam Names  the names, each one of affineIn()'s
+ */
+template <typename... Names>
+struct SharedJacobians
+{
+    static constexpr std::size_t Count = sizeof...(Names);  ///< the number of names
+};
+
+/** \ingroup Models
+ * \brief An item of affineIn(), <tt>shared(path<Name>)</tt>: the input \a Name, in which the
+ * function is affine with a Jacobian that is the same at every point of one call (SharedJacobians).
+ *
+ * \tparam Name  the name, a tag of the model's reads()
+ */
+template <typename Name>
+struct SharedItem
+{};
+
+/** \ingroup Models
+ * \returns the item of affineIn() that says the function is affine in the input named by \a path, a
+ * path value of one tag, with a Jacobian that is the same at every point of one call:
+ * <tt>affineIn(path<Velocity>, shared(path<Scale>))</tt>
+ */
+template <PathValue P>
+[[nodiscard]] SharedItem<internal::PathTag<internal::PathOf<P>>>
+shared(P const &)
+{
+    static_assert(
+        std::is_same_v<internal::PathOf<P>, TagPath<internal::PathTag<internal::PathOf<P>>>>,
+        "shared(path<Name>) names an input of the model by the one tag it is read under in reads()"
+    );
+    return {};
+}
+
+namespace internal
+{
+
+/** Whether \a T is a shared() item of affineIn(). */
+template <typename T>
+inline constexpr bool isSharedItem = false;
+
+/** A SharedItem is one. */
+template <typename Name>
+inline constexpr bool isSharedItem<SharedItem<Name>> = true;
+
+/** \returns \a item as the tuple of the shared names it gives affineIn() */
+template <typename Item>
+[[nodiscard]] auto
+sharedNameOf(Item const *)
+{
+    if constexpr (isSharedItem<Item>)
+    {
+        return []<typename Name>(SharedItem<Name> const *) {
+            return std::tuple<Name>{};
+        }(static_cast<Item const *>(nullptr));
+    }
+    else
+    {
+        return std::tuple<>{};
+    }
+}
+
+/** The SharedJacobians of the names in the tuple \a Names. */
+template <typename Names>
+struct SharedJacobiansOf;
+
+/** Of a tuple of names. */
+template <typename... Names>
+struct SharedJacobiansOf<std::tuple<Names...>>
+{
+    using type = SharedJacobians<Names...>;  ///< the policy
+};
+
+/** affineIn() with shared() items: the affineIn() of every name, \a Affine, and the names shared,
+ * \a Shared, which measurementModel() and processModel() give the model as two policies.
+ */
+template <typename Affine, typename Shared>
+struct AffineWithShared
+{
+    Affine affine;  ///< the affineIn(), shared names among its own
+    Shared shared;  ///< the names shared, a SharedJacobians
+};
+
+/** Whether \a T is an AffineWithShared. */
+template <typename T>
+inline constexpr bool isAffineWithShared = false;
+
+/** An AffineWithShared is one. */
+template <typename Affine, typename Shared>
+inline constexpr bool isAffineWithShared<AffineWithShared<Affine, Shared>> = true;
+
+/** Whether the names \a Shared, a SharedJacobians, include \a Name; none do of NoPolicy. */
+template <typename Shared, typename Name>
+inline constexpr bool sharedNames = false;
+
+/** Of a SharedJacobians. */
+template <typename... Names, typename Name>
+inline constexpr bool sharedNames<SharedJacobians<Names...>, Name> = (std::is_same_v<Names, Name> || ... || false);
+
+}  // namespace internal
+
+/** \ingroup Models
  * \brief affineIn() of one matrix, \f$ F \f$ or \f$ H \f$ over the whole state, which a model
  * without a function and without tags takes as its whole map (decisions.md [whole-state-models]).
  *
@@ -868,12 +975,18 @@ offset(C const & c)
 template <typename... Items>
     requires(
         !(PathValue<Items> && ...)
-        && ((PathValue<Items> || internal::isConstantItem<Items> || internal::isAffineOffset<Items>) && ...)
+        && ((PathValue<Items> || internal::isConstantItem<Items> || internal::isAffineOffset<Items>
+             || internal::isSharedItem<Items>)
+            && ...)
     )
 [[nodiscard]] auto
 affineIn(Items const &... items)
 {
-    using PointNames = decltype(std::tuple_cat(internal::pointNameOf(static_cast<Items const *>(nullptr))...));
+    using SharedNames = decltype(std::tuple_cat(internal::sharedNameOf(static_cast<Items const *>(nullptr))...));
+    using PointNames = decltype(std::tuple_cat(
+        internal::pointNameOf(static_cast<Items const *>(nullptr))...,
+        internal::sharedNameOf(static_cast<Items const *>(nullptr))...
+    ));
     auto constants = std::tuple_cat(internal::constantOf(items)...);
     auto offsets = std::tuple_cat(internal::offsetOf(items)...);
     static_assert(std::tuple_size_v<decltype(offsets)> <= 1, "affineIn() takes one offset()");
@@ -900,15 +1013,33 @@ affineIn(Items const &... items)
             return std::get<0>(offsets);
         }
     }();
-    return std::apply(
-        [&](auto &... c) {
-            return AffineConstants<Points, decltype(offset), std::remove_cvref_t<decltype(c)>...>{
-                {std::move(c)...},
-                std::move(offset)
-            };
-        },
-        constants
-    );
+    auto const base = [&] {
+        if constexpr (std::tuple_size_v<decltype(constants)> == 0 && std::tuple_size_v<decltype(offsets)> == 0)
+        {
+            return Points{};
+        }
+        else
+        {
+            return std::apply(
+                [&](auto &... c) {
+                    return AffineConstants<Points, decltype(offset), std::remove_cvref_t<decltype(c)>...>{
+                        {std::move(c)...},
+                        std::move(offset)
+                    };
+                },
+                constants
+            );
+        }
+    }();
+    if constexpr (std::tuple_size_v<SharedNames> == 0)
+    {
+        return base;
+    }
+    else
+    {
+        using Shared = typename internal::SharedJacobiansOf<SharedNames>::type;
+        return internal::AffineWithShared<std::remove_cvref_t<decltype(base)>, Shared>{base, Shared{}};
+    }
 }
 
 namespace internal
@@ -1383,6 +1514,7 @@ enum class PolicyKind
     reads,
     writes,
     affineIn,
+    sharedJacobians,  ///< internal: the names of affineIn() whose Jacobian is the same at every point of a call
     additiveNoise,
     continuousNoise,
     logLikelihood,
@@ -1427,6 +1559,12 @@ inline constexpr std::optional<PolicyKind> policyKind<AffineConstants<Points, Of
 
 template <typename Matrix>
 inline constexpr std::optional<PolicyKind> policyKind<AffineMatrix<Matrix>>{PolicyKind::affineIn};
+
+template <typename Affine, typename Shared>
+inline constexpr std::optional<PolicyKind> policyKind<AffineWithShared<Affine, Shared>>{PolicyKind::affineIn};
+
+template <typename... Names>
+inline constexpr std::optional<PolicyKind> policyKind<SharedJacobians<Names...>>{PolicyKind::sharedJacobians};
 
 template <typename... Parts>
 inline constexpr std::optional<PolicyKind> policyKind<AdditiveNoise<Parts...>>{PolicyKind::additiveNoise};

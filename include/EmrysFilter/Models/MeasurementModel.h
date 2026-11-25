@@ -1019,7 +1019,18 @@ template <typename F, typename... Policies>
 [[nodiscard]] auto
 measurementModel(F && function, Policies &&... policies)
 {
-    if constexpr (internal::hasAffineConstants<Policies...>)
+    if constexpr (internal::hasAffineShared<Policies...>)
+    {
+        // shared() items of affineIn() are a policy of their own (decisions.md [affine-coordinates]).
+        return internal::withSharedSplit(
+            [](auto && made, auto const &... split) {
+                return measurementModel(std::forward<decltype(made)>(made), split...);
+            },
+            std::forward<F>(function),
+            policies...
+        );
+    }
+    else if constexpr (internal::hasAffineConstants<Policies...>)
     {
         // Constant items of affineIn() become inputs read and factored as any affine one, and the
         // function adds their term (Models/AffineConstants.h).

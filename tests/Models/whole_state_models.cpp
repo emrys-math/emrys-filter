@@ -545,8 +545,8 @@ TEST(WholeStateModels, MatrixModelsAreTheTextbookKalmanFilter)
     EXPECT_LT((filter.state().mean() - mean).norm(), 1e-12);
 }
 
-// A whole-state batched process model writes the whole Jacobian, Y.jacobian() under
-// jacobians::shared(), and predicts as the matrix model does over its step, which only fixedStep() takes.
+// A whole-state batched process model writes the whole Jacobian per column, jacobian(Y, j) under
+// jacobians::perColumn(), and predicts as the matrix model does over its step, which only fixedStep() takes.
 TEST(WholeStateModels, BatchedWholeStateModelWritesTheWholeJacobian)
 {
     Eigen::Matrix4d const f = transitionMatrix();
@@ -558,10 +558,13 @@ TEST(WholeStateModels, BatchedWholeStateModelWritesTheWholeJacobian)
                 Emrys::values(y) = f.cast<T>() * x;
                 if (Emrys::wantsJacobians(y))
                 {
-                    Emrys::jacobian(y) = f.cast<T>();
+                    for (Eigen::Index j = 0; j < x.cols(); ++j)
+                    {
+                        Emrys::jacobian(y, j) = f.cast<T>();
+                    }
                 }
             },
-            jacobians::shared()
+            jacobians::perColumn()
         ),
         noise
     );

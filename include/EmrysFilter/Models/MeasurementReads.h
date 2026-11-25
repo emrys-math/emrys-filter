@@ -363,7 +363,7 @@ public:
     /** \returns evaluate() with a function marked writesJacobians() asked for the Jacobian of the
      * blocks the factored transform reads alone (factoredBlocks()), zero in the others' columns
      */
-    template <typename Joint, typename... Inputs>
+    template <bool Shared = true, typename Joint, typename... Inputs>
     [[nodiscard]] auto
     evaluateFactored(Joint const & joint, Inputs const &... inputs) const
     {
@@ -371,7 +371,7 @@ public:
         static_assert(HasFunction, "a measurement model known by its likelihood alone has no function to evaluate");
         using T = typename Joint::Scalar;
         auto const x = this->template gather<T>(joint, std::tuple<Inputs const &...>{inputs...});
-        constexpr auto wanted = Base::template factoredBlocks<std::tuple_size_v<InputBlocks<In>>>();
+        constexpr auto wanted = Base::template factoredBlocks<std::tuple_size_v<InputBlocks<In>>, Shared>();
         return split<false>(vectorReturned(callWantedForm(m_measurement.model().function(), wanted, m_in, m_out, x)));
     }
 
@@ -505,7 +505,16 @@ public:
         [&]<std::size_t... I>(std::index_sequence<I...>) {
             ((wanted[I] = argumentIsUncertain(I)), ...);
         }(std::make_index_sequence<ItemCount>{});
-        callBatchedWithJacobians(m_measurement.model().function(), m_in, m_out, x, wanted, y, jacobians);
+        callBatchedWithJacobians(
+            m_measurement.model().function(),
+            m_in,
+            m_out,
+            x,
+            wanted,
+            Base::template sharedBlocks<std::tuple_size_v<InputBlocks<In>>>(),
+            y,
+            jacobians
+        );
     }
 
     /** \returns the inputs of a batch, a column per point in the input space, as many as \a Y has:
@@ -586,7 +595,16 @@ public:
             ((wanted[I] = Base::template itemFactored<I>()), ...);
         }(std::make_index_sequence<ItemCount>{});
         auto const x = gatherColumns<Y>(joint, inputs...);
-        callBatchedWithJacobians(m_measurement.model().function(), m_in, m_out, x, wanted, y, jacobians);
+        callBatchedWithJacobians(
+            m_measurement.model().function(),
+            m_in,
+            m_out,
+            x,
+            wanted,
+            Base::template sharedBlocks<std::tuple_size_v<InputBlocks<In>>>(),
+            y,
+            jacobians
+        );
     }
 
     /** Writes the model's own \f$ \log p(z \mid x_j) \f$ into \a result, a row with an entry per
@@ -790,7 +808,7 @@ public:
     static constexpr bool EvaluatesValues = true;
 
     /** The function for one call of \a R that gives a part of what operator()() gives. */
-    template <bool Factored>
+    template <bool Factored, bool Shared = true>
     struct Part
     {
         R const & resolved;  ///< the resolved model
@@ -802,7 +820,7 @@ public:
         {
             if constexpr (Factored)
             {
-                return resolved.evaluateFactored(joint, inputs...);
+                return resolved.template evaluateFactored<Shared>(joint, inputs...);
             }
             else
             {
@@ -823,7 +841,8 @@ public:
     /** \returns the function that gives the value with the Jacobian of the blocks the factored
      * transform reads alone
      */
-    [[nodiscard]] Part<true>
+    template <bool Shared = true>
+    [[nodiscard]] Part<true, Shared>
     factored() const
     {
         return {m_resolved};
@@ -918,7 +937,8 @@ transformMeasurementBy(R const & resolved, Method const & method, F const & f, R
             {
                 auto const factored = FactoredAt<R::affineSize(), R::affineMaxSize(), Method>{
                     method,
-                    resolved.template affineCoordinates<false>()
+                    resolved.template affineCoordinates<false>(),
+                    resolved.affineShared()
                 };
                 return transformPrediction(resolved, factored, f, withCross(read), inputs...);
             }

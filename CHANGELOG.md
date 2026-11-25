@@ -8,6 +8,10 @@ instead.
 
 ### Added
 
+- `shared(path<Name>)` in `affineIn()`: the input `Name`, in which the function is affine with a
+  Jacobian that is the same at every point of a call, such as one that depends on a sure input or
+  on a process model's step. A function marked `writesJacobians()` is asked for it at the first
+  point of a factored transform alone, and a batched one writes it once, `jacobian<Name>(y)`.
 - An example of `PosteriorCramerRaoBound` on the Models page of the reference: the bound stepped
   along true states that `simulate()` draws, a column per Monte Carlo run.
 - Models without a function, `affineIn()` alone as the whole map, updated and predicted exactly:
@@ -148,6 +152,11 @@ instead.
 
 ### Changed
 
+- The mark `jacobians::shared()` is gone: a Jacobian the same at every point of a call is a block's,
+  named `shared(path<Name>)` in `affineIn()`. Write `batched(f, jacobians::perColumn())` with
+  `affineIn(shared(path<Name>)...)` for `batched(f, jacobians::shared())`, and `jacobian<Name>(y)`,
+  written once, for each shared block; a whole-state batched function writes `jacobian(y, j)` per
+  column, and a linear one is `affineIn(F)`.
 - A function that knows its Jacobian writes it into its output: mark it `writesJacobians(f)`, take
   the output `y` last, `h(in, out, x, y)` or `f(in, out, x, dt, y)`, and write `value(y) = v` and,
   when `wantsJacobians(y)`, `jacobian(y) = J`, or by block `jacobian<Name>(y)` when

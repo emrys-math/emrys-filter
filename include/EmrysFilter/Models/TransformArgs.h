@@ -113,6 +113,9 @@ struct FactoredAt
 {
     Points points;                                  ///< the sigma points over the rest
     IndexVector<AffineSize, AffineMaxSize> affine;  ///< coordinates of the joint input, in column order
+    /// for each of \a affine, 1 where it is of a block whose Jacobian is shared, the same at every
+    /// point of the call (shared(path<Name>) in affineIn()), and 0 otherwise; empty where none is
+    IndexVector<AffineSize, AffineMaxSize> shared{};
 };
 
 /** Whether \a T is a FactoredAt. */
@@ -743,15 +746,17 @@ public:
     }
 
     /** \returns returned() with the Jacobian of the blocks the factored transform reads alone, where
-     * \a f gives a function object for that, \c factored(), as a model's does; otherwise returned()
+     * \a f gives a function object for that, \c factored(), as a model's does; otherwise returned().
+     * Without \a Shared, the blocks whose Jacobian is shared are left out too, as at every point of a
+     * call after the first.
      */
-    template <typename T>
+    template <typename T, bool Shared = true>
     [[nodiscard]] decltype(auto)
     returnedFactored(InputVector<T> const & x) const
     {
-        if constexpr (requires { m_f.factored(); })
+        if constexpr (requires { m_f.template factored<Shared>(); })
         {
-            auto const factored = m_f.factored();
+            auto const factored = m_f.template factored<Shared>();
             return call<T>(factored, x);
         }
         else

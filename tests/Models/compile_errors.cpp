@@ -728,6 +728,21 @@ updatedBy(Model const & model)
 );
 #endif
 
+#if defined(SHARED_BY_PATH)  // static_assert: Policies.h: shared(path<Name>) names an input of the model by the one
+[[maybe_unused]] auto const item = Emrys::shared(Emrys::path<Fixes, Fix>);
+#endif
+
+#if defined(ON_EACH_SHARED)  // static_assert: Placement.h: onEach() places a model whose affineIn() shares no
+[[maybe_unused]] auto const placed = Emrys::onEach<Fixes>(Emrys::processModel(
+    []<typename T>(auto const & in, auto const &, auto const & x, auto) {
+        return Eigen::Matrix<T, 2, 1>{Emrys::block<Fix>(in, x)};
+    },
+    Emrys::reads(Emrys::path<Fix>),
+    Emrys::writes(Emrys::path<Fix>),
+    Emrys::affineIn(Emrys::shared(Emrys::path<Fix>))
+));
+#endif
+
 #if defined(OU_MEAN_SIZE)  // static_assert: ProcessModel.h: must have the size of its block
 [[maybe_unused]] constexpr auto size = sizeof(Emrys::OrnsteinUhlenbeck<Speed, Emrys::RevertingTo<Offset>>);
 #endif
@@ -2174,6 +2189,12 @@ batchedLikelihoods([[maybe_unused]] Mark mark, Write write)
 });
 #endif
 
+#if defined(BATCHED_WHOLE_WITHOUT_MARK)  // static_assert: Batched.h: has no whole Jacobian to write
+[[maybe_unused]] auto const values = batchedLikelihoods(Emrys::internal::NoJacobians{}, [](auto & y) {
+    Emrys::jacobian(y, 0).setZero();
+});
+#endif
+
 #if defined(BATCHED_JACOBIAN_NOT_READ)  // static_assert: Batched.h: a batched function writes a Jacobian only for a
 [[maybe_unused]] auto const values = batchedLikelihoods(Emrys::jacobians::perColumn(), [](auto & y) {
     Emrys::jacobian<Velocity>(y, 0).setZero();
@@ -2208,25 +2229,7 @@ struct BatchOffset : Emrys::Linear<1>
 );
 #endif
 
-#if defined(BATCHED_SHARED_PER_COLUMN)  // static_assert: Batched.h: a batched function marked jacobians::shared()
-[[maybe_unused]] auto const values = batchedLikelihoods(Emrys::jacobians::shared(), [](auto & y) {
-    Emrys::jacobian<Position>(y, 0).setZero();
-});
-#endif
-
-#if defined(BATCHED_PER_COLUMN_SHARED)  // static_assert: Batched.h: a batched function marked jacobians::perColumn()
-[[maybe_unused]] auto const values = batchedLikelihoods(Emrys::jacobians::perColumn(), [](auto & y) {
-    Emrys::jacobian<Position>(y).setZero();
-});
-#endif
-
-#if defined(BATCHED_WHOLE_SHARED_PER_COLUMN)  // static_assert: Batched.h: under jacobians::shared(), a batched
-[[maybe_unused]] auto const values = batchedLikelihoods(Emrys::jacobians::shared(), [](auto & y) {
-    Emrys::jacobian(y, 0).setZero();
-});
-#endif
-
-#if defined(BATCHED_WHOLE_PER_COLUMN_SHARED)  // static_assert: Batched.h: under jacobians::perColumn(), a batched
+#if defined(BATCHED_WHOLE_PER_COLUMN_SHARED)  // static_assert: Batched.h: writes its whole Jacobian per column
 [[maybe_unused]] auto const values = batchedLikelihoods(Emrys::jacobians::perColumn(), [](auto & y) {
     Emrys::jacobian(y).setZero();
 });

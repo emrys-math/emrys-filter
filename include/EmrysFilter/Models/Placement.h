@@ -153,6 +153,26 @@ struct AffineNamesOf<AffineIn<Names...>>
 template <typename Model>
 using AffineNamesOfModel = typename AffineNamesOf<typename Model::template Policy<PolicyKind::affineIn>>::type;
 
+/** The names of the SharedJacobians \a S as a tuple type, or none for NoPolicy. */
+template <typename S>
+struct SharedNamesOf
+{
+    using type = std::tuple<>;  ///< none
+};
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename... Names>
+struct SharedNamesOf<SharedJacobians<Names...>>
+{
+    using type = std::tuple<Names...>;
+};
+
+/// \endcond
+
+/** The names of the model \a Model whose Jacobian is shared, as a tuple type. */
+template <typename Model>
+using SharedNamesOfModel = typename SharedNamesOf<typename Model::template Policy<PolicyKind::sharedJacobians>>::type;
+
 /** Whether the model \a Model names \a Name in its affineIn(). */
 template <typename Model, typename Name>
 inline constexpr bool declaresAffine = []<typename... Names>(std::tuple<Names...> *) {
@@ -296,6 +316,11 @@ struct Placement
     using AffinePolicy = typename decltype([]<typename... Names>(std::tuple<Names...> *) {
         return std::type_identity<AffineIn<OuterName<Names>...>>{};
     }(static_cast<AffineNamesOfModel<Model> *>(nullptr)))::type;
+
+    /** The placed names whose Jacobian is shared, renamed as the affine ones are. */
+    using SharedPolicy = typename decltype([]<typename... Names>(std::tuple<Names...> *) {
+        return std::type_identity<SharedJacobians<OuterName<Names>...>>{};
+    }(static_cast<SharedNamesOfModel<Model> *>(nullptr)))::type;
 };
 
 /** \returns the reads() policy \a Target of a model placed on a block, from the model's \a reads:
@@ -683,6 +708,12 @@ struct EachPlacement
             return {};
         }
     }
+
+    static_assert(
+        std::tuple_size_v<SharedNamesOfModel<Model>> == 0,
+        "onEach() places a model whose affineIn() shares no Jacobian, shared(path<Name>), yet; give the block with "
+        "path<Name>"
+    );
 
     /** The placed affineIn(): the repeated block where the model is affine in every block of one
      * repetition it reads, and each input the model is affine in.
@@ -1158,6 +1189,7 @@ template <
     typename InnerIn,
     typename ReadsPolicy,
     typename AffinePolicy,
+    typename SharedPolicy,
     typename Policy,
     typename Selection>
 [[nodiscard]] auto
@@ -1171,6 +1203,10 @@ placedPolicy(Policy const & policy, [[maybe_unused]] Selection const & where)
     else if constexpr (kind == PolicyKind::affineIn)
     {
         return AffinePolicy{};
+    }
+    else if constexpr (kind == PolicyKind::sharedJacobians)
+    {
+        return SharedPolicy{};
     }
     else if constexpr (kind == PolicyKind::logLikelihood)
     {
@@ -1361,11 +1397,13 @@ placeProcess(Selection const & where, Model const & model, Renames const &...)
         Step,
         typename Placement::ReadsPolicy,
         PlacedWrites<Prefix, Model, Selection>,
-        typename Placement::AffinePolicy>{
+        typename Placement::AffinePolicy,
+        typename Placement::SharedPolicy>{
         Step{model},
         placedReads<typename Placement::ReadsPolicy>(model.template policy<PolicyKind::reads>(), where),
         placedWrites<Prefix>(model, where),
-        typename Placement::AffinePolicy{}
+        typename Placement::AffinePolicy{},
+        typename Placement::SharedPolicy{}
     };
 }
 
@@ -1381,6 +1419,7 @@ placeMeasurement(Selection const & where, Model const & model, Renames const &..
     using InnerIn = typename Model::template Policy<PolicyKind::reads>::InputSpace;
     using ReadsPolicy = typename Placement::ReadsPolicy;
     using AffinePolicy = typename Placement::AffinePolicy;
+    using SharedPolicy = typename Placement::SharedPolicy;
     auto const function = [&] {
         if constexpr (Model::HasFunction)
         {
@@ -1395,9 +1434,9 @@ placeMeasurement(Selection const & where, Model const & model, Renames const &..
         [&](auto const &... policies) {
             return MeasurementFunction<
                 std::remove_cvref_t<decltype(function)>,
-                decltype(placedPolicy<Prefix, InnerIn, ReadsPolicy, AffinePolicy>(policies, where))...>{
+                decltype(placedPolicy<Prefix, InnerIn, ReadsPolicy, AffinePolicy, SharedPolicy>(policies, where))...>{
                 function,
-                placedPolicy<Prefix, InnerIn, ReadsPolicy, AffinePolicy>(policies, where)...
+                placedPolicy<Prefix, InnerIn, ReadsPolicy, AffinePolicy, SharedPolicy>(policies, where)...
             };
         },
         model.policies()
@@ -1586,9 +1625,10 @@ composeMeasurements(Models... models)
         decltype(std::tuple_cat(std::declval<typename PathsOf<WritePathsOf<Models>>::type>()...)),
         decltype(std::tuple_cat(std::declval<CompositeBlocks<OutputSpaceOf<Models>>>()...))>::type;
     using AffinePolicy = typename AffineOf<ReadsPolicy, std::tuple<Models...>>::type;
+    using SharedPolicy = typename SharedOf<ReadsPolicy, std::tuple<Models...>>::type;
     using Function = MeasurementParts<Models...>;
     auto const noise = std::tuple_cat(placedNoiseParts(models)...);
-    auto const base = std::tuple{unionReads<ReadsPolicy>(models...), WritesPolicy{}, AffinePolicy{}};
+    auto const base = std::tuple{unionReads<ReadsPolicy>(models...), WritesPolicy{}, AffinePolicy{}, SharedPolicy{}};
     auto const withNoise = [&] {
         if constexpr (std::tuple_size_v<std::remove_cvref_t<decltype(noise)>> > 0)
         {
