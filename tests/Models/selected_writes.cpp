@@ -275,27 +275,38 @@ TEST(SelectedWrites, AListIsWrittenInItsOrder)
 // predict by linearization as the same parts differentiated automatically.
 TEST(SelectedWrites, AReturnedJacobianIsWrittenToTheSelection)
 {
-    auto const turnReturning = [](Eigen::Matrix<double, Eigen::Dynamic, 1, Eigen::ColMajor, 20, 1> const & x,
-                                  double dt) {
-        Eigen::Index const n = x.size();
-        Eigen::MatrixXd jacobian = Eigen::MatrixXd::Zero(n, n);
-        double const c = std::cos(0.25 * dt);
-        double const s = std::sin(0.25 * dt);
-        Eigen::Matrix2d rotation;
-        rotation << c, -s, s, c;
-        for (Eigen::Index i = 0; i < n / 4; ++i)
-        {
-            Eigen::Vector2d const v = x.segment<2>(4 * i + 2);
-            jacobian.block<2, 2>(4 * i, 4 * i).setIdentity();
-            jacobian.block<2, 2>(4 * i, 4 * i + 2) =
-                dt * rotation + Eigen::Matrix2d{Eigen::Vector2d{0.2 * v(0), 0.2 * v(1)}.asDiagonal()};
-            jacobian.block<2, 2>(4 * i + 2, 4 * i + 2) = rotation;
+    auto const turnReturning = Emrys::writesJacobians(
+        [](Eigen::Matrix<double, Eigen::Dynamic, 1, Eigen::ColMajor, 20, 1> const & x, double dt, auto & output) {
+            Eigen::Index const n = x.size();
+            Eigen::MatrixXd jacobian = Eigen::MatrixXd::Zero(n, n);
+            double const c = std::cos(0.25 * dt);
+            double const s = std::sin(0.25 * dt);
+            Eigen::Matrix2d rotation;
+            rotation << c, -s, s, c;
+            for (Eigen::Index i = 0; i < n / 4; ++i)
+            {
+                Eigen::Vector2d const v = x.segment<2>(4 * i + 2);
+                jacobian.block<2, 2>(4 * i, 4 * i).setIdentity();
+                jacobian.block<2, 2>(4 * i, 4 * i + 2) =
+                    dt * rotation + Eigen::Matrix2d{Eigen::Vector2d{0.2 * v(0), 0.2 * v(1)}.asDiagonal()};
+                jacobian.block<2, 2>(4 * i + 2, 4 * i + 2) = rotation;
+            }
+            Emrys::value(output) = turnAll.template operator()<double>(x, dt);
+            if (Emrys::wantsJacobians(output))
+            {
+                Emrys::jacobian(output) = jacobian;
+            }
         }
-        return Emrys::withJacobian(turnAll.template operator()<double>(x, dt), jacobian);
-    };
-    auto const holdReturning = [](Eigen::Matrix<double, Eigen::Dynamic, 1, Eigen::ColMajor, 20, 1> const & x, double) {
-        return Emrys::withJacobian(x, Eigen::MatrixXd::Identity(x.size(), x.size()));
-    };
+    );
+    auto const holdReturning = Emrys::writesJacobians(
+        [](Eigen::Matrix<double, Eigen::Dynamic, 1, Eigen::ColMajor, 20, 1> const & x, double, auto & output) {
+            Emrys::value(output) = x;
+            if (Emrys::wantsJacobians(output))
+            {
+                Emrys::jacobian(output) = Eigen::MatrixXd::Identity(x.size(), x.size());
+            }
+        }
+    );
     auto const supplied =
         compose(partOf(turnReturning, 0.3, path<Fleet>[std::array{2, 0}]), partOf(holdReturning, 0.05, path<Fleet>[1]));
     auto const automatic =

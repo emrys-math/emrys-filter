@@ -76,16 +76,19 @@ public:
         {
             // The ranges with their Jacobian, computed together: each row is the unit direction from
             // its anchor to p.
-            auto const withJacobian =
-                [&](auto const & in, auto const &, Eigen::Matrix<Scalar, Dimension, 1> const & x) {
+            auto const withJacobian = Emrys::writesJacobians(
+                [&](auto const & in, auto const &, Eigen::Matrix<Scalar, Dimension, 1> const & x, auto & output) {
                     Eigen::Matrix<Scalar, Dimension, 1> const p = Emrys::block<Position<Dimension>>(in, x);
                     Eigen::Matrix<Scalar, Dimension, AnchorCount> const toAnchor = m_anchors.colwise() - p;
                     Ranges const distances = toAnchor.colwise().norm().transpose();
-                    return Emrys::withJacobian(
-                        distances,
-                        (-(toAnchor.array().rowwise() / distances.transpose().array())).matrix().transpose()
-                    );
-                };
+                    Emrys::value(output) = distances;
+                    if (Emrys::wantsJacobians(output))
+                    {
+                        Emrys::jacobian(output) =
+                            (-(toAnchor.array().rowwise() / distances.transpose().array())).matrix().transpose();
+                    }
+                }
+            );
             if (!m_filter.update(Emrys::observe(Emrys::methods::linearized(), model(withJacobian), z)))
             {
                 std::abort();

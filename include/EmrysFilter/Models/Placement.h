@@ -374,6 +374,17 @@ public:
         return callForm(m_model.function(), renamedInstance<InnerIn>(in), renamedInstance<InnerOut>(out), x, dt);
     }
 
+    /** \returns the model's step of \a x, the value alone, the model's function asked for its value
+     * alone (callValueForm())
+     */
+    template <typename In, typename Out, typename X, typename TimeScalar>
+    [[nodiscard]] auto
+    valueAt(In const & in, Out const & out, X const & x, TimeScalar dt) const
+        requires MatrixExpression<X>
+    {
+        return callValueForm(m_model.function(), renamedInstance<InnerIn>(in), renamedInstance<InnerOut>(out), x, dt);
+    }
+
     /** The model's function. */
     using Inner = std::remove_cvref_t<decltype(std::declval<Model const &>().function())>;
 

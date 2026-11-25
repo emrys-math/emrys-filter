@@ -254,13 +254,17 @@ struct GyroTurn
     make()
     {
         return Emrys::processModel(
-            [](auto const & in, auto const & out, auto const & x, double dt) {
+            Emrys::writesJacobians([](auto const & in, auto const & out, auto const & x, double dt, auto & output) {
                 Eigen::Vector3d const turn = (block<GyroRate>(in, x) - block<GyroBias>(in, x)) * dt;
                 Eigen::Matrix<double, 3, 9> jacobian = Eigen::Matrix<double, 3, 9>::Zero();
                 jacobian.leftCols<3>() = Emrys::UnitQuaternion::exponential(turn).toRotationMatrix().transpose();
                 jacobian.middleCols<3>(3) = -dt * Emrys::UnitQuaternion::rightJacobian(turn);
-                return Emrys::withJacobian(turnAttitude(in, out, x, dt), jacobian);
-            },
+                Emrys::value(output) = turnAttitude(in, out, x, dt);
+                if (Emrys::wantsJacobians(output))
+                {
+                    Emrys::jacobian(output) = jacobian;
+                }
+            }),
             reads(path<Attitude>, path<GyroBias>, path<GyroRate>),
             Emrys::writes(path<Attitude>),
             Emrys::continuousNoise(Emrys::on<Attitude>(1e-4))

@@ -210,7 +210,7 @@ TEST(RbPointMassFilter, UpdateGivenABlockMatchesTheKalmanUpdate)
     EXPECT_NEAR(widened->logLikelihood(), -0.5 * (std::log(2 * pi * sw) + innovation * innovation / sw), 1e-12);
 }
 
-// A range that returns its Jacobian with its value (withJacobian(), [returned-jacobians]), one matrix over
+// A range that returns its Jacobian with its value (writesJacobians(), [returned-jacobians]), one matrix over
 // the blocks read, updates given a block as the range differentiated automatically does, with the
 // position known or Gaussian: the position's columns go to the given block and the bias's to the rest.
 TEST(RbPointMassFilter, UpdateGivenABlockTakesAReturnedJacobian)
@@ -219,13 +219,19 @@ TEST(RbPointMassFilter, UpdateGivenABlockTakesAReturnedJacobian)
     auto const p = Eigen::Vector2d{12, -7};
     double const z = 55.0;
     auto const returningRange = Emrys::measurementModel(
-        [beacon = beacons[0]](auto const & in, auto const &, Eigen::Vector3d const & x) {
-            Eigen::Vector2d const d = Emrys::block<Position>(in, x) - beacon;
-            double const r = d.norm();
-            Eigen::RowVector3d jacobian;
-            jacobian << d.transpose() / r, 1.0;
-            return Emrys::withJacobian(Vector1{r + Emrys::block<Bias>(in, x)(0)}, jacobian);
-        },
+        Emrys::writesJacobians(
+            [beacon = beacons[0]](auto const & in, auto const &, Eigen::Vector3d const & x, auto & output) {
+                Eigen::Vector2d const d = Emrys::block<Position>(in, x) - beacon;
+                double const r = d.norm();
+                Eigen::RowVector3d jacobian;
+                jacobian << d.transpose() / r, 1.0;
+                Emrys::value(output) = Vector1{r + Emrys::block<Bias>(in, x)(0)};
+                if (Emrys::wantsJacobians(output))
+                {
+                    Emrys::jacobian(output) = jacobian;
+                }
+            }
+        ),
         Emrys::reads(Emrys::path<Position>, Emrys::path<Bias>),
         additiveNoise(rangeNoise())
     );

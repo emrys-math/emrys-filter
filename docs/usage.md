@@ -427,7 +427,7 @@ probable component, `state()[state().mostProbable()].component`.
   `Emrys::ValueVector<Measurement, T>` for a named output space. Captured constants and known
   inputs may stay `double`: Eigen mixes them with the dual numbers, so they need no `.cast<T>()`,
   and a scalar such as `dt` needs no `T(dt)`. A `float` filter is the exception: a `double` vector
-  does not mix with its `float` ones, so hold its constants in `float`. A function that knows its Jacobian returns it with `withJacobian(value, jacobian)`.
+  does not mix with its `float` ones, so hold its constants in `float`. A function that knows its Jacobian is marked `writesJacobians(f)` and writes it into its output.
 - **Inputs.** An input of a prediction is a block the model names in `reads()` that the state
   lacks, such as a gyroscope's reading `struct Gyro : Linear<3> {}`. The arguments to `predict()`
   after the step give each by its tag: a known control as `Emrys::sure<Gyro>(value)`, or an
@@ -509,7 +509,9 @@ auto const unicycle = Emrys::processModel(
 blocks of the state its result fills, in order; `continuousNoise()` white-noise spectral densities
 by block of the output, discretized over the step, or `additiveNoise()` the $Q$ of one step, which
 only `fixedStep(model, dt)` takes: `predict(dt)` refuses a model with it, or with a part that has it. A function
-that knows its Jacobian over its input's differences returns `withJacobian(y, J)` and is never
+that knows its Jacobian is marked `writesJacobians(f)`, takes its output `y` last, writes `value(y)`
+and, when `wantsJacobians(y)`, `jacobian(y)` over its input's differences, or by block
+`jacobian<Name>(y)` when `wantsJacobian<Name>(y)`, and is never
 differentiated. `affineIn(path<...>)` names the inputs the function is affine in given the rest,
 which every sigma-point method then carries exactly rather than spreading points over them;
 `affineIn(on<Bias>(H), offset(on<Range>(c)))` gives a constant part the function leaves out, `H`

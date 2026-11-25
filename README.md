@@ -48,7 +48,7 @@ int main()
     // A radar at the origin sees the Position block as range and bearing,
     // which is nonlinear. The model reads the blocks it names, wherever they
     // sit in the state; Linearized differentiates it automatically, or takes
-    // the Jacobian a function returns with withJacobian().
+    // the Jacobian a function writes, marked writesJacobians().
     double const rangeVariance = 1.0;
     double const bearingVariance = 1e-4;
     Eigen::Matrix2d const radarNoise =
@@ -307,7 +307,7 @@ since clutter is mixture measurement noise.
 Python and ROS bindings (built on the analysis project's catalog of instantiations); batch
 optimization and SLAM back-ends (the graph library's; use GTSAM today); model predictive control
 (needs a solver the header-only libraries don't take); and inference runtimes for learned
-models, which are supported as models through `withJacobian()` and `Unscented` but not linked.
+models, which are supported as models through `writesJacobians()` and `Unscented` but not linked.
 
 ## How it compares
 

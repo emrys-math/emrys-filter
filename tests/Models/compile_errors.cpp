@@ -383,21 +383,6 @@ affineNotDifferentiable()
 );
 #endif
 
-#if defined(TRANSFORM_TUPLE_JACOBIAN)  // static_assert: Transform.h: a transformed function returns its Jacobian as one
-[[maybe_unused]] auto const moved = Emrys::transform(
-    Emrys::methods::linearized(),
-    [](auto const &, Eigen::Vector4d const & x) {
-        return Emrys::withJacobian(
-            Eigen::Vector2d{x.head<2>() + x.tail<2>()},
-            std::tuple{Eigen::Matrix2d{Eigen::Matrix2d::Identity()}, Eigen::Matrix2d{Eigen::Matrix2d::Identity()}}
-        );
-    },
-    Emrys::reads(Emrys::path<Position>, Emrys::path<Offset>),
-    makePosition(),
-    makeOffset()
-);
-#endif
-
 #if defined(TRANSFORM_MIXTURE_NOISE)  // static_assert: Transform.h: transform() adds one Gaussian noise
 [[maybe_unused]] auto const moved =
     Emrys::transform(Emrys::methods::unscented(), readPosition, Emrys::additiveNoise(makeMixtureNoise()), makeNoise());
@@ -578,22 +563,6 @@ updatedBy(Model const & model)
 );
 #endif
 
-#if defined(AFFINE_CONSTANT_TUPLE_JACOBIAN)  // static_assert: AffineConstants.h: returns its Jacobian as one matrix
-[[maybe_unused]] auto const constantUpdate = updatedBy(
-    Emrys::measurementModel(
-        []<typename T>(auto const & in, auto const &, auto const & x) {
-            return Emrys::withJacobian(
-                Eigen::Matrix<T, 2, 1>{Emrys::block<Position>(in, x)},
-                std::tuple{Eigen::Matrix2d{Eigen::Matrix2d::Identity()}}
-            );
-        },
-        Emrys::reads(Emrys::path<Position>),
-        Emrys::affineIn(Emrys::on<Velocity>(Eigen::Matrix2d::Identity())),
-        Emrys::additiveNoise(makeNoise())
-    )
-);
-#endif
-
 #if defined(AFFINE_CONSTANT_ON_A_MANIFOLD)  // static_assert: AffineConstants.h: its output's plus() is the plain one
 [[maybe_unused]] auto const constantUpdate = [] {
     auto const model = Emrys::measurementModel(
@@ -714,6 +683,48 @@ updatedBy(Model const & model)
     Emrys::affineIn(Emrys::on<Position>(Eigen::Matrix2d::Identity())),
     makePosition(),
     Emrys::additiveNoise(makeNoise())
+);
+#endif
+
+#if defined(POINT_JACOBIAN_NOT_READ)  // static_assert: PointOutput.h: jacobian<Name>(y) names a block of the
+[[maybe_unused]] auto const pointUpdate = updatedBy(
+    Emrys::measurementModel(
+        Emrys::writesJacobians([](auto const & in, auto const &, auto const & x, auto & y) {
+            Emrys::value(y) = Emrys::block<Position>(in, x);
+            Emrys::jacobian<Velocity>(y).setZero();
+        }),
+        Emrys::reads(Emrys::path<Position>),
+        Emrys::additiveNoise(makeNoise())
+    )
+);
+#endif
+
+#if defined(POINT_WANTS_NOT_READ)  // static_assert: PointOutput.h: wantsJacobian<Name>(y) names a block of the
+[[maybe_unused]] auto const pointUpdate = updatedBy(
+    Emrys::measurementModel(
+        Emrys::writesJacobians([](auto const & in, auto const &, auto const & x, auto & y) {
+            Emrys::value(y) = Emrys::block<Position>(in, x);
+            [[maybe_unused]] bool const wanted = Emrys::wantsJacobian<Velocity>(y);
+        }),
+        Emrys::reads(Emrys::path<Position>),
+        Emrys::additiveNoise(makeNoise())
+    )
+);
+#endif
+
+#if defined(POINT_MARK_OF_A_BATCH)  // static_assert: PointOutput.h: writesJacobians() marks a function at a point
+[[maybe_unused]] auto const marked =
+    Emrys::writesJacobians(Emrys::batched([](auto const &, auto const &, auto const &, auto &) {}));
+#endif
+
+#if defined(POINT_WITHOUT_OUTPUT_SPACE)  // static_assert: PointOutput.h: whose space the model names before the call
+[[maybe_unused]] auto const transformed = Emrys::transform(
+    methods::linearized(),
+    Emrys::writesJacobians([](auto const & in, auto const &, auto const & x, auto & y) {
+        Emrys::value(y) = Emrys::block<Position>(in, x);
+    }),
+    Emrys::reads(Emrys::path<Position>),
+    makePosition()
 );
 #endif
 
@@ -900,24 +911,6 @@ updatedBy(Model const & model)
         Emrys::reads(Emrys::path<Position>),
         Emrys::writes(Emrys::path<Position>),
         Emrys::additiveNoise(makeMixtureNoise())
-    ),
-    1.0
-);
-#endif
-
-#if defined(PROCESS_JACOBIAN_AS_BLOCKS)  // static_assert: ProcessModel.h: a process model's function returns its
-[[maybe_unused]] auto const predicted = Emrys::predict(
-    Emrys::methods::linearized(),
-    Emrys::GaussianParams<Emrys::Composite<Position>>{Eigen::Vector2d::Zero(), Eigen::Matrix2d::Identity()},
-    Emrys::processModel(
-        [](auto const & in, auto const &, Eigen::Vector2d const & x, double) {
-            return Emrys::withJacobian(
-                Eigen::Vector2d{Emrys::block<Position>(in, x)},
-                std::tuple{Eigen::Matrix2d{Eigen::Matrix2d::Identity()}}
-            );
-        },
-        Emrys::reads(Emrys::path<Position>),
-        Emrys::writes(Emrys::path<Position>)
     ),
     1.0
 );
@@ -1290,25 +1283,6 @@ squareRootWithoutMethod()
         Emrys::measurementModel(
             []<typename T>(auto const & in, auto const &, auto const & x) {
                 return Eigen::Matrix<T, Eigen::Dynamic, 1>{Emrys::block<Position>(in, x)};
-            },
-            Emrys::reads(Emrys::path<Position>)
-        ),
-        Eigen::Vector2d::Zero()
-    )
-);
-#endif
-
-#if defined(JACOBIAN_AS_BLOCKS)  // static_assert: MeasurementReads.h: a measurement model's function returns its
-[[maybe_unused]] auto const updated = Emrys::update(
-    makeInitial(),
-    Emrys::observe(
-        Emrys::methods::linearized(),
-        Emrys::measurementModel(
-            [](auto const & in, auto const &, Eigen::Vector2d const & x) {
-                return Emrys::withJacobian(
-                    Eigen::Vector2d{Emrys::block<Position>(in, x)},
-                    std::tuple{Eigen::Matrix2d{Eigen::Matrix2d::Identity()}}
-                );
             },
             Emrys::reads(Emrys::path<Position>)
         ),

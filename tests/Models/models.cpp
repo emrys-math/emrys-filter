@@ -568,7 +568,7 @@ TEST(Measurement, InputNoiseMatchesAdditiveNoiseWhenItAdds)
     EXPECT_NEAR(byInput->logLikelihood(), byAddition->logLikelihood(), 1e-10);
 }
 
-// A measurement function that returns its Jacobian with its value (withJacobian(), [returned-jacobians]), one
+// A measurement function that returns its Jacobian with its value (writesJacobians(), [returned-jacobians]), one
 // matrix over its input's differences, the two blocks read and then the noise it reads from the call, updates as
 // the same function differentiated automatically does. The noise's scale depends on the position, so each block
 // matters.
@@ -584,20 +584,29 @@ TEST(Measurement, AReturnedJacobianMatchesAutoDiff)
             p + Eigen::Matrix<T, 2, 1>::Constant(block<Bias>(in, state)(0)) + T(0.1) * p(0) * block<FixNoise>(in, state)
         };
     };
-    auto const returning = [&](auto const & in, auto const & out, Eigen::Matrix<double, 5, 1> const & state) {
-        Eigen::Vector2d const p = block<Position>(in, state);
-        Eigen::Vector2d const v = block<FixNoise>(in, state);
-        Eigen::Matrix<double, 2, 5> jacobian = Eigen::Matrix<double, 2, 5>::Zero();
-        jacobian.leftCols<2>() = Eigen::Matrix2d::Identity();
-        jacobian.col(0) += 0.1 * v;
-        jacobian.col(2) = Eigen::Vector2d::Ones();
-        jacobian.rightCols<2>() = 0.1 * p(0) * Eigen::Matrix2d::Identity();
-        return Emrys::withJacobian(measure(in, out, state), jacobian);
-    };
+    auto const returning = Emrys::writesJacobians(
+        [&](auto const & in, auto const & out, Eigen::Matrix<double, 5, 1> const & state, auto & output) {
+            Eigen::Vector2d const p = block<Position>(in, state);
+            Eigen::Vector2d const v = block<FixNoise>(in, state);
+            Eigen::Matrix<double, 2, 5> jacobian = Eigen::Matrix<double, 2, 5>::Zero();
+            jacobian.leftCols<2>() = Eigen::Matrix2d::Identity();
+            jacobian.col(0) += 0.1 * v;
+            jacobian.col(2) = Eigen::Vector2d::Ones();
+            jacobian.rightCols<2>() = 0.1 * p(0) * Eigen::Matrix2d::Identity();
+            Emrys::value(output) = measure(in, out, state);
+            if (Emrys::wantsJacobians(output))
+            {
+                Emrys::jacobian(output) = jacobian;
+            }
+        }
+    );
     auto const read = reads(path<Position>, path<Bias>, path<FixNoise>);
     auto const noise = GaussianParams<FixNoise>{Eigen::Vector2d::Zero(), R};
     auto const automatic = Emrys::update(x, observe(methods::linearized(), measurementModel(measure, read), z, noise));
-    auto const supplied = Emrys::update(x, observe(methods::linearized(), measurementModel(returning, read), z, noise));
+    auto const supplied = Emrys::update(
+        x,
+        observe(methods::linearized(), measurementModel(returning, read, outputSpace(Linear<2>{})), z, noise)
+    );
     ASSERT_TRUE(automatic);
     ASSERT_TRUE(supplied);
     EXPECT_LT((supplied->branches[0].posterior.mean() - automatic->branches[0].posterior.mean()).norm(), 1e-12);
@@ -725,14 +734,16 @@ TEST(Measurement, AnOutlierFavorsTheOutlierComponent)
     noise.add(std::log(0.05), Eigen::Vector2d::Zero(), 400 * R);
     Eigen::Vector2d const expected = H * x.mean();
     auto const fix = measurementModel(
-        [](auto const & in, auto const &, Eigen::Vector3d const & state) {
+        Emrys::writesJacobians([](auto const & in, auto const &, Eigen::Vector3d const & state, auto & output) {
             Eigen::Matrix<double, 2, 3> jacobian;
             jacobian << Eigen::Matrix2d::Identity(), Eigen::Vector2d::Ones();
-            return Emrys::withJacobian(
-                Eigen::Vector2d{block<Position>(in, state) + Eigen::Vector2d::Constant(block<Bias>(in, state)(0))},
-                jacobian
-            );
-        },
+            Emrys::value(output) =
+                Eigen::Vector2d{block<Position>(in, state) + Eigen::Vector2d::Constant(block<Bias>(in, state)(0))};
+            if (Emrys::wantsJacobians(output))
+            {
+                Emrys::jacobian(output) = jacobian;
+            }
+        }),
         reads(path<Position>, path<Bias>),
         additiveNoise(noise)
     );
@@ -1149,4 +1160,62 @@ TYPED_TEST(ModelMethodTest, OrnsteinUhlenbeckPlacedOnABlockReadsItsMeanOutsideIt
     double const phi = std::exp(-timeStep / driftTau);
     Eigen::Vector4d const mean = predicted.mean();
     EXPECT_LT((mean.head<2>() - (phi * x.mean().head<2>() + (1 - phi) * x.mean().tail<2>())).norm(), 1e-12);
+}
+
+// A process model whose function writes its Jacobians by block, writesJacobians() ([returned-jacobians]),
+// predicts under Linearized as the closed form F P F', and a step that reads its value alone,
+// propagate(), asks it for no Jacobian.
+TEST(ProcessModel, AFunctionWritesTheJacobiansAskedFor)
+{
+    using Track = Composite<Position, Velocity>;
+    int asked = 0;
+    int calls = 0;
+    auto const model = compose(
+        Emrys::processModel(
+            Emrys::writesJacobians([&](auto const & in, auto const &, auto const & x, double dt, auto & y) {
+                ++calls;
+                Emrys::value(y) = block<Position>(in, x) + dt * block<Velocity>(in, x);
+                if (Emrys::wantsJacobian<Position>(y))
+                {
+                    ++asked;
+                    Emrys::jacobian<Position>(y) = Eigen::Matrix2d::Identity();
+                }
+                if (Emrys::wantsJacobian<Velocity>(y))
+                {
+                    Emrys::jacobian<Velocity>(y) = dt * Eigen::Matrix2d::Identity();
+                }
+            }),
+            reads(path<Position>, path<Velocity>),
+            Emrys::writes(path<Position>)
+        ),
+        Constant<Velocity>{}
+    );
+    Eigen::Matrix4d a;
+    for (int i = 0; i < 4; ++i)
+    {
+        for (int j = 0; j < 4; ++j)
+        {
+            a(i, j) = 0.3 * std::sin(1.0 + 2.0 * i + 3.0 * j);
+        }
+    }
+    auto const x = GaussianParams<Track>{
+        Track{},
+        Eigen::Vector4d{1.0, -2.0, 0.5, 0.25},
+        Eigen::Matrix4d{a * a.transpose() + 0.1 * Eigen::Matrix4d::Identity()}
+    };
+    Eigen::Matrix4d f = Eigen::Matrix4d::Identity();
+    f.topRightCorner<2, 2>() = timeStep * Eigen::Matrix2d::Identity();
+
+    auto const predicted = Emrys::predict(methods::linearized(), x, model, timeStep);
+    Eigen::Matrix4d const p = x.covarianceLower().selfadjointView<Eigen::Lower>();
+    Eigen::Matrix4d const cov = predicted.covarianceLower().selfadjointView<Eigen::Lower>();
+    EXPECT_LT((predicted.mean() - f * x.mean()).norm(), 1e-12);
+    EXPECT_LT((cov - f * p * f.transpose()).norm(), 1e-12);
+    EXPECT_EQ(asked, calls);
+    EXPECT_GE(calls, 1);
+
+    int const askedBefore = asked;
+    Eigen::Vector4d const moved = Emrys::propagate(Track{}, x.mean(), model, timeStep);
+    EXPECT_LT((moved - f * x.mean()).norm(), 1e-12);
+    EXPECT_EQ(asked, askedBefore);
 }

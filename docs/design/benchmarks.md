@@ -289,7 +289,7 @@ step to 4,938 instructions with analytic measurement Jacobians, 1.21 times the h
 The prediction computed the exponential of the turn twice, in `GyroIntegration`'s `propagate()` and
 in its `jacobian()` for $R(u)^T$, where the hand code computes it once and takes the rotation from
 it, since the old block contract's two functions were called separately and could share nothing. A
-model's function now returns both, `withJacobian()` [returned-jacobians], and `gyroIntegration()` does,
+model's function now gives both, `writesJacobians()` [returned-jacobians], and `gyroIntegration()` does,
 which took the prediction from 1,233 instructions to 1,073 and the step to 4,778 with analytic
 measurement Jacobians, 1.17 times the hand code's, and to 7,248 with autodiff, 1.28 times.
 

@@ -445,7 +445,7 @@ TEST(SelectedReads, LikelihoodsOfSamplesAreTheirTaggedBlocks)
 TEST(SelectedReads, AReturnedJacobianIsOverTheSelection)
 {
     using In = Composite<Position, Landmarks>;
-    auto const returning = [](Emrys::ValueVector<In, double> const & x) {
+    auto const returning = Emrys::writesJacobians([](Emrys::ValueVector<In, double> const & x, auto & output) {
         Eigen::Index const count = (x.size() - 2) / 2;
         Eigen::VectorXd value(count);
         Eigen::MatrixXd jacobian = Eigen::MatrixXd::Zero(count, x.size());
@@ -456,8 +456,12 @@ TEST(SelectedReads, AReturnedJacobianIsOverTheSelection)
             jacobian.block<1, 2>(i, 0) = -d.transpose() / value(i);
             jacobian.block<1, 2>(i, 2 + 2 * i) = d.transpose() / value(i);
         }
-        return Emrys::withJacobian(value, jacobian);
-    };
+        Emrys::value(output) = value;
+        if (Emrys::wantsJacobians(output))
+        {
+            Emrys::jacobian(output) = jacobian;
+        }
+    });
     Eigen::Matrix2d const noise = 0.04 * Eigen::Matrix2d::Identity();
     Eigen::Vector2d const observed{9.0, 11.0};
     auto const lastAndFirst = std::array{2, 0};

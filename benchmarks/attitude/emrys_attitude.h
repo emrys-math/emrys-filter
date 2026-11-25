@@ -46,7 +46,7 @@ struct Gyro : Emrys::Linear<3>
 gyroIntegration(double noiseDensity)
 {
     return Emrys::processModel(
-        [](auto const & in, auto const & out, auto const & x, double dt) {
+        Emrys::writesJacobians([](auto const & in, auto const & out, auto const & x, double dt, auto & output) {
             Eigen::Vector3d const turn = (Emrys::block<Gyro>(in, x) - Emrys::block<Bias>(in, x)) * dt;
             auto const step = Emrys::UnitQuaternion::exponential(turn);
             Eigen::Vector4d y;
@@ -55,8 +55,12 @@ gyroIntegration(double noiseDensity)
             Eigen::Matrix<double, 3, 9> jacobian = Eigen::Matrix<double, 3, 9>::Zero();
             jacobian.leftCols<3>() = step.toRotationMatrix().transpose();
             jacobian.middleCols<3>(3) = -dt * Emrys::UnitQuaternion::rightJacobian(turn);
-            return Emrys::withJacobian(y, jacobian);
-        },
+            Emrys::value(output) = y;
+            if (Emrys::wantsJacobians(output))
+            {
+                Emrys::jacobian(output) = jacobian;
+            }
+        }),
         Emrys::reads(Emrys::path<Attitude>, Emrys::path<Bias>, Emrys::path<Gyro>),
         Emrys::writes(Emrys::path<Attitude>),
         Emrys::continuousNoise(Emrys::on<Attitude>(noiseDensity))
@@ -142,13 +146,18 @@ private:
             // The predicted reading R(q)^T r with its Jacobian in the attitude's differences:
             // turning the body by a small rotation vector d moves v = R(q)^T r by v × d, so the
             // Jacobian is [v]×.
-            auto const withJacobian = [&](auto const & in, auto const &, Eigen::Vector4d const & x) {
-                Eigen::Vector4d const q = Emrys::block<Attitude>(in, x);
-                Eigen::Vector3d const v = Emrys::UnitQuaternion::map(q).conjugate() * reference;
-                auto skew = Eigen::Matrix3d{};
-                skew << 0.0, -v(2), v(1), v(2), 0.0, -v(0), -v(1), v(0), 0.0;
-                return Emrys::withJacobian(v, skew);
-            };
+            auto const withJacobian =
+                Emrys::writesJacobians([&](auto const & in, auto const &, Eigen::Vector4d const & x, auto & output) {
+                    Eigen::Vector4d const q = Emrys::block<Attitude>(in, x);
+                    Eigen::Vector3d const v = Emrys::UnitQuaternion::map(q).conjugate() * reference;
+                    auto skew = Eigen::Matrix3d{};
+                    skew << 0.0, -v(2), v(1), v(2), 0.0, -v(0), -v(1), v(0), 0.0;
+                    Emrys::value(output) = v;
+                    if (Emrys::wantsJacobians(output))
+                    {
+                        Emrys::jacobian(output) = skew;
+                    }
+                });
             return observe(
                 Emrys::methods::linearized(),
                 Emrys::measurementModel(

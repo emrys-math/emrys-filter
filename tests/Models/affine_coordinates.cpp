@@ -37,7 +37,6 @@ using Emrys::reads;
 using Emrys::ScalarOf;
 using Emrys::sure;
 using Emrys::update;
-using Emrys::withJacobian;
 using Emrys::writes;
 using Emrys::zeros;
 
@@ -294,7 +293,7 @@ TEST(AffineCoordinates, TheThreeRoutesToTheJacobianAgreeAtTheSameCalls)
         affineIn(path<Planar>, path<Velocity>)
     );
     auto const byReturned = processModel(
-        [&calls](auto const & in, auto const & out, auto const & x, double dt) {
+        Emrys::writesJacobians([&calls](auto const & in, auto const & out, auto const & x, double dt, auto & output) {
             ++calls;
             Eigen::Matrix<double, 5, 1> y;
             double const theta = block<Heading>(in, x)(0);
@@ -305,21 +304,29 @@ TEST(AffineCoordinates, TheThreeRoutesToTheJacobianAgreeAtTheSameCalls)
             Eigen::Matrix<double, 5, 5> j = Eigen::Matrix<double, 5, 5>::Identity();
             j.topRows<2>() = positionJacobian(v, theta, dt);
             static_cast<void>(out);
-            return withJacobian(y, j);
-        },
+            Emrys::value(output) = y;
+            if (Emrys::wantsJacobians(output))
+            {
+                Emrys::jacobian(output) = j;
+            }
+        }),
         reads(path<Planar>, path<Velocity>, path<Heading>),
         writes(path<Planar>, path<Velocity>, path<Heading>),
         affineIn(path<Planar>, path<Velocity>)
     );
     auto const byParts = compose(
         processModel(
-            [&calls](auto const & in, auto const &, auto const & x, double dt) {
+            Emrys::writesJacobians([&calls](auto const & in, auto const &, auto const & x, double dt, auto & output) {
                 ++calls;
                 double const theta = block<Heading>(in, x)(0);
                 Eigen::Vector2d const v = block<Velocity>(in, x);
                 Eigen::Vector2d const y = block<Planar>(in, x) + dt * turned(v, theta);
-                return withJacobian(y, positionJacobian(v, theta, dt));
-            },
+                Emrys::value(output) = y;
+                if (Emrys::wantsJacobians(output))
+                {
+                    Emrys::jacobian(output) = positionJacobian(v, theta, dt);
+                }
+            }),
             reads(path<Planar>, path<Velocity>, path<Heading>),
             writes(path<Planar>),
             affineIn(path<Planar>, path<Velocity>)
@@ -549,9 +556,13 @@ TYPED_TEST(ConstantItemsTest, AMeasurementModelUpdatesAsTheWholeFunction)
 
     // The function returns its Jacobian over the place; the model adds H in the lean's columns.
     auto const returning = measurementModel(
-        []<typename T>(auto const & in, auto const &, auto const & x) {
-            return withJacobian(reading<T>(block<Place>(in, x)), readingJacobian<double>(block<Place>(in, x)));
-        },
+        Emrys::writesJacobians([]<typename T>(auto const & in, auto const &, auto const & x, auto & output) {
+            Emrys::value(output) = reading<T>(block<Place>(in, x));
+            if (Emrys::wantsJacobians(output))
+            {
+                Emrys::jacobian(output) = readingJacobian<double>(block<Place>(in, x));
+            }
+        }),
         reads(path<Place>),
         affineIn(on<Lean>(leanColumns()), offset(on<Seen>(seenOffset), on<Level>(levelOffset))),
         outputSpace(Reading{}),
@@ -707,15 +718,19 @@ TYPED_TEST(ConstantItemsTest, AModelWithoutAFunctionIsItsAffineMap)
         additiveNoise(readingNoise())
     );
     auto const function = measurementModel(
-        []<typename T>(auto const & in, auto const &, auto const & x) {
+        Emrys::writesJacobians([]<typename T>(auto const & in, auto const &, auto const & x, auto & output) {
             Eigen::Vector<T, 3> y =
                 placeColumns().cast<T>() * block<Place>(in, x) + leanColumns().cast<T>() * block<Lean>(in, x);
             y.template head<2>() += seenOffset.cast<T>();
             y.template tail<1>() += levelOffset.cast<T>();
             Eigen::Matrix<double, 3, 4> jacobian;
             jacobian << placeColumns(), leanColumns();
-            return withJacobian(y, jacobian);
-        },
+            Emrys::value(output) = y;
+            if (Emrys::wantsJacobians(output))
+            {
+                Emrys::jacobian(output) = jacobian;
+            }
+        }),
         reads(path<Place>, path<Lean>),
         outputSpace(Reading{}),
         additiveNoise(readingNoise())

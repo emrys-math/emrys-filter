@@ -766,7 +766,7 @@ Batched<F, Mark>::operator()(In const & in, Out const & out, X const & x, Rest c
     internal::callForm(function, in, out, x, rest..., y);
     if constexpr (GivesJacobians)
     {
-        return withJacobian(std::move(value), std::move(jacobian));
+        return internal::withJacobian(std::move(value), std::move(jacobian));
     }
     else
     {

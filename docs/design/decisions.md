@@ -2304,14 +2304,14 @@ size [benchmarks], and the returned posterior was a second copy of the state.
 
 ### returned-jacobians
 
-*A function that knows its Jacobian returns it with its value, and nothing differentiates by fixed
-steps.*
+*A function that knows its Jacobian writes it into its output with its value, and nothing
+differentiates by fixed steps.*
 
-**Rule.** A function that knows its Jacobian returns `withJacobian(value, jacobian)`: a model's
-function one matrix over its whole input, rows in `out`'s differences and columns in `in`'s; a
-function given to `transform()` one matrix for one uncertain input or a `std::tuple` of blocks, one
-per uncertain input. It returns all of its Jacobian or none of it. `Linearized` calls it once, at
-the means or about a `linearizedAbout()` point. A composition whose parts all return theirs returns
+**Rule.** A function that knows its Jacobian is marked `writesJacobians(f)` and takes its output `y`
+last, `h(in, out, x, y)`: it writes `value(y)` and, for each block the method wants,
+`jacobian<Name>(y)` (rows in `out`'s differences), or `jacobian(y)` whole when `wantsJacobians(y)`,
+as a batched function writes [batched-functions]; its output's space is known before the call. A
+step that reads the value alone wants none. `Linearized` calls it once, at the means or about a `linearizedAbout()` point. A composition whose parts all return theirs returns
 the whole's and is never differentiated. Any other function is differentiated automatically and must
 be generic in its scalar; the built-in models return theirs.
 
@@ -2320,16 +2320,16 @@ the difference to the anchor, and at the benchmark's small sizes [benchmarks] co
 the largest cost left in the user's own code: differentiating the attitude benchmark's step took
 4,317 instructions, and returning its Jacobian 1,073, against the hand code's 1,000. One function
 keeps the value and the Jacobian from drifting apart and receives exactly the value's arguments, and
-its return type tells the method at compile time whether there is a Jacobian. All or none, because a
-block left out would need a second evaluation with dual numbers on every call.
+its mark tells the method at compile time whether there is a Jacobian. The output written in place
+lets a call want none, or some blocks, without a second function, and spells both forms alike.
 
 **Rejected.** `Linearized{jacobian}`, a separate Jacobian function: it received the joint vector
 rather than the blocks a measurement reads. The `Affine` method, which differentiated by a unit step
 in each coordinate: exact only for an affine function, and on a space with its own `plus()` a step
 of one radian is not small. `jacobian()` and `propagateWithJacobian()` members beside `propagate()`,
-which spell the step twice. Blocks returned by path, `withJacobian(y, on<Position>(J))`, with the
-rest differentiated: a row path and a column path read as one nested path, and a partial Jacobian
-costs the second evaluation.
+which spell the step twice. Returning `withJacobian(value, J)`, the form before 17zt, which computes
+the whole Jacobian where only the value is read. Telling the form by an extra argument alone, which
+[batched-functions] rejects too.
 
 **Where.** `Models/Methods.h`, `Models/Transform.h`, `Models/ProcessModel.h`,
 `Models/MeasurementReads.h`.

@@ -287,7 +287,7 @@ TYPED_TEST(TransformMethodTest, UpdateIsTheKalmanUpdate)
 }
 
 // methods::linearized() differentiating automatically and methods::linearized() taking the hand
-// Jacobian a function returns with its value over its whole input (withJacobian(), [returned-jacobians])
+// Jacobian a function returns with its value over its whole input (writesJacobians(), [returned-jacobians])
 // agree on a range-bearing transform with an uncertain sensor position, the sensor's uncertainty
 // widens the output, and only the marked input's cross-covariance is returned.
 TEST(Transform, AutoDiffMatchesAReturnedJacobian)
@@ -316,17 +316,29 @@ TEST(Transform, AutoDiffMatchesAReturnedJacobian)
         Eigen::Vector2d{-1.0, 1.0},
         0.04 * Eigen::Matrix2d::Identity()
     };
-    auto const withJacobian = [&](auto const & in, Eigen::Matrix<double, 6, 1> const & joint) {
-        Eigen::Vector4d const state = Emrys::block<State>(in, joint);
-        Eigen::Vector2d const position = Emrys::block<SensorPosition>(in, joint);
-        auto const [jx, js] = jacobian(state, position);
-        Eigen::Matrix<double, 2, 6> whole;
-        whole << jx, js;
-        return Emrys::withJacobian(rangeBearing(in, joint), whole);
-    };
+    auto const withJacobian =
+        Emrys::writesJacobians([&](auto const & in, Eigen::Matrix<double, 6, 1> const & joint, auto & output) {
+            Eigen::Vector4d const state = Emrys::block<State>(in, joint);
+            Eigen::Vector2d const position = Emrys::block<SensorPosition>(in, joint);
+            auto const [jx, js] = jacobian(state, position);
+            Eigen::Matrix<double, 2, 6> whole;
+            whole << jx, js;
+            Emrys::value(output) = rangeBearing(in, joint);
+            if (Emrys::wantsJacobians(output))
+            {
+                Emrys::jacobian(output) = whole;
+            }
+        });
     auto const read = reads(path<State>, path<SensorPosition>);
     auto const automatic = Emrys::transform(methods::linearized(), rangeBearing, read, withCross(x), sensor);
-    auto const supplied = Emrys::transform(methods::linearized(), withJacobian, read, withCross(x), sensor);
+    auto const supplied = Emrys::transform(
+        methods::linearized(),
+        withJacobian,
+        read,
+        Emrys::outputSpace(Emrys::Linear<2>{}),
+        withCross(x),
+        sensor
+    );
     EXPECT_LT((automatic.output().mean() - supplied.output().mean()).norm(), 1e-14);
     EXPECT_LT((automatic.output().covarianceLower() - supplied.output().covarianceLower()).norm(), 1e-12);
     EXPECT_LT((automatic.crossCovariance() - supplied.crossCovariance()).norm(), 1e-12);

@@ -730,6 +730,13 @@ Decided (2026-11-23), not built:
   `jacobian<Name>(y, j)`, `jacobian<Name>(y)`, `jacobian(y, j)`, and `jacobian(y)` in `Batched.h`
   replace `BatchedOutput`'s members, which are private, reached by `internal::BatchedOutputAccess`.
   Stage 6 gives the output of a function at a point the same functions.
+- Built as stage 6 (2026-11-24): `writesJacobians(f)` (the user chose the name), `PointOutput`, and
+  `value()`, `wantsJacobian<Name>()`, `wantsJacobians()`, `jacobian<Name>()`, `jacobian()` in
+  `Models/PointOutput.h`; `internal::WritesJacobians` is read as the returned `WithJacobian`, now
+  internal, so the methods, compositions, and placements are unchanged. A call wants every block or
+  none: `ResolvedProcess::propagateValue()` wants none, through `callValueForm()`. Left: wanting the
+  affine blocks alone in the factored transform, and the conditioned blocks in the update given a
+  block, which need the wanted set passed down to `Transform.h`'s `valueWithAffineJacobian()`.
 
 The Jacobian a function writes, decided (2026-11-23), not built:
 
@@ -774,10 +781,6 @@ The Jacobian a function writes, decided (2026-11-23), not built:
 In order, each a commit that passes the `land` checks, with its decisions, `usage.md`, and
 `CHANGELOG.md` in it.
 
-6. **A function at a point writes its output.** The form with `y` last and its mark; every call
-   site that reads a returned Jacobian asks for the blocks it uses instead; the built-in models,
-   `Placement.h`'s compositions, and the tests and examples move; `withJacobian()` goes.
-   [returned-jacobians] is rewritten.
 7. **`shared()` by name in `affineIn()`,** in place of the mark `jacobians::shared()`, asked for
    once per call in both forms.
 8. **Compositions forward Jacobians on the batched path.**

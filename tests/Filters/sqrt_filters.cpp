@@ -362,9 +362,13 @@ auto
 forget(double density)
 {
     return Emrys::processModel(
-        []<typename T>(auto const &, auto const &, auto const &, auto) {
-            return Emrys::withJacobian(Eigen::Matrix<T, 1, 1>{T(0)}, Vector1{0.0});
-        },
+        Emrys::writesJacobians([]<typename T>(auto const &, auto const &, auto const &, auto, auto & output) {
+            Emrys::value(output) = Eigen::Matrix<T, 1, 1>{T(0)};
+            if (Emrys::wantsJacobians(output))
+            {
+                Emrys::jacobian(output) = Vector1{0.0};
+            }
+        }),
         reads(path<Level>),
         Emrys::writes(path<Level>),
         Emrys::affineIn(path<Level>),

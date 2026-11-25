@@ -24,6 +24,7 @@
 #include <EmrysFilter/Models/AffineConstants.h>
 #include <EmrysFilter/Models/Condition.h>
 #include <EmrysFilter/Models/Methods.h>
+#include <EmrysFilter/Models/PointOutput.h>
 #include <EmrysFilter/Models/Policies.h>
 #include <EmrysFilter/Models/TransformArgs.h>
 #include <EmrysFilter/Spaces/Composite.h>
@@ -143,7 +144,7 @@ struct CountFrom
  * instance of the output space, and \a x a vector in \a in, which it reads with
  * <tt>block<Name>(in, x)</tt>; it returns a vector in \a out, which it may fill block by block from
  * <tt>zeros<T>(out)</tt>, either generic in its scalar or with its Jacobian beside it
- * (withJacobian(), decisions.md [returned-jacobians]). A function generic in its scalar may take it
+ * (writesJacobians(), decisions.md [returned-jacobians]). A function generic in its scalar may take it
  * as its one template parameter, <tt>[]\<typename T\>(auto const & in, auto const & out, auto const &
  * x)</tt>, which the call supplies (decisions.md [function-scalars]). A model with a likelihood alone
  * (logLikelihood()) and no function serves the filters that weight points.

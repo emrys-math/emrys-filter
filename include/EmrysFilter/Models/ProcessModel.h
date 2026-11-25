@@ -34,6 +34,7 @@
 #include <EmrysFilter/Models/Batched.h>
 #include <EmrysFilter/Models/MeasurementModel.h>
 #include <EmrysFilter/Models/Methods.h>
+#include <EmrysFilter/Models/PointOutput.h>
 #include <EmrysFilter/Models/Policies.h>
 #include <EmrysFilter/Models/ResolvedReads.h>
 #include <EmrysFilter/Models/Transform.h>
@@ -656,7 +657,7 @@ inline constexpr bool holdsOneStep = requires { requires bool(T::HoldsOneStep); 
  * in \a in, which it reads with <tt>block<Name>(in, x)</tt>, and \a dt the step in the filter's
  * scalar (see \ref Time); it returns a vector in \a out, which it may fill block by block from
  * <tt>zeros<T>(out)</tt>, either generic in the scalar of \a x or with its Jacobian beside it
- * (withJacobian(), decisions.md [returned-jacobians]), rows in \a out's differences and columns in
+ * (writesJacobians(), decisions.md [returned-jacobians]), rows in \a out's differences and columns in
  * \a in's. A function generic in the scalar may take it as its one template parameter,
  * <tt>[]\<typename T\>(auto const & in, auto const & out, auto const & x, double dt)</tt>, which the
  * call supplies (decisions.md [function-scalars]). The next state is the state with the written blocks replaced. A
@@ -2246,6 +2247,10 @@ partJacobianRow(
      ...);
 }
 
+/** What stepPart() writes in place of a Jacobian when the step is asked for its value alone. */
+struct ValuesOnly
+{};
+
 /** Steps part \a I of \a parts: gathers its input from \a x by name, calls its function with
  * \a extra after the input, writes its result into \a y by block, and its Jacobian into
  * \a jacobian where the whole assembles one.
@@ -2274,18 +2279,49 @@ stepPart(
     auto const pin = partIn<Part>(in);
     auto const pout = partOut<Part>(out);
     auto const px = partVector<Part>(in, pin, x);
-    auto result = vectorReturned(callForm(std::get<I>(parts).function(), pin, pout, px, extra...));
+    auto result = [&] {
+        if constexpr (std::is_same_v<J, ValuesOnly>)
+        {
+            return vectorReturned(callValueForm(std::get<I>(parts).function(), pin, pout, px, extra...));
+        }
+        else
+        {
+            return vectorReturned(callForm(std::get<I>(parts).function(), pin, pout, px, extra...));
+        }
+    }();
     auto const & value = valueOf(result);
     using Names = CompositeBlocks<OutputSpaceOf<Part>>;
     [&]<typename... Rows>(std::tuple<Rows...> *) {
         ((block<Rows>(out, y) = block<Rows>(pout, value)), ...);
-        if constexpr (!std::is_same_v<J, NoPolicy>)
+        if constexpr (!std::is_same_v<J, NoPolicy> && !std::is_same_v<J, ValuesOnly>)
         {
             (partJacobianRow<
                  Rows>(out, in, jacobian, pout, pin, result.jacobian, static_cast<ReadItemsOf<Part> *>(nullptr)),
              ...);
         }
     }(static_cast<Names *>(nullptr));
+}
+
+/** \returns the models \a parts side by side at \a x, as stepParts() gives them, the value alone: each
+ * part's function asked for its value alone (callValueForm()), so a function marked
+ * writesJacobians() computes no Jacobian
+ */
+template <typename... Models, typename In, typename Out, typename X, typename... Extra>
+[[nodiscard]] auto
+stepPartsValues(
+    std::tuple<Models...> const & parts,
+    In const & in,
+    Out const & out,
+    X const & x,
+    Extra const &... extra
+)
+{
+    auto y = zeros<typename X::Scalar>(out);
+    auto valuesOnly = ValuesOnly{};
+    [&]<std::size_t... I>(std::index_sequence<I...>) {
+        (stepPart<I>(parts, in, out, x, y, valuesOnly, extra...), ...);
+    }(std::index_sequence_for<Models...>{});
+    return y;
 }
 
 /** \returns the models \a parts side by side at \a x, a vector in the whole's input space \a in,
@@ -2660,6 +2696,15 @@ public:
         requires MatrixExpression<X>
     {
         return internal::stepParts<TimeScalar>(m_parts, in, out, x, dt);
+    }
+
+    /** \returns the whole's step of \a x, the value alone, each part asked for its value alone */
+    template <typename In, typename Out, typename X, typename TimeScalar>
+    [[nodiscard]] auto
+    valueAt(In const & in, Out const & out, X const & x, TimeScalar dt) const
+        requires MatrixExpression<X>
+    {
+        return internal::stepPartsValues(m_parts, in, out, x, dt);
     }
 
     /// whether the whole takes a batch: a part's function does (decisions.md [batched-functions])
@@ -3149,7 +3194,18 @@ public:
     [[nodiscard]] typename Moments<Space, ScalarOf<State>>::VectorType
     propagateValue(State const & state, TimeScalar dt, Inputs const &... inputs) const
     {
-        return scattered(state, valueOf(returnedAt(state, dt, inputs...)));
+        static_assert(
+            sizeof...(Inputs) == InputCount || sizeof...(Inputs) == 0,
+            "the step takes one vector per uncertain input, or none to read each at its mean"
+        );
+        EMRYS_FILTER_ASSERT(state.size() == m_stateSize && "the state does not fit the space");
+        auto const x = this->template gatherFromRows<ScalarOf<State>>(
+            state,
+            Eigen::Index{0},
+            std::tuple<Inputs const &...>{inputs...}
+        );
+        // A function that writes its Jacobians is asked for none (decisions.md [returned-jacobians]).
+        return scattered(state, vectorReturned(callValueForm(model().function(), m_in, m_out, x, dt)));
     }
 
     /// whether the function is batched, batched(f) (decisions.md [batched-functions])
@@ -3447,11 +3503,6 @@ private:
     [[nodiscard]] auto
     expand(J const & jacobian) const
     {
-        static_assert(
-            MatrixExpression<J>,
-            "a process model's function returns its Jacobian as one matrix over its input's differences, "
-            "withJacobian(y, J)"
-        );
         EMRYS_FILTER_ASSERT(
             jacobian.rows() == differenceDimension(m_out) && jacobian.cols() == differenceDimension(m_in)
             && "a returned Jacobian has a row per difference coordinate of the output and a column per one of the input"

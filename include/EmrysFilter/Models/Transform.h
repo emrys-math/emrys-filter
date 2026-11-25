@@ -114,7 +114,7 @@ namespace Emrys
  * input as <tt>const auto&</tt> and build outputs with ScalarOf. A sure input reaches \a f in the
  * input vector's scalar; captured constants may stay \c double, as Eigen mixes \c double with its
  * dual numbers, but a \c float filter holds its constants in \c float. An \a f that knows its
- * Jacobian returns it with its value instead, as withJacobian(), one matrix over the input's
+ * Jacobian writes it with its value instead, marked writesJacobians(), one matrix over the input's
  * differences, and need not be generic; the sigma-point methods take the value and ignore the
  * Jacobian, so one function serves every method.
  *
@@ -310,7 +310,7 @@ linearizeAt(methods::Linearized const &, Problem const & problem)
             returnsDuals<Problem>,
             "methods::linearized() differentiates f automatically, so f must take its uncertain inputs as const auto& "
             "and build its result with their scalar, which it may take as its template parameter, "
-            "[]<typename T>(auto const & x), or return its Jacobian with withJacobian()"
+            "[]<typename T>(auto const & x), or write its Jacobian, writesJacobians()"
         );
         if constexpr (returnsDuals<Problem>)
         {
@@ -2428,12 +2428,6 @@ private:
         }
         else
         {
-            using J = std::remove_cvref_t<decltype(returned.jacobian)>;
-            static_assert(
-                MatrixExpression<J>,
-                "a transformed function returns its Jacobian as one matrix over its input's differences, "
-                "withJacobian(y, J)"
-            );
             auto const & jacobian = returned.jacobian;
             EMRYS_FILTER_ASSERT(
                 jacobian.cols() == differenceDimension(m_in)

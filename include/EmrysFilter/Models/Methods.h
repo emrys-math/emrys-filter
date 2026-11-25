@@ -6,7 +6,7 @@
  * [sigma-point-sets], [user-extension-points]): methods::linearized(), unscented(),
  * fourthMomentUnscented(), cubature(), sphericalSimplex(), gaussHermite(), spread(), and
  * iterated(); the UnscentedRule and PointSet concepts a rule or a point set of the user's own meets; the
- * TransformMethod concept observe() requires of its method; and withJacobian() for a function that knows
+ * TransformMethod concept observe() requires of its method; and the WithJacobian of a function that knows
  * its Jacobian. What each method computes is in Transform.h. Read TransformArgs.h next.
  */
 
@@ -30,10 +30,13 @@
 namespace Emrys
 {
 
-/** \ingroup Transforms
- * What a function returns when it knows its Jacobian: its value, and the Jacobian of its output
- * differences in its uncertain inputs' differences, at the same point (decisions.md [returned-jacobians]). Made by
- * withJacobian().
+namespace internal
+{
+
+/** What a function returns to the library when it knows its Jacobian: its value, and the Jacobian
+ * of its output differences in its uncertain inputs' differences, at the same point (decisions.md
+ * [returned-jacobians]). The built-in models return one, and a user's function marked
+ * writesJacobians() is read as one. Made by withJacobian().
  *
  * \a Jacobian is one matrix when the function has one uncertain input, and otherwise a
  * \c std::tuple of blocks, one per uncertain input in order, each with a row per output
@@ -47,9 +50,6 @@ struct WithJacobian
     Value value;        ///< the function's value
     Jacobian jacobian;  ///< its Jacobian, one matrix or a tuple of blocks
 };
-
-namespace internal
-{
 
 /** The unqualified \a T as a function stores it beside its Jacobian: a matrix expression
  * evaluated to a plain matrix, a tuple of them a tuple of plain matrices.
@@ -198,31 +198,20 @@ callForm(F const & f, In const & in, [[maybe_unused]] Out const & out, X const &
 
 }  // namespace internal
 
-/** \ingroup Transforms
- * \returns \a value with \a jacobian beside it, for a function to return when it knows its
- * Jacobian (see WithJacobian). Expressions are evaluated, and plain matrices passed as rvalues
- * are moved.
- *
- * Linearized then takes the Jacobian as it is and calls the function once; the other methods
- * use the value alone, so a function used only by them has no reason to return one.
- *
- * \code
- * // Ranges to anchors, and their Jacobian: each anchor's unit direction from p, negated.
- * auto const ranges = [&](Eigen::Vector2d const & p) {
- *   Eigen::Matrix<double, 2, 4> const toAnchor = anchors.colwise() - p;
- *   Eigen::Vector4d const r = toAnchor.colwise().norm().transpose();
- *   return Emrys::withJacobian(r, -(toAnchor.array().rowwise() / r.transpose().array()).matrix().transpose());
- * };
- * \endcode
+namespace internal
+{
+
+/** \returns \a value with \a jacobian beside it, as the library's functions return a Jacobian they
+ * know (see WithJacobian). Expressions are evaluated, and plain matrices passed as rvalues are moved.
  */
 template <typename Value, typename Jacobian>
-[[nodiscard]] WithJacobian<
-    internal::PlainResult<std::remove_cvref_t<Value>>,
-    internal::PlainResult<std::remove_cvref_t<Jacobian>>>
+[[nodiscard]] WithJacobian<PlainResult<std::remove_cvref_t<Value>>, PlainResult<std::remove_cvref_t<Jacobian>>>
 withJacobian(Value && value, Jacobian && jacobian)
 {
     return {std::forward<Value>(value), std::forward<Jacobian>(jacobian)};
 }
+
+}  // namespace internal
 
 /** The most points a PointSet may have over a fixed number of coordinates, which bounds the
  * compile-time size of its matrices: a transform by a set of more is refused at compile time,
@@ -315,7 +304,7 @@ namespace methods
  * Linearized method: \f$ \bar y = f(\mu) \f$ and \f$ \Sigma_{yy} = \sum_i J_i \Sigma_i J_i^T \f$,
  * with the Jacobians \f$ J_i \f$ of \a f at the input means. Exact for an affine \a f.
  *
- * An \a f that returns its Jacobian with its value (withJacobian()) is called once, at the means,
+ * An \a f that writes its Jacobian with its value (writesJacobians()) is called once, at the means,
  * and that Jacobian used. Any other \a f is differentiated by forward-mode
  * [automatic differentiation](https://en.wikipedia.org/wiki/Automatic_differentiation), with
  * Eigen's \c AutoDiffScalar, and must be generic in its scalar type; one that returns plain

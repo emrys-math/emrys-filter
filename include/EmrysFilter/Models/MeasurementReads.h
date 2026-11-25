@@ -666,11 +666,6 @@ private:
         else
         {
             using J = std::remove_cvref_t<decltype(returned.jacobian)>;
-            static_assert(
-                MatrixExpression<J>,
-                "a measurement model's function returns its Jacobian as one matrix over its input's differences, "
-                "withJacobian(y, J)"
-            );
             auto const & jacobian = returned.jacobian;
             EMRYS_FILTER_ASSERT(
                 jacobian.cols() == differenceDimension(m_in)

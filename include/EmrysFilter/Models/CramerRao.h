@@ -86,7 +86,7 @@ addInfoSums(InfoSums<Matrix> a, InfoSums<Matrix> const & b)
  * Jacobian taken at the truth, and for an affine model the Kalman filter's covariance itself.
  *
  * The Jacobians are the Linearized method's at each true state, whatever method a model asks for,
- * so a function that returns its Jacobian (withJacobian()) is called once per state. On a space
+ * so a function that writes its Jacobian (writesJacobians()) is called once per state. On a space
  * with its own plus() and minus() they are in its tangent space, and the bound is that of
  * \ref Chahbazian2024 "Chahbazian et al. (2024)", Proposition 2 and eqs. (68) to (72), for noise
  * that enters as \f$ f(x) \boxplus w \f$, as simulate() draws it. The paper takes \f$ F \f$ at

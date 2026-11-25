@@ -84,11 +84,15 @@ constexpr auto range = []<typename T>(auto const & in, auto const &, auto const 
 };
 
 // The range with its Jacobian over the input, Position alone.
-constexpr auto rangeWithJacobian = [](auto const & in, auto const &, auto const & x) {
+auto const rangeWithJacobian = Emrys::writesJacobians([](auto const & in, auto const &, auto const & x, auto & output) {
     auto const p = block<Position>(in, x);
     Eigen::Matrix<double, 1, 2> const jacobian = p.transpose() / p.norm();
-    return Emrys::withJacobian(Eigen::Matrix<double, 1, 1>{p.norm()}, jacobian);
-};
+    Emrys::value(output) = Eigen::Matrix<double, 1, 1>{p.norm()};
+    if (Emrys::wantsJacobians(output))
+    {
+        Emrys::jacobian(output) = jacobian;
+    }
+});
 
 [[nodiscard]] GaussianParams<Linear<1>>
 rangeNoise(double variance = 0.25)

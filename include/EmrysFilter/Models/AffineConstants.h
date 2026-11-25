@@ -280,11 +280,6 @@ private:
     [[nodiscard]] auto
     jacobianOf(In const & in, InnerIn const & inner, Out const & out, J const & jacobian) const
     {
-        static_assert(
-            MatrixExpression<J>,
-            "a function with constant items in affineIn() returns its Jacobian as one matrix over its input's "
-            "differences, withJacobian(y, J)"
-        );
         using Scalar = typename J::Scalar;
         using Matrix = MatrixOf<
             Scalar,

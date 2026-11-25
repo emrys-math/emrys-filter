@@ -348,7 +348,7 @@ Hanebeck (2009), ICML, for filters built on them; Frey and Hinton (1999), *Neura
 Hernández-Lobato (2019), ICLR, for moment propagation through network layers; Bar-Shalom, Li, and
 Kirubarajan (2001), §5.4, for the consistency tests.
 
-**Hooks.** `transform()` and its methods in `Models/Transform.h` and `Models/Methods.h`, `withJacobian()`,
+**Hooks.** `transform()` and its methods in `Models/Transform.h` and `Models/Methods.h`, `writesJacobians()`,
 `OutputWithCross`, `InputNoise`, the uncertain inputs of `predict()`, `NisMonitor` in
 `Models/Consistency.h` and the NEES check the roadmap plans beside it, and the examples planned
 under Documentation in the roadmap.

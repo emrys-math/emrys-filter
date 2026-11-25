@@ -86,7 +86,7 @@
  * the caller passed (see \ref Time), so a \c float filter's models compute in \c float. It is in the
  * unit of the models' continuous-time parameters, seconds when it was a \c std::chrono duration. The
  * function is generic in the scalar of \c x, which the Linearized method differentiates
- * automatically, or returns its Jacobian with its value (withJacobian(), [returned-jacobians]), as
+ * automatically, or writes its Jacobian with its value (writesJacobians(), [returned-jacobians]), as
  * the built-in models do, so that Linearized predicts them with no differentiation.
  *
  * A model reads its blocks by name wherever they sit in the state, so one model serves every place
@@ -175,6 +175,7 @@
 #include <EmrysFilter/Models/MeasurementUpdate.h>
 #include <EmrysFilter/Models/Methods.h>
 #include <EmrysFilter/Models/Placement.h>
+#include <EmrysFilter/Models/PointOutput.h>
 #include <EmrysFilter/Models/Policies.h>
 #include <EmrysFilter/Models/ProcessModel.h>
 #include <EmrysFilter/Models/Reduction.h>
