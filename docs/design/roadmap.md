@@ -64,7 +64,6 @@ Done when: the entry is checked and the `land` checks pass, with MSVC.
 
 - [ ] A singular $Q$ (a noiseless block): Section IV of Tichavský, Muravchik, and Nehorai (1998),
       decided with 17zh's singular $Q$.
-- [ ] An example of the bound on the Models module page, beside simulate() and nees().
 
 Done when: the singular case is decided and passes its tests on all three compilers.
 

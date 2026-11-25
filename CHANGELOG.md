@@ -8,6 +8,8 @@ instead.
 
 ### Added
 
+- An example of `PosteriorCramerRaoBound` on the Models page of the reference: the bound stepped
+  along true states that `simulate()` draws, a column per Monte Carlo run.
 - [docs/benchmarks.md](docs/benchmarks.md), the benchmark results: each problem's instructions and
   time per step against the same filter written by hand in Eigen, the compile times, the method,
   and how to run the benchmarks yourself.

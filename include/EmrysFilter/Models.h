@@ -134,6 +134,27 @@
  *
  * The program examples/terrain_lookup.cpp filters such a measurement with a particle filter.
  *
+ * A filter is checked in simulation, where the truth is known. simulate() draws the true states and their
+ * measurements from the models the filter assumes (Simulation.h), and nees() tests the filter's covariance against
+ * its error at each truth (Consistency.h). PosteriorCramerRaoBound gives, along the same truths, the least mean
+ * squared error that any filter could reach (CramerRao.h). It runs no filter: each step reads the models' Jacobians
+ * at the true states, given as a column per Monte Carlo run, and takes its expectations as the means over the
+ * columns. Here \c motion is a process model and \c range a measurement model with additive %Gaussian noise:
+ *
+ * \code
+ * auto rng = std::mt19937_64{42};
+ * auto truths = drawSamples(initial.toDensity().value(), 1000, rng);  // a column per run
+ * auto bound = PosteriorCramerRaoBound<State>::create(initial).value();  // J = P0^-1
+ * for (int k = 0; k < steps; ++k)
+ * {
+ *     for (Eigen::Index i = 0; i < truths.cols(); ++i)
+ *         truths.col(i) = simulate<State>(truths.col(i), motion, rng, dt);
+ *     bound.predict(motion, truths, dt).value();
+ *     bound.update(truths, range).value();
+ * }
+ * auto const floor = bound.covariance().value();  // no filter's mean squared error is below it
+ * \endcode
+ *
  * Read \ref Filters next.
  */
 
