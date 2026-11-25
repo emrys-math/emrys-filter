@@ -346,6 +346,35 @@ public:
         return split<false>(call(this->template gather<T>(joint, std::tuple<Inputs const &...>{inputs...})));
     }
 
+    /** \returns evaluate() of the value alone: a function marked writesJacobians() asked for no
+     * Jacobian, and any other's Jacobian dropped
+     */
+    template <typename Joint, typename... Inputs>
+    [[nodiscard]] auto
+    evaluateValue(Joint const & joint, Inputs const &... inputs) const
+    {
+        static_assert(sizeof...(Inputs) == InputCount, "the function takes one vector per uncertain input");
+        static_assert(HasFunction, "a measurement model known by its likelihood alone has no function to evaluate");
+        using T = typename Joint::Scalar;
+        auto const x = this->template gather<T>(joint, std::tuple<Inputs const &...>{inputs...});
+        return vectorReturned(callValueForm(m_measurement.model().function(), m_in, m_out, x));
+    }
+
+    /** \returns evaluate() with a function marked writesJacobians() asked for the Jacobian of the
+     * blocks the factored transform reads alone (factoredBlocks()), zero in the others' columns
+     */
+    template <typename Joint, typename... Inputs>
+    [[nodiscard]] auto
+    evaluateFactored(Joint const & joint, Inputs const &... inputs) const
+    {
+        static_assert(sizeof...(Inputs) == InputCount, "the function takes one vector per uncertain input");
+        static_assert(HasFunction, "a measurement model known by its likelihood alone has no function to evaluate");
+        using T = typename Joint::Scalar;
+        auto const x = this->template gather<T>(joint, std::tuple<Inputs const &...>{inputs...});
+        constexpr auto wanted = Base::template factoredBlocks<std::tuple_size_v<InputBlocks<In>>>();
+        return split<false>(vectorReturned(callWantedForm(m_measurement.model().function(), wanted, m_in, m_out, x)));
+    }
+
     /** \returns the function at the whole state \a state, a vector in the state space, and at the
      * uncertain inputs \a inputs, one vector each in the order of inputs(), or at their means when
      * none is given: its value, or a WithJacobian whose blocks are one over the whole state's
@@ -755,6 +784,49 @@ public:
     operator()(Joint const & joint, Inputs const &... inputs) const
     {
         return m_resolved.evaluate(joint, inputs...);
+    }
+
+    /// whether values() gives the function for the value alone, which a transform evaluates
+    static constexpr bool EvaluatesValues = true;
+
+    /** The function for one call of \a R that gives a part of what operator()() gives. */
+    template <bool Factored>
+    struct Part
+    {
+        R const & resolved;  ///< the resolved model
+
+        /** \returns the value alone, or with the Jacobian of the factored blocks alone */
+        template <typename Joint, typename... Inputs>
+        [[nodiscard]] auto
+        operator()(Joint const & joint, Inputs const &... inputs) const
+        {
+            if constexpr (Factored)
+            {
+                return resolved.evaluateFactored(joint, inputs...);
+            }
+            else
+            {
+                return resolved.evaluateValue(joint, inputs...);
+            }
+        }
+    };
+
+    /** \returns the function that gives the value alone, which a transform evaluates at each of its
+     * points, so that a function marked writesJacobians() is asked for no Jacobian
+     */
+    [[nodiscard]] Part<false>
+    values() const
+    {
+        return {m_resolved};
+    }
+
+    /** \returns the function that gives the value with the Jacobian of the blocks the factored
+     * transform reads alone
+     */
+    [[nodiscard]] Part<true>
+    factored() const
+    {
+        return {m_resolved};
     }
 
     /** Writes into \a y the function at the points that are the columns of \a joint and of each of

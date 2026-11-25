@@ -815,3 +815,96 @@ TYPED_TEST(ConstantItemsTest, TransformOfAMapWithoutAFunction)
     EXPECT_LT((y.mean() - (placeColumns() * place.mean() + c)).norm(), 1e-12);
     EXPECT_LT((cov - placeColumns() * p * placeColumns().transpose()).norm(), 1e-12);
 }
+
+namespace
+{
+
+// What a measurement of s v, marked writesJacobians(), was asked for: calls, and calls that wanted the
+// Jacobian of the scale and of the value.
+struct Asked
+{
+    int calls = 0;
+    int scale = 0;
+    int value = 0;
+};
+
+template <typename... Policies>
+auto
+productMeasurement(Asked & asked, Policies const &... policies)
+{
+    return measurementModel(
+        Emrys::writesJacobians([&asked](auto const & in, auto const &, auto const & x, auto & y) {
+            ++asked.calls;
+            double const s = block<Scale>(in, x)(0);
+            double const v = block<Value>(in, x)(0);
+            Emrys::value(y) = Eigen::Matrix<double, 1, 1>{s * v};
+            if (Emrys::wantsJacobian<Scale>(y))
+            {
+                ++asked.scale;
+                Emrys::jacobian<Scale>(y) = Eigen::Matrix<double, 1, 1>{v};
+            }
+            if (Emrys::wantsJacobian<Value>(y))
+            {
+                ++asked.value;
+                Emrys::jacobian<Value>(y) = Eigen::Matrix<double, 1, 1>{s};
+            }
+        }),
+        reads(path<Scale>, path<Value>),
+        outputSpace(Linear<1>{}),
+        additiveNoise(GaussianParams<Linear<1>>{Eigen::Matrix<double, 1, 1>::Zero(), Eigen::Matrix<double, 1, 1>{0.1}}),
+        policies...
+    );
+}
+
+}  // namespace
+
+// A function marked writesJacobians() is asked for the Jacobians the method reads alone
+// ([returned-jacobians]): a factored sigma-point transform the affine block's at each point, an
+// unfactored one none, and Linearized every block's; the updates agree with the same model unmarked.
+TEST(AffineCoordinates, AFunctionIsAskedForTheJacobiansTheMethodReads)
+{
+    using Pair = Composite<Scale, Value>;
+    auto const prior =
+        GaussianParams<Pair>{Pair{}, Eigen::Vector2d{2.0, 0.5}, Eigen::Matrix2d{{0.3, 0.05}, {0.05, 0.2}}};
+    Eigen::Matrix<double, 1, 1> const z{1.4};
+
+    Asked factored;
+    auto const x = update(prior, observe(methods::unscented(), productMeasurement(factored, affineIn(path<Value>)), z));
+    ASSERT_TRUE(x);
+    EXPECT_GT(factored.calls, 0);
+    EXPECT_EQ(factored.value, factored.calls);
+    EXPECT_EQ(factored.scale, 0);
+
+    Asked unfactored;
+    auto const y = update(prior, observe(methods::unscented(), productMeasurement(unfactored), z));
+    ASSERT_TRUE(y);
+    EXPECT_GT(unfactored.calls, 0);
+    EXPECT_EQ(unfactored.value, 0);
+    EXPECT_EQ(unfactored.scale, 0);
+
+    Asked linearized;
+    auto const w = update(prior, observe(methods::linearized(), productMeasurement(linearized), z));
+    ASSERT_TRUE(w);
+    EXPECT_EQ(linearized.calls, 1);
+    EXPECT_EQ(linearized.scale, 1);
+    EXPECT_EQ(linearized.value, 1);
+
+    // The factored update is the exact one for a model affine in the value given the scale, and agrees
+    // with the same function unmarked, differentiated in the value.
+    auto const unmarked = measurementModel(
+        []<typename T>(auto const & in, auto const &, auto const & state) {
+            return Eigen::Matrix<T, 1, 1>{block<Scale>(in, state)(0) * block<Value>(in, state)(0)};
+        },
+        reads(path<Scale>, path<Value>),
+        affineIn(path<Value>),
+        outputSpace(Linear<1>{}),
+        additiveNoise(GaussianParams<Linear<1>>{Eigen::Matrix<double, 1, 1>::Zero(), Eigen::Matrix<double, 1, 1>{0.1}})
+    );
+    auto const u = update(prior, observe(methods::unscented(), unmarked, z));
+    ASSERT_TRUE(u);
+    EXPECT_LT((x->branches.front().posterior.mean() - u->branches.front().posterior.mean()).norm(), 1e-12);
+    EXPECT_LT(
+        (x->branches.front().posterior.covarianceLower() - u->branches.front().posterior.covarianceLower()).norm(),
+        1e-12
+    );
+}

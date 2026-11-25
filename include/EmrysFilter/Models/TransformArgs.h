@@ -742,6 +742,24 @@ public:
         return call<T>(m_f, x);
     }
 
+    /** \returns returned() with the Jacobian of the blocks the factored transform reads alone, where
+     * \a f gives a function object for that, \c factored(), as a model's does; otherwise returned()
+     */
+    template <typename T>
+    [[nodiscard]] decltype(auto)
+    returnedFactored(InputVector<T> const & x) const
+    {
+        if constexpr (requires { m_f.factored(); })
+        {
+            auto const factored = m_f.factored();
+            return call<T>(factored, x);
+        }
+        else
+        {
+            return call<T>(m_f, x);
+        }
+    }
+
     /// whether \a f gives a function object for its values alone, \c values(), as a process model's
     /// step does (internal::ProcessStep)
     static constexpr bool EvaluatesValues = requires { requires std::remove_cvref_t<F>::EvaluatesValues; };

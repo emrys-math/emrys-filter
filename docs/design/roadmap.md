@@ -733,10 +733,15 @@ Decided (2026-11-23), not built:
 - Built as stage 6 (2026-11-24): `writesJacobians(f)` (the user chose the name), `PointOutput`, and
   `value()`, `wantsJacobian<Name>()`, `wantsJacobians()`, `jacobian<Name>()`, `jacobian()` in
   `Models/PointOutput.h`; `internal::WritesJacobians` is read as the returned `WithJacobian`, now
-  internal, so the methods, compositions, and placements are unchanged. A call wants every block or
-  none: `ResolvedProcess::propagateValue()` wants none, through `callValueForm()`. Left: wanting the
-  affine blocks alone in the factored transform, and the conditioned blocks in the update given a
-  block, which need the wanted set passed down to `Transform.h`'s `valueWithAffineJacobian()`.
+  internal, so the methods, compositions, and placements are unchanged. A `PointOutput` holds a
+  wanted flag per block: a value-only step wants none (`callValueForm()`, `ResolvedFunction::values()`,
+  `Composition` and `PlacedStep` `valueAt()`), and the factored transform the factored blocks alone
+  (`Transform::returnedFactored()`, `evaluateFactored()`, `propagateFactored()`, `factoredBlocks()`);
+  `wantsJacobians(y)` says some block is wanted, so a function that writes its Jacobian whole always
+  gives what was asked. A composition still asks its parts for every block in the factored
+  transform. Left: the conditioned blocks alone in the update given a block. MSVC 19.50 crashed
+  (C1001) on a `writesJacobians()` process model built in `tests/Models/models.cpp`, which compiles
+  in `fixed_step_model.cpp`, where the test is.
 
 The Jacobian a function writes, decided (2026-11-23), not built:
 

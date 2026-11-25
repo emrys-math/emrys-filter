@@ -3184,6 +3184,37 @@ public:
         }
     }
 
+    /** \returns propagate() with a function marked writesJacobians() asked for the Jacobian of the
+     * blocks the factored transform reads alone (factoredBlocks()), zero in the others' columns
+     */
+    template <typename State, typename TimeScalar, typename... Inputs>
+    [[nodiscard]] auto
+    propagateFactored(State const & state, TimeScalar dt, Inputs const &... inputs) const
+    {
+        static_assert(
+            sizeof...(Inputs) == InputCount || sizeof...(Inputs) == 0,
+            "the step takes one vector per uncertain input, or none to read each at its mean"
+        );
+        EMRYS_FILTER_ASSERT(state.size() == m_stateSize && "the state does not fit the space");
+        auto const x = this->template gatherFromRows<ScalarOf<State>>(
+            state,
+            Eigen::Index{0},
+            std::tuple<Inputs const &...>{inputs...}
+        );
+        constexpr auto wanted = Base::template factoredBlocks<std::tuple_size_v<InputBlocks<In>>>();
+        auto result = vectorReturned(callWantedForm(model().function(), wanted, m_in, m_out, x, dt));
+        using Result = std::remove_cvref_t<decltype(result)>;
+        auto y = scattered(state, valueOf(result));
+        if constexpr (isWithJacobian<Result>)
+        {
+            return withJacobian(std::move(y), expand(result.jacobian));
+        }
+        else
+        {
+            return y;
+        }
+    }
+
     /** \returns the value of propagate() alone: the state \a state moved forward by \a dt at the
      * uncertain inputs \a inputs, not normalized. A Jacobian that the function returns is not
      * expanded to the whole state, which costs more than the step of a small state: what a caller
@@ -3701,6 +3732,32 @@ public:
     operator()(X const & x, Inputs const &... inputs) const
     {
         return m_resolved.propagate(x, m_dt, inputs...);
+    }
+
+    /** The step for one call that gives the next state with the Jacobian of the blocks the factored
+     * transform reads alone.
+     */
+    struct Factored
+    {
+        R const & resolved;  ///< the resolved model
+        TimeScalar dt;       ///< the time step
+
+        /** \returns the state \a x moved forward, with those blocks' Jacobian */
+        template <typename X, typename... Inputs>
+        [[nodiscard]] auto
+        operator()(X const & x, Inputs const &... inputs) const
+        {
+            return resolved.propagateFactored(x, dt, inputs...);
+        }
+    };
+
+    /** \returns the step whose call asks a function marked writesJacobians() for the Jacobian of the
+     * blocks the factored transform reads alone
+     */
+    [[nodiscard]] Factored
+    factored() const
+    {
+        return {m_resolved, m_dt};
     }
 
     /** Writes into \a y the states that are the columns of \a states moved forward, at the columns of

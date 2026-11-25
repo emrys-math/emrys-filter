@@ -915,7 +915,9 @@ valueWithAffineJacobian(Problem const & problem, X const & x, Affine const & aff
     Index const l = affine.size();
     if constexpr (returnsJacobian<Problem>)
     {
-        auto returned = problem.template returned<Scalar>(x);
+        // The function is asked for the Jacobian of the blocks factored out alone (decisions.md
+        // [returned-jacobians]).
+        auto returned = problem.template returnedFactored<Scalar>(x);
         using Blocks = decltype(returned.jacobian);
         problem.forEachUncertain([&]<std::size_t I>(auto const & input) {
             auto const & block = [&]() -> auto const & {

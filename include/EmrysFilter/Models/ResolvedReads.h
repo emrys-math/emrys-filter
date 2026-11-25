@@ -965,6 +965,28 @@ public:
         return affineNames<Affine, Name> && isLinear<Name> && (inState(I) || argumentIsUncertain(I));
     }
 
+    /** \returns which blocks of the function's input the factored transform reads the Jacobian of,
+     * one flag per block in order: the items factored out (itemFactored()); every block of a
+     * whole-state model's input, which is its one block
+     */
+    template <std::size_t Blocks>
+    [[nodiscard]] static constexpr std::array<bool, Blocks>
+    factoredBlocks()
+    {
+        std::array<bool, Blocks> wanted{};
+        if constexpr (Blocks == ItemCount)
+        {
+            [&]<std::size_t... I>(std::index_sequence<I...>) {
+                ((wanted[I] = itemFactored<I>()), ...);
+            }(std::make_index_sequence<ItemCount>{});
+        }
+        else
+        {
+            wanted.fill(true);
+        }
+        return wanted;
+    }
+
     /** \returns the difference dimension of the items factored out, or Eigen::Dynamic: a function rather
      * than a constant, since MSVC reads a class template's own constexpr member in its member
      * declarations before it has initialized it
