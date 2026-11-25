@@ -918,16 +918,18 @@ updatedBy(Model const & model)
 #endif
 
 #if defined(PROCESS_MODEL_MIXTURE_NOISE)  // static_assert: ProcessModel.h: a process model's additive noise is one
+// Over fixedStep(), since additiveNoise() holds a process model to one step.
 [[maybe_unused]] auto const predicted = Emrys::predict(
-    Emrys::methods::linearized(),
     Emrys::GaussianParams<Emrys::Composite<Position>>{Eigen::Vector2d::Zero(), Eigen::Matrix2d::Identity()},
-    Emrys::processModel(
-        holdPosition,
-        Emrys::reads(Emrys::path<Position>),
-        Emrys::writes(Emrys::path<Position>),
-        Emrys::additiveNoise(makeMixtureNoise())
-    ),
-    1.0
+    Emrys::fixedStep(
+        Emrys::processModel(
+            holdPosition,
+            Emrys::reads(Emrys::path<Position>),
+            Emrys::writes(Emrys::path<Position>),
+            Emrys::additiveNoise(makeMixtureNoise())
+        ),
+        1.0
+    )
 );
 #endif
 
