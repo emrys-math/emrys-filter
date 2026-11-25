@@ -296,6 +296,8 @@ inputBlockRows(In const & in)
     }
 }
 
+struct BatchedOutputAccess;
+
 }  // namespace internal
 
 /** \ingroup Models
@@ -319,13 +321,6 @@ inputBlockRows(In const & in)
  * \tparam Scalar_  the scalar the function writes
  * \tparam Mark     the Jacobians the function writes
  */
-namespace internal
-{
-
-struct BatchedOutputAccess;
-
-}  // namespace internal
-
 template <typename In, typename Out, typename Scalar_, typename Mark>
 class BatchedOutput
 {
