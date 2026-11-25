@@ -94,7 +94,7 @@ public:
                 auto const positions = Emrys::block<Position<Dimension>>(in, x);
                 for (Eigen::Index a = 0; a < AnchorCount; ++a)
                 {
-                    y.values().row(a) = (positions.colwise() - m_anchors.col(a)).colwise().norm();
+                    Emrys::values(y).row(a) = (positions.colwise() - m_anchors.col(a)).colwise().norm();
                 }
             });
             auto const model =

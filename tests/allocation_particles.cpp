@@ -103,9 +103,9 @@ batchedModel()
     return Emrys::processModel(
         Emrys::batched([](auto const & in, auto const & out, auto const & x, double dt, auto & y) {
             using T = typename std::remove_cvref_t<decltype(x)>::Scalar;
-            Emrys::block<Position>(out, y.values()) =
+            Emrys::block<Position>(out, Emrys::values(y)) =
                 Emrys::block<Position>(in, x) + T(dt) * Emrys::block<Velocity>(in, x);
-            Emrys::block<Velocity>(out, y.values()) = Emrys::block<Velocity>(in, x);
+            Emrys::block<Velocity>(out, Emrys::values(y)) = Emrys::block<Velocity>(in, x);
         }),
         Emrys::reads(Emrys::path<Position>, Emrys::path<Velocity>),
         Emrys::writes(Emrys::path<Position>, Emrys::path<Velocity>),
@@ -120,7 +120,7 @@ batchedFix(Eigen::Vector2d const & z)
     return observe(
         Emrys::measurementModel(
             Emrys::batched([](auto const & in, auto const &, auto const & x, auto & y) {
-                y.values() = Emrys::block<Position>(in, x);
+                Emrys::values(y) = Emrys::block<Position>(in, x);
             }),
             Emrys::reads(Emrys::path<Position>),
             additiveNoise(GaussianParams<Linear<2>>{Eigen::Vector2d::Zero(), Eigen::Matrix2d{{1.0, 0.2}, {0.2, 0.8}}})

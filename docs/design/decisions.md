@@ -436,9 +436,9 @@ filters didn't say which kind it came from; a filter names itself and nests its 
 points as the columns of a matrix `X` and writing into a last argument `Y` that the library sizes
 once (`h(in, out, X, Y)`); column $j$ of the result depends only on column $j$ of the inputs. The
 mark names the Jacobians the function gives, whose storage is sized before the call: none,
-`jacobians::perColumn()`, or `jacobians::shared()` for a linear function; `Y.wantsJacobian<Name>()`
-says which blocks the method uses. Unmarked, a needed Jacobian comes by autodiff: of one column for
-`Linearized` and the iterated updates, and of the whole batch, in duals seeded on the blocks used,
+`jacobians::perColumn()`, or `jacobians::shared()` for a linear function; `wantsJacobian<Name>(Y)`
+says which blocks the method uses, and it writes `values(Y)` and `jacobian<Name>(Y, j)`, free
+functions as `block<Name>()` is. Unmarked, a needed Jacobian comes by autodiff: of one column for `Linearized` and the iterated updates, and of the whole batch, in duals seeded on the blocks used,
 where every point's is needed [affine-coordinates], [likelihood-measurements]. The library calls a
 batched function once per sigma-point set and per particle set or chunk [execution-policies].
 `on()` keeps its model's mark; `compose()` calls each batched part once over its rows, `onEach()` a
@@ -2076,7 +2076,7 @@ state's too. A process model gives both policies or neither. Its noise is over t
 Jacobian, so that every method predicts it exactly, as `measurementModel(affineIn(H), noise)` updates exactly [linear-sensors];
 its $F$ is of one step, so only `fixedStep()` takes it [fixed-step-models]. Such a model
 takes no inputs of the call and no `affineIn()`, and `on()`, `onEach()`, and `compose()` refuse it at
-compile time. A batched function of one writes its Jacobian whole, `Y.jacobian(j)` or `Y.jacobian()`.
+compile time. A batched function of one writes its Jacobian whole, `jacobian(Y, j)` or `jacobian(Y)`.
 
 **Why.** The Kalman filter as a textbook writes it, $F$, $H$, $Q$, and $R$ on `Linear<4>`, is the
 first filter most users write, and tags are worth their cost once a state has blocks. The whole

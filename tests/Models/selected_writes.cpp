@@ -391,7 +391,7 @@ TEST(SelectedWrites, ABatchedFunctionWritesAList)
         return y;
     };
     auto const batchedShrink = Emrys::batched([](auto const &, auto const &, auto const & x, double dt, auto & y) {
-        y.values() = (1.0 - 0.1 * dt) * x + 0.05 * x.cwiseProduct(x);
+        Emrys::values(y) = (1.0 - 0.1 * dt) * x + 0.05 * x.cwiseProduct(x);
     });
     auto const list = path<Fleet>[std::array{2, 0}];
     auto const byPoint = compose(partOf(shrink, 0.3, list), partOf(hold, 0.05, path<Fleet>[1]));

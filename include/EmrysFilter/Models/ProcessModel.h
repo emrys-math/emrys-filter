@@ -2357,7 +2357,7 @@ stepPartsBatch(
     [[maybe_unused]] constexpr int Cols = X::ColsAtCompileTime;
     [[maybe_unused]] constexpr int MaxCols = X::MaxColsAtCompileTime;
     Eigen::Index const count = x.cols();
-    auto & values = y.values();
+    auto & values = Emrys::values(y);
     values.setZero();
     [&]<std::size_t... I>(std::index_sequence<I...>) {
         (

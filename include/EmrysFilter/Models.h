@@ -113,12 +113,12 @@
  * lock, or calls into another runtime or a device, can take every point at once: batched(f) marks it
  * as taking the points as the columns of a matrix \c X and writing their values into the output
  * \c Y the library provides, <tt>h(in, out, X, Y)</tt>, or for a process model
- * <tt>f(in, out, X, dt, Y)</tt>, with \c Y.values() a column per point (Batched.h,
+ * <tt>f(in, out, X, dt, Y)</tt>, with <tt>values(Y)</tt> a column per point (Batched.h,
  * [batched-functions]). Column \f$ j \f$ of what it writes depends only on column \f$ j \f$ of \c X.
  * The library calls it once per particle set or chunk and once per sigma-point set, and through
  * on(), compose(), and onEach() as through the model itself. A method that needs its Jacobian takes
  * it from the function, marked batched(f, jacobians::perColumn()) or batched(f, jacobians::shared())
- * and writing <tt>Y.jacobian<Name>(j)</tt> for the blocks <tt>Y.wantsJacobian<Name>()</tt> names,
+ * and writing <tt>jacobian<Name>(Y, j)</tt> for the blocks <tt>wantsJacobian<Name>(Y)</tt> names,
  * or differentiates it in dual numbers, for which the function takes \c X as <tt>auto const &</tt>:
  *
  * \code
@@ -127,7 +127,7 @@
  *     batched([&terrain](auto const & in, auto const &, auto const & X, auto & Y) {
  *       auto const position = block<Position>(in, X);
  *       for (Eigen::Index j = 0; j < X.cols(); ++j)
- *         Y.values()(0, j) = terrain.height(position.col(j));
+ *         values(Y)(0, j) = terrain.height(position.col(j));
  *     }),
  *     reads(path<Position>), additiveNoise(elevationNoise));
  * \endcode

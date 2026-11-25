@@ -93,7 +93,7 @@ batchedRange(double z, std::atomic<int> * calls, std::atomic<int> * columns)
                     *columns += int(x.cols());
                     auto const r =
                         (observed(0) - Emrys::block<Position>(in, x).colwise().norm().array()) / rangeDeviation;
-                    y.values() =
+                    Emrys::values(y) =
                         (-0.5 * r.square() - std::log(rangeDeviation * std::sqrt(2 * std::numbers::pi))).matrix();
                 })
             )
@@ -163,12 +163,12 @@ batchedRangeModel(Mark... mark)
                 for (Eigen::Index j = 0; j < x.cols(); ++j)
                 {
                     T const r = Eigen::numext::sqrt(T(p.col(j).squaredNorm()));
-                    y.values()(0, j) = r;
+                    Emrys::values(y)(0, j) = r;
                     if constexpr (sizeof...(Mark) > 0)
                     {
-                        if (y.template wantsJacobian<Position>())
+                        if (Emrys::wantsJacobian<Position>(y))
                         {
-                            y.template jacobian<Position>(j) = p.col(j).transpose() / r;
+                            Emrys::jacobian<Position>(y, j) = p.col(j).transpose() / r;
                         }
                     }
                 }
@@ -210,9 +210,9 @@ batchedVelocityModel(Mark... mark)
                 using T = typename std::remove_cvref_t<decltype(x)>::Scalar;
                 ++stepCalls;
                 stepColumns += int(x.cols());
-                Emrys::block<Position>(out, y.values()) =
+                Emrys::block<Position>(out, Emrys::values(y)) =
                     Emrys::block<Position>(in, x) + T(dt) * Emrys::block<Velocity>(in, x);
-                Emrys::block<Velocity>(out, y.values()) = Emrys::block<Velocity>(in, x);
+                Emrys::block<Velocity>(out, Emrys::values(y)) = Emrys::block<Velocity>(in, x);
                 if constexpr (sizeof...(Mark) > 0)
                 {
                     Eigen::Matrix<double, 4, 2> position = Eigen::Matrix<double, 4, 2>::Zero();
@@ -220,13 +220,13 @@ batchedVelocityModel(Mark... mark)
                     Eigen::Matrix<double, 4, 2> velocity = Eigen::Matrix<double, 4, 2>::Zero();
                     velocity.topRows<2>() = dt * Eigen::Matrix2d::Identity();
                     velocity.bottomRows<2>().setIdentity();
-                    if (y.template wantsJacobian<Position>())
+                    if (Emrys::wantsJacobian<Position>(y))
                     {
-                        y.template jacobian<Position>() = position.cast<T>();
+                        Emrys::jacobian<Position>(y) = position.cast<T>();
                     }
-                    if (y.template wantsJacobian<Velocity>())
+                    if (Emrys::wantsJacobian<Velocity>(y))
                     {
-                        y.template jacobian<Velocity>() = velocity.cast<T>();
+                        Emrys::jacobian<Velocity>(y) = velocity.cast<T>();
                     }
                 }
             },
@@ -268,9 +268,9 @@ batchedForcedModel(Policies... policies)
             using T = typename std::remove_cvref_t<decltype(x)>::Scalar;
             ++stepCalls;
             stepColumns += int(x.cols());
-            Emrys::block<Position>(out, y.values()) =
+            Emrys::block<Position>(out, Emrys::values(y)) =
                 Emrys::block<Position>(in, x) + T(dt) * Emrys::block<Velocity>(in, x);
-            Emrys::block<Velocity>(out, y.values()) =
+            Emrys::block<Velocity>(out, Emrys::values(y)) =
                 Emrys::block<Velocity>(in, x) + T(dt) * Emrys::block<SpecificForce>(in, x);
         }),
         Emrys::reads(Emrys::path<Position>, Emrys::path<Velocity>, Emrys::path<SpecificForce>),
@@ -292,25 +292,25 @@ batchedForcedModelWithJacobians(Policies... policies)
                 using T = typename std::remove_cvref_t<decltype(x)>::Scalar;
                 ++stepCalls;
                 stepColumns += int(x.cols());
-                Emrys::block<Position>(out, y.values()) =
+                Emrys::block<Position>(out, Emrys::values(y)) =
                     Emrys::block<Position>(in, x) + T(dt) * Emrys::block<Velocity>(in, x);
-                Emrys::block<Velocity>(out, y.values()) =
+                Emrys::block<Velocity>(out, Emrys::values(y)) =
                     Emrys::block<Velocity>(in, x) + T(dt) * Emrys::block<SpecificForce>(in, x);
                 Eigen::Matrix<double, 4, 2> top = Eigen::Matrix<double, 4, 2>::Zero();
                 top.topRows<2>().setIdentity();
                 Eigen::Matrix<double, 4, 2> bottom = Eigen::Matrix<double, 4, 2>::Zero();
                 bottom.bottomRows<2>().setIdentity();
-                if (y.template wantsJacobian<Position>())
+                if (Emrys::wantsJacobian<Position>(y))
                 {
-                    y.template jacobian<Position>() = top.cast<T>();
+                    Emrys::jacobian<Position>(y) = top.cast<T>();
                 }
-                if (y.template wantsJacobian<Velocity>())
+                if (Emrys::wantsJacobian<Velocity>(y))
                 {
-                    y.template jacobian<Velocity>() = (dt * top + bottom).cast<T>();
+                    Emrys::jacobian<Velocity>(y) = (dt * top + bottom).cast<T>();
                 }
-                if (y.template wantsJacobian<SpecificForce>())
+                if (Emrys::wantsJacobian<SpecificForce>(y))
                 {
-                    y.template jacobian<SpecificForce>() = (dt * bottom).cast<T>();
+                    Emrys::jacobian<SpecificForce>(y) = (dt * bottom).cast<T>();
                 }
             },
             jacobians::shared()
@@ -359,16 +359,16 @@ batchedBiasedRangeModel(Mark... mark)
                 for (Eigen::Index j = 0; j < x.cols(); ++j)
                 {
                     T const r = Eigen::numext::sqrt(T(p.col(j).squaredNorm()));
-                    y.values()(0, j) = r + Emrys::block<RangeBias>(in, x)(0, j);
+                    Emrys::values(y)(0, j) = r + Emrys::block<RangeBias>(in, x)(0, j);
                     if constexpr (sizeof...(Mark) > 0)
                     {
-                        if (y.template wantsJacobian<Position>())
+                        if (Emrys::wantsJacobian<Position>(y))
                         {
-                            y.template jacobian<Position>(j) = p.col(j).transpose() / r;
+                            Emrys::jacobian<Position>(y, j) = p.col(j).transpose() / r;
                         }
-                        if (y.template wantsJacobian<RangeBias>())
+                        if (Emrys::wantsJacobian<RangeBias>(y))
                         {
-                            y.template jacobian<RangeBias>(j).setOnes();
+                            Emrys::jacobian<RangeBias>(y, j).setOnes();
                         }
                     }
                 }
@@ -512,14 +512,14 @@ TEST(Batched, OutputLaysOutTheWantedJacobiansByBlock)
         in,
         {true, false, true}
     };
-    EXPECT_TRUE(y.wantsJacobian<Position>());
-    EXPECT_FALSE(y.wantsJacobian<Heading>());
-    EXPECT_TRUE(y.wantsJacobian<Velocity>());
-    static_assert(decltype(y.jacobian<Position>(0))::ColsAtCompileTime == 2);
-    y.jacobian<Position>(1).setConstant(1.0);
-    y.jacobian<Velocity>(1).setConstant(2.0);
-    y.jacobian<Velocity>(0).setConstant(3.0);
-    y.values().setConstant(4.0);
+    EXPECT_TRUE(Emrys::wantsJacobian<Position>(y));
+    EXPECT_FALSE(Emrys::wantsJacobian<Heading>(y));
+    EXPECT_TRUE(Emrys::wantsJacobian<Velocity>(y));
+    static_assert(decltype(Emrys::jacobian<Position>(y, 0))::ColsAtCompileTime == 2);
+    Emrys::jacobian<Position>(y, 1).setConstant(1.0);
+    Emrys::jacobian<Velocity>(y, 1).setConstant(2.0);
+    Emrys::jacobian<Velocity>(y, 0).setConstant(3.0);
+    Emrys::values(y).setConstant(4.0);
     auto expected = Eigen::Matrix<double, 3, 8>{};
     expected << Eigen::Matrix<double, 3, 2>::Zero(), Eigen::Matrix<double, 3, 2>::Constant(3.0),
         Eigen::Matrix<double, 3, 2>::Constant(1.0), Eigen::Matrix<double, 3, 2>::Constant(2.0);
@@ -534,8 +534,8 @@ TEST(Batched, OutputLaysOutTheWantedJacobiansByBlock)
         in,
         {false, true, false}
     };
-    EXPECT_FALSE(z.wantsJacobian<Position>());
-    z.jacobian<Heading>().setConstant(5.0);
+    EXPECT_FALSE(Emrys::wantsJacobian<Position>(z));
+    Emrys::jacobian<Heading>(z).setConstant(5.0);
     EXPECT_EQ(shared, (Eigen::Matrix<double, 3, 1>::Constant(5.0)));
 }
 

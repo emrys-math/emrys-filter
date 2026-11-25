@@ -410,7 +410,7 @@ TEST(Parallel, BatchedLikelihoodsWithAnInputMatchSequential)
 
     auto const model = Emrys::measurementModel(
         Emrys::batched([](auto const & in, auto const &, auto const & x, auto & y) {
-            y.values() = Emrys::block<Position>(in, x).colwise().norm() + Emrys::block<Bias>(in, x);
+            Emrys::values(y) = Emrys::block<Position>(in, x).colwise().norm() + Emrys::block<Bias>(in, x);
         }),
         Emrys::reads(Emrys::path<Position>, Emrys::path<Bias>),
         Emrys::additiveNoise(

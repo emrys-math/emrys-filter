@@ -40,7 +40,7 @@ Done when: the singular case is decided and passes its tests on all three compil
 [batched-functions]: a function marked `batched(f)` takes every point at once and writes one output
 `Y`, with Jacobians by block when its mark gives them, and the library calls it once per batch. It
 takes each of the function forms of [model-policies], `h(in, out, X, Y)` to `h(X, Y)` and a process
-model's with `dt` before `Y`, and a whole-state model's writes its Jacobian whole, `Y.jacobian(j)`
+model's with `dt` before `Y`, and a whole-state model's writes its Jacobian whole, `jacobian(Y, j)`
 [whole-state-models].
 
 Every call site takes a batched function and calls it once per batch: the particle filter's
@@ -726,6 +726,10 @@ Decided (2026-11-23), not built:
   `processModel(F, ...)` are `internal::measurementModelOfMatrix()`, `measurementModelOfColumns()`,
   and `processModelOfMatrix()`, and `Columns` is internal; `LinearStep` holds one step. Every test,
   example, document, and skill writes `affineIn()`; the benchmarks wrote no matrix form.
+- Built as stage 5 (2026-11-24): `values(y)`, `wantsJacobian<Name>(y)`, `wantsJacobians(y)`,
+  `jacobian<Name>(y, j)`, `jacobian<Name>(y)`, `jacobian(y, j)`, and `jacobian(y)` in `Batched.h`
+  replace `BatchedOutput`'s members, which are private, reached by `internal::BatchedOutputAccess`.
+  Stage 6 gives the output of a function at a point the same functions.
 
 The Jacobian a function writes, decided (2026-11-23), not built:
 
@@ -770,8 +774,6 @@ The Jacobian a function writes, decided (2026-11-23), not built:
 In order, each a commit that passes the `land` checks, with its decisions, `usage.md`, and
 `CHANGELOG.md` in it.
 
-5. **Free functions on the batched output.** `values(Y)`, `wantsJacobian<Name>(Y)`,
-   `jacobian<Name>(Y, j)`, and `jacobian<Name>(Y)` replace `BatchedOutput`'s members.
 6. **A function at a point writes its output.** The form with `y` last and its mark; every call
    site that reads a returned Jacobian asks for the blocks it uses instead; the built-in models,
    `Placement.h`'s compositions, and the tests and examples move; `withJacobian()` goes.

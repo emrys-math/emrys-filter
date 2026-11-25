@@ -346,7 +346,7 @@ TEST(SelectedFilters, AParticleFilterMovesParticlesByABatchedFunctionThatWritesA
 {
     auto const batchedDrift = processModel(
         Emrys::batched([](auto const &, auto const &, auto const & x, double dt, auto & y) {
-            y.values() = (1.0 - 0.1 * dt) * x;
+            Emrys::values(y) = (1.0 - 0.1 * dt) * x;
         }),
         reads(path<Landmarks>[std::array{0, 2}]),
         writes(path<Landmarks>[std::array{0, 2}]),

@@ -148,6 +148,11 @@ instead.
 
 ### Changed
 
+- A batched function writes its output by free functions, as `block<Name>(in, x)` reads its input:
+  write `values(y)` for `y.values()`, `wantsJacobian<Name>(y)` for `y.template wantsJacobian<Name>()`,
+  `jacobian<Name>(y, j)` and `jacobian<Name>(y)` for `y.template jacobian<Name>(j)` and
+  `y.template jacobian<Name>()`, `wantsJacobians(y)` for `y.wantsJacobians()`, and `jacobian(y, j)`
+  and `jacobian(y)` for `y.jacobian(j)` and `y.jacobian()`. The members are private.
 - The matrix forms are gone; a linear model is one without a function, `affineIn()` alone. Write
   `measurementModel(affineIn(on<A>(H_A), on<B>(H_B)), noise)` for
   `measurementModel(H, reads(path<A>, path<B>), noise)`, splitting `H` into the columns of each

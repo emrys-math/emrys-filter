@@ -854,7 +854,7 @@ public:
         Eigen::Index const points = x.cols();
         BlockRows const inRows = blockRows<RepeatedTag>(in);
         BlockRows const outRows = blockRows<RepeatedTag>(out);
-        auto & values = y.values();
+        auto & values = Emrys::values(y);
         values.setZero();
         InnerIn const innerIn{};
         InnerOut const innerOut{};

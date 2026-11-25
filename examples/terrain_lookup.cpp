@@ -98,7 +98,7 @@ main()
             auto const position = Emrys::block<Position>(in, X);
             for (Eigen::Index j = 0; j < X.cols(); ++j)
             {
-                Y.values()(0, j) = terrain.height(position.col(j));
+                Emrys::values(Y)(0, j) = terrain.height(position.col(j));
             }
         }),
         Emrys::reads(Emrys::path<Position>),

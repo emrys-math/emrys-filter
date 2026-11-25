@@ -238,7 +238,7 @@ using BatchBody = std::remove_cvref_t<decltype(batchBody(std::declval<F const &>
  *
  * \code
  * auto const range = Emrys::logLikelihood(Emrys::batched([](auto const & in, auto const & X, auto const & z, auto & Y)
- * { Y.values() = -0.5 * (block<Position>(in, X).colwise().norm().array() - z(0)).square().matrix() / variance;
+ * { values(Y) = -0.5 * (block<Position>(in, X).colwise().norm().array() - z(0)).square().matrix() / variance;
  * }));
  * \endcode
  */
@@ -322,13 +322,15 @@ inputBlockRows(In const & in)
  * point, and the Jacobians the library uses, by block of the function's input, in storage the library
  * provides and sizes once before the call.
  *
- * The function writes values() whole. Where its mark gives Jacobians, it writes
- * <tt>jacobian<Name>(j)</tt> (jacobians::perColumn()) or <tt>jacobian<Name>()</tt>
- * (jacobians::shared()) for each block \c Name of its input for which <tt>wantsJacobian<Name>()</tt>
+ * The function writes <tt>values(y)</tt> whole. Where its mark gives Jacobians, it writes
+ * <tt>jacobian<Name>(y, j)</tt> (jacobians::perColumn()) or <tt>jacobian<Name>(y)</tt>
+ * (jacobians::shared()) for each block \c Name of its input for which <tt>wantsJacobian<Name>(y)</tt>
  * is true on this call: the columns of the Jacobian for the block that reads() names \c Name. The
  * storage holds only those blocks, so a block not wanted is not written. A function of a model
- * without tags writes <tt>jacobian(j)</tt> or <tt>jacobian()</tt>, the Jacobian over its whole input,
- * when wantsJacobians() says every block is wanted (decisions.md [whole-state-models]).
+ * without tags writes <tt>jacobian(y, j)</tt> or <tt>jacobian(y)</tt>, the Jacobian over its whole
+ * input, when <tt>wantsJacobians(y)</tt> says every block is wanted (decisions.md [whole-state-models]).
+ * The functions are free ones, as block() is, so a generic function calls them without
+ * <tt>.template</tt>.
  *
  * \tparam In       the function's input space, a Composite of the names reads() gives, or the
  *                  state's space for a whole-state model, which is its own one block
@@ -337,6 +339,13 @@ inputBlockRows(In const & in)
  * \tparam Scalar_  the scalar the function writes
  * \tparam Mark     the Jacobians the function writes
  */
+namespace internal
+{
+
+struct BatchedOutputAccess;
+
+}  // namespace internal
+
 template <typename In, typename Out, typename Scalar_, typename Mark>
 class BatchedOutput
 {
@@ -393,6 +402,19 @@ public:
             && "the Jacobians' storage holds the wanted blocks' columns for each column, or once"
         );
     }
+
+    /** \returns this output over the same storage for a function whose input space \a in and output
+     * space \a Out2 name the same blocks in the same order and sizes, under names of their own: what
+     * a placed model's function gives the model it places, which reads and writes the blocks by its
+     * own names (decisions.md [model-placement]). \a in outlives the result.
+     */
+    template <typename Out2, typename In2>
+    [[nodiscard]] BatchedOutput<In2, Out2, Scalar_, Mark>
+    renamed(In2 const & in);
+
+private:
+
+    friend struct internal::BatchedOutputAccess;
 
     /** \returns the values, a column per point, for the function to write */
     [[nodiscard]] ValuesType &
@@ -489,14 +511,10 @@ public:
         return columnsOf<Name>(0);
     }
 
-    /** \returns this output over the same storage for a function whose input space \a in and output
-     * space \a Out2 name the same blocks in the same order and sizes, under names of their own: what
-     * a placed model's function gives the model it places, which reads and writes the blocks by its
-     * own names (decisions.md [model-placement]). \a in outlives the result.
-     */
+    /** renamed() of the output */
     template <typename Out2, typename In2>
     [[nodiscard]] BatchedOutput<In2, Out2, Scalar_, Mark>
-    renamed(In2 const & in)
+    renamedImpl(In2 const & in)
     {
         using Renamed = BatchedOutput<In2, Out2, Scalar_, Mark>;
         static_assert(std::tuple_size_v<internal::InputBlocks<In2>> == BlockCount);
@@ -583,6 +601,133 @@ private:
     std::array<Eigen::Index, BlockCount> m_offsets{};  ///< each block's first column among the wanted, or -1
     Eigen::Index m_wantedColumns = 0;                  ///< the columns of the wanted blocks, side by side
 };
+
+template <typename In, typename Out, typename Scalar_, typename Mark>
+template <typename Out2, typename In2>
+BatchedOutput<In2, Out2, Scalar_, Mark>
+BatchedOutput<In, Out, Scalar_, Mark>::renamed(In2 const & in)
+{
+    return renamedImpl<Out2>(in);
+}
+
+namespace internal
+{
+
+/** The members of a BatchedOutput that the free functions on it reach. */
+struct BatchedOutputAccess
+{
+    /** \returns the values of \a y */
+    template <typename Y>
+    [[nodiscard]] static decltype(auto)
+    values(Y & y)
+    {
+        return y.values();
+    }
+
+    /** \returns whether \a y wants the Jacobian of the block \a Name */
+    template <typename Name, typename Y>
+    [[nodiscard]] static bool
+    wantsJacobian(Y const & y)
+    {
+        return y.template wantsJacobian<Name>();
+    }
+
+    /** \returns whether \a y wants the whole Jacobian */
+    template <typename Y>
+    [[nodiscard]] static bool
+    wantsJacobians(Y const & y)
+    {
+        return y.wantsJacobians();
+    }
+
+    /** \returns the Jacobian of \a y in the block \a Name, or the whole one where \a Name is void,
+     * of column \a j where it is given
+     */
+    template <typename Name, typename Y, typename... Column>
+    [[nodiscard]] static auto
+    jacobian(Y & y, Column... j)
+    {
+        if constexpr (std::is_void_v<Name>)
+        {
+            return y.jacobian(j...);
+        }
+        else
+        {
+            return y.template jacobian<Name>(j...);
+        }
+    }
+};
+
+}  // namespace internal
+
+/** \ingroup Models
+ * \returns the values of the batched function's output \a y, a column per point, for the function
+ * to write whole (decisions.md [batched-functions])
+ */
+template <typename In, typename Out, typename Scalar_, typename Mark>
+[[nodiscard]] typename BatchedOutput<In, Out, Scalar_, Mark>::ValuesType &
+values(BatchedOutput<In, Out, Scalar_, Mark> & y)
+{
+    return internal::BatchedOutputAccess::values(y);
+}
+
+/** \ingroup Models
+ * \returns the values of the batched function's output \a y, a column per point
+ */
+template <typename In, typename Out, typename Scalar_, typename Mark>
+[[nodiscard]] typename BatchedOutput<In, Out, Scalar_, Mark>::ValuesType const &
+values(BatchedOutput<In, Out, Scalar_, Mark> const & y)
+{
+    return internal::BatchedOutputAccess::values(y);
+}
+
+/** \ingroup Models
+ * \returns whether the library uses the Jacobian of the block named \a Name of the function's
+ * input on this call, which the function then writes into \a y; always false for a function marked
+ * without Jacobians
+ */
+template <typename Name, typename In, typename Out, typename Scalar_, typename Mark>
+[[nodiscard]] bool
+wantsJacobian(BatchedOutput<In, Out, Scalar_, Mark> const & y)
+{
+    return internal::BatchedOutputAccess::wantsJacobian<Name>(y);
+}
+
+/** \ingroup Models
+ * \returns whether the library uses the Jacobian of every block of the input on this call, the
+ * whole of it, which a function of a model without tags writes with jacobian(y, j) or jacobian(y)
+ */
+template <typename In, typename Out, typename Scalar_, typename Mark>
+[[nodiscard]] bool
+wantsJacobians(BatchedOutput<In, Out, Scalar_, Mark> const & y)
+{
+    return internal::BatchedOutputAccess::wantsJacobians(y);
+}
+
+/** \ingroup Models
+ * \returns the Jacobian of column \a j of \a y in the block named \a Name, writable, under
+ * jacobians::perColumn(), for a block wantsJacobian<Name>(y) says is wanted: its rows are the
+ * output's differences and its columns the block's. Without \a Name, the Jacobian of column \a j
+ * over the whole input, which a function of a model without tags writes when wantsJacobians(y).
+ */
+template <typename Name = void, typename In, typename Out, typename Scalar_, typename Mark>
+[[nodiscard]] auto
+jacobian(BatchedOutput<In, Out, Scalar_, Mark> & y, Eigen::Index j)
+{
+    return internal::BatchedOutputAccess::jacobian<Name>(y, j);
+}
+
+/** \ingroup Models
+ * \returns the Jacobian of every column of \a y in the block named \a Name, writable, under
+ * jacobians::shared(), for a block wantsJacobian<Name>(y) says is wanted; without \a Name, over the
+ * whole input
+ */
+template <typename Name = void, typename In, typename Out, typename Scalar_, typename Mark>
+[[nodiscard]] auto
+jacobian(BatchedOutput<In, Out, Scalar_, Mark> & y)
+{
+    return internal::BatchedOutputAccess::jacobian<Name>(y);
+}
 
 template <typename F, typename Mark>
 template <typename In, typename Out, MatrixExpression X, typename... Rest>
