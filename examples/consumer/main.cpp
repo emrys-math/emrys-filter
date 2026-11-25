@@ -21,8 +21,7 @@ main()
     auto const motion = Emrys::ConstantVelocity<Position, Velocity>{accelerationDensity};
     double const fixVariance = 1.0;  // m^2 on each axis
     auto const gps = Emrys::measurementModel(
-        Emrys::DifferenceMatrix<Position>::Identity(),
-        Emrys::reads(Emrys::path<Position>),
+        Emrys::affineIn(Emrys::on<Position>(Emrys::DifferenceMatrix<Position>::Identity())),
         Emrys::additiveNoise(fixVariance * Emrys::DifferenceMatrix<Position>::Identity())
     );
     auto const prior = Emrys::GaussianParams<State>{
