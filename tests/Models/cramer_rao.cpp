@@ -361,6 +361,30 @@ TEST(PosteriorCramerRaoBound, StartsFromNoInfo)
     EXPECT_TRUE(bound.covariance().has_value());
 }
 
+// The same over step sizes and noise densities whose terms do not cancel to exact zeros: from no
+// information a prediction leaves about epsilon times its terms where the information is zero,
+// which covariance() takes for none, and the least information a second fix gives, about 233
+// epsilon of its terms at dt = 0.01 and q = 1e-6, it takes for information.
+TEST(PosteriorCramerRaoBound, TellsRoundingFromInfo)
+{
+    for (double const dt : {0.01, 0.3, 0.7, 1.0, 2.5, 100.0})
+    {
+        for (double const q : {1e-6, 0.1, 0.3, 1.7, 1e4})
+        {
+            auto bound = PosteriorCramerRaoBound<State>{State{}, Matrix4::Zero()};
+            Vector4 const truth = Vector4::Zero();
+            auto const model = ConstantVelocity<Position, Velocity>{q};
+            ASSERT_TRUE(bound.predict(model, truth, dt).has_value());
+            ASSERT_TRUE(bound.update(truth, makeFixModel()).has_value());
+            EXPECT_EQ(bound.covariance().error_or(GaussianError::NotPositiveDefinite), GaussianError::Singular)
+                << "dt " << dt << ", q " << q;
+            ASSERT_TRUE(bound.predict(model, truth, dt).has_value());
+            ASSERT_TRUE(bound.update(truth, makeFixModel()).has_value());
+            EXPECT_TRUE(bound.covariance().has_value()) << "dt " << dt << ", q " << q;
+        }
+    }
+}
+
 // What Proposition 1 needs is refused, and the bound is left as it was: a noiseless block makes Q
 // singular (Section IV of the paper, not supported yet), a measurement noise of zero makes R
 // singular, and a prior covariance with no inverse has no information matrix. From no

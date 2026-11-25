@@ -724,14 +724,15 @@ its upper factor $R = L^T$ beside it as the Gaussian keeps $L$, and the local fa
 form steps, the fitting, the particle sets, the Rao-Blackwellized particle filter's weights, and
 the conditional with its evidence. It is not timed; none of them is in the benchmarks' steps.
 
-One stays on `Eigen::LLT`: the posterior Cramér-Rao bound. From no information its prediction is
-$Q^{-1} - Q^{-1} F (F^T Q^{-1} F)^{-1} F^T Q^{-1}$, which is zero, and with Eigen's factorization
-and solves the terms cancel to exact zeros, so that the bound's `covariance()` reports that it has
-none (`PosteriorCramerRaoBound.StartsFromNoInfo`). With the library's factorization the inverse,
-the gain, and the whitened factor are rounded differently from each other, and the same
-cancellation leaves 1e-14 where the terms are of order 1, which then factorizes as if it were
-information. That recursion wants one consistent way to form its terms before it changes
-factorization; nothing times it.
+The posterior Cramér-Rao bound stayed on `Eigen::LLT` one commit longer. From no information its
+prediction is $Q^{-1} - Q^{-1} F (F^T Q^{-1} F)^{-1} F^T Q^{-1}$, which is zero; with Eigen's
+factorization the terms of `PosteriorCramerRaoBound.StartsFromNoInfo` cancelled to exact zeros,
+and with the library's they left 1e-14 where the terms are of order 1, which factorized as if it
+were information. Exact zeros were the test's numbers, not Eigen's arithmetic: at other step sizes
+and noises Eigen's left 1e-14 too, and the bound reported a covariance of about 1e14 for a velocity
+it knew nothing of in 4 of 12. So the bound's `covariance()` now tells rounding from information,
+by the size of the terms that formed each coordinate ([cramer-rao-bound]), and with that it moved
+to the library's factorization; nothing times it.
 
 `Core/Solve.h` then lost its substitution through an `Eigen::LLT`, which had no caller left; an
 `Eigen::LLT` given to `transposedSolve()` is solved a column at a time by Eigen, as a pivoted LDLT

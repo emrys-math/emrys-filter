@@ -8,17 +8,16 @@
  */
 
 #include <expected>
+#include <limits>
 #include <type_traits>
 #include <utility>
 
-#include <Eigen/Cholesky>
-
+#include <EmrysFilter/Core/Cholesky.h>
 #include <EmrysFilter/Core/Execution.h>
 #include <EmrysFilter/Core/Forwarding.h>
 #include <EmrysFilter/Core/Macros.h>
 #include <EmrysFilter/Core/Math.h>
 #include <EmrysFilter/Core/Multiply.h>
-#include <EmrysFilter/Core/Solve.h>
 #include <EmrysFilter/Core/Time.h>
 #include <EmrysFilter/Distributions/Gaussian.h>
 #include <EmrysFilter/Distributions/Moments.h>
@@ -41,7 +40,7 @@ namespace internal
 template <typename Matrix>
 struct InfoSums
 {
-    Matrix first;       ///< the sum of the first matrix, such as \f$ F \f$
+    Matrix first;       ///< the sum of the first matrix, such as \f$ L^{-1} F \f$ with \f$ L L^T = Q \f$
     Matrix second;      ///< the sum of the second matrix, such as \f$ F^T Q^{-1} F \f$
     bool valid = true;  ///< whether every state's terms were formed
 };
@@ -131,6 +130,7 @@ public:
     PosteriorCramerRaoBound(Space_ space, Info && info)
         : m_space{std::move(space)}
         , m_info{std::forward<Info>(info)}
+        , m_scale{m_info.diagonal()}
     {
         EMRYS_FILTER_ASSERT(
             m_info.rows() == differenceDimension(m_space) && m_info.cols() == m_info.rows()
@@ -145,13 +145,13 @@ public:
     [[nodiscard]] static std::expected<PosteriorCramerRaoBound, GaussianError>
     create(GaussianParams<Space_, Scalar_> const & prior)
     {
-        auto const llt = Eigen::LLT<MatrixType>{internal::symmetricFromLower<MatrixType>(prior.covarianceLower())};
-        if (llt.info() != Eigen::Success)
+        auto const cholesky =
+            CholeskyFactorization<MatrixType>{internal::symmetricFromLower<MatrixType>(prior.covarianceLower())};
+        if (!cholesky.isPositiveDefinite())
         {
             return std::unexpected{GaussianError::NotPositiveDefinite};
         }
-        MatrixType info = internal::inverseFrom<MatrixType>(llt);
-        return PosteriorCramerRaoBound{prior.space(), symmetric(std::move(info))};
+        return PosteriorCramerRaoBound{prior.space(), inverseOf(cholesky)};
     }
 
     /** \returns the state space */
@@ -169,18 +169,39 @@ public:
     }
 
     /** \returns the bound itself, \f$ J^{-1} \f$, the least covariance of any estimator's error,
-     *          or GaussianError::Singular while the information leaves a direction unknown
+     *          or GaussianError::Singular while the information leaves a direction unknown.
+     *
+     * A direction is unknown where its information is within rounding of zero, not only where it
+     * is exactly zero: from no information a prediction is
+     * \f$ Q^{-1} - Q^{-1} F (F^T Q^{-1} F)^{-1} F^T Q^{-1} = 0 \f$, which rounding leaves at about
+     * \f$ \epsilon \f$ times the terms subtracted, and that is no information. So the bound keeps
+     * the size \f$ s_i \f$ of the terms that formed coordinate \f$ i \f$ of \f$ J \f$, the
+     * diagonal of \f$ Q^{-1} \f$ after a prediction, with that of each update's
+     * \f$ \mathrm{E}[H^T R^{-1} H] \f$ added, and a direction is unknown unless
+     * \f$ J - \tau\, \mathrm{diag}(s) \f$ is positive definite, \f$ \tau = 8 n \epsilon \f$ for
+     * \f$ n \f$ coordinates: \f$ J \f$'s least eigenvalue, with each coordinate scaled by its
+     * \f$ s_i \f$, must exceed \f$ \tau \f$. Scaling by coordinate keeps the test the same in any
+     * units. For a constant-velocity state from no information, over step sizes from 0.01 to 100
+     * and noise densities from 1e-6 to 1e4, the rounding left at most \f$ 2.5 \epsilon \f$ and the
+     * least information a second fix gave was \f$ 233 \epsilon \f$
+     * (`PosteriorCramerRaoBound.TellsRoundingFromInfo`).
      */
     [[nodiscard]] std::expected<MatrixType, GaussianError>
     covariance() const
     {
-        auto const llt = Eigen::LLT<MatrixType>{m_info};
-        if (llt.info() != Eigen::Success)
+        auto const cholesky = CholeskyFactorization<MatrixType>{m_info};
+        if (!cholesky.isPositiveDefinite())
         {
             return std::unexpected{GaussianError::Singular};
         }
-        MatrixType result = internal::inverseFrom<MatrixType>(llt);
-        return symmetric(std::move(result));
+        Scalar_ const tolerance = Scalar_(8) * Scalar_(m_info.rows()) * std::numeric_limits<Scalar_>::epsilon();
+        MatrixType margin = m_info;
+        margin.diagonal() -= tolerance * m_scale;
+        if (!CholeskyFactorization<MatrixType>{margin}.isPositiveDefinite())
+        {
+            return std::unexpected{GaussianError::Singular};
+        }
+        return inverseOf(cholesky);
     }
 
     /** Moves the bound forward by \a dt, any TimeStep (see \ref Time), through the process model
@@ -235,10 +256,9 @@ public:
         if constexpr (R::Affine && R::ReturnsJacobian && R::InputCount == 0)
         {
             MatrixType const transition = resolved.template transition<Scalar_>(step);
-            return predictFrom(noise, [&](auto const & solveNoise) {
-                internal::InfoSums<MatrixType> sums{transition, MatrixType{}, true};
-                MatrixType const whitened = solveNoise(transition);
-                sums.second.noalias() = internal::multiply(whitened.transpose(), whitened);
+            return predictFrom(noise, [&](auto const & whiten) {
+                internal::InfoSums<MatrixType> sums{whiten(transition), MatrixType{}, true};
+                sums.second.noalias() = internal::multiply(sums.first.transpose(), sums.first);
                 return sums;
             });
         }
@@ -251,7 +271,7 @@ public:
             using Input = internal::PointInput<Space_, Scalar_>;
             using Problem = internal::Transform<decltype(f) const, Space_, Input>;
             Eigen::Index const count = truths.cols();
-            return predictFrom(noise, [&](auto const & solveNoise) {
+            return predictFrom(noise, [&](auto const & whiten) {
                 return averageOver(
                     std::forward<P>(policy),
                     count,
@@ -260,9 +280,8 @@ public:
                         auto const point = Input{m_space, VectorType{truths.col(i)}};
                         auto const problem = Problem{f, m_space, point};
                         auto const linearized = internal::linearizeAt(methods::linearized(), problem);
-                        MatrixType const jacobian = linearized.jacobian.leftCols(differenceDimension(m_space));
-                        MatrixType const whitened = solveNoise(jacobian);
-                        sums.first += jacobian;
+                        MatrixType const whitened = whiten(linearized.jacobian.leftCols(differenceDimension(m_space)));
+                        sums.first += whitened;
                         sums.second.noalias() += internal::multiply(whitened.transpose(), whitened);
                     }
                 );
@@ -340,15 +359,15 @@ public:
                     methods::linearized()
                 );
                 using NoiseMatrix = typename std::remove_cvref_t<decltype(linearization)>::NoiseMatrix;
-                auto const llt = Eigen::LLT<NoiseMatrix>{linearization.noise};
-                if (llt.info() != Eigen::Success)
+                auto const cholesky = CholeskyFactorization<NoiseMatrix>{linearization.noise};
+                if (!cholesky.isPositiveDefinite())
                 {
                     partial.valid = false;
                     return;
                 }
                 using JacobianMatrix = typename std::remove_cvref_t<decltype(linearization)>::JacobianMatrix;
                 JacobianMatrix whitened = linearization.jacobian;
-                internal::solveInPlace(llt.matrixL(), whitened);
+                cholesky.whitenInPlace(whitened);
                 partial.second.noalias() += internal::multiply(whitened.transpose(), whitened);
             }
         );
@@ -358,6 +377,7 @@ public:
         }
         m_info += sums.second;
         m_info = symmetric(std::move(m_info));
+        m_scale += sums.second.diagonal();
         return {};
     }
 
@@ -406,44 +426,64 @@ private:
         return sums;
     }
 
-    /** The prediction from the process noise \a noise and \a average(solveNoise), which gives the
-     * mean Jacobian \f$ \bar F \f$ and \f$ D^{11} \f$, with \a solveNoise(A) the solve
-     * \f$ L^{-1} A \f$ by the Cholesky factor \f$ L L^T = Q \f$:
-     * \f$ J \leftarrow Q^{-1} - G (J + D^{11})^{-1} G^T \f$, \f$ G = Q^{-1} \bar F \f$.
+    /** \returns \f$ A^{-1} \f$ from the factorization \a cholesky of \f$ A \f$, as
+     *          \f$ (L^{-1})^T L^{-1} \f$, exactly symmetric
+     */
+    [[nodiscard]] static MatrixType
+    inverseOf(CholeskyFactorization<MatrixType> const & cholesky)
+    {
+        MatrixType root = MatrixType::Identity(cholesky.rows(), cholesky.rows());
+        cholesky.whitenInPlace(root);
+        MatrixType result = internal::multiply(root.transpose(), root);
+        return symmetric(std::move(result));
+    }
+
+    /** The prediction from the process noise \a noise and \a average(whiten), with \a whiten(A)
+     * the whitening \f$ L^{-1} A \f$ by the Cholesky factor \f$ L L^T = Q \f$, which gives the
+     * whitened mean Jacobian \f$ \bar W = L^{-1} \bar F \f$ and \f$ D^{11} \f$:
+     * \f$ J \leftarrow Q^{-1} - Q^{-1} \bar F (J + D^{11})^{-1} \bar F^T Q^{-1}
+     *     = L^{-T} (I - V^T V) L^{-1} \f$, \f$ V = C^{-1} \bar W^T \f$ for the Cholesky factor
+     * \f$ C C^T = J + D^{11} \f$. Every term is formed through the one whitening, \f$ Q^{-1} \f$
+     * too, so that where they cancel they are rounded alike.
      */
     template <typename Average>
     [[nodiscard]] std::expected<void, GaussianError>
     predictFrom(MatrixType const & noise, Average const & average)
     {
-        auto const noiseLlt = Eigen::LLT<MatrixType>{noise};
-        if (noiseLlt.info() != Eigen::Success)
+        auto const noiseCholesky = CholeskyFactorization<MatrixType>{noise};
+        if (!noiseCholesky.isPositiveDefinite())
         {
             return std::unexpected{GaussianError::NotPositiveDefinite};
         }
-        auto const solveNoise = [&](MatrixType const & a) {
+        auto const whiten = [&](MatrixType const & a) {
             MatrixType result = a;
-            internal::solveInPlace(noiseLlt.matrixL(), result);
+            noiseCholesky.whitenInPlace(result);
             return result;
         };
-        internal::InfoSums<MatrixType> const sums = average(solveNoise);
-        auto const combinedLlt = Eigen::LLT<MatrixType>{MatrixType{m_info + sums.second}};
-        if (combinedLlt.info() != Eigen::Success)
+        internal::InfoSums<MatrixType> const sums = average(whiten);
+        auto const combined = CholeskyFactorization<MatrixType>{MatrixType{m_info + sums.second}};
+        if (!combined.isPositiveDefinite())
         {
             return std::unexpected{GaussianError::Singular};
         }
-        MatrixType const noiseInverse = internal::inverseFrom<MatrixType>(noiseLlt);
-        MatrixType gain = sums.first;
-        internal::solveInPlace(noiseLlt, gain);
-        MatrixType whitened = gain.transpose();
-        internal::solveInPlace(combinedLlt.matrixL(), whitened);
-        MatrixType info = noiseInverse;
-        info.noalias() -= internal::multiply(whitened.transpose(), whitened);
-        m_info = symmetric(std::move(info));
+        Eigen::Index const n = m_info.rows();
+        MatrixType projected = sums.first.transpose();
+        combined.whitenInPlace(projected);
+        MatrixType kept = MatrixType::Identity(n, n);
+        kept.noalias() -= internal::multiply(projected.transpose(), projected);
+        MatrixType root = MatrixType::Identity(n, n);
+        noiseCholesky.whitenInPlace(root);
+        MatrixType const info = internal::multiply(root.transpose(), MatrixType{internal::multiply(kept, root)});
+        m_info = symmetric(info);
+        m_scale = root.colwise().squaredNorm().transpose();
         return {};
     }
 
     EMRYS_FILTER_NO_UNIQUE_ADDRESS Space_ m_space;  ///< the state space
     MatrixType m_info;                              ///< \f$ J \f$
+    /// the size of the terms that formed each coordinate of \f$ J \f$, which covariance() compares
+    /// its information with
+    typename Moments<Space_, Scalar_>::DifferenceVectorType m_scale;
 };
 
 }  // namespace Emrys

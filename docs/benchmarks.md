@@ -348,8 +348,8 @@ the UKF at 2D with 4 anchors took 1.10 times mherb/kalman's time in `double` and
 What is left at the small sizes is the library's own overhead: its step is longer than the hand
 code's by about what it was before these commits, 16 ns at 2D with 4 anchors, and where that goes
 is not measured yet. Since these measurements the library's factorizations of information matrices
-and its local ones have moved to its own factorization too, all but the posterior Cramér-Rao
-bound's; none of them is in a step timed here.
+and its local ones have moved to its own factorization too, the posterior Cramér-Rao bound's
+last; none of them is in a step timed here.
 
 At 3D with 6 anchors a step takes longer in `float` than in `double`, for EmrysFilter (239 ns
 against 182 ns) and for the hand-written Eigen filter (149 ns against 126 ns), though it takes

@@ -197,8 +197,7 @@ instead.
 - The information form of the Gaussian, the iterated update and the updates of the information
   and square-root forms, the fitting of a mixture, a particle set's conditional, a
   Rao-Blackwellized particle filter's weights, and a conditional with its evidence factorize by
-  `CholeskyFactorization` too, so their results differ from before by rounding. The posterior
-  Cramér-Rao bound still uses `Eigen::LLT`.
+  `CholeskyFactorization` too, so their results differ from before by rounding.
 - An update factorizes its innovation covariance by a Cholesky factorization of the library's own
   where the measurement has a fixed size of at most 24, in place of `Eigen::LLT`: without square
   roots, a column at a time, which is what a filter's step waits on. With the substitution of the
@@ -356,6 +355,11 @@ instead.
   the model's type as the covariance form too through the alias's deduction guides.
 - `UpdateBranch::component` and `FilterBranch::component` are 0 in a default-constructed branch,
   not indeterminate.
+- `PosteriorCramerRaoBound::covariance()` reports `GaussianError::Singular` for a direction whose
+  information is within rounding of zero. From no information a prediction's terms cancel to about
+  `1e-14` rather than to zero, which it took for information, returning a covariance of about
+  `1e14` for a state it knew nothing of. The bound now factorizes by `CholeskyFactorization` in
+  place of `Eigen::LLT`, so its values differ from before by rounding.
 
 ## [0.1.0] - 2026-11-13
 

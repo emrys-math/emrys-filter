@@ -34,7 +34,7 @@ Read the index, then the decisions your change touches.
 | [embedded-builds](#embedded-builds) | The library builds warning-free, without exceptions, and for Cortex-M |
 | [value-preconditions](#value-preconditions) | No floating-point value reaches undefined behavior or a loop that does not end, whether or not an assertion checks it |
 | [borrowed-intermediates](#borrowed-intermediates) | Inside a step, intermediates are borrowed; what a step returns is owned or written in place |
-| [own-cholesky](#own-cholesky) | A Cholesky factorization is the library's own type, which factorizes a small fixed-size matrix itself, without square roots, and leaves any other to Eigen (built everywhere but the posterior Cramér-Rao bound) |
+| [own-cholesky](#own-cholesky) | A Cholesky factorization is the library's own type, which factorizes a small fixed-size matrix itself, without square roots, and leaves any other to Eigen |
 | [execution-policies](#execution-policies) | A loop over a count takes an execution policy as its first argument, `execution::sequential` by default |
 | [view-stamp](#view-stamp) | A view checks its parameters' modification stamp when read, in builds with assertions, and no view is made of a temporary; every build keeps the stamp |
 | [time-steps](#time-steps) | A time step is any type with a conversion to the filter's scalar, made once, below which time is that scalar |
@@ -287,8 +287,7 @@ holds. A pivot that is not greater than zero is a failure, at every size, so a m
 not positive definite. Only the values of the lower triangle are used [borrowed-intermediates]; the
 upper triangle is loaded with its columns, so it must be initialized, and may hold anything. A
 Gaussian keeps one, `cholesky()`, and the factor $L$ made from it once, `covarianceRoot()`, for
-its samplers. The pivoted LDLT of a prior's block [innovation-cholesky] stays Eigen's, and so does
-the posterior Cramér-Rao bound's `LLT`, whose recursion needs its arithmetic (roadmap).
+its samplers. The pivoted LDLT of a prior's block [innovation-cholesky] stays Eigen's.
 
 **Why.** Eigen's factorization and solves were most of a small step: for a 4×4 matrix and four
 right-hand sides they take 78 ns where this takes 36, each call waiting on the one before as a
@@ -2472,19 +2471,23 @@ noise, with each expectation estimated by the mean over true states the caller d
 `simulate()` and passes as the columns of a `SampleSet`. The Jacobians are the library's, through
 `Linearized` at each truth, so a space with its own `plus()` gets the bound in its tangent space
 (Chahbazian et al. 2024, Proposition 2). A step whose matrices don't factorize returns
-`std::unexpected`.
+`std::unexpected`. `covariance()` reports `Singular` unless $J - 8 n \epsilon \operatorname{diag}(s)$
+is positive definite, with $s_i$ the size of the terms that formed coordinate $i$ of $J$.
 
 **Why.** The bound is a pure function of the library's types and allocates nothing beyond its
 count-sized averaging, so it belongs here beside NEES, which it complements: NEES says whether a
 filter's covariance is honest, the bound how far its error is from the best possible. A recursion on
 $J$ rather than its inverse, because the paper's is, $J$ starts at zero for an unknown state, and the
 prediction needs $J$. The truths are the caller's because a simulation interleaves them with
-measurements and filters, and the average over truths must be formed inside the recursion.
+measurements and filters, and the average over truths must be formed inside the recursion. The
+test of rounding, because from no information a prediction's terms cancel to about $\epsilon$
+times their size, not to zero, and a positive pivot alone took that for information (the
+measurements are in `CramerRao.h`).
 
 **Rejected.** A Monte Carlo runner or report here, which belong to the analysis project
 [analysis-project]. The paper's Jacobian at the pair of states, where the library takes it at
 $f(x_k)$: the same on `Linear`, and agreeing to first order elsewhere, the order of the paper's own
-truncation.
+truncation. Terms that cancel to exact zeros, which no order of operations gives for every model.
 
 **Where.** `Models/CramerRao.h`. A singular $Q$ (the paper's Section IV) is roadmap step 17g.
 

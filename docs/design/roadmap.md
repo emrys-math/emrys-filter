@@ -1020,13 +1020,11 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       1.29).
       The information forms' cached factorization and the local ones of the form steps, the
       fitting, the particle sets, the Rao-Blackwellized particle filter, and the conditional
-      with its evidence followed, in the commit after the page's. The posterior Cramér-Rao
-      bound stays on `Eigen::LLT`: from no information its recursion cancels to exact zeros
-      with Eigen's arithmetic and leaves 1e-14 with the library's, which then factorizes as
-      information (benchmarks.md, claim 9).
+      with its evidence followed, in the commit after the page's, and the posterior Cramér-Rao
+      bound last (2026-11-25), once its `covariance()` told rounding from information
+      ([cramer-rao-bound]).
       `Core/Solve.h` no longer substitutes through an `Eigen::LLT`, which nothing called.
-      Next: give the Cramér-Rao recursion one consistent way to form its terms, then move it;
-      the same substitution in
+      Next: the same substitution in
       `solveInPlace()` and `inverseFrom()`, which still solve a column at a time through
       Eigen; find where the 16 ns and 320 instructions go that the library adds to the hand
       code's step at 2D with 4 anchors (candidates read from the code: the calls left out of
