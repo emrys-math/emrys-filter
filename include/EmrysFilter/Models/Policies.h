@@ -945,7 +945,7 @@ template <typename... Parts>
 offset(Parts const &... parts)
 {
     static_assert(
-        (internal::namedByOneTag<Parts>() && ...),
+        (internal::OnPathParts<Parts>::Plain && ...),
         "offset() places each part on a block of the output by its one tag, on<Block>(c)"
     );
     static_assert(
