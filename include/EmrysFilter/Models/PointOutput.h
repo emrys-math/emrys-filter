@@ -301,8 +301,10 @@ public:
     operator()(In const & in, Out const & out, X const & x, Rest &&... rest) const
         requires MatrixExpression<X>
     {
-        using Output = PointOutput<In, Out, typename X::Scalar>;
-        return withWanted(Output::every(true), in, out, x, std::forward<Rest>(rest)...);
+        checkOutput<Out>();
+        auto every = std::array<bool, std::tuple_size_v<internal::InputBlocks<In>>>{};
+        every.fill(true);
+        return withWanted(every, in, out, x, std::forward<Rest>(rest)...);
     }
 
     /** \returns the function's value at \a x with the Jacobian of the blocks \a wanted says, zero in
@@ -312,11 +314,7 @@ public:
     [[nodiscard]] auto
     withWanted(Wanted const & wanted, In const & in, Out const & out, X const & x, Rest &&... rest) const
     {
-        static_assert(
-            Space<Out>,
-            "a function marked writesJacobians() writes into an output whose space the model names before the call: "
-            "give it outputSpace(), writes(), or additive noise over the output"
-        );
+        checkOutput<Out>();
         auto output = PointOutput<In, Out, typename X::Scalar>{in, out, wanted};
         callForm(m_function, in, out, x, std::forward<Rest>(rest)..., output);
         return withJacobian(
@@ -330,6 +328,7 @@ public:
     [[nodiscard]] auto
     valueAt(In const & in, Out const & out, X const & x, Rest &&... rest) const
     {
+        checkOutput<Out>();
         using Output = PointOutput<In, Out, typename X::Scalar>;
         auto output = Output{in, out, Output::every(false)};
         callForm(m_function, in, out, x, std::forward<Rest>(rest)..., output);
@@ -337,6 +336,18 @@ public:
     }
 
 private:
+
+    /** A compile-time error unless  Out, the output space a call names, is a Space. */
+    template <typename Out>
+    static consteval void
+    checkOutput()
+    {
+        static_assert(
+            Space<Out>,
+            "a function marked writesJacobians() writes into an output whose space the model names before the call: "
+            "give it outputSpace(), writes(), or additive noise over the output"
+        );
+    }
 
     F m_function;  ///< the function marked
 };

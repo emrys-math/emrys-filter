@@ -640,15 +640,18 @@ struct OnPathParts<OnPath<X, Path, Selection>>
     /// whether it is <tt>on<Name>(H)</tt> of one tag and no selection, which a model with a function takes
     static constexpr bool Plain =
         std::is_same_v<Selection, NoSelection> && std::is_same_v<AsTagPath<Path>, TagPath<PathTag<Path>>>;
+    /// whether it selects nothing, as an offset() part does, by a tag or, which offset() refuses, a path
+    static constexpr bool Unselected = std::is_same_v<Selection, NoSelection>;
 };
 
 /** An OnEach. */
 template <typename X, typename Path, typename Selection>
 struct OnPathParts<OnEach<X, Path, Selection>>
 {
-    using Value = X;                      ///< the value placed
-    using PathType = Path;                ///< the path of the repeated block, a tag or a TagPath
-    static constexpr bool Plain = false;  ///< only a model without a function takes it
+    using Value = X;                           ///< the value placed
+    using PathType = Path;                     ///< the path of the repeated block, a tag or a TagPath
+    static constexpr bool Plain = false;       ///< only a model without a function takes it
+    static constexpr bool Unselected = false;  ///< never an offset() part
 };
 
 /** Whether \a T is a constant item of affineIn(), <tt>on<Name>(H)</tt> or <tt>onEach<Block>(H)</tt>,
@@ -670,7 +673,7 @@ template <typename T>
 inline constexpr bool isOffsetPart = [] {
     if constexpr (isConstantItem<T>)
     {
-        return OnPathParts<T>::Plain;
+        return OnPathParts<T>::Unselected;
     }
     else
     {
