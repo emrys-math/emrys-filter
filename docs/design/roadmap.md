@@ -26,38 +26,6 @@ question answered, breaking or not; and for every algorithm checked against its 
 read in full (decided 2026-11-16). With no date to meet, a feature that may want a change to the
 existing API is built before the launch rather than after it.
 
-## 17t. Sigma-point axes and repairs — in progress
-
-[sigma-point-axes] records the design. The second differences, which use `along(d)`, are 16b's.
-`Distributions/Roots.h` holds the axes, `ridge`, the fallback list, `squareRoot()`, and
-`squareRootWithReport()`; `methods::spread()` carries a method's axes to `Transform::root()`,
-the factored transform's rest [affine-coordinates], and `Iterated`; and every other root goes through
-`internal::defaultRoot()`. Under the default the forms
-equal the Kalman filter to rounding (`sqrt_filters.cpp`, `info_filter.cpp`, `iterated_forms.cpp`).
-
-An update takes axes that can fail: `transformMeasurement()` takes their root of the blocks read
-first and gives the transform that root, and `tests/Models/spread.cpp` checks that
-`spread(cubature(), cholesky())` fails the Kalman update on a singular prior, plain, iterated, and
-linearized about it, and equals `cubature()` on a positive definite one in every form. Left: the
-`pr` checks.
-
-Done when: every root the library takes goes through `squareRoot()`, the forms agree under every
-rule, and the `pr` checks pass.
-
-## 17v. Consider states — in progress
-
-[consider-states] records the design: `observe(method, model, z, consider(path<Bias>))`, carried
-out by `kalmanConditionInPlace()` and the iterated update, and refused by the square-root and
-information forms, the filters that weight points, and the updates given a block.
-`tests/Models/consider.cpp`, `tests/Filters/consider_consistency.cpp`, and `example.consider_bias`
-are the evidence.
-
-- [ ] Check the bibliography's `Schmidt1966` entry, and what `Consider`'s documentation takes from
-      it, against the paper itself (Advances in Control Systems, volume 3), which this session
-      could not read.
-
-Done when: the entry is checked and the `land` checks pass, with MSVC.
-
 ## 17g. Posterior Cramér-Rao bound — in progress
 
 [cramer-rao-bound]: the recursion and its tests are done.
@@ -1332,7 +1300,9 @@ resolve.
 | 17q | A categorical distribution has an entropy |  |
 | 17r | The four forms are read alike through their densities | [form-densities] |
 | 17s | Policies are made by factories, in namespaces | [policy-factories], [upkeep] |
+| 17t | Sigma-point axes and repairs: `methods::spread(rule, axes)`, `squareRoot()` and its fallbacks, and updates whose axes can fail | [sigma-point-axes] |
 | 17u | Linearization forms, and `condition()` | [linearization-forms], [covariance-update-forms] |
+| 17v | Consider states: `consider(path<Bias>)` in an update, carried by `kalmanConditionInPlace()` and the iterated update | [consider-states] |
 | 17z | Models as functions with reads and writes: `processModel()`, `measurementModel()`, policies, composition and placement, affine coordinates | [model-policies], [model-placement], [affine-coordinates], [returned-jacobians], [prediction-inputs] |
 | 17zb | Whole-state models, function forms, and `transform()` with a measurement model's policies | [whole-state-models], [transform-policies], [model-policies], [sensors] |
 | 17zc | A function takes its scalar as a template parameter, `zeros<T>(out)` replaces `vectorIn()`, and the examples name the steps their models apply | [function-scalars] |
