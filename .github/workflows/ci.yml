@@ -328,8 +328,16 @@ jobs:
         with:
           arch: x64
 
+      # The runner has 4 logical processors and 16 GB, so Ninja runs 6 compiles at once. Six of the
+      # heavy test and benchmark translation units ran MSVC out of heap space (C1060 on
+      # carouge_ranging.cpp, 2026-11-25), and the job's time had doubled to about 90 minutes since
+      # the benchmarks' tests joined it. Three run at once here; the workflow's own configure keeps
+      # the cached value.
       - name: Build and test
-        run: cmake --workflow --preset ${{ matrix.preset }}
+        run: |
+          cmake --preset msvc -DEMRYS_FILTER_TEST_COMPILE_JOBS=3
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --workflow --preset ${{ matrix.preset }}
 
   docs:
     name: docs (Doxygen)
