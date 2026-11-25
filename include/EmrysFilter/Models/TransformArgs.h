@@ -103,6 +103,18 @@ jacobianBlock(Jacobian const & jacobian)
     }
 }
 
+/** \returns flags of a FactoredAt's affine coordinates that say none is shared: zeros of a fixed
+ * \a Size, which Eigen would leave uninitialized, and empty of a dynamic one
+ */
+template <int Size, int MaxSize>
+[[nodiscard]] IndexVector<Size, MaxSize>
+noSharedCoordinates()
+{
+    auto flags = IndexVector<Size, MaxSize>{};
+    flags.setZero();
+    return flags;
+}
+
 /** A sigma-point method \a Points with the coordinates of the joint input that a model's affineIn()
  * names factored out (decisions.md [affine-coordinates]): the points spread over the rest, and the
  * coordinates \a affine, of linear blocks, carried exactly by their %Gaussian given the rest, with the
@@ -114,8 +126,8 @@ struct FactoredAt
     Points points;                                  ///< the sigma points over the rest
     IndexVector<AffineSize, AffineMaxSize> affine;  ///< coordinates of the joint input, in column order
     /// for each of \a affine, 1 where it is of a block whose Jacobian is shared, the same at every
-    /// point of the call (shared(path<Name>) in affineIn()), and 0 otherwise; empty where none is
-    IndexVector<AffineSize, AffineMaxSize> shared{};
+    /// point of the call (shared(path<Name>) in affineIn()), and 0 otherwise; all 0, or empty, where none is
+    IndexVector<AffineSize, AffineMaxSize> shared = noSharedCoordinates<AffineSize, AffineMaxSize>();
 };
 
 /** Whether \a T is a FactoredAt. */

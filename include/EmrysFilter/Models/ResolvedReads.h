@@ -1099,13 +1099,13 @@ public:
     }
 
     /** \returns for each coordinate affineCoordinates() gives, 1 where it is of an item whose
-     * Jacobian the model shares (sharedBlocks()), and 0 otherwise; empty where none is
+     * Jacobian the model shares (sharedBlocks()), and 0 otherwise; all 0, or empty, where none is
      */
     [[nodiscard]] IndexVector<affineSize(), affineMaxSize()>
     affineShared() const
     {
         using SharedPolicy = typename Model::template Policy<PolicyKind::sharedJacobians>;
-        auto result = IndexVector<affineSize(), affineMaxSize()>{};
+        auto result = noSharedCoordinates<affineSize(), affineMaxSize()>();
         constexpr bool Any = []<std::size_t... I>(std::index_sequence<I...>) {
             return ((itemFactored<I>() && sharedNames<SharedPolicy, typename Item<I>::NameType>) || ... || false);
         }(std::make_index_sequence<ItemCount>{});
