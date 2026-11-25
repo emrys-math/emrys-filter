@@ -105,6 +105,17 @@ instead.
   the axes cannot take the root of the blocks the measurement reads; it was a compile error. A
   transform or prediction still refuses such axes, and so does an update whose model's `affineIn()`
   names some of the blocks read.
+- `GpbFilter`, the generalized pseudo-Bayesian (GPB) estimator of order N, which keeps a Gaussian
+  for each sequence of the last N modes of a switching model: GPB1 and GPB2 at N of one and two,
+  and Kim's filter at two. Its state is a `Hybrid` over
+  `ModeSequence<ModeSpace, N>`, the product of N copies of the mode space, whose axes are tagged
+  `Lagged<ModeSpace, k>`, with `Current<ModeSpace>` the mode now. `overModeSequences<N>(prior)`
+  makes its initial state from a hybrid over the current mode, and it takes a chain, a motion,
+  and measurements as an `ImmFilter` does:
+  `GpbFilter{chain, motion, overModeSequences<2>(prior)}`.
+- `HybridUpdateSteps`, the update of a hybrid state by a measurement that may depend on the mode,
+  which `ImmRecursion` now derives from and `GpbRecursion` shares. Code that calls an
+  `ImmRecursion`'s `update()` or names its `ResultType<M>` compiles as before.
 - `SECURITY.md`: how to report a vulnerability privately, and what counts as one. Among them is
   undefined behavior, or a call that never returns, caused by a floating-point value passed to the
   library, NaN and infinities included, in a build with `NDEBUG`.

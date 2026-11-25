@@ -1,8 +1,8 @@
 #pragma once
 
 /** \file
- * Everything in the Filters layer: the Kalman, %Gaussian mixture, interacting multiple model,
- * particle, Rao-Blackwellized, and hidden Markov model filters.
+ * Everything in the Filters layer: the Kalman, %Gaussian mixture, interacting multiple model, generalized
+ * pseudo-Bayesian, particle, Rao-Blackwellized, and hidden Markov model filters.
  */
 
 /** \defgroup Filters Filters
@@ -15,7 +15,9 @@
  * InfoFilter.h, SqrtKalmanFilter.h, and SqrtInfoFilter.h spell [gaussian-forms];
  * MixtureFilter.h, ImmFilter.h, ParticleFilter.h, RbPointMassFilter.h, and RbParticleFilter.h
  * differ from it in their state, with RbUpdate.h shared by the last two, while HiddenMarkovFilter.h
- * has nothing left %Gaussian [emissions]. AmmFilter.h spells the IMM on the identity chain [autonomous-multiple-model].
+ * has nothing left %Gaussian [emissions]. AmmFilter.h spells the IMM on the identity chain [autonomous-multiple-model],
+ * and GpbFilter.h, the generalized pseudo-Bayesian (GPB) filter, keeps a %Gaussian per sequence of the last modes
+ * where the IMM keeps one per mode.
  * Upkeep between steps is the caller's [upkeep]: a filter holds the upkeep it was given, FilterUpkeep.h's, and
  * runs it on its state when the caller calls maintain(). So is the record of the forward pass
  * that the histories of \ref Smoothers smooth [smoothing]. Recursion.h spells what KalmanFilter.h's and
@@ -30,6 +32,7 @@
  * | Kalman filter with mixture noise | inlier or outlier, memoryless | enumeration, collapsed each step |
  * | %Gaussian mixture filter | component index, unlabeled | enumeration, reduced |
  * | IMM | maneuver regime, Markov with transition matrix \f$ \Pi \f$ | enumeration, mixed through \f$ \Pi \f$ |
+ * | GPB of order \f$ N \f$ | the last \f$ N \f$ regimes, Markov through \f$ \Pi \f$ | enumeration, the oldest merged |
  * | Rao-Blackwellized point mass | fixed point of one block | enumeration, no mixing |
  * | Rao-Blackwellized particle | a sampled block | sampling |
  * | Hidden Markov model | the whole state, Markov through \f$ \Pi \f$ or a generator | enumeration, nothing %Gaussian |
@@ -40,7 +43,8 @@
  * axis whose values its components are, which an IMM whose mode space has that axis updates by, and which a filter with
  * no mode space reads as memoryless mixture noise. The two readings agree exactly where they should: an IMM whose chain
  * on the sensor axis has identical rows, the alternatives' weights, is the first-order generalized pseudo-Bayesian
- * estimator of \ref BarShalom2001 "Bar-Shalom, Li, and Kirubarajan (2001)", §11.6, and that is a KalmanFilter whose
+ * estimator of \ref BarShalom2001 "Bar-Shalom, Li, and Kirubarajan (2001)", §11.6, which a GpbFilter of
+ * order one is on any chain, and that is a KalmanFilter whose
  * noise is the mixture, collapsed after each update, since mixing through identical rows starts every mode from the
  * one collapsed %Gaussian (ImmFilter.NoiseByModeIsMemorylessWhereNoModeSpaceHasItsAxis).
  *
@@ -84,6 +88,7 @@
  * | KalmanFilter and the form filters | (one part) |
  * | GaussianMixtureFilter | the component is dropped |
  * | ImmFilter, AmmFilter | the mode keeps its prior %Gaussian with probability 0, which the chain can revive |
+ * | GpbFilter | the sequence keeps its prior %Gaussian with weight 0, as an IMM's mode does |
  * | RbPointMassFilter | the cell is removed, since nothing moves probability between cells |
  * | RbParticleFilter | the particle keeps its %Gaussian with weight 0, until resampled |
  * | ParticleFilter, HiddenMarkovFilter | (no policy); an observation nothing explains leaves the weights |
@@ -109,6 +114,7 @@
 #include <EmrysFilter/Filters/ImmFilter.h>
 #include <EmrysFilter/Filters/InfoFilter.h>
 #include <EmrysFilter/Filters/KalmanFilter.h>
+#include <EmrysFilter/Filters/GpbFilter.h>
 #include <EmrysFilter/Filters/Recursion.h>
 #include <EmrysFilter/Filters/SqrtInfoFilter.h>
 #include <EmrysFilter/Filters/SqrtKalmanFilter.h>

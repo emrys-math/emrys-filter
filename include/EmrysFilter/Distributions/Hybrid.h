@@ -3,7 +3,8 @@
 /** \file
  * The hybrid state of a discrete mode and a component per mode (decisions.md [imm], [component-first]): Hybrid,
  * with its collapse into one component, whole or grouped by a mode axis, its view as a mixture,
- * its marginal, a MixtureMarginal over the modes [element-marginals], and its ComponentTraits and
+ * its marginal, a MixtureMarginal over the modes [element-marginals], overModeSequences(), which
+ * spreads it over the sequences of the last modes for a GpbFilter, and its ComponentTraits and
  * internal::ElementsOf, which make a hybrid state a component in its own right, so a
  * Mixture of hybrids is the state of a mixture of interacting multiple model filters [filters-and-recursions]; and
  * the HybridGaussian alias for the hybrid of Gaussians, the interacting multiple model filter's
@@ -30,6 +31,7 @@
 #include <EmrysFilter/Distributions/Statistics.h>
 #include <EmrysFilter/Spaces/Discrete.h>
 #include <EmrysFilter/Spaces/Selection.h>
+#include <EmrysFilter/Spaces/ModeSequence.h>
 #include <EmrysFilter/Spaces/Space.h>
 
 namespace Emrys
@@ -752,6 +754,45 @@ using HybridGaussian = Hybrid<Gaussian<Space_, Scalar_>, ModeSpace_, Allocator_>
  */
 template <Space Space_, DiscreteSpace ModeSpace_, RealScalar Scalar_ = double, typename Allocator_ = DefaultAllocator>
 using HybridGaussianParams = HybridParams<Gaussian<Space_, Scalar_>, ModeSpace_, Allocator_>;
+
+/** \ingroup Distributions
+ * \returns the hybrid state over the sequences of the last \a Length modes (see ModeSequence) that
+ * \a hybrid, a state over the current mode, is: each sequence has the component of its current mode,
+ * and the weight of its current mode shared equally among the sequences that end in it. It is how a
+ * GpbFilter's initial state is made from a prior that says nothing of the modes before the
+ * first, and it has \a hybrid's allocator.
+ *
+ * \code
+ * auto const prior = HybridGaussianParams<State, Maneuver>{CategoricalParams<Maneuver>{}, initial};
+ * auto const state = overModeSequences<2>(prior);  // HybridGaussianParams<State, ModeSequence<Maneuver, 2>>
+ * \endcode
+ *
+ * The earlier modes' weights do not matter to the filter: its first prediction merges the sequences
+ * that differ in their oldest mode, whose components are equal here, and no later step reads them.
+ */
+template <std::size_t Length, internal::ComponentOrInfoForm Component_, DiscreteSpace ModeSpace_, typename Allocator_>
+[[nodiscard]] HybridParams<Component_, ModeSequence<ModeSpace_, Length>, Allocator_>
+overModeSequences(HybridParams<Component_, ModeSpace_, Allocator_> const & hybrid)
+{
+    using Result = HybridParams<Component_, ModeSequence<ModeSpace_, Length>, Allocator_>;
+    using Scalar = typename Result::Scalar;
+    auto const sequences = ModeSequence<ModeSpace_, Length>{hybrid.modeSpace()};
+    Eigen::Index const count = sequences.cardinality();
+    Scalar const logShare = Eigen::numext::log(Scalar(count / hybrid.size()));
+    auto logWeights = typename Result::ModesType::ArrayType{};
+    logWeights.resize(count);
+    auto conditionals = typename Result::ConditionalsType(
+        internal::ReBound<Allocator_, typename Result::ComponentType>(hybrid.get_allocator())
+    );
+    conditionals.reserve(std::size_t(count));
+    for (Eigen::Index sequence = 0; sequence < count; ++sequence)
+    {
+        Eigen::Index const mode = sequences.currentOf(sequence);
+        logWeights(sequence) = hybrid.modes().logWeight(mode) - logShare;
+        conditionals.push_back(hybrid.conditional(mode));
+    }
+    return Result{typename Result::ModesType{sequences, logWeights}, std::move(conditionals)};
+}
 
 /** ComponentTraits of a hybrid state, which make it a component (decisions.md [component-first]). */
 template <Component Component_, DiscreteSpace ModeSpace_, typename Allocator_>

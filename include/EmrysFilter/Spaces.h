@@ -99,6 +99,7 @@
 #include <EmrysFilter/Spaces/Coordinates.h>
 #include <EmrysFilter/Spaces/Discrete.h>
 #include <EmrysFilter/Spaces/Indexing.h>
+#include <EmrysFilter/Spaces/ModeSequence.h>
 #include <EmrysFilter/Spaces/Reset.h>
 #include <EmrysFilter/Spaces/Selection.h>
 #include <EmrysFilter/Spaces/Space.h>

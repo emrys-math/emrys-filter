@@ -16,6 +16,7 @@ They are listed in reading order, and each builds on the ones before it.
 | 2 | [particle-filter.md](particle-filter.md): sampled prediction, likelihood weighting, resampling, and roughening | not yet reviewed; refreshed for roadmap 17z (models and likelihood-only measurements rewritten, §1, §3, §5, §11, §14 rerun with Clang; §8's tenth roughening not reproduced); Q6 [likelihood-measurements], Q8 [allocation], Q12, Q15 decided; Q1 to Q5, Q7, Q9 to Q11, Q13, Q14, Q16 open |
 | 3 | [rao-blackwellized-filters.md](rao-blackwellized-filters.md): point-mass, grid, and particle | not yet reviewed; refreshed for roadmap 17z (§6 and the misuse table rewritten, the prediction ignoring `affineIn()` where it refused `FactoredUnscented`, error quotes rerun with Clang); Q2, Q7, Q15, Q18 [allocation], Q27 [rb-particle-filter] decided; Q11 partly decided; Q1, Q3 to Q6, Q8 to Q10, Q12 to Q14, Q16, Q17, Q19 to Q26 open |
 | 4 | [smoothing.md](smoothing.md): the record of the forward pass and the backward passes over it | written; not yet reviewed; refreshed for roadmap 17z (models rewritten, §3 to §5 and §6's IMM columns rerun with Clang; since then §6's chain made continuous-time [switching-models], its numbers not rerun); Q4 decided; Q1 to Q3, Q5 to Q11 open; Q12 open |
+| 5 | [gpb-filter.md](gpb-filter.md): the filter that keeps a Gaussian per sequence of the last modes, the generalized pseudo-Bayesian estimator of any order | written with a first implementation on the branch `mode-sequences` (2026-11-22); not yet reviewed; the filter's name decided (`GpbFilter`); Q1 to Q12 open |
 
 When you write or finish reviewing a document, update its status here. A finished review moves
 out, as the roadmap's Documentation section says, and is deleted: Core and Spaces were the first,
@@ -175,3 +176,17 @@ fixed-lag), `HybridGaussianHistory` for the IMM and AMM, `GaussianMixtureHistory
 - Tests: `tests/Smoothers/smoothing`, `mixture_smoothing`, and the smoothing cases in
   `tests/unequal_dimensions_filters`, `allocation`, `allocation_mixtures`,
   `allocation_particles`, and `parallel`.
+
+### 5. Generalized pseudo-Bayesian filter
+
+The space of the last modes (`ModeSequence`, `Lagged`, `Current`), a hybrid spread over it
+(`overModeSequences()`), the filter and its recursion, the update it shares with the IMM
+(`HybridUpdateSteps`), and how the filter stands beside the IMM.
+
+- Decisions: none of its own yet, the name aside, which style.md's list records; [switching-models], [by-mode], [imm], [filters-and-recursions],
+  [update-outcomes], [discrete-spaces] as given.
+- Headers: `Spaces/ModeSequence.h`, `Filters/GpbFilter.h`, `HybridUpdateSteps` in
+  `Filters/ImmFilter.h`, and `overModeSequences()` in `Distributions/Hybrid.h`.
+- Tests: `tests/Filters/gpb_filter`, and the cases `MODE_SEQUENCE_EMPTY` and
+  `GPB_FIXED_STEP_METHOD` of `tests/Spaces/compile_errors` and
+  `tests/Filters/compile_errors`.

@@ -461,32 +461,42 @@ Done when: it passes its test on all three compilers.
 
 Done when: both pass their tests on all three compilers.
 
-## 17zn. Generalized pseudo-Bayesian estimators — not started
+## 17zn. Generalized pseudo-Bayesian estimators — first implementation, on the branch `mode-sequences`
 
-GPBn beside the IMM and the AMM, on `SwitchingModel` [switching-models] (Bar-Shalom, Li, and
-Kirubarajan 2001), with n a template parameter, since the state's type changes with it. GPBn keeps
-a Gaussian per history of the last n−1 modes; a step predicts each through each mode's model,
-$M^{n-1} \cdot M$ predictions, updates and reweights the $M^n$ results, and merges by moments
-those that differ only in their oldest mode. The IMM, which mixes before predicting, is not in the
-family and stays its own filter.
+`GpbFilter` is GPBn for any n, beside the IMM and the AMM, on `SwitchingModel`
+[switching-models] (Bar-Shalom, Li, and Kirubarajan 2001, as Hashimzade et al. 2024, §2.2.2,
+give it). Its state is a `Hybrid` over `ModeSequence<ModeSpace, N>`, the sequences of the last n
+modes, for every n, n = 1 included. [docs/guide/gpb-filter.md](../guide/gpb-filter.md)
+reviews the implementation and holds its open questions; read it first. The filter's name is
+decided (2026-11-22), and `Gpb` is in style.md's list of abbreviations; nothing else of it is
+decided, and nothing is in decisions.md.
 
-- [ ] The state: weights over the last $\max(n-1, 1)$ modes and Gaussians over the newest $n-1$
-      of them, a weight's Gaussian found by dropping its older coordinates. For $n \ge 2$ the two
-      agree and the state is a `Hybrid` over a product of $n-1$ copies of the mode space, one per
-      lag, with distinct axis tags (a `History<ModeSpace, N>` space, say); for $n = 1$ a partial
-      specialization of the state type alone, one Gaussian with weights over the current mode. The
-      filter's predict, update, and merge are written once over the mapping: the prior weight of a
-      new mode sums the old weights over what the mapping drops, which is empty for $n \ge 2$ and
-      $\sum_i w_i \Pi_{ij}$ for $n = 1$, and the merge marginalizes the oldest axis of the
-      Gaussians' index and then of the weights'. The merge builds on `Hybrid`'s marginal, and
-      GPB2's cross predictions on `HybridPredictedJoint::predictedThrough()`.
-- [ ] The estimator. Test: with one mode it equals the Kalman filter; from one Gaussian it equals
-      the exact posterior, the mixture over all $M^k$ mode histories by enumeration, for the first
-      $n-1$ steps, for $n = 2, 3$; on the IMM's maneuvering target, GPB1's error is at or above
-      the IMM's and GPB2's at or below, as the source reports. No test claims the error falls with
-      n on a given run, which nothing guarantees.
+The implementation departs from the plan this step had in two ways, both questions of the guide:
 
-Done when: GPB1, GPB2, and GPB3 pass their tests on all three compilers.
+- The state holds the $M^n$ updated Gaussians, and `predict()` merges those that differ only in
+  their oldest mode before it predicts. The plan kept the $M^{n-1}$ merged Gaussians, which a
+  filter whose `predict()` and `update()` are separate calls cannot hold between the two: the
+  $M^n$ predictions have to be somewhere until the update. So n = 1 needs no state type of its
+  own, and the update is the IMM's, moved into `HybridUpdateSteps`, a base of `ImmRecursion`.
+- It records no step for a smoother, so it builds nothing on `HybridPredictedJoint`.
+
+It also found that with n of two or more the filter is the IMM on the chain of the last n modes,
+which a test shows for n = 2 with the library's own `ImmFilter`.
+
+- [ ] The guide's questions answered, the state first (Q2), and the answers recorded in
+      decisions.md and style.md.
+- [ ] The land checks, which no run has made: the `clang` workflow, `msvc` (deduction guides),
+      and `clang-compile-errors` (two new cases, and `ImmFilter.h`'s cases, whose claims moved
+      into a base class). What was checked instead is in the guide's opening.
+- [ ] `tests/allocation_mixtures.cpp`: the steps allocate nothing on a bounded space once the
+      scratch and a reused result have been as large.
+- [ ] What the filter lacks beside the IMM, each a question of the guide: a recursion of the
+      user's own as a template parameter, a `MixtureFilter` over its hybrids, the updates given a
+      block that the Rao-Blackwellized filters make, and a smoother.
+- [ ] The user's documents: `docs/usage.md`, `docs/choosing.md` (when sequences of two modes
+      are worth four times an IMM's work), the Filters module page's table, and the README's list.
+
+Done when: sequences of one, two, and three modes pass their tests on all three compilers.
 
 ## 16b. Hooks for splitting by nonlinearity — not started
 

@@ -1,4 +1,4 @@
-// The compile errors that the spaces claim (Spaces/Coordinates.h, Composite.h, Discrete.h,
+// The compile errors that the spaces claim (Spaces/Coordinates.h, Composite.h, Discrete.h, ModeSequence.h,
 // TagPath.h with its block accessors, UnitQuaternion.h): each case below is a misuse that must fail to compile with the
 // static_assert or deleted function it names, checked by tests/compile_errors.cmake. Without a case
 // the file compiles, which checks what the cases share. The evidence for [coverage]'s negative
@@ -119,6 +119,10 @@ everyCaseSharesThis()
 
 #if defined(DISCRETE_PRODUCT_EMPTY)  // static_assert: Discrete.h: a product needs at least one axis
 [[maybe_unused]] Emrys::DiscreteProduct<> const space;
+#endif
+
+#if defined(MODE_SEQUENCE_EMPTY)  // static_assert: ModeSequence.h: a mode sequence holds at least one mode
+[[maybe_unused]] Emrys::ModeSequence<Maneuver, 0> const space;
 #endif
 
 #if defined(VALUE_OF_NOTHING)  // static_assert: Discrete.h: name a value

@@ -16,7 +16,8 @@ the decision, and history belongs in the commit message. An open question goes i
   every identifier that contains them (types, functions, variables, files, internals), and never
   mixed with the full word [params-and-density]: `Params` (parameters), `Sqrt` (square root), `Info`
   (information), `Rb` (Rao-Blackwellized), `Imm` and `Amm` (interacting and autonomous multiple
-  model), `Ess` (effective sample size), and the index utilities `idx()` and `block()` for values and
+  model), `Gpb` (generalized pseudo-Bayesian), `Ess` (effective sample size), and the index
+  utilities `idx()` and `block()` for values and
   `diffIdx()` and `diffBlock()` for differences [index-names]. An abbreviation is a camel-case word: `RbParticleFilter`,
   `SqrtInfoGaussian`, `toSqrtInfo()`. So is an acronym in our own identifiers (`NisMonitor`,
   `positionNees`), while Eigen's names keep Eigen's spelling (`Eigen::LLT`, `matrixLLT()`). Don't

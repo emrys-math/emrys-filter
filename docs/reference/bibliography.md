@@ -61,7 +61,8 @@ association. *Automatica*, 11(5):451–460, 1975.
 Y. Bar-Shalom, X. R. Li, and T. Kirubarajan. *Estimation with Applications to Tracking and
 Navigation: Theory, Algorithms and Software*. Wiley, 2001.
 **Not read.** The comments that cite it take their numbers from \ref Chen2023 "Chen et al. (2023)"
-(NIS and NEES), \ref Hashimzade2024 "Hashimzade et al. (2024)" (IMM),
+(NIS and NEES), \ref Hashimzade2024 "Hashimzade et al. (2024)" (IMM, and the generalized
+pseudo-Bayesian estimators),
 \ref BarShalom1975 "Bar-Shalom and Tse (1975)" (gating), and
 [Discretization](https://en.wikipedia.org/wiki/Discretization#Discretization_of_linear_state_space_models).
 
@@ -193,7 +194,10 @@ censored Markov chains, and RG-factorization in block-form,
 
 \anchor Hashimzade2024
 N. Hashimzade, O. Kirsanov, T. Kirsanova, and J. Maih. On Bayesian filtering for Markov regime
-switching models. arXiv:2402.08051, 2024. Free: [arXiv](https://arxiv.org/abs/2402.08051).
+switching models. arXiv:2402.08051, 2024. §2.2.2, Algorithm 1, is the generalized pseudo-Bayesian
+estimator of order \f$ N \f$, GPB(N), and §2.2.3, Algorithm 2, the interacting multiple model filter
+of order \f$ N \f$, IMM(N); §2.2 says that the filter of \ref Kim1994 "Kim (1994)" is GPB(2).
+Free: [arXiv](https://arxiv.org/abs/2402.08051).
 
 \anchor Helmick1995
 R. E. Helmick, W. D. Blair, and S. A. Hoffman. Fixed-interval smoothing for Markovian switching

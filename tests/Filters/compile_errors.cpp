@@ -181,6 +181,15 @@ everyCaseSharesThis()
 );
 #endif
 
+#if defined(GPB_FIXED_STEP_METHOD)  // static_assert: GpbFilter.h: a filter with fixed-step models
+// As for the IMM: each fixed-step mode predicts by its own method, so the filter's is ModelsMethod.
+[[maybe_unused]] constexpr auto size = sizeof(Emrys::GpbRecursion<
+                                              Emrys::Gaussian<State>,
+                                              Emrys::SwitchingModel<Maneuver, double, Fixed>,
+                                              2,
+                                              Emrys::methods::Linearized>);
+#endif
+
 #if defined(MIXTURE_FIXED_STEP_METHOD)  // static_assert: MixtureFilter.h: a filter with a fixed-step model predicts by
 [[maybe_unused]] constexpr auto size =
     sizeof(Emrys::MixtureFilter<Emrys::Gaussian<State>, Fixed, Emrys::methods::Unscented<>>);

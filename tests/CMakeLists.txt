@@ -97,6 +97,7 @@ add_executable(emrys_filter_tests
   Filters/gaussian_mixture_filter.cpp
   Filters/imm_filter.cpp
   Filters/amm_filter.cpp
+  Filters/gpb_filter.cpp
   Filters/particle_filter.cpp
   Filters/rb_point_mass_filter.cpp
   Filters/rb_particle_filter.cpp
