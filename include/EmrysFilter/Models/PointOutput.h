@@ -38,12 +38,14 @@ struct PointOutputAccess;
  * [returned-jacobians]): its value, and the Jacobians the method uses on this call, by block of the
  * function's input, in storage the library provides.
  *
- * The function writes <tt>value(y)</tt> whole, and <tt>jacobian<Name>(y)</tt> for each block
+ * The function writes <tt>value(y)</tt> whole, and <tt>jacobian<Name>(y)</tt> whole for each block
  * \c Name of its input for which <tt>wantsJacobian<Name>(y)</tt> is true: the Jacobian's columns
  * for the block that reads() names \c Name, its rows the output's differences. A block not wanted
  * is not read, so the function need not write it. <tt>jacobian(y)</tt> is the Jacobian over the
  * whole input, which a function that computes it whole writes when <tt>wantsJacobians(y)</tt> says
- * some block is wanted; the method reads the wanted blocks' columns alone.
+ * some block is wanted; the method reads the wanted blocks' columns alone. Nothing is zeroed for
+ * the function when every block is wanted, since it then writes every column, so a block whose
+ * Jacobian is zero is written as zero.
  *
  * \tparam In       the function's input space, a Composite of reads()' names, or the state's space
  * \tparam Out      its output space
@@ -74,22 +76,36 @@ public:
         maxValueDimensionAtCompileTime<DifferenceSpace<Out>>,
         maxValueDimensionAtCompileTime<DifferenceSpace<In>>>;
 
-    /** The output of a function from \a in to \a out, with the Jacobian of block \a k wanted where
-     * \a wanted says. \a in outlives this.
+    /** The value and the Jacobian the function writes, as the library reads a function's Jacobian,
+     * so that what the function writes is returned without a copy.
      */
-    PointOutput(In const & in, Out const & out, Wanted const & wanted)
-        : m_value(valueDimension(out))
+    using Result = internal::WithJacobian<ValueType, JacobianType>;
+
+    /** The output of a function from \a in to \a out, written into \a result, with the Jacobian of
+     * block \a k wanted where \a wanted says: the value sized to the output, and the Jacobian, where
+     * a block is wanted, sized to the output's differences and the input's, and zero only when some
+     * block is not wanted, whose columns the function leaves. \a in and \a result outlive this.
+     */
+    PointOutput(In const & in, Out const & out, Wanted const & wanted, Result & result)
+        : m_result{result}
         , m_in{in}
         , m_wanted{wanted}
     {
         bool any = false;
+        bool every = true;
         for (bool const w : wanted)
         {
             any = any || w;
+            every = every && w;
         }
-        if (any)
+        result.value.resize(valueDimension(out));
+        if (any && every)
         {
-            m_jacobian = JacobianType::Zero(differenceDimension(out), differenceDimension(in));
+            result.jacobian.resize(differenceDimension(out), differenceDimension(in));
+        }
+        else if (any)
+        {
+            result.jacobian.setZero(differenceDimension(out), differenceDimension(in));
         }
     }
 
@@ -106,10 +122,9 @@ private:
 
     friend struct internal::PointOutputAccess;
 
-    ValueType m_value;        ///< the value
-    JacobianType m_jacobian;  ///< the Jacobian, sized only when a block is wanted
-    In const & m_in;          ///< the function's input space
-    Wanted m_wanted;          ///< whether each block's Jacobian is wanted
+    Result & m_result;  ///< the value, and the Jacobian, sized only when a block is wanted
+    In const & m_in;    ///< the function's input space
+    Wanted m_wanted;    ///< whether each block's Jacobian is wanted
 };
 
 namespace internal
@@ -123,7 +138,7 @@ struct PointOutputAccess
     [[nodiscard]] static auto &
     value(Y & y)
     {
-        return y.m_value;
+        return y.m_result.value;
     }
 
     /** \returns whether \a y wants the Jacobian of the block at position \a K */
@@ -154,7 +169,7 @@ struct PointOutputAccess
     [[nodiscard]] static auto &
     jacobian(Y & y)
     {
-        return y.m_jacobian;
+        return y.m_result.jacobian;
     }
 
     /** \returns the input space of \a y */
@@ -315,12 +330,11 @@ public:
     withWanted(Wanted const & wanted, In const & in, Out const & out, X const & x, Rest &&... rest) const
     {
         checkOutput<Out>();
-        auto output = PointOutput<In, Out, typename X::Scalar>{in, out, wanted};
+        using Output = PointOutput<In, Out, typename X::Scalar>;
+        typename Output::Result result;
+        auto output = Output{in, out, wanted, result};
         callForm(m_function, in, out, x, std::forward<Rest>(rest)..., output);
-        return withJacobian(
-            std::move(PointOutputAccess::value(output)),
-            std::move(PointOutputAccess::jacobian(output))
-        );
+        return result;
     }
 
     /** \returns the function's value alone at \a x, with no Jacobian wanted */
@@ -330,9 +344,10 @@ public:
     {
         checkOutput<Out>();
         using Output = PointOutput<In, Out, typename X::Scalar>;
-        auto output = Output{in, out, Output::every(false)};
+        typename Output::Result result;
+        auto output = Output{in, out, Output::every(false), result};
         callForm(m_function, in, out, x, std::forward<Rest>(rest)..., output);
-        return std::move(PointOutputAccess::value(output));
+        return std::move(result.value);
     }
 
 private:

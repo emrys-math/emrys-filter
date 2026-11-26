@@ -172,9 +172,9 @@ instead.
 - A function that knows its Jacobian writes it into its output: mark it `writesJacobians(f)`, take
   the output `y` last, `h(in, out, x, y)` or `f(in, out, x, dt, y)`, and write `value(y) = v` and,
   when `wantsJacobians(y)`, `jacobian(y) = J`, or by block `jacobian<Name>(y)` when
-  `wantsJacobian<Name>(y)`, in place of `return withJacobian(v, J)`. `withJacobian()` and
-  `WithJacobian` are internal. A step that reads the value alone, such as a particle's, wants no
-  Jacobian, so it is not computed. The output's space must be known before the call: give a
+  `wantsJacobian<Name>(y)`, in place of `return withJacobian(v, J)`, each block wanted written
+  whole, zeros included. `withJacobian()` and `WithJacobian` are internal. A step that reads the
+  value alone, such as a particle's, wants no Jacobian, so it is not computed. The output's space must be known before the call: give a
   measurement model whose space came from its returned size `outputSpace()`.
 - A batched function writes its output by free functions, as `block<Name>(in, x)` reads its input:
   write `values(y)` for `y.values()`, `wantsJacobian<Name>(y)` for `y.template wantsJacobian<Name>()`,

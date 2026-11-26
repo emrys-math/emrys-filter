@@ -2308,9 +2308,9 @@ differentiates by fixed steps.*
 
 **Rule.** A function that knows its Jacobian is marked `writesJacobians(f)` and takes its output `y`
 last, `h(in, out, x, y)`: it writes `value(y)` and, for each block the method wants,
-`jacobian<Name>(y)` (rows in `out`'s differences), or `jacobian(y)` whole when `wantsJacobians(y)`,
-as a batched function writes [batched-functions]; its output's space is known before the call. A
-step that reads the value alone wants none. `Linearized` calls it once, at the means or about a `linearizedAbout()` point. A composition whose parts all return theirs returns
+`jacobian<Name>(y)` whole, zeros included (rows in `out`'s differences), or `jacobian(y)` whole when
+`wantsJacobians(y)`, as a batched function writes [batched-functions]; its output's space is known
+before the call. A step that reads the value alone wants none. `Linearized` calls it once, at the means or about a `linearizedAbout()` point. A composition whose parts all return theirs returns
 the whole's and is never differentiated. Any other function is differentiated automatically and must
 be generic in its scalar; the built-in models return theirs.
 

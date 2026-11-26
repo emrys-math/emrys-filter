@@ -511,7 +511,7 @@ by block of the output, discretized over the step, or `additiveNoise()` the $Q$ 
 only `fixedStep(model, dt)` takes: `predict(dt)` refuses a model with it, or with a part that has it. A function
 that knows its Jacobian is marked `writesJacobians(f)`, takes its output `y` last, writes `value(y)`
 and, when `wantsJacobians(y)`, `jacobian(y)` over its input's differences, or by block
-`jacobian<Name>(y)` when `wantsJacobian<Name>(y)`, and is never
+`jacobian<Name>(y)` when `wantsJacobian<Name>(y)`, each whole, zeros included, and is never
 differentiated. `affineIn(path<...>)` names the inputs the function is affine in given the rest,
 which every sigma-point method then carries exactly rather than spreading points over them;
 `affineIn(on<Bias>(H), offset(on<Range>(c)))` gives a constant part the function leaves out, `H`

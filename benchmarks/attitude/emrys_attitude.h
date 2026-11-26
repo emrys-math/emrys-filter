@@ -49,16 +49,15 @@ gyroIntegration(double noiseDensity)
         Emrys::writesJacobians([](auto const & in, auto const & out, auto const & x, double dt, auto & output) {
             Eigen::Vector3d const turn = (Emrys::block<Gyro>(in, x) - Emrys::block<Bias>(in, x)) * dt;
             auto const step = Emrys::UnitQuaternion::exponential(turn);
-            Eigen::Vector4d y;
-            Emrys::UnitQuaternion::map(Emrys::block<Attitude>(out, y)) =
+            Emrys::UnitQuaternion::map(Emrys::block<Attitude>(out, Emrys::value(output))) =
                 Emrys::UnitQuaternion::map(Emrys::block<Attitude>(in, x)) * step;
-            Eigen::Matrix<double, 3, 9> jacobian = Eigen::Matrix<double, 3, 9>::Zero();
-            jacobian.leftCols<3>() = step.toRotationMatrix().transpose();
-            jacobian.middleCols<3>(3) = -dt * Emrys::UnitQuaternion::rightJacobian(turn);
-            Emrys::value(output) = y;
             if (Emrys::wantsJacobians(output))
             {
-                Emrys::jacobian(output) = jacobian;
+                // Over the attitude, the bias, and the gyroscope's reading, whose columns are zero.
+                auto jacobian = Emrys::jacobian(output);
+                jacobian.template leftCols<3>() = step.toRotationMatrix().transpose();
+                jacobian.template middleCols<3>(3) = -dt * Emrys::UnitQuaternion::rightJacobian(turn);
+                jacobian.template rightCols<3>().setZero();
             }
         }),
         Emrys::reads(Emrys::path<Attitude>, Emrys::path<Bias>, Emrys::path<Gyro>),
@@ -150,12 +149,10 @@ private:
                 Emrys::writesJacobians([&](auto const & in, auto const &, Eigen::Vector4d const & x, auto & output) {
                     Eigen::Vector4d const q = Emrys::block<Attitude>(in, x);
                     Eigen::Vector3d const v = Emrys::UnitQuaternion::map(q).conjugate() * reference;
-                    auto skew = Eigen::Matrix3d{};
-                    skew << 0.0, -v(2), v(1), v(2), 0.0, -v(0), -v(1), v(0), 0.0;
                     Emrys::value(output) = v;
                     if (Emrys::wantsJacobians(output))
                     {
-                        Emrys::jacobian(output) = skew;
+                        Emrys::jacobian(output) << 0.0, -v(2), v(1), v(2), 0.0, -v(0), -v(1), v(0), 0.0;
                     }
                 });
             return observe(
