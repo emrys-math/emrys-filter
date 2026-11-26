@@ -275,7 +275,8 @@ public:
             constexpr int size = Matrix::RowsAtCompileTime;
             constexpr int count = Result::RowsAtCompileTime;
             using Column = Eigen::Matrix<Scalar, internal::paddedSize<Scalar, count>, 1>;
-            auto work = Eigen::Matrix<Scalar, internal::paddedSize<Scalar, count>, size>{};
+            // Not initialized, since each column is written whole before a pass reads it.
+            Eigen::Matrix<Scalar, internal::paddedSize<Scalar, count>, size> work;
             // L~ Y = B: unknown r of every right-hand side from those before it.
             for (int r = 0; r < size; ++r)
             {
@@ -437,8 +438,10 @@ private:
     {
         constexpr int size = Matrix::RowsAtCompileTime;
         using Column = Eigen::Matrix<Scalar, internal::paddedSize<Scalar, size>, 1>;
-        // The columns of L~ D, which the columns after them are reduced by.
-        auto unscaled = Eigen::Matrix<Scalar, internal::paddedSize<Scalar, size>, size>{};
+        // The columns of L~ D, which the columns after them are reduced by. Not initialized, since
+        // column k is written whole before a column after it reads it: an initialized one, of
+        // 4.6 KB at a size of 24 in double, was zeroed at every factorization.
+        Eigen::Matrix<Scalar, internal::paddedSize<Scalar, size>, size> unscaled;
         m_positiveDefinite = false;
         for (int k = 0; k < size; ++k)
         {

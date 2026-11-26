@@ -157,6 +157,9 @@ instead.
   with the measurement's size times the state's rather than with the cube of their sum: at 3D with
   24 anchors the square-root EKF's step takes 0.62 of mherb/kalman's time, from 1.08, and the
   square-root UKF's 0.89, from 1.27. Its results differ from before by rounding.
+- `CholeskyFactorization` no longer zeroes its scratch before writing it, 4.6 KB at a size of 24
+  in `double` at every factorization: the ranging EKF's step at 3D with 24 anchors takes
+  23,400 instructions, from 28,200. Its results are unchanged.
 - `compose()` and `onEach()` forward the Jacobians their batched parts write, each part's or
   repetition's into its rows, so a method no longer differentiates a composition whose parts are all
   marked `batched(f, jacobians::perColumn())`, or a part at a point that writes its Jacobian. A
