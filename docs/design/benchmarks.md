@@ -92,7 +92,7 @@ might doubt, published with its method and machine, and never one per feature."
 | 3 | Sampled filters are as fast as a loop you would write, and scale with threads | Particle filter on the ranging problem | ns per particle-step; ratio of `par` at $T$ threads to `Sequential` | hand-rolled Eigen particle filter (sequential) | the pair is built, not in CI, not published; the thread sweep is step 18's |
 | 4 | Each option has a known price | Options table on the ranging problem | ns per step relative to the plain EKF row | the library's own EKF | not started |
 | 5 | Composition is additive | Filters table on the ranging problem | ns per step relative to the EKF, divided by the component count | the library's own EKF | not started |
-| 6 | It fits and runs on a microcontroller | Footprint and cycles on Cortex-M4F and M7 | `.text`, `.data`, stack per function, DWT cycles per step | hand-rolled EKF and TinyEKF on the same target | the footprint is measured and published (2026-11-26): on the Cortex-M4F and M7 the library's ranging EKF takes 19.7 KB of code, the hand code's 6.9 KB, TinyEKF's 2.3 KB; the cycles per step wait on boards |
+| 6 | It fits and runs on a microcontroller | Footprint on Cortex-M4F and M7 | `.text`, `.data`, stack per function | hand-rolled EKF and TinyEKF on the same target | the footprint is measured and published (2026-11-26): on the Cortex-M4F and M7 the library's ranging EKF takes 19.7 KB of code, the hand code's 6.9 KB, TinyEKF's 2.3 KB; cycles per step are omitted, with no board to count them on (the user's decision, 2026-11-26) |
 | 7 | A template library's compile cost is tolerable | Compile cost of each benchmark translation unit | seconds and peak memory per compiler | the hand-rolled translation unit | built and measured on three compilers (section 7), not in CI, not published |
 | 8 | A GPU pays above some particle count | Device path against host `par` | crossover particle count | the library's own host path | step 19, not planned here |
 | 9 | It is no slower than the C++ Kalman library a user would otherwise pick | mherb/kalman's EKF, UKF, square-root EKF, and square-root UKF, TinyEKF's EKF, FrancoisCarouge/Kalman's EKF, and OpenCV's `cv::KalmanFilter` run as an EKF, on the ranging problem | instructions and ns per step, at the ranging sizes and scalars | each library, as its users write it | measured again 2026-11-26 with Clang on Linux and MSVC on Windows; with Clang the EKF holds against all four at every size but mherb/kalman's at 2D with 4 anchors in double (1.02), both square-root filters at every size, and the UKF but in float at 2D with 4 anchors (1.06); with MSVC the EKF (1.24 and 1.60) and the UKF (1.38 and 1.27) fail at 2D with 4 anchors; the pairs that do not agree are timed with a mark |
@@ -417,8 +417,8 @@ that "additive" is a number near one. These two tables are also where the borrow
 **6. Footprint.** [embedded-builds]'s Cortex-M job compiles the ranging and attitude EKFs in `float`
 for Cortex-M4F and Cortex-M7 with no heap and records `.text` and `.data` from the linker map and
 stack use per function from `-fstack-usage`; the table shows them beside the hand-rolled filter's.
-Cycles per step from the DWT counter are measured by hand on one board per core, as
-[embedded-builds] says, and published with the board and clock.
+Cycles per step are not measured: QEMU does not model them, and there is no board to count them
+on (the user's decision, 2026-11-26).
 
 **7. Compile cost.** `benchmarks/<problem>/compile_cost.cpp` is the problem's filter as a program
 uses it: built, run over a trajectory, and its estimate returned from a function with external
@@ -1142,8 +1142,8 @@ In the order each supports the next. Each is a pull request or two.
    given `dt` at every step closes step 13d's leftover. *Done when:* both tables are published and the borrow-stamp work
    has its before measurement.
 6. **Footprint (after [embedded-builds]'s Cortex-M job).** The sizes and stack table from the job's
-   artifacts, and DWT cycles from one M4F and one M7 board by hand. *Done when:* the table is
-   published with the boards and clocks.
+   artifacts. *Done* (2026-11-26): the table is on the results page; cycles per step are omitted,
+   with no board to count them on.
 7. **Compile cost.** The per-translation-unit time and memory on all three compilers, in CI as
    artifacts and on the results page as a table. *Started:* the units, `tools/compile_cost.py`,
    and the first table are built (section 7); the CI job, Linux's numbers, and the `Core.h` cost
@@ -1163,5 +1163,3 @@ Step 8 of the table, the GPU crossover, waits for step 19 and is specified there
   anyone keeping a database.
 - Does Compiler Explorer carry Eigen 5? If not, the disassembly artifact is the fallback, and
   the question is how much of it to quote.
-- Which boards for the DWT cycle counts? One M4F and one M7 that are common enough for a reader
-  to own, with the clock stated.

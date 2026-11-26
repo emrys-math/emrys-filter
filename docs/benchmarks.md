@@ -295,7 +295,8 @@ TinyEKF's, whose every product is a loop over arrays. Each adds no `.data`, and 
 bytes of `.bss`. The largest stack frame of each program is its `program()`, which holds the filter:
 7,664 bytes for the library's on the M4F, 5,152 for the hand code's, and 6,712 for TinyEKF's,
 against the simulator's 4,376. Measured on 2026-11-26 with the Arm GNU toolchain 14.2.1 and QEMU
-10.2.1; the cycles per step are to be counted on boards.
+10.2.1. Cycles per step are not measured: QEMU does not model them, and there is no board to
+count them on.
 
 ## Compile time
 
@@ -518,7 +519,8 @@ cannot be inlined, which cost nothing measurable against the same filter stepped
 ## Not measured yet
 
 - The particle filter's scaling with threads under `std::execution::par`.
-- Cycles per step on Cortex-M4F and Cortex-M7 boards, by the DWT counter.
+- Cycles per step on Cortex-M4F and Cortex-M7, which QEMU does not model and no board is at hand
+  to count.
 - The price of each option (update form, Gaussian form, sigma points) relative to the plain EKF.
 
 ## Machines

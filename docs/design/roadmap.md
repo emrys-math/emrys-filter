@@ -1049,9 +1049,11 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       miscompiling the benchmark's `colwise().norm()` of a 2×8 `float` matrix inside its
       measurement functions, both sides', so the `float` EKF at 2D with 8 anchors strays (not
       reproduced alone, and 19.52 not tried); libstdc++'s `std::generate_canonical` taking a
-      `logl` at every draw, most of the Linux particle step. Next: the cycles per step on
-      boards; a test of `float` at 2D with 8 anchors that would catch the MSVC miscompilation,
-      with a workaround; the gather by blocks for a read that is one run of columns. The whole test suite passed with Clang 21
+      `logl` at every draw, most of the Linux particle step. Cycles per step on the Cortex-M
+      are omitted, with no board to count them on (the user's decision, 2026-11-26). Next: a
+      test of `float` at 2D with 8 anchors that would catch the MSVC miscompilation, with a
+      workaround, in an issue of its own if CI passes as the branch is (the user's decision,
+      2026-11-26); the gather by blocks for a read that is one run of columns. The whole test suite passed with Clang 21
       and with GCC 15 in WSL (2026-11-23, both with warnings as errors) but
       `Allocation.ParticleFilterUnderAUsersPolicyStaysOffTheHeap`, whose scratch arena `next`
       enlarged before the branch was rebased onto it (2026-11-24). SymForce and manif wait for
