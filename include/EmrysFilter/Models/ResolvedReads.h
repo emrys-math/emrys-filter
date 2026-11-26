@@ -524,50 +524,6 @@ nameOf(Block const & block)
     }
 }
 
-/** The scalar type \a T as a vector stores it: itself, or for an automatic-differentiation scalar
- * whose derivatives are an expression, the one whose derivatives are a plain vector.
- */
-template <typename T>
-struct PlainScalarOf
-{
-    using type = T;  ///< the scalar itself
-};
-
-/// \cond INTERNAL_SPECIALIZATIONS
-template <typename Derivatives>
-struct PlainScalarOf<Eigen::AutoDiffScalar<Derivatives>>
-{
-    using type = Eigen::AutoDiffScalar<typename std::remove_cvref_t<Derivatives>::PlainObject>;
-};
-
-/// \endcond
-
-/** \returns \a returned, what a model's function returned, with a scalar wrapped as a vector of one
- * coordinate, so that a function of one output may return its value alone, in its input's scalar
- * type: an automatic-differentiation scalar whose derivatives are still an expression refers to
- * temporaries of the function, which are gone by now, so it is refused
- */
-template <typename R>
-[[nodiscard]] auto
-vectorReturned(R && returned)
-{
-    using Plain = std::remove_cvref_t<R>;
-    if constexpr (!MatrixExpression<Plain> && !isWithJacobian<Plain>)
-    {
-        static_assert(
-            std::is_same_v<Plain, typename PlainScalarOf<Plain>::type>,
-            "a function that returns a scalar returns it as its input's scalar type, T{...}: an expression of "
-            "automatic-differentiation scalars refers to temporaries of the function; or return a vector of one "
-            "coordinate"
-        );
-        return Eigen::Matrix<Plain, 1, 1>{std::forward<R>(returned)};
-    }
-    else
-    {
-        return std::forward<R>(returned);
-    }
-}
-
 /** \returns whether every item of \a Model's reads() is named in its affineIn(), or for a whole-state
  * model whether its function says it is affine, as a matrix model's does: the function is then
  * affine in its whole input, so its Jacobian is the same at every point
@@ -1008,6 +964,56 @@ public:
         return shared;
     }
 
+    /** \returns which blocks of the function's input an update given a block reads the Jacobian of,
+     * one flag per block in order: an item of the state with a difference coordinate that \a given, a
+     * predicate on the whole state's difference coordinates, says is not of the given block, or any
+     * item of the state where \a GivenUncertain; each uncertain input; and every block of a
+     * whole-state model's input, which is its one block
+     */
+    template <std::size_t Blocks, bool GivenUncertain, typename Given>
+    [[nodiscard]] std::array<bool, Blocks>
+    blocksBeyond([[maybe_unused]] Given const & given) const
+    {
+        std::array<bool, Blocks> wanted{};
+        if constexpr (Blocks == ItemCount)
+        {
+            [&]<std::size_t... I>(std::index_sequence<I...>) {
+                ((wanted[I] =
+                      [&] {
+                          if constexpr (inState(I))
+                          {
+                              if constexpr (GivenUncertain)
+                              {
+                                  return true;
+                              }
+                              else
+                              {
+                                  Eigen::Index const start = m_reads.jointDifferenceStart(stateIndexOf(I));
+                                  for (Eigen::Index r = 0; r < m_differenceRows[I].size; ++r)
+                                  {
+                                      if (!given(m_reads.differenceIndices()(start + r)))
+                                      {
+                                          return true;
+                                      }
+                                  }
+                                  return false;
+                              }
+                          }
+                          else
+                          {
+                              return argumentIsUncertain(I);
+                          }
+                      }()),
+                 ...);
+            }(std::make_index_sequence<ItemCount>{});
+        }
+        else
+        {
+            wanted.fill(true);
+        }
+        return wanted;
+    }
+
     /** \returns the difference dimension of the items factored out, or Eigen::Dynamic: a function rather
      * than a constant, since MSVC reads a class template's own constexpr member in its member
      * declarations before it has initialized it
@@ -1099,15 +1105,15 @@ public:
     }
 
     /** \returns for each coordinate affineCoordinates() gives, 1 where it is of an item whose
-     * Jacobian the model shares (sharedBlocks()), and 0 otherwise; all 0, or empty, where none is
+     * Jacobian is the same at every point of a call, one the model shares (sharedBlocks()) or a
+     * constant item's, and 0 otherwise; all 0, or empty, where none is
      */
     [[nodiscard]] IndexVector<affineSize(), affineMaxSize()>
     affineShared() const
     {
-        using SharedPolicy = typename Model::template Policy<PolicyKind::sharedJacobians>;
         auto result = noSharedCoordinates<affineSize(), affineMaxSize()>();
         constexpr bool Any = []<std::size_t... I>(std::index_sequence<I...>) {
-            return ((itemFactored<I>() && sharedNames<SharedPolicy, typename Item<I>::NameType>) || ... || false);
+            return ((itemFactored<I>() && sameJacobianAtEachPoint<Model, typename Item<I>::NameType>) || ... || false);
         }(std::make_index_sequence<ItemCount>{});
         if constexpr (Any)
         {
@@ -1122,7 +1128,7 @@ public:
                     [&] {
                         if constexpr (itemFactored<I>())
                         {
-                            constexpr bool shared = sharedNames<SharedPolicy, typename Item<I>::NameType>;
+                            constexpr bool shared = sameJacobianAtEachPoint<Model, typename Item<I>::NameType>;
                             for (Eigen::Index r = 0; r < m_differenceRows[I].size; ++r)
                             {
                                 result(next++) = shared ? 1 : 0;

@@ -268,7 +268,7 @@ updateGivenShared(
         InnovationVector residual = observedResidual<Scalar>(
             resolved,
             y.space(),
-            Emrys::plus(y.space(), valueOf(f(conditionals.mean(i), points.center(i))), noise.mean())
+            Emrys::plus(y.space(), f.valueAt(conditionals.mean(i), points.center(i)), noise.mean())
         );
         Scalar const nis = residual.dot(cholesky.solve(residual));
         result.nisData[std::size_t(i)] = nis;

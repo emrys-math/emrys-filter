@@ -709,11 +709,28 @@ struct EachPlacement
         }
     }
 
-    static_assert(
-        std::tuple_size_v<SharedNamesOfModel<Model>> == 0,
-        "onEach() places a model whose affineIn() shares no Jacobian, shared(path<Name>), yet; give the block with "
-        "path<Name>"
-    );
+    /** The placed names whose Jacobian is the same at every point of a call (shared(path<Name>) in the
+     * model's affineIn()): the repeated block where the model shares the Jacobian of every block of one
+     * repetition it reads, which each repetition writes once, and each input whose Jacobian it shares,
+     * under its new name.
+     */
+    using SharedNames = typename decltype([]<std::size_t... K>(std::index_sequence<K...>) {
+        using InnerShared = typename Model::template Policy<PolicyKind::sharedJacobians>;
+        constexpr bool anyState = ((kind<K>() == EachKind::state) || ...);
+        constexpr bool blockShared =
+            anyState
+            && ((kind<K>() != EachKind::state || sharedNames<InnerShared, typename InnerItem<K>::NameType>) && ...);
+        return std::type_identity<decltype(std::tuple_cat(
+            std::conditional_t<blockShared, std::tuple<RepeatedTag>, std::tuple<>>{},
+            std::conditional_t < kind<K>() != EachKind::state
+                && sharedNames<InnerShared, typename InnerItem<K>::NameType>,
+            std::tuple<NewName<K>>,
+            std::tuple < >> {}...
+        ))>{};
+    }(std::make_index_sequence<ItemCount>{}))::type;
+
+    /** The placed names whose Jacobian is shared, as a SharedJacobians. */
+    using SharedOfEach = typename SharedJacobiansOf<SharedNames>::type;
 
     /** The placed affineIn(): the repeated block where the model is affine in every block of one
      * repetition it reads, and each input the model is affine in.
@@ -1003,9 +1020,13 @@ private:
         constexpr std::size_t IK = std::tuple_size_v<InnerBlocks>;
         Eigen::Index const points = xi.cols();
         auto wanted = std::array<bool, IK>{};
+        auto shared = std::array<bool, IK>{};
         [&]<std::size_t... K>(std::index_sequence<K...>) {
+            using InnerShared = typename Model::template Policy<PolicyKind::sharedJacobians>;
             ((wanted[blockPosition<typename P::template InnerItem<K>::NameType, InnerBlocks>] =
-                  Emrys::wantsJacobian<WholeName<K>>(y)),
+                  Emrys::wantsJacobian<WholeName<K>>(y),
+              shared[blockPosition<typename P::template InnerItem<K>::NameType, InnerBlocks>] =
+                  sharedNames<InnerShared, typename P::template InnerItem<K>::NameType>),
              ...);
         }(std::make_index_sequence<P::ItemCount>{});
         std::array<Eigen::Index, IK> offsets{};
@@ -1022,7 +1043,7 @@ private:
             Eigen::Dynamic>;
         auto pj = PJ{};
         pj.resize(differenceDimension(innerOut), w * points);
-        callBatchedWithJacobians(m_model.function(), innerIn, innerOut, xi, wanted, std::array<bool, IK>{}, yi, pj, dt);
+        callBatchedWithJacobians(m_model.function(), innerIn, innerOut, xi, wanted, shared, yi, pj, dt);
         Eigen::Index const firstRow = differenceBlockRows<RepeatedTag>(out).start + i * BlockDifferenceSize;
         // The repetition's rows, by block it writes: a fold of its own, apart from the items'.
         auto const writeRows = [&](auto && target, Eigen::Index column, Eigen::Index from, Eigen::Index size) {
@@ -1056,6 +1077,12 @@ private:
                     else if constexpr (P::template kind<K>() == EachKind::repeated)
                     {
                         column = i * size;
+                    }
+                    // A block the whole shares is written once, from the first point, where the model shares it.
+                    if (BatchedOutputAccess::sharedBlock<WholeName<K>>(y))
+                    {
+                        writeRows(Emrys::jacobian<WholeName<K>>(y), column, offsets[b], size);
+                        return;
                     }
                     for (Eigen::Index j = 0; j < points; ++j)
                     {
@@ -1381,6 +1408,27 @@ public:
         return stepParts<ScalarOf<X>>(m_parts, in, out, x);
     }
 
+    /** \returns the measurement of \a x, the value alone, each model asked for its value alone */
+    template <typename In, typename Out, typename X>
+    [[nodiscard]] auto
+    valueAt(In const & in, Out const & out, X const & x) const
+        requires MatrixExpression<X>
+    {
+        return stepPartsValues(m_parts, in, out, x);
+    }
+
+    /** \returns the measurement of \a x with the Jacobian of the blocks \a wanted says, one flag per
+     * block of the input \a in, each model asked for those of its own blocks alone, zero in the
+     * columns of the others: what a method that reads some blocks' columns alone asks for
+     */
+    template <typename Wanted, typename In, typename Out, typename X>
+    [[nodiscard]] auto
+    withWanted(Wanted const & wanted, In const & in, Out const & out, X const & x) const
+        requires MatrixExpression<X>
+    {
+        return stepPartsWanted<ScalarOf<X>>(m_parts, wanted, in, out, x);
+    }
+
     /// whether the whole takes a batch: a model's function does (decisions.md [batched-functions])
     static constexpr bool TakesBatches = anyTakesBatches<Models...>;
 
@@ -1566,12 +1614,34 @@ placeEach(Selection const & where, Model const & model, Renames const &...)
     static_assert(wholeStateRefused<Model>);
     using Each = EachPlacement<Prefix, Model, Selection, Renames...>;
     using Step = EachStep<Prefix, Model, Selection, Renames...>;
-    return ProcessFunction<Step, typename Each::ReadsOfEach, typename Each::WritesOfEach, typename Each::AffineOfEach>{
-        Step{model},
-        Each::makeReads(model.template policy<PolicyKind::reads>(), where),
-        Each::makeWrites(where),
-        typename Each::AffineOfEach{}
-    };
+    if constexpr (std::tuple_size_v<typename Each::SharedNames> == 0)
+    {
+        return ProcessFunction<
+            Step,
+            typename Each::ReadsOfEach,
+            typename Each::WritesOfEach,
+            typename Each::AffineOfEach>{
+            Step{model},
+            Each::makeReads(model.template policy<PolicyKind::reads>(), where),
+            Each::makeWrites(where),
+            typename Each::AffineOfEach{}
+        };
+    }
+    else
+    {
+        return ProcessFunction<
+            Step,
+            typename Each::ReadsOfEach,
+            typename Each::WritesOfEach,
+            typename Each::AffineOfEach,
+            typename Each::SharedOfEach>{
+            Step{model},
+            Each::makeReads(model.template policy<PolicyKind::reads>(), where),
+            Each::makeWrites(where),
+            typename Each::AffineOfEach{},
+            typename Each::SharedOfEach{}
+        };
+    }
 }
 
 }  // namespace internal

@@ -909,6 +909,12 @@ inline constexpr bool sharedNames = false;
 template <typename... Names, typename Name>
 inline constexpr bool sharedNames<SharedJacobians<Names...>, Name> = (std::is_same_v<Names, Name> || ... || false);
 
+/** Whether the columns of the function \a F's Jacobian in the input named \a Name are a constant
+ * item's of affineIn() (internal::ConstantAffineFunction), the same at every point of every call.
+ */
+template <typename F, typename Name>
+inline constexpr bool constantColumns = requires { requires F::template ConstantColumns<Name>; };
+
 }  // namespace internal
 
 /** \ingroup Models
@@ -1525,6 +1531,22 @@ enum class PolicyKind
     outputSpace,
     discreteNoise  ///< internal: a built-in process model's closed-form noise over the step
 };
+
+/** Whether the Jacobian of the model \a Model in its input named \a Name is the same at every point
+ * of one call: a name its affineIn() shares (sharedNames), or a constant item's (constantColumns).
+ */
+template <typename Model, typename Name>
+inline constexpr bool sameJacobianAtEachPoint =
+    sharedNames<typename Model::template Policy<PolicyKind::sharedJacobians>, Name> || [] {
+        if constexpr (requires { typename Model::FunctionType; })
+        {
+            return constantColumns<typename Model::FunctionType, Name>;
+        }
+        else
+        {
+            return false;
+        }
+    }();
 
 /** The kind of the policy type \a T, or nothing for a type that is no policy. */
 template <typename T>

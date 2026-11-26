@@ -535,15 +535,6 @@ updatedBy(Model const & model)
     return bool(Emrys::update(makeInitial(), Emrys::observe(methods::linearized(), model, Eigen::Vector2d::Zero())));
 }
 
-#if defined(AFFINE_CONSTANT_BATCHED)  // static_assert: AffineConstants.h: a batched function takes no constant items
-[[maybe_unused]] auto const model = Emrys::measurementModel(
-    Emrys::batched([](auto const &, auto const &, auto const &, auto &) {}),
-    Emrys::reads(Emrys::path<Position>),
-    Emrys::affineIn(Emrys::on<Velocity>(Eigen::Matrix2d::Identity())),
-    Emrys::additiveNoise(makeNoise())
-);
-#endif
-
 #if defined(AFFINE_CONSTANT_READ_TOO)  // static_assert: AffineConstants.h: so reads() does not name it too
 [[maybe_unused]] auto const model = Emrys::measurementModel(
     positionOf,
@@ -730,17 +721,6 @@ updatedBy(Model const & model)
 
 #if defined(SHARED_BY_PATH)  // static_assert: Policies.h: shared(path<Name>) names an input of the model by the one
 [[maybe_unused]] auto const item = Emrys::shared(Emrys::path<Fixes, Fix>);
-#endif
-
-#if defined(ON_EACH_SHARED)  // static_assert: Placement.h: onEach() places a model whose affineIn() shares no
-[[maybe_unused]] auto const placed = Emrys::onEach<Fixes>(Emrys::processModel(
-    []<typename T>(auto const & in, auto const &, auto const & x, auto) {
-        return Eigen::Matrix<T, 2, 1>{Emrys::block<Fix>(in, x)};
-    },
-    Emrys::reads(Emrys::path<Fix>),
-    Emrys::writes(Emrys::path<Fix>),
-    Emrys::affineIn(Emrys::shared(Emrys::path<Fix>))
-));
 #endif
 
 #if defined(OU_MEAN_SIZE)  // static_assert: ProcessModel.h: must have the size of its block
@@ -1270,7 +1250,7 @@ squareRootWithoutMethod()
 
 // A function that returns a scalar as an expression of automatic-differentiation scalars, which refers
 // to the function's own temporaries, is refused: it returns T{...}, its input's scalar, or a vector.
-#if defined(FUNCTION_RETURNS_EXPRESSION)  // static_assert: ResolvedReads.h: a function that returns a scalar returns
+#if defined(FUNCTION_RETURNS_EXPRESSION)  // static_assert: TransformArgs.h: a function that returns a scalar returns
 [[maybe_unused]] auto const updated = Emrys::update(
     makeInitial(),
     Emrys::observe(

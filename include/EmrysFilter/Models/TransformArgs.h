@@ -773,7 +773,17 @@ public:
     [[nodiscard]] decltype(auto)
     returned(InputVector<T> const & x) const
     {
-        return call<T>(m_f, x);
+        // A function that can be asked for the Jacobians of its uncertain arguments alone is
+        // (decisions.md [returned-jacobians]).
+        if constexpr (requires { m_f.template uncertainJacobians<ArgTraits<Args>::isUncertain...>(); })
+        {
+            auto const uncertain = m_f.template uncertainJacobians<ArgTraits<Args>::isUncertain...>();
+            return call<T>(uncertain, x);
+        }
+        else
+        {
+            return call<T>(m_f, x);
+        }
     }
 
     /** \returns returned() with the Jacobian of the blocks the factored transform reads alone, where
@@ -1067,6 +1077,50 @@ private:
     Index m_inputSize = 0;                                     ///< the joint input's value dimension
     Index m_inputDifferenceSize = 0;                           ///< the joint input's difference dimension
 };
+
+/** The scalar type \a T as a vector stores it: itself, or for an automatic-differentiation scalar
+ * whose derivatives are an expression, the one whose derivatives are a plain vector.
+ */
+template <typename T>
+struct PlainScalarOf
+{
+    using type = T;  ///< the scalar itself
+};
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename Derivatives>
+struct PlainScalarOf<Eigen::AutoDiffScalar<Derivatives>>
+{
+    using type = Eigen::AutoDiffScalar<typename std::remove_cvref_t<Derivatives>::PlainObject>;
+};
+
+/// \endcond
+
+/** \returns \a returned, what a model's function returned, with a scalar wrapped as a vector of one
+ * coordinate, so that a function of one output may return its value alone, in its input's scalar
+ * type: an automatic-differentiation scalar whose derivatives are still an expression refers to
+ * temporaries of the function, which are gone by now, so it is refused
+ */
+template <typename R>
+[[nodiscard]] auto
+vectorReturned(R && returned)
+{
+    using Plain = std::remove_cvref_t<R>;
+    if constexpr (!MatrixExpression<Plain> && !isWithJacobian<Plain>)
+    {
+        static_assert(
+            std::is_same_v<Plain, typename PlainScalarOf<Plain>::type>,
+            "a function that returns a scalar returns it as its input's scalar type, T{...}: an expression of "
+            "automatic-differentiation scalars refers to temporaries of the function; or return a vector of one "
+            "coordinate"
+        );
+        return Eigen::Matrix<Plain, 1, 1>{std::forward<R>(returned)};
+    }
+    else
+    {
+        return std::forward<R>(returned);
+    }
+}
 
 }  // namespace internal
 

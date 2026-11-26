@@ -2305,7 +2305,8 @@ struct ValuesOnly
 
 /** Steps part \a I of \a parts: gathers its input from \a x by name, calls its function with
  * \a extra after the input, writes its result into \a y by block, and its Jacobian into
- * \a jacobian where the whole assembles one.
+ * \a jacobian where the whole assembles one, a function marked writesJacobians() asked for the
+ * blocks \a wanted says alone, one flag per block of the whole's input, or every block's.
  */
 template <
     std::size_t I,
@@ -2315,6 +2316,7 @@ template <
     typename X,
     typename Y,
     typename J,
+    typename Wanted,
     typename... Extra>
 void
 stepPart(
@@ -2324,6 +2326,7 @@ stepPart(
     X const & x,
     Y & y,
     [[maybe_unused]] J & jacobian,
+    [[maybe_unused]] Wanted const & wanted,
     Extra const &... extra
 )
 {
@@ -2332,13 +2335,19 @@ stepPart(
     auto const pout = partOut<Part>(out);
     auto const px = partVector<Part>(in, pin, x);
     auto result = [&] {
+        auto const & function = std::get<I>(parts).function();
         if constexpr (std::is_same_v<J, ValuesOnly>)
         {
-            return vectorReturned(callValueForm(std::get<I>(parts).function(), pin, pout, px, extra...));
+            return vectorReturned(callValueForm(function, pin, pout, px, extra...));
+        }
+        else if constexpr (std::is_same_v<Wanted, EveryBlock>)
+        {
+            return vectorReturned(callForm(function, pin, pout, px, extra...));
         }
         else
         {
-            return vectorReturned(callForm(std::get<I>(parts).function(), pin, pout, px, extra...));
+            using PIn = std::remove_cvref_t<decltype(pin)>;
+            return vectorReturned(callWantedForm(function, partWanted<PIn, In>(wanted), pin, pout, px, extra...));
         }
     }();
     auto const & value = valueOf(result);
@@ -2371,19 +2380,32 @@ stepPartsValues(
     auto y = zeros<typename X::Scalar>(out);
     auto valuesOnly = ValuesOnly{};
     [&]<std::size_t... I>(std::index_sequence<I...>) {
-        (stepPart<I>(parts, in, out, x, y, valuesOnly, extra...), ...);
+        (stepPart<I>(parts, in, out, x, y, valuesOnly, EveryBlock{}, extra...), ...);
     }(std::index_sequence_for<Models...>{});
     return y;
 }
 
-/** \returns the models \a parts side by side at \a x, a vector in the whole's input space \a in,
- * into the whole's output space \a out, each called with \a extra after its input: each part's
- * function on its own input, its result written by block, and with the Jacobian, in
- * \a JacobianScalar, assembled from the parts' when every part returns one
+/** \returns stepParts() with each part's function marked writesJacobians() asked for the blocks
+ * \a wanted says alone, one flag per block of the whole's input \a in, or every block's for
+ * EveryBlock: the Jacobian zero in the other blocks' columns
  */
-template <typename JacobianScalar, typename... Models, typename In, typename Out, typename X, typename... Extra>
+template <
+    typename JacobianScalar,
+    typename... Models,
+    typename Wanted,
+    typename In,
+    typename Out,
+    typename X,
+    typename... Extra>
 [[nodiscard]] auto
-stepParts(std::tuple<Models...> const & parts, In const & in, Out const & out, X const & x, Extra const &... extra)
+stepPartsWanted(
+    std::tuple<Models...> const & parts,
+    Wanted const & wanted,
+    In const & in,
+    Out const & out,
+    X const & x,
+    Extra const &... extra
+)
 {
     constexpr bool AllJacobians = (returnsJacobianWith<Models, JacobianScalar, Extra...> && ...);
     auto y = zeros<typename X::Scalar>(out);
@@ -2404,7 +2426,7 @@ stepParts(std::tuple<Models...> const & parts, In const & in, Out const & out, X
         }
     }();
     [&]<std::size_t... I>(std::index_sequence<I...>) {
-        (stepPart<I>(parts, in, out, x, y, jacobian, extra...), ...);
+        (stepPart<I>(parts, in, out, x, y, jacobian, wanted, extra...), ...);
     }(std::index_sequence_for<Models...>{});
     if constexpr (AllJacobians)
     {
@@ -2414,6 +2436,18 @@ stepParts(std::tuple<Models...> const & parts, In const & in, Out const & out, X
     {
         return y;
     }
+}
+
+/** \returns the models \a parts side by side at \a x, a vector in the whole's input space \a in,
+ * into the whole's output space \a out, each called with \a extra after its input: each part's
+ * function on its own input, its result written by block, and with the Jacobian, in
+ * \a JacobianScalar, assembled from the parts' when every part returns one
+ */
+template <typename JacobianScalar, typename... Models, typename In, typename Out, typename X, typename... Extra>
+[[nodiscard]] auto
+stepParts(std::tuple<Models...> const & parts, In const & in, Out const & out, X const & x, Extra const &... extra)
+{
+    return stepPartsWanted<JacobianScalar>(parts, EveryBlock{}, in, out, x, extra...);
 }
 
 /** Whether the function of any of the models \a Models takes batches (decisions.md
@@ -2975,6 +3009,18 @@ public:
         requires MatrixExpression<X>
     {
         return internal::stepPartsValues(m_parts, in, out, x, dt);
+    }
+
+    /** \returns the whole's step of \a x with the Jacobian of the blocks \a wanted says, one flag per
+     * block of the input \a in, each part asked for those of its own blocks alone, zero in the columns
+     * of the others: what a method that reads some blocks' columns alone asks for
+     */
+    template <typename Wanted, typename In, typename Out, typename X, typename TimeScalar>
+    [[nodiscard]] auto
+    withWanted(Wanted const & wanted, In const & in, Out const & out, X const & x, TimeScalar dt) const
+        requires MatrixExpression<X>
+    {
+        return internal::stepPartsWanted<TimeScalar>(m_parts, wanted, in, out, x, dt);
     }
 
     /// whether the whole takes a batch: a part's function does (decisions.md [batched-functions])

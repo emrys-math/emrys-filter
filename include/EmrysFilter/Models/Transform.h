@@ -1043,7 +1043,8 @@ evaluateWithAffineJacobians(
     else
     {
         // A block whose Jacobian is shared, the same at every point of the call, is asked for at the first
-        // point alone and its columns copied to the others (decisions.md [affine-coordinates]).
+        // point alone, and its columns there are the ones the transform reads (decisions.md
+        // [affine-coordinates]).
         bool const anyShared = shared.size() > 0 && shared.maxCoeff() > 0;
         for (Index k = 0; k < count; ++k)
         {
@@ -1067,16 +1068,6 @@ evaluateWithAffineJacobians(
             if (k == 0)
             {
                 outputs.resize(y.size(), count);
-            }
-            else if (anyShared)
-            {
-                for (Index j = 0; j < l; ++j)
-                {
-                    if (shared(j) != 0)
-                    {
-                        jacobians.col(k * l + j) = jacobians.col(j);
-                    }
-                }
             }
             outputs.col(k) = y;
         }
@@ -1170,20 +1161,62 @@ transformResult(FactoredAt<AffineSize, AffineMaxSize, Points> const & method, Pr
     Index const m = problem.outputDifferenceSize();
     // The affine coordinates' parts (decisions.md [linearization-forms]): with the mean Jacobian H_a = sum_i w_i h_i,
     // Psi_a = L_c^T H_a^T, and Omega_a = sum_i w_i (h_i - H_a) P_a|n (h_i - H_a)^T in a second pass
-    // over the Jacobians kept, so that neither is recovered by subtraction.
+    // over the Jacobians kept, so that neither is recovered by subtraction. A column the same at every
+    // point, of a shared block or a constant item, is read at the first point alone, in closed form:
+    // it is its own mean and does not deviate, so it adds nothing to Omega_a.
+    auto const & shared = method.shared;
+    bool const anyShared = shared.size() > 0 && shared.maxCoeff() > 0;
     auto const affineParts = [&](auto const & jacobians, auto const & pointWeights) {
         Index const count = pointWeights.size();
         AffineJacobian meanJacobian = AffineJacobian::Zero(m, l);
-        for (Index k = 0; k < count; ++k)
-        {
-            meanJacobian += pointWeights(k) * jacobians.middleCols(k * l, l);
-        }
         OutputMatrix omega = OutputMatrix::Zero(m, m);
-        for (Index k = 0; k < count; ++k)
+        if (!anyShared)
         {
-            AffineJacobian const deviation = jacobians.middleCols(k * l, l) - meanJacobian;
-            AffineCross const spread = multiply(conditional, deviation.transpose());
-            omega.noalias() += pointWeights(k) * multiply(deviation, spread);
+            for (Index k = 0; k < count; ++k)
+            {
+                meanJacobian += pointWeights(k) * jacobians.middleCols(k * l, l);
+            }
+            for (Index k = 0; k < count; ++k)
+            {
+                AffineJacobian const deviation = jacobians.middleCols(k * l, l) - meanJacobian;
+                AffineCross const spread = multiply(conditional, deviation.transpose());
+                omega.noalias() += pointWeights(k) * multiply(deviation, spread);
+            }
+        }
+        else
+        {
+            // The columns that vary from point to point, and the others from the first point.
+            auto varying = IndexVector<Eigen::Dynamic, AffineMaxSize>{};
+            varying.resize(l - (shared.array() != 0).count());
+            for (Index j = 0, v = 0; j < l; ++j)
+            {
+                if (shared(j) != 0)
+                {
+                    meanJacobian.col(j) = jacobians.col(j);
+                }
+                else
+                {
+                    varying(v++) = j;
+                }
+            }
+            using VaryingJacobian = MatrixOf<Scalar, OutputSize, Eigen::Dynamic, OutputMaxSize, AffineMaxSize>;
+            using VaryingMatrix = MatrixOf<Scalar, Eigen::Dynamic, Eigen::Dynamic, AffineMaxSize, AffineMaxSize>;
+            using VaryingCross = MatrixOf<Scalar, Eigen::Dynamic, OutputSize, AffineMaxSize, OutputMaxSize>;
+            Index const v = varying.size();
+            VaryingJacobian varyingMean = VaryingJacobian::Zero(m, v);
+            for (Index k = 0; k < count; ++k)
+            {
+                varyingMean += pointWeights(k) * jacobians.middleCols(k * l, l)(Eigen::placeholders::all, varying);
+            }
+            meanJacobian(Eigen::placeholders::all, varying) = varyingMean;
+            VaryingMatrix const varyingConditional = conditional(varying, varying);
+            for (Index k = 0; k < count; ++k)
+            {
+                VaryingJacobian const deviation =
+                    jacobians.middleCols(k * l, l)(Eigen::placeholders::all, varying) - varyingMean;
+                VaryingCross const spread = multiply(varyingConditional, deviation.transpose());
+                omega.noalias() += pointWeights(k) * multiply(deviation, spread);
+            }
         }
         AffineCross whitened = multiply(conditionalRoot.transpose(), meanJacobian.transpose());
         return std::pair{std::move(whitened), std::move(omega)};
@@ -2173,15 +2206,64 @@ public:
     [[nodiscard]] auto
     operator()(A const &... args) const
     {
-        static_assert(sizeof...(A) == InputCount);
-        using T = typename FirstTypeOf<typename UncertainScalarOf<ArgTraits<Inputs>::isUncertain, A>::type...>::type;
-        auto const arguments = std::tuple<A const &...>{args...};
-        auto x = InVector<T>{};
-        x.resize(valueDimension(m_in));
-        [&]<std::size_t... I>(std::index_sequence<I...>) {
-            (gatherItem<I, T>(x, std::get<inputOfItem<I>()>(arguments)), ...);
-        }(std::make_index_sequence<ItemCount>{});
-        return split(vectorReturned(callForm(m_model.function(), m_in, m_out, x)));
+        return split(vectorReturned(callForm(m_model.function(), m_in, m_out, gathered(args...))));
+    }
+
+    /// whether values() gives the function for the value alone, which a transform evaluates
+    static constexpr bool EvaluatesValues = true;
+
+    /** The function for one call of the transform that gives a part of what operator()() gives. */
+    template <bool Factored, bool Shared = true>
+    struct Part
+    {
+        ModelTransform const & transform;  ///< the transform
+
+        /** \returns the value alone, or with the Jacobian of the factored blocks alone */
+        template <typename... A>
+        [[nodiscard]] auto
+        operator()(A const &... args) const
+        {
+            return transform.template evaluatePart<Factored, Shared>(args...);
+        }
+    };
+
+    /** \returns the function that gives the value alone, which a transform evaluates at each of its
+     * points, so that a function marked writesJacobians() is asked for no Jacobian
+     */
+    [[nodiscard]] Part<false>
+    values() const
+    {
+        return {*this};
+    }
+
+    /** \returns the function that gives the value with the Jacobian of the blocks the factored
+     * transform reads alone, and without \a Shared not those whose Jacobian is shared either, as at
+     * every point of a call after the first
+     */
+    template <bool Shared = true>
+    [[nodiscard]] Part<true, Shared>
+    factored() const
+    {
+        return {*this};
+    }
+
+    /** \returns operator()() of the value alone, or with \a Factored of the value with the Jacobian of
+     * the blocks factoredBlocks() gives, zero in the other blocks' columns
+     */
+    template <bool Factored, bool Shared, typename... A>
+    [[nodiscard]] auto
+    evaluatePart(A const &... args) const
+    {
+        auto const x = gathered(args...);
+        if constexpr (Factored)
+        {
+            constexpr auto wanted = factoredBlocks<std::tuple_size_v<InputBlocks<In>>, Shared>();
+            return split(vectorReturned(callWantedForm(m_model.function(), wanted, m_in, m_out, x)));
+        }
+        else
+        {
+            return vectorReturned(callValueForm(m_model.function(), m_in, m_out, x));
+        }
     }
 
     /// whether the positional transform evaluates a batch of points in one call, evaluateBatch():
@@ -2213,13 +2295,59 @@ public:
         [&]<std::size_t... I>(std::index_sequence<I...>) {
             ((wanted[I] = itemFactored<I>()), ...);
         }(std::make_index_sequence<ItemCount>{});
-        auto shared = std::array<bool, std::tuple_size_v<InputBlocks<In>>>{};
-        [&]<std::size_t... I>(std::index_sequence<I...>) {
-            using Shared = typename Model::template Policy<PolicyKind::sharedJacobians>;
-            ((shared[I] = sharedNames<Shared, typename Item<I>::NameType>), ...);
-        }(std::make_index_sequence<ItemCount>{});
         auto const x = gatherColumns<Y>(y.cols(), args...);
-        callBatchedWithJacobians(m_model.function(), m_in, m_out, x, wanted, shared, y, jacobians);
+        callBatchedWithJacobians(
+            m_model.function(),
+            m_in,
+            m_out,
+            x,
+            wanted,
+            sharedBlocks<std::tuple_size_v<InputBlocks<In>>>(),
+            y,
+            jacobians
+        );
+    }
+
+    /** \returns which blocks of the function's input the factored transform reads the Jacobian of,
+     * one flag per block in order: the items factored out (itemFactored()), and without \a Shared not
+     * those whose Jacobian the model shares; every block of a whole-input model's input, its one block
+     */
+    template <std::size_t Blocks, bool Shared = true>
+    [[nodiscard]] static constexpr std::array<bool, Blocks>
+    factoredBlocks()
+    {
+        std::array<bool, Blocks> wanted{};
+        if constexpr (!Whole && Blocks == ItemCount)
+        {
+            using SharedPolicy = typename Model::template Policy<PolicyKind::sharedJacobians>;
+            [&]<std::size_t... I>(std::index_sequence<I...>) {
+                ((wanted[I] = itemFactored<I>() && (Shared || !sharedNames<SharedPolicy, Name<I>>)), ...);
+            }(std::make_index_sequence<ItemCount>{});
+        }
+        else
+        {
+            wanted.fill(true);
+        }
+        return wanted;
+    }
+
+    /** \returns which blocks of the function's input the model shares the Jacobian of, the same at
+     * every point of one call, one flag per block in order: the items its affineIn() names
+     * shared(path<Name>); none of a whole-input model's input
+     */
+    template <std::size_t Blocks>
+    [[nodiscard]] static constexpr std::array<bool, Blocks>
+    sharedBlocks()
+    {
+        std::array<bool, Blocks> shared{};
+        if constexpr (!Whole && Blocks == ItemCount)
+        {
+            using SharedPolicy = typename Model::template Policy<PolicyKind::sharedJacobians>;
+            [&]<std::size_t... I>(std::index_sequence<I...>) {
+                ((shared[I] = sharedNames<SharedPolicy, Name<I>>), ...);
+            }(std::make_index_sequence<ItemCount>{});
+        }
+        return shared;
     }
 
     /** \returns the inputs of a batch of \a count points, a column each in the input space, as many
@@ -2327,6 +2455,44 @@ public:
         return result;
     }
 
+    /** \returns for each coordinate affineCoordinates() gives, 1 where it is of an item whose
+     * Jacobian is the same at every point of a call, one the model shares (sharedBlocks()) or a
+     * constant item's, and 0 otherwise; all 0, or empty, where none is
+     */
+    [[nodiscard]] IndexVector<affineSize(), affineMaxSize()>
+    affineShared() const
+    {
+        auto result = noSharedCoordinates<affineSize(), affineMaxSize()>();
+        constexpr bool Any = []<std::size_t... I>(std::index_sequence<I...>) {
+            return ((itemFactored<I>() && sameJacobianAtEachPoint<Model, Name<I>>) || ... || false);
+        }(std::make_index_sequence<ItemCount>{});
+        if constexpr (Any)
+        {
+            Eigen::Index count = 0;
+            [&]<std::size_t... I>(std::index_sequence<I...>) {
+                ((count += itemFactored<I>() ? m_differenceRows[I].size : 0), ...);
+            }(std::make_index_sequence<ItemCount>{});
+            result.resize(count);
+            Eigen::Index next = 0;
+            [&]<std::size_t... I>(std::index_sequence<I...>) {
+                (
+                    [&] {
+                        if constexpr (itemFactored<I>())
+                        {
+                            constexpr bool shared = sameJacobianAtEachPoint<Model, Name<I>>;
+                            for (Eigen::Index r = 0; r < m_differenceRows[I].size; ++r)
+                            {
+                                result(next++) = shared ? 1 : 0;
+                            }
+                        }
+                    }(),
+                    ...
+                );
+            }(std::make_index_sequence<ItemCount>{});
+        }
+        return result;
+    }
+
     /** \returns \a result, what the positional transform returned, with the model's additive noise
      * added: its covariance to the output's, as \f$ N \f$ of an OutputWithCross, and its mean moved
      * by the noise's mean
@@ -2408,6 +2574,24 @@ private:
         {
             return Out{};
         }
+    }
+
+    /** \returns the model's input vector at the inputs \a args, as the positional transform gives
+     * them: a vector for each uncertain input and the input itself for a sure one
+     */
+    template <typename... A>
+    [[nodiscard]] auto
+    gathered(A const &... args) const
+    {
+        static_assert(sizeof...(A) == InputCount);
+        using T = typename FirstTypeOf<typename UncertainScalarOf<ArgTraits<Inputs>::isUncertain, A>::type...>::type;
+        auto const arguments = std::tuple<A const &...>{args...};
+        auto x = InVector<T>{};
+        x.resize(valueDimension(m_in));
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+            (gatherItem<I, T>(x, std::get<inputOfItem<I>()>(arguments)), ...);
+        }(std::make_index_sequence<ItemCount>{});
+        return x;
     }
 
     /** Writes item \a I's block of the input vector \a x from \a argument, its input as the positional
@@ -2634,8 +2818,11 @@ transformModel(Method const & method, Model const & model, Inputs const &... inp
         auto const g = G{model, inputs...};
         if constexpr (isSigmaPointMethod<Method> && G::factorsAffine())
         {
-            auto const factored =
-                FactoredAt<G::affineSize(), G::affineMaxSize(), Method>{method, g.affineCoordinates()};
+            auto const factored = FactoredAt<G::affineSize(), G::affineMaxSize(), Method>{
+                method,
+                g.affineCoordinates(),
+                g.affineShared()
+            };
             return g.withNoise(transformBy(factored, g, g.out(), inputs...));
         }
         else

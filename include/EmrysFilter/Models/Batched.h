@@ -279,6 +279,28 @@ using InputBlocks = typename decltype([] {
     }
 }())::type;
 
+/** What a function that passes on the blocks wanted to the functions it calls is given in place of
+ * them when every block's Jacobian is wanted.
+ */
+struct EveryBlock
+{};
+
+/** \returns the blocks of the input \a PIn of a function that reads some of the blocks of the input
+ * \a In, by name, whose Jacobian \a wanted, one flag per block of \a In, says: a part of a
+ * composition's, or the function a model with constant items wraps
+ */
+template <typename PIn, typename In, typename Wanted>
+[[nodiscard]] auto
+partWanted(Wanted const & wanted)
+{
+    using PBlocks = InputBlocks<PIn>;
+    auto result = std::array<bool, std::tuple_size_v<PBlocks>>{};
+    [&]<std::size_t... B>(std::index_sequence<B...>) {
+        ((result[B] = wanted[blockPosition<std::tuple_element_t<B, PBlocks>, InputBlocks<In>>]), ...);
+    }(std::make_index_sequence<std::tuple_size_v<PBlocks>>{});
+    return result;
+}
+
 /** \returns the difference rows of the block \a Name of \a in, a batched function's input space:
  * its rows in a Composite, or every row of a space that is its own one block
  */

@@ -26,7 +26,8 @@ instead.
   offset(on<Range>(cr)))`. The model reads each such input as an affine one and adds `H x + c` to
   the function's value by `plus()`, and `H` to its Jacobian, in `measurementModel()`,
   `processModel()`, and `transform()` alike. A process model with one holds one step, so only
-  `fixedStep()` predicts it. A batched function takes none yet.
+  `fixedStep()` predicts it. A batched function takes them too: it writes the Jacobians of its own
+  blocks, and the model adds the constant columns.
 - `OrnsteinUhlenbeck<B, RevertingTo<M>>{TimeConstant{tau}, StationaryVariance{s}}`, an
   Ornstein-Uhlenbeck block that reverts to the mean `M` instead of zero: `x' = phi x + (1 - phi) m`
   with the noise of the form about zero, so that `s` is the stationary variance about `M`. The mean
@@ -164,6 +165,19 @@ instead.
   dynamic size, so that it is instantiated once per scalar and bound on the columns, whatever the
   rows and the expression; the square-root forms instantiated it once per stacked shape. A test
   file of the square-root filters compiles about a fifth faster with Clang.
+- `onEach()` places a model whose `affineIn()` names `shared(path<Name>)`, which it refused: each
+  repetition writes the shared block once, and where the model shares every block of a repetition
+  it reads, the placed model shares the repeated block.
+- A function marked `writesJacobians()` is asked for the Jacobians a method reads alone in more
+  places: `transform()` asks for the factored blocks, and for a `shared(path<Name>)` block at the
+  first point alone, as an update does; the update given a block, `update(prior, measurement,
+  given<P>(space, value))`, asks Linearized for the blocks outside the given block alone, and for
+  those inside it too when it is given as a Gaussian, and a sigma-point method for none; and a
+  composition at a point, and the function of a model with constant items in `affineIn()`, pass on
+  to the function they call the blocks wanted, or none for a value alone.
+- The factored transform reads a block whose Jacobian is the same at every point, a
+  `shared(path<Name>)` block or a constant item `on<Name>(H)`, at its first point alone: its mean is
+  that column, and it adds nothing to the curvature term.
 - `compose()` and `onEach()` forward the Jacobians their batched parts write, each part's or
   repetition's into its rows, so a method no longer differentiates a composition whose parts are all
   marked `batched(f, jacobians::perColumn())`, or a part at a point that writes its Jacobian. A

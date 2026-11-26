@@ -2133,7 +2133,7 @@ $y = g(x_n) + H(x_n) \, x_a$. A sigma-point method spreads its points over $x_n$
 point $x_a$ given $x_n$ is Gaussian and goes through $f$ exactly, adding $H P_{a|n} H^T$, with $H$
 from the returned Jacobian or automatic differentiation in the affine coordinates, one call per
 point. A coordinate is factored out where it is a linear block of the state or an uncertain input;
-a `sure` input is skipped, and a block that is not linear is treated as nonlinear. `shared(path<Name>)` is a block whose $H$ is the same at every point of a call, asked for once. `on<Name>(H)` and
+a `sure` input is skipped, and a block that is not linear is treated as nonlinear. `shared(path<Name>)` is a block whose $H$ is the same at every point of a call, asked for once and, as a constant item's, read in closed form. `on<Name>(H)` and
 `offset(...)` give a constant part $H x + c$ the function leaves out, read as affine and added by `plus()`, which holds a process model to one step [fixed-step-models]; a composition's affine set is the names every part reading them declares. `Linearized`, `Iterated`,
 the square-root and information steps, the update given a block, and the Rao-Blackwellized
 prediction ignore the declaration.

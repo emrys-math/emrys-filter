@@ -17,6 +17,7 @@
 #include <EmrysFilter/Distributions/Moments.h>
 #include <EmrysFilter/Models/Batched.h>
 #include <EmrysFilter/Models/Methods.h>
+#include <EmrysFilter/Models/PointOutput.h>
 #include <EmrysFilter/Models/Policies.h>
 #include <EmrysFilter/Models/TransformArgs.h>
 #include <EmrysFilter/Spaces/Composite.h>
@@ -108,6 +109,30 @@ struct OutputSpaceOfFunction<F>
     using OutputSpaceType = typename F::OutputSpaceType;  ///< the function's output space
 };
 
+/** Whether \a T is a BatchedOutput. */
+template <typename T>
+inline constexpr bool isBatchedOutput = false;
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename In, typename Out, typename Scalar, typename Mark>
+inline constexpr bool isBatchedOutput<BatchedOutput<In, Out, Scalar, Mark>> = true;
+/// \endcond
+
+/** Whether the last of \a Rest, the arguments of a call after its input, is a BatchedOutput, as a
+ * batched function's call ends.
+ */
+template <typename... Rest>
+inline constexpr bool endsWithBatchedOutput = [] {
+    if constexpr (sizeof...(Rest) == 0)
+    {
+        return false;
+    }
+    else
+    {
+        return isBatchedOutput<std::remove_cvref_t<std::tuple_element_t<sizeof...(Rest) - 1, std::tuple<Rest...>>>>;
+    }
+}();
+
 /** What a model without a function has in its place: its map is affineIn() alone, \f$ y = c \boxplus
  * \sum_k H_k x_k \f$ with \f$ c \f$ a point of the output, zero where offset() gives none.
  */
@@ -131,16 +156,22 @@ struct NoAffineFunction
 template <typename F, typename InnerIn, typename Offset, typename... Constants>
 class ConstantAffineFunction : public OutputSpaceOfFunction<F>
 {
-    static_assert(
-        !takesBatches<F>,
-        "a batched function takes no constant items in affineIn() yet; give the constant part with path<Name> and "
-        "write its columns"
-    );
-
 public:
 
     /// a process model with a constant part holds one step, so that only fixedStep() takes it
     static constexpr bool HoldsOneStep = true;
+
+    /// whether the function takes a batch, as the function given does (decisions.md [batched-functions])
+    static constexpr bool TakesBatches = takesBatches<F>;
+
+    /** The Jacobians the function writes in a batch: the function given's, with the constant
+     * columns added, or none, so that a method differentiates it (decisions.md [batched-functions]).
+     */
+    using MarkType = BatchMarkOrNone<F>;
+
+    /// whether \a Name names a constant item's input, whose columns are the same at every point
+    template <typename Name>
+    static constexpr bool ConstantColumns = (std::is_same_v<ConstantName<Constants>, Name> || ... || false);
 
     /** \a function with the constant items \a constants and the offset \a offset. */
     ConstantAffineFunction(F function, std::tuple<Constants...> constants, Offset offset)
@@ -163,13 +194,42 @@ public:
     template <typename In, typename Out, typename X, typename... Rest>
     [[nodiscard]] auto
     operator()(In const & in, Out const & out, X const & x, Rest &&... rest) const
+        requires(MatrixExpression<X> && !endsWithBatchedOutput<Rest...>)
+    {
+        return withWanted(EveryBlock{}, in, out, x, std::forward<Rest>(rest)...);
+    }
+
+    /** Writes into the BatchedOutput last among \a rest, \a y, the function at a batch \a x, a column
+     * per point in the input space \a in, into the output space \a out, with the rest of \a rest, a
+     * process model's step, before it: the function given called once over its own blocks of the
+     * columns, asked for the Jacobians of those of its blocks \a y wants where it writes them, the
+     * constant part added to each column, and the constant columns written where \a y wants them
+     * (decisions.md [batched-functions]).
+     */
+    template <typename In, typename Out, typename X, typename... Rest>
+    void
+    operator()(In const & in, Out const & out, X const & x, Rest &&... rest) const
+        requires(TakesBatches && endsWithBatchedOutput<Rest...>)
+    {
+        checkOutput<Out>();
+        auto const arguments = std::forward_as_tuple(rest...);
+        auto & y = std::get<sizeof...(Rest) - 1>(arguments);
+        [&]<std::size_t... S>(std::index_sequence<S...>) {
+            batch(in, out, x, y, std::get<S>(arguments)...);
+        }(std::make_index_sequence<sizeof...(Rest) - 1>{});
+    }
+
+    /** \returns operator()() with the function given marked writesJacobians() asked for the Jacobian
+     * of the blocks \a wanted says alone, one flag per block of the input \a in, by name, or every
+     * block's for EveryBlock; the constant columns are written whatever \a wanted says, since they
+     * cost nothing to compute
+     */
+    template <typename Wanted, typename In, typename Out, typename X, typename... Rest>
+    [[nodiscard]] auto
+    withWanted(Wanted const & wanted, In const & in, Out const & out, X const & x, Rest &&... rest) const
         requires MatrixExpression<X>
     {
-        static_assert(
-            !HasPlus<Out>,
-            "a model with constant items in affineIn() adds their term to its function's value as a difference, so "
-            "its output's plus() is the plain one, as a Linear or a Periodic output's is"
-        );
+        checkOutput<Out>();
         using T = typename X::Scalar;
         using Value = typename Moments<Out, T>::VectorType;
         if constexpr (std::is_same_v<F, NoAffineFunction>)
@@ -183,20 +243,209 @@ public:
         }
         else
         {
-            return withFunction<T, Value>(in, out, x, std::forward<Rest>(rest)...);
+            InnerIn const inner = innerOf(in, static_cast<CompositeBlocks<InnerIn> *>(nullptr));
+            auto const innerX = gatherInner<T>(in, inner, x, static_cast<CompositeBlocks<InnerIn> *>(nullptr));
+            auto const returned = [&] {
+                if constexpr (std::is_same_v<Wanted, EveryBlock>)
+                {
+                    return callForm(m_function, inner, out, innerX, std::forward<Rest>(rest)...);
+                }
+                else
+                {
+                    return callWantedForm(
+                        m_function,
+                        partWanted<InnerIn, In>(wanted),
+                        inner,
+                        out,
+                        innerX,
+                        std::forward<Rest>(rest)...
+                    );
+                }
+            }();
+            return withFunction<T, Value>(in, inner, out, x, returned);
+        }
+    }
+
+    /** \returns the value alone of operator()(): the function given asked for its value alone
+     * (callValueForm()), so a function marked writesJacobians() computes no Jacobian
+     */
+    template <typename In, typename Out, typename X, typename... Rest>
+    [[nodiscard]] auto
+    valueAt(In const & in, Out const & out, X const & x, Rest &&... rest) const
+        requires MatrixExpression<X>
+    {
+        checkOutput<Out>();
+        using T = typename X::Scalar;
+        using Value = typename Moments<Out, T>::VectorType;
+        if constexpr (std::is_same_v<F, NoAffineFunction>)
+        {
+            Value const zero = Value::Zero(valueDimension(out));
+            Value value = plus(out, zero, constantPart<T>(in, out, x));
+            return value;
+        }
+        else
+        {
+            InnerIn const inner = innerOf(in, static_cast<CompositeBlocks<InnerIn> *>(nullptr));
+            auto const innerX = gatherInner<T>(in, inner, x, static_cast<CompositeBlocks<InnerIn> *>(nullptr));
+            Value value = plus(
+                out,
+                vectorReturned(callValueForm(m_function, inner, out, innerX, std::forward<Rest>(rest)...)),
+                constantPart<T>(in, out, x)
+            );
+            return value;
         }
     }
 
 private:
 
-    /** operator()() of a model with a function */
-    template <typename T, typename Value, typename In, typename Out, typename X, typename... Rest>
-    [[nodiscard]] auto
-    withFunction(In const & in, Out const & out, X const & x, Rest &&... rest) const
+    /** The batched operator()(): writes into \a y the function at the batch \a x with \a step, a
+     * process model's step or nothing, before its output
+     */
+    template <typename In, typename Out, typename X, typename Y, typename... Step>
+    void
+    batch(In const & in, Out const & out, X const & x, Y & y, Step const &... step) const
     {
+        using T = typename X::Scalar;
+        using InnerX = MatrixOf<
+            T,
+            valueDimensionAtCompileTime<InnerIn>,
+            X::ColsAtCompileTime,
+            maxValueDimensionAtCompileTime<InnerIn>,
+            X::MaxColsAtCompileTime>;
+        using Value = typename Moments<Out, T>::VectorType;
         InnerIn const inner = innerOf(in, static_cast<CompositeBlocks<InnerIn> *>(nullptr));
-        auto const innerX = gatherInner<T>(in, inner, x, static_cast<CompositeBlocks<InnerIn> *>(nullptr));
-        auto const returned = callForm(m_function, inner, out, innerX, std::forward<Rest>(rest)...);
+        Eigen::Index const count = x.cols();
+        auto innerX = InnerX{};
+        innerX.resize(valueDimension(inner), count);
+        for (Eigen::Index j = 0; j < count; ++j)
+        {
+            innerX.col(j) = gatherInner<T>(in, inner, x.col(j), static_cast<CompositeBlocks<InnerIn> *>(nullptr));
+        }
+        auto & values = Emrys::values(y);
+        if constexpr (std::is_same_v<MarkType, NoJacobians>)
+        {
+            callBatched(m_function, inner, out, innerX, values, step...);
+        }
+        else
+        {
+            forwardJacobians(inner, out, innerX, y, step...);
+        }
+        for (Eigen::Index j = 0; j < count; ++j)
+        {
+            values.col(j) = plus(out, Value{values.col(j)}, constantPart<T>(in, out, x.col(j)));
+        }
+    }
+
+    /** Calls the function given once over \a innerX, its own blocks of a batch, asking for the
+     * Jacobians of those of its blocks the whole's output \a y wants, writes its values into \a y and
+     * those Jacobians into \a y's columns of the blocks, and the constant columns into the constant
+     * items' blocks \a y wants: once for a block \a y shares, and at each column otherwise
+     */
+    template <typename Out, typename InnerX, typename Y, typename... Step>
+    void
+    forwardJacobians(InnerIn const & inner, Out const & out, InnerX const & innerX, Y & y, Step const &... step) const
+    {
+        using T = typename InnerX::Scalar;
+        using InnerBlocks = InputBlocks<InnerIn>;
+        constexpr std::size_t IK = std::tuple_size_v<InnerBlocks>;
+        Eigen::Index const count = innerX.cols();
+        auto wanted = std::array<bool, IK>{};
+        auto shared = std::array<bool, IK>{};
+        std::array<Eigen::Index, IK> offsets{};
+        Eigen::Index w = 0;
+        [&]<std::size_t... B>(std::index_sequence<B...>) {
+            ((wanted[B] = Emrys::wantsJacobian<std::tuple_element_t<B, InnerBlocks>>(y),
+              shared[B] = BatchedOutputAccess::sharedBlock<std::tuple_element_t<B, InnerBlocks>>(y),
+              offsets[B] = w,
+              w += wanted[B] ? inputBlockRows<std::tuple_element_t<B, InnerBlocks>>(inner).size : 0),
+             ...);
+        }(std::make_index_sequence<IK>{});
+        using PJ = MatrixOf<
+            T,
+            valueDimensionAtCompileTime<DifferenceSpace<Out>>,
+            Eigen::Dynamic,
+            maxValueDimensionAtCompileTime<DifferenceSpace<Out>>,
+            Eigen::Dynamic>;
+        auto pj = PJ{};
+        pj.resize(differenceDimension(out), w * count);
+        auto & values = Emrys::values(y);
+        callBatchedWithJacobians(m_function, inner, out, innerX, wanted, shared, values, pj, step...);
+        [&]<std::size_t... B>(std::index_sequence<B...>) {
+            (
+                [&] {
+                    using Name = std::tuple_element_t<B, InnerBlocks>;
+                    if (!wanted[B])
+                    {
+                        return;
+                    }
+                    Eigen::Index const size = inputBlockRows<Name>(inner).size;
+                    Eigen::Index const offset = offsets[B];
+                    if (shared[B])
+                    {
+                        Emrys::jacobian<Name>(y) = pj.middleCols(offset, size);
+                        return;
+                    }
+                    for (Eigen::Index j = 0; j < count; ++j)
+                    {
+                        Emrys::jacobian<Name>(y, j) = pj.middleCols(j * w + offset, size);
+                    }
+                }(),
+                ...
+            );
+        }(std::make_index_sequence<IK>{});
+        std::apply(
+            [&](auto const &... constants) {
+                (writeConstantColumns(y, count, constants), ...);
+            },
+            m_constants
+        );
+    }
+
+    /** Writes the matrix of the constant item \a constant into the columns of its block in the
+     * batched output \a y of \a count columns, where \a y wants them: once for a block \a y shares,
+     * and at each column otherwise
+     */
+    template <typename Y, typename Constant>
+    static void
+    writeConstantColumns(Y & y, Eigen::Index count, Constant const & constant)
+    {
+        using Name = ConstantName<Constant>;
+        using T = typename Y::Scalar;
+        if (!Emrys::wantsJacobian<Name>(y))
+        {
+            return;
+        }
+        if (BatchedOutputAccess::sharedBlock<Name>(y))
+        {
+            Emrys::jacobian<Name>(y) = constant.value.template cast<T>();
+            return;
+        }
+        for (Eigen::Index j = 0; j < count; ++j)
+        {
+            Emrys::jacobian<Name>(y, j) = constant.value.template cast<T>();
+        }
+    }
+
+    /** A compile-time error unless the output \a Out adds a difference by the plain sum. */
+    template <typename Out>
+    static consteval void
+    checkOutput()
+    {
+        static_assert(
+            !HasPlus<Out>,
+            "a model with constant items in affineIn() adds their term to its function's value as a difference, so "
+            "its output's plus() is the plain one, as a Linear or a Periodic output's is"
+        );
+    }
+
+    /** \returns the value and Jacobian of a model with a function, from what the function given
+     * returned, \a returned, at \a x: the constant part added to its value, and the constant columns to
+     * its Jacobian where it returns one
+     */
+    template <typename T, typename Value, typename In, typename Out, typename X, typename Returned>
+    [[nodiscard]] auto
+    withFunction(In const & in, InnerIn const & inner, Out const & out, X const & x, Returned const & returned) const
+    {
         auto const delta = constantPart<T>(in, out, x);
         if constexpr (isWithJacobian<std::remove_cvref_t<decltype(returned)>>)
         {

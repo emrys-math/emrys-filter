@@ -441,6 +441,40 @@ batchedBiasedRangeModel(Mark... mark)
     );
 }
 
+// The range alone batched, without Jacobians or, given jacobians::perColumn(), with each column's, and
+// its bias a constant item of affineIn(), on<RangeBias>(1).
+template <typename... Mark>
+auto
+constantBiasRangeModel(Mark... mark)
+{
+    return Emrys::measurementModel(
+        Emrys::batched(
+            [](auto const & in, auto const &, auto const & x, auto & y) {
+                using T = typename std::remove_cvref_t<decltype(x)>::Scalar;
+                ++rangeCalls;
+                auto const p = Emrys::block<Position>(in, x);
+                for (Eigen::Index j = 0; j < x.cols(); ++j)
+                {
+                    T const r = Eigen::numext::sqrt(T(p.col(j).squaredNorm()));
+                    Emrys::values(y)(0, j) = r;
+                    if constexpr (sizeof...(Mark) > 0)
+                    {
+                        if (Emrys::wantsJacobian<Position>(y))
+                        {
+                            Emrys::jacobian<Position>(y, j) = p.col(j).transpose() / r;
+                        }
+                    }
+                }
+            },
+            mark...
+        ),
+        Emrys::reads(Emrys::path<Position>),
+        Emrys::writes(Emrys::path<Range>),
+        Emrys::additiveNoise(rangeNoise()),
+        Emrys::affineIn(Emrys::on<RangeBias>(Eigen::Matrix<double, 1, 1>{1.0}))
+    );
+}
+
 // The accelerometer's reading of the specific force, an uncertain input.
 GaussianParams<SpecificForce>
 accelerometerReading()
@@ -768,6 +802,33 @@ TEST(Batched, FactoredMeasurementUpdateCallsTheFunctionOnce)
     check(batchedBiasedRangeModel(jacobians::perColumn()));
 }
 
+// A batched function takes constant items in affineIn() ([affine-coordinates], [batched-functions]):
+// the range alone, batched, with on<RangeBias>(1), updates as the range plus its bias per point, in one
+// call of the batch under a sigma-point method, with and without the Jacobians it writes, and under
+// Linearized.
+TEST(Batched, ABatchedFunctionTakesConstantItems)
+{
+    auto const prior = makePrior();
+    auto const z = Eigen::Matrix<double, 1, 1>{3.9};
+    auto const bias = GaussianParams<RangeBias>{Eigen::Matrix<double, 1, 1>{0.1}, Eigen::Matrix<double, 1, 1>{0.04}};
+    auto const check = [&](auto const & model, auto const & method, bool once) {
+        auto const expected = Emrys::update(prior, observe(method, biasedRangeModel(), z, bias));
+        ASSERT_TRUE(expected);
+        rangeCalls = 0;
+        auto const updated = Emrys::update(prior, observe(method, model, z, bias));
+        ASSERT_TRUE(updated);
+        if (once)
+        {
+            EXPECT_EQ(rangeCalls, 1);
+        }
+        expectSameGaussian(updated->branches.front().posterior, expected->branches.front().posterior);
+    };
+    check(constantBiasRangeModel(), Emrys::methods::unscented(), true);
+    check(constantBiasRangeModel(jacobians::perColumn()), Emrys::methods::unscented(), true);
+    check(constantBiasRangeModel(), Emrys::methods::linearized(), false);
+    check(constantBiasRangeModel(jacobians::perColumn()), Emrys::methods::linearized(), false);
+}
+
 // An update given a block, as a Rao-Blackwellized filter's conditional Gaussian takes it, calls a
 // batched measurement model once over the transform's points: the rest is Velocity, two coordinates,
 // so the unscented transform has 2 * 2 + 1 points.
@@ -974,6 +1035,30 @@ TEST(Batched, OnEachForwardsItsModelsJacobians)
     static_assert(
         std::is_same_v<Emrys::internal::BatchMark<typename decltype(byBatch)::FunctionType>, jacobians::PerColumn>
     );
+    auto const check = [&](auto const & method, char const * name) {
+        SCOPED_TRACE(name);
+        dualStepCalls = 0;
+        auto const predicted = Emrys::predict(method, prior, byBatch, 0.5);
+        EXPECT_EQ(dualStepCalls, 0);
+        expectSameGaussian(predicted, Emrys::predict(method, prior, byPoint, 0.5));
+    };
+    check(Emrys::methods::linearized(), "linearized");
+    check(Emrys::methods::unscented(), "unscented");
+}
+
+// onEach() places a model whose affineIn() names shared(path<Name>) ([affine-coordinates]): the model
+// shares the Jacobian of every block of a repetition, so the placed model shares the repeated block's,
+// which each repetition writes once; the flight is never differentiated, and predicts as the per-point
+// models do.
+TEST(Batched, OnEachPlacesAModelThatSharesItsJacobians)
+{
+    auto const flight = Flight{Lead{}, Escorts{Craft{}, 3}};
+    auto const prior = spreadPrior(flight);
+    auto const placed = Emrys::onEach<Escorts>(batchedVelocityModel(jacobians::perColumn()));
+    using Shared = typename decltype(placed)::template Policy<Emrys::internal::PolicyKind::sharedJacobians>;
+    static_assert(Emrys::internal::sharedNames<Shared, Escorts>);
+    auto const byPoint = Emrys::compose(Emrys::on<Lead>(velocityModel()), Emrys::onEach<Escorts>(velocityModel()));
+    auto const byBatch = Emrys::compose(Emrys::on<Lead>(batchedVelocityModel(jacobians::perColumn())), placed);
     auto const check = [&](auto const & method, char const * name) {
         SCOPED_TRACE(name);
         dualStepCalls = 0;

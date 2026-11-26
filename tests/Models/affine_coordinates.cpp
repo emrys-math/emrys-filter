@@ -828,6 +828,10 @@ struct Asked
     int value = 0;
 };
 
+// An input that a constant item on<Tilt>(h) adds h t to a measurement of s v for.
+struct Tilt : Linear<1>
+{};
+
 template <typename... Policies>
 auto
 productMeasurement(Asked & asked, Policies const &... policies)
@@ -909,6 +913,94 @@ TEST(AffineCoordinates, AFunctionIsAskedForTheJacobiansTheMethodReads)
     );
 }
 
+// An update given a block asks a function marked writesJacobians() under Linearized for the blocks
+// conditioned on alone, and for the given block's too where it is given as a Gaussian; a sigma-point method
+// asks for none. Each update agrees with the same function unmarked.
+TEST(AffineCoordinates, AnUpdateGivenABlockAsksForTheBlocksConditionedOn)
+{
+    using Pair = Composite<Scale, Value>;
+    using Rest = Emrys::ParticleGaussianParams<Pair, Scale>::RestSpace;
+    auto const prior = GaussianParams<Rest>{Rest{}, Eigen::Matrix<double, 1, 1>{0.5}, Eigen::Matrix<double, 1, 1>{0.2}};
+    Eigen::Matrix<double, 1, 1> const z{1.4};
+    Eigen::Matrix<double, 1, 1> const known{2.0};
+    auto const scale = GaussianParams<Scale>{known, Eigen::Matrix<double, 1, 1>{0.3}};
+    auto const unmarked = measurementModel(
+        []<typename T>(auto const & in, auto const &, auto const & state) {
+            return Eigen::Matrix<T, 1, 1>{block<Scale>(in, state)(0) * block<Value>(in, state)(0)};
+        },
+        reads(path<Scale>, path<Value>),
+        outputSpace(Linear<1>{}),
+        additiveNoise(GaussianParams<Linear<1>>{Eigen::Matrix<double, 1, 1>::Zero(), Eigen::Matrix<double, 1, 1>{0.1}})
+    );
+    auto const expectSame = [](auto const & a, auto const & b) {
+        ASSERT_TRUE(a && b);
+        EXPECT_LT((a->branches.front().posterior.mean() - b->branches.front().posterior.mean()).norm(), 1e-12);
+        EXPECT_LT(
+            (a->branches.front().posterior.covarianceLower() - b->branches.front().posterior.covarianceLower()).norm(),
+            1e-12
+        );
+    };
+
+    Asked point;
+    auto const atPoint = Emrys::given<Scale>(Pair{}, known);
+    auto const x = update(prior, observe(methods::linearized(), productMeasurement(point), z), atPoint);
+    EXPECT_GT(point.calls, 0);
+    EXPECT_EQ(point.value, point.calls);
+    EXPECT_EQ(point.scale, 0);
+    expectSame(x, update(prior, observe(methods::linearized(), unmarked, z), atPoint));
+
+    Asked spread;
+    auto const overGaussian = Emrys::given<Scale>(Pair{}, scale);
+    auto const y = update(prior, observe(methods::linearized(), productMeasurement(spread), z), overGaussian);
+    EXPECT_GT(spread.calls, 0);
+    EXPECT_EQ(spread.value, spread.calls);
+    EXPECT_EQ(spread.scale, spread.calls);
+    expectSame(y, update(prior, observe(methods::linearized(), unmarked, z), overGaussian));
+
+    Asked sigma;
+    auto const w = update(prior, observe(methods::unscented(), productMeasurement(sigma), z), atPoint);
+    EXPECT_GT(sigma.calls, 0);
+    EXPECT_EQ(sigma.value, 0);
+    EXPECT_EQ(sigma.scale, 0);
+    expectSame(w, update(prior, observe(methods::unscented(), unmarked, z), atPoint));
+}
+
+// transform() asks a function marked writesJacobians() for the Jacobians the method reads alone, as an
+// update does: a factored sigma-point transform the affine block's at each point, an unfactored one none;
+// the factored one agrees with the same model unmarked.
+TEST(AffineCoordinates, TransformAsksForTheJacobiansTheMethodReads)
+{
+    auto const scale = GaussianParams<Scale>{Eigen::Matrix<double, 1, 1>{2.0}, Eigen::Matrix<double, 1, 1>{0.3}};
+    auto const value = GaussianParams<Value>{Eigen::Matrix<double, 1, 1>{0.5}, Eigen::Matrix<double, 1, 1>{0.2}};
+
+    Asked factored;
+    auto const x =
+        Emrys::transform(methods::unscented(), productMeasurement(factored, affineIn(path<Value>)), scale, value);
+    EXPECT_GT(factored.calls, 0);
+    EXPECT_EQ(factored.value, factored.calls);
+    EXPECT_EQ(factored.scale, 0);
+
+    Asked unfactored;
+    [[maybe_unused]] auto const y =
+        Emrys::transform(methods::unscented(), productMeasurement(unfactored), scale, value);
+    EXPECT_GT(unfactored.calls, 0);
+    EXPECT_EQ(unfactored.value, 0);
+    EXPECT_EQ(unfactored.scale, 0);
+
+    auto const unmarked = measurementModel(
+        []<typename T>(auto const & in, auto const &, auto const & state) {
+            return Eigen::Matrix<T, 1, 1>{block<Scale>(in, state)(0) * block<Value>(in, state)(0)};
+        },
+        reads(path<Scale>, path<Value>),
+        affineIn(path<Value>),
+        outputSpace(Linear<1>{}),
+        additiveNoise(GaussianParams<Linear<1>>{Eigen::Matrix<double, 1, 1>::Zero(), Eigen::Matrix<double, 1, 1>{0.1}})
+    );
+    auto const u = Emrys::transform(methods::unscented(), unmarked, scale, value);
+    EXPECT_LT((x.mean() - u.mean()).norm(), 1e-12);
+    EXPECT_LT((x.covarianceLower() - u.covarianceLower()).norm(), 1e-12);
+}
+
 // A block whose Jacobian is the same at every point of a call, shared(path<Name>) in affineIn(), is asked
 // for at the first point of a factored transform alone ([affine-coordinates]): s + v^3 is affine in the
 // scale with coefficient one, and the update agrees with the model that asks for it at every point.
@@ -962,4 +1054,107 @@ TEST(AffineCoordinates, ASharedJacobianIsAskedForOncePerCall)
         (x->branches.front().posterior.covarianceLower() - y->branches.front().posterior.covarianceLower()).norm(),
         1e-12
     );
+
+    // transform() asks for it at the first point alone too.
+    auto const scale = GaussianParams<Scale>{Eigen::Matrix<double, 1, 1>{2.0}, Eigen::Matrix<double, 1, 1>{0.3}};
+    auto const value = GaussianParams<Value>{Eigen::Matrix<double, 1, 1>{0.5}, Eigen::Matrix<double, 1, 1>{0.2}};
+    Asked sharedTransform;
+    auto const p = Emrys::transform(
+        methods::unscented(),
+        model(sharedTransform, affineIn(Emrys::shared(path<Scale>))),
+        scale,
+        value
+    );
+    EXPECT_GT(sharedTransform.calls, 1);
+    EXPECT_EQ(sharedTransform.scale, 1);
+    EXPECT_EQ(sharedTransform.value, 0);
+    Asked eachTransform;
+    auto const q = Emrys::transform(methods::unscented(), model(eachTransform, affineIn(path<Scale>)), scale, value);
+    EXPECT_EQ(eachTransform.scale, eachTransform.calls);
+    EXPECT_EQ(eachTransform.calls, sharedTransform.calls);
+    EXPECT_LT((p.mean() - q.mean()).norm(), 1e-12);
+    EXPECT_LT((p.covarianceLower() - q.covarianceLower()).norm(), 1e-12);
+}
+
+// A constant item beside a function is read in closed form ([affine-coordinates]): its columns are the
+// same at every point, so the factored transform reads them at the first point alone, and the function
+// given, marked writesJacobians(), is asked for its own factored block alone, never for the scale's. The
+// moments are those of the same model written as one function, differentiated in the tilt at each point.
+TEST(AffineCoordinates, AConstantItemBesideAFunctionIsReadInClosedForm)
+{
+    auto const scale = GaussianParams<Scale>{Eigen::Matrix<double, 1, 1>{2.0}, Eigen::Matrix<double, 1, 1>{0.3}};
+    auto const value = GaussianParams<Value>{Eigen::Matrix<double, 1, 1>{0.5}, Eigen::Matrix<double, 1, 1>{0.2}};
+    auto const tilt = GaussianParams<Tilt>{Eigen::Matrix<double, 1, 1>{0.3}, Eigen::Matrix<double, 1, 1>{0.4}};
+    Eigen::Matrix<double, 1, 1> const h{1.5};
+
+    Asked asked;
+    auto const constant = Emrys::transform(
+        methods::unscented(),
+        productMeasurement(asked, affineIn(path<Value>, on<Tilt>(h))),
+        scale,
+        value,
+        tilt
+    );
+    EXPECT_GT(asked.calls, 0);
+    EXPECT_EQ(asked.value, asked.calls);
+    EXPECT_EQ(asked.scale, 0);
+
+    auto const whole = Emrys::transform(
+        methods::unscented(),
+        measurementModel(
+            [h]<typename T>(auto const & in, auto const &, auto const & x) {
+                return Eigen::Matrix<T, 1, 1>{
+                    block<Scale>(in, x)(0) * block<Value>(in, x)(0) + h(0) * block<Tilt>(in, x)(0)
+                };
+            },
+            reads(path<Scale>, path<Value>, path<Tilt>),
+            affineIn(path<Value>, path<Tilt>),
+            outputSpace(Linear<1>{}),
+            additiveNoise(
+                GaussianParams<Linear<1>>{Eigen::Matrix<double, 1, 1>::Zero(), Eigen::Matrix<double, 1, 1>{0.1}}
+            )
+        ),
+        scale,
+        value,
+        tilt
+    );
+    EXPECT_LT((constant.mean() - whole.mean()).norm(), 1e-12);
+    EXPECT_LT((constant.covarianceLower() - whole.covarianceLower()).norm(), 1e-12);
+}
+
+// A composition at a point asks a part marked writesJacobians() for the blocks the factored transform
+// reads alone, as a batch does: the product's part is asked for the value's Jacobian at each point and
+// never for the scale's, and the prediction keeps Isserlis' moments.
+TEST(AffineCoordinates, ACompositionAsksItsPartsForTheFactoredBlocks)
+{
+    Asked asked;
+    auto const model = compose(
+        processModel(
+            Emrys::writesJacobians([&asked](auto const & in, auto const &, auto const & x, double, auto & y) {
+                ++asked.calls;
+                double const s = block<Scale>(in, x)(0);
+                double const v = block<Value>(in, x)(0);
+                Emrys::value(y) = Eigen::Matrix<double, 1, 1>{s * v};
+                if (Emrys::wantsJacobian<Scale>(y))
+                {
+                    ++asked.scale;
+                    Emrys::jacobian<Scale>(y) = Eigen::Matrix<double, 1, 1>{v};
+                }
+                if (Emrys::wantsJacobian<Value>(y))
+                {
+                    ++asked.value;
+                    Emrys::jacobian<Value>(y) = Eigen::Matrix<double, 1, 1>{s};
+                }
+            }),
+            reads(path<Scale>, path<Value>),
+            writes(path<Product>),
+            affineIn(path<Value>)
+        ),
+        Constant<Scale>{},
+        Constant<Value>{}
+    );
+    expectIsserlis(Emrys::predict(methods::unscented(), bilinearPrior(), model, 1.0), 1e-12);
+    EXPECT_GT(asked.calls, 0);
+    EXPECT_GT(asked.value, 0);
+    EXPECT_EQ(asked.scale, 0);
 }

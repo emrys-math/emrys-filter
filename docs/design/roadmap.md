@@ -664,28 +664,6 @@ Done when: decided, and if built, the examples whose models are steps (`consider
 `attitude.cpp`, `unicycle.cpp`) use it, and a test shows a step model predicts as its value form does
 under every method.
 
-## 17zw. What affine maps and Jacobians by block left — not started
-
-Step 17zt built the constant items of `affineIn()`, the models without a function, the Jacobians a
-function writes by block, and `shared(path<Name>)` [affine-coordinates], [returned-jacobians],
-[batched-functions]. Each item below passes its test on the three compilers.
-
-- The factored transform carries a constant item beside a function exactly at each point; add its
-  moments once in closed form instead, as a model without a function has them. A test counts the
-  columns computed against the same model written as a function.
-- A batched function takes no constant items (`ConstantAffineFunction` refuses one). Give it them,
-  with the constant's columns added to the columns `jacobian<Name>(y, j)` writes.
-- The update given a block asks a function for every block; ask it for the blocks conditioned on
-  alone, as the factored transform asks for the factored ones.
-- A composition of functions at a point asks its parts for every block in the factored transform,
-  where the batched path asks each part for the blocks wanted; ask by point the same way.
-- `transform()` of a function asks for a `shared()` block at every point; ask at the first alone,
-  as a model's factored transform does (`FactoredAt::shared`).
-- `onEach()` refuses a model whose `affineIn()` names `shared(path<Name>)`; take it, the block
-  written once per repetition.
-
-Done when: each item passes its test on all three compilers.
-
 ## 19. GPU backend — deferred
 
 A `Device` policy runs the step 18 primitives on a GPU, with the particles in device memory
@@ -1349,3 +1327,4 @@ resolve.
 | 17zs | One spelling for what depends on the mode, `byMode<Axis>(when<Value>(part), ...)`: noise by mode axis, a measurement per value, nested, in every filter that holds hybrids; a hybrid filter takes the chain and the motion, `ImmFilter{chain, motion, prior}` | [by-mode], [switching-models], [imm] |
 | 17zt | Constant items `on<Name>(H)` and `offset()` in `affineIn()`, models without a function in place of the matrix forms, functions that write their Jacobians by block (`writesJacobians()`, `BatchedOutput`'s free functions), `shared(path<Name>)`, and compositions that forward their parts' Jacobians in a batch | [affine-coordinates], [returned-jacobians], [linear-sensors], [whole-state-models], [transform-policies], [batched-functions], [fixed-step-models] |
 | 17zv | `OrnsteinUhlenbeck<B, RevertingTo<M>>`, an Ornstein-Uhlenbeck block about a mean read from another block | [continuous-time-noise] |
+| 17zw | What 17zt left: constant items read in closed form and taken by a batched function, the blocks wanted passed on by the update given a block, a composition at a point, and `transform()`, and `onEach()` of a model that names `shared(path<Name>)` | [affine-coordinates], [returned-jacobians], [batched-functions] |

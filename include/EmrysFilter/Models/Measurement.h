@@ -919,32 +919,88 @@ public:
     [[nodiscard]] auto
     operator()(X const & x, Pinned const & p, Inputs const &... inputs) const
     {
-        using T = ScalarOf<X>;
-        EMRYS_FILTER_ASSERT(x.size() == m_rest.size() && p.size() == m_rows.size && "the blocks do not fit the space");
-        auto state = Eigen::Matrix<T, N, 1, Eigen::ColMajor, NMax, 1>{};
-        state.resize(m_size);
-        state(m_rest) = x;
-        if constexpr (OneRun)
+        return splitReturned<sizeof...(Inputs)>(m_resolved.evaluateAtState(stateOf(x, p), inputs...));
+    }
+
+    /** \returns the value alone of operator()(): a function marked writesJacobians() asked for no
+     * Jacobian, and any other's Jacobian dropped
+     */
+    template <typename X, typename Pinned, typename... Inputs>
+    [[nodiscard]] auto
+    valueAt(X const & x, Pinned const & p, Inputs const &... inputs) const
+    {
+        return m_resolved.evaluateValueAtState(stateOf(x, p), inputs...);
+    }
+
+    /// whether values() gives the function for the value alone, which a transform evaluates
+    static constexpr bool EvaluatesValues = true;
+
+    /** The function for one call of a transform that gives a part of what operator()() gives: the
+     * value alone, or without \a Values the value with the Jacobian of the blocks read outside the
+     * given block, and of the given block too where \a GivenUncertain.
+     */
+    template <bool Values, bool GivenUncertain = true>
+    struct Part
+    {
+        PinnedMeasurement const & pinned;  ///< the measurement
+
+        /** \returns the part of operator()() at \a x, \a p, and \a inputs */
+        template <typename X, typename Pinned, typename... Inputs>
+        [[nodiscard]] auto
+        operator()(X const & x, Pinned const & p, Inputs const &... inputs) const
         {
-            middleRowsOf<PinnedN>(state, m_rows.start, m_rows.size) = p.template cast<T>();
+            if constexpr (Values)
+            {
+                return pinned.valueAt(x, p, inputs...);
+            }
+            else
+            {
+                return pinned.template evaluateUncertain<GivenUncertain>(x, p, inputs...);
+            }
         }
-        else
-        {
-            state(m_listed.given) = p.template cast<T>();
-        }
-        using Returned = std::remove_cvref_t<decltype(m_resolved.evaluateAtState(state, inputs...))>;
-        if constexpr (!isWithJacobian<Returned>)
-        {
-            return m_resolved.evaluateAtState(state, inputs...);
-        }
-        else
-        {
-            auto returned = m_resolved.evaluateAtState(state, inputs...);
-            return withJacobian(
-                std::move(returned.value),
-                splitJacobian(returned.jacobian, std::integral_constant<std::size_t, sizeof...(Inputs)>{})
-            );
-        }
+    };
+
+    /** \returns the function that gives the value alone, which a transform evaluates at each of its
+     * points, so that a function marked writesJacobians() is asked for no Jacobian
+     */
+    [[nodiscard]] Part<true>
+    values() const
+    {
+        return {*this};
+    }
+
+    /** \returns the function that gives the value with the Jacobians of the arguments that are
+     * uncertain alone, \a Uncertain one flag per argument <tt>(x, p, inputs...)</tt> as a transform
+     * gives them: a function marked writesJacobians() is asked for no block wholly inside a given
+     * block known exactly, as a point is (decisions.md [returned-jacobians])
+     */
+    template <bool RestUncertain, bool GivenUncertain, bool... InputsUncertain>
+    [[nodiscard]] Part<false, GivenUncertain>
+    uncertainJacobians() const
+    {
+        return {*this};
+    }
+
+    /** \returns operator()() with a function marked writesJacobians() asked for the Jacobian of the
+     * blocks read outside the given block alone, and of those inside it too where \a GivenUncertain
+     */
+    template <bool GivenUncertain, typename X, typename Pinned, typename... Inputs>
+    [[nodiscard]] auto
+    evaluateUncertain(X const & x, Pinned const & p, Inputs const &... inputs) const
+    {
+        using Blocks = InputBlocks<typename ResolvedType::In>;
+        auto const wanted =
+            m_resolved.template blocksBeyond<std::tuple_size_v<Blocks>, GivenUncertain>([&](Eigen::Index d) {
+                if constexpr (OneRun)
+                {
+                    return d >= m_differenceRows.start && d < m_differenceRows.start + m_differenceRows.size;
+                }
+                else
+                {
+                    return (m_listed.givenDifferences.array() == d).any();
+                }
+            });
+        return splitReturned<sizeof...(Inputs)>(m_resolved.evaluateAtStateWanted(wanted, stateOf(x, p), inputs...));
     }
 
     /// whether the transforms evaluate a batch of points in one call, evaluateBatch() (decisions.md
@@ -988,6 +1044,47 @@ public:
     }
 
 private:
+
+    /** \returns the whole state assembled from the rest \a x and the given block \a p */
+    template <typename X, typename Pinned>
+    [[nodiscard]] auto
+    stateOf(X const & x, Pinned const & p) const
+    {
+        using T = ScalarOf<X>;
+        EMRYS_FILTER_ASSERT(x.size() == m_rest.size() && p.size() == m_rows.size && "the blocks do not fit the space");
+        auto state = Eigen::Matrix<T, N, 1, Eigen::ColMajor, NMax, 1>{};
+        state.resize(m_size);
+        state(m_rest) = x;
+        if constexpr (OneRun)
+        {
+            middleRowsOf<PinnedN>(state, m_rows.start, m_rows.size) = p.template cast<T>();
+        }
+        else
+        {
+            state(m_listed.given) = p.template cast<T>();
+        }
+        return state;
+    }
+
+    /** \returns \a returned, what the resolved measurement returned at a whole state, with a
+     * Jacobian split as operator()() returns it, given \a InputCount uncertain inputs
+     */
+    template <std::size_t InputCount, typename Returned>
+    [[nodiscard]] auto
+    splitReturned(Returned && returned) const
+    {
+        if constexpr (!isWithJacobian<std::remove_cvref_t<Returned>>)
+        {
+            return std::forward<Returned>(returned);
+        }
+        else
+        {
+            return withJacobian(
+                std::move(returned.value),
+                splitJacobian(returned.jacobian, std::integral_constant<std::size_t, InputCount>{})
+            );
+        }
+    }
 
     /** \returns the Jacobian \a blocks the function returned, one over the whole state's differences
      * and then one per uncertain input, as ArgumentJacobians over <tt>(x, p, inputs...)</tt>: the

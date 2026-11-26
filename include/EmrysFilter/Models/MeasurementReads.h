@@ -394,6 +394,36 @@ public:
         );
     }
 
+    /** \returns evaluateAtState() with a function marked writesJacobians() asked for the Jacobian of
+     * the blocks \a wanted says alone, one flag per block of its input, zero in the others' columns
+     */
+    template <typename Wanted, typename State, typename... Inputs>
+    [[nodiscard]] auto
+    evaluateAtStateWanted(Wanted const & wanted, State const & state, Inputs const &... inputs) const
+    {
+        static_assert(sizeof...(Inputs) == InputCount, "the function takes one vector per uncertain input");
+        static_assert(HasFunction, "a measurement model known by its likelihood alone has no function to evaluate");
+        using T = typename State::Scalar;
+        auto const x =
+            this->template gatherFromRows<T>(state, Eigen::Index{0}, std::tuple<Inputs const &...>{inputs...});
+        return split<true>(vectorReturned(callWantedForm(m_measurement.model().function(), wanted, m_in, m_out, x)));
+    }
+
+    /** \returns evaluateAtState() of the value alone: a function marked writesJacobians() asked for
+     * no Jacobian, and any other's Jacobian dropped
+     */
+    template <typename State, typename... Inputs>
+    [[nodiscard]] auto
+    evaluateValueAtState(State const & state, Inputs const &... inputs) const
+    {
+        static_assert(sizeof...(Inputs) == InputCount, "the function takes one vector per uncertain input");
+        static_assert(HasFunction, "a measurement model known by its likelihood alone has no function to evaluate");
+        using T = typename State::Scalar;
+        auto const x =
+            this->template gatherFromRows<T>(state, Eigen::Index{0}, std::tuple<Inputs const &...>{inputs...});
+        return vectorReturned(callValueForm(m_measurement.model().function(), m_in, m_out, x));
+    }
+
     /** \returns the model's own \f$ \log p(z \mid x) \f$ at the whole state \a state, from its
      * logLikelihood() policy, <tt>g(in, x, z)</tt>, with each uncertain input at its mean
      */
