@@ -152,6 +152,11 @@ instead.
 
 ### Changed
 
+- The square-root form's update triangularizes its joint root by reflections over the state's
+  columns and one column of the noise's root at a time, not over the whole root, so its cost grows
+  with the measurement's size times the state's rather than with the cube of their sum: at 3D with
+  24 anchors the square-root EKF's step takes 0.62 of mherb/kalman's time, from 1.08, and the
+  square-root UKF's 0.89, from 1.27. Its results differ from before by rounding.
 - `compose()` and `onEach()` forward the Jacobians their batched parts write, each part's or
   repetition's into its rows, so a method no longer differentiates a composition whose parts are all
   marked `batched(f, jacobians::perColumn())`, or a part at a point that writes its Jacobian. A

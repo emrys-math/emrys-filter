@@ -3,7 +3,9 @@
 // a range-bearing measurement they equal KalmanFilter under Linearized, Unscented, and the sigma-point sets of step 17e
 // (Cubature, SphericalSimplex, GaussHermite), with a fixed-step model too, in state, log-likelihood, and NIS; on a
 // measurement far more precise than the prior they stay positive definite where the covariance
-// form's posterior variance is exactly zero; the square-root information filter predicts from no
+// form's posterior variance is exactly zero; the square-root Kalman filter equals KalmanFilter on a
+// measurement with more outputs than the state has differences, with correlated noise and with a
+// noiseless reading; the square-root information filter predicts from no
 // information at all, where the information filter cannot, and reaches the least-squares estimate;
 // an Unscented with a negative center weight predicts through the factorized covariance; and on a
 // state with a unit quaternion both equal the Kalman filter's reset; and a model that returns its
@@ -293,6 +295,58 @@ TEST(SqrtFilters, StayPositiveDefiniteWhereTheCovarianceFormCannot)
     auto info = InfoFilter{makeModel(), toInfo(prior).value()};
     ASSERT_TRUE(info.update(makeFix<Position>(z, methods::linearized(), precise)));
     EXPECT_NEAR(info.state().covariance().value()(0, 0), 1e-12, 1e-15);
+}
+
+// A measurement with more outputs than the state has differences, six readings of the whole state
+// through a dense matrix, folds into the square-root form as the Kalman filter updates, the fold
+// taking in one column of the noise's root at a time: with a correlated noise, rooted by its
+// Cholesky factor, and with one reading noiseless, whose pivoted root is triangularized first.
+TEST(SqrtFilters, MoreOutputsThanDifferencesMatchTheKalmanFilter)
+{
+    using Readings = Linear<6>;
+    using Vector6 = Eigen::Matrix<double, 6, 1>;
+    using Matrix6 = Eigen::Matrix<double, 6, 6>;
+    Eigen::Matrix<double, 6, 4> const a{
+        {1.0, 0.0, 0.5, 0.0},
+        {0.0, 1.0, 0.0, -0.3},
+        {0.7, 0.2, 0.0, 0.0},
+        {0.0, 0.0, 1.0, 0.4},
+        {-0.2, 0.9, 0.0, 1.0},
+        {0.3, 0.3, 0.3, 0.3}
+    };
+    Eigen::Matrix<double, 6, 3> const
+        shape{{0.5, 0.1, 0.0}, {0.2, 0.4, 0.1}, {0.0, 0.3, 0.6}, {-0.1, 0.0, 0.2}, {0.3, -0.2, 0.0}, {0.0, 0.1, 0.4}};
+    Matrix6 const correlated = shape * shape.transpose() + 0.2 * Matrix6::Identity();
+    // The third reading without noise: the Cholesky factorization meets a zero pivot there.
+    Matrix6 semidefinite = correlated;
+    semidefinite.row(2).setZero();
+    semidefinite.col(2).setZero();
+    ASSERT_FALSE(Emrys::roots::Cholesky{}.root(semidefinite).has_value());
+    for (Matrix6 const & r : {correlated, semidefinite})
+    {
+        auto const model = measurementModel(
+            [a]<typename T>(auto const &, auto const &, auto const & x) {
+                Eigen::Matrix<T, 6, 1> y = a.template cast<T>() * x;
+                return y;
+            },
+            outputSpace(Readings{}),
+            additiveNoise(GaussianParams<Readings>{Vector6::Zero(), r})
+        );
+        auto kalman = KalmanFilter{makeModel(), makeInitial()};
+        auto root = SqrtKalmanFilter{makeModel(), toSqrt(makeInitial()).value()};
+        for (int k = 1; k <= 4; ++k)
+        {
+            kalman.predict(timeStep);
+            ASSERT_TRUE(root.predict(timeStep));
+            Vector6 const z = a * Vector4{fixAt(k)(0), fixAt(k)(1), 1.0, 0.5} + 0.1 * Vector6::Constant(double(k));
+            auto const expected = kalman.update(observe(methods::linearized(), model, z));
+            auto const fromRoot = root.update(observe(methods::linearized(), model, z));
+            ASSERT_TRUE(expected && fromRoot);
+            EXPECT_NEAR(fromRoot->logLikelihood(), expected->logLikelihood(), 1e-9);
+            EXPECT_NEAR(fromRoot->branches[0].nis(), expected->branches[0].nis(), 1e-9);
+            expectSameState(root.state(), kalman.state(), 1e-9);
+        }
+    }
 }
 
 // From no information at all (R = 0) and with no process noise, the square-root information

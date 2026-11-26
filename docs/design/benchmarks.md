@@ -95,7 +95,7 @@ might doubt, published with its method and machine, and never one per feature."
 | 6 | It fits and runs on a microcontroller | Footprint and cycles on Cortex-M4F and M7 | `.text`, `.data`, stack per function, DWT cycles per step | hand-rolled EKF and TinyEKF on the same target | after [embedded-builds]'s Cortex-M job |
 | 7 | A template library's compile cost is tolerable | Compile cost of each benchmark translation unit | seconds and peak memory per compiler | the hand-rolled translation unit | built and measured on three compilers (section 7), not in CI, not published |
 | 8 | A GPU pays above some particle count | Device path against host `par` | crossover particle count | the library's own host path | step 19, not planned here |
-| 9 | It is no slower than the C++ Kalman library a user would otherwise pick | mherb/kalman's EKF, UKF, square-root EKF, and square-root UKF, TinyEKF's EKF, FrancoisCarouge/Kalman's EKF, and OpenCV's `cv::KalmanFilter` run as an EKF, on the ranging problem | instructions and ns per step, at the ranging sizes and scalars | each library, as its users write it | measured 2026-11-23 on branch `mherb-benchmark`, and FrancoisCarouge/Kalman on 2026-11-24; the EKF holds against all four at every size and the UKF in double; the claim fails in time for the UKF in float at 2D with 4 anchors (1.03), the square-root EKF in double at 3D with 24 (1.06), and the square-root UKF in double at every 3D size (up to 1.29); the pairs that do not agree are timed with a mark |
+| 9 | It is no slower than the C++ Kalman library a user would otherwise pick | mherb/kalman's EKF, UKF, square-root EKF, and square-root UKF, TinyEKF's EKF, FrancoisCarouge/Kalman's EKF, and OpenCV's `cv::KalmanFilter` run as an EKF, on the ranging problem | instructions and ns per step, at the ranging sizes and scalars | each library, as its users write it | measured 2026-11-23 on branch `mherb-benchmark`, and FrancoisCarouge/Kalman on 2026-11-24; the EKF holds against all four at every size and the UKF in double; the claim fails in time for the UKF in float at 2D with 4 anchors (1.03), the square-root EKF in double at 3D with 24 (1.06), and the square-root UKF in double at every 3D size (up to 1.29), and both square-root filters hold since their update was changed on 2026-11-25 (below), in a run of 500 batches; the pairs that do not agree are timed with a mark |
 
 **1. Ranging.** What exists, plus the two axes [benchmarks] names and the ranging benchmark lacks: a
 constant-acceleration case (state dimension 6 and 9 beside 4 and 6), and the scaling curves over
@@ -559,6 +559,19 @@ UKF in double at every 3D size. At 2D with 4 anchors the library takes 723 instr
 mherb/kalman 1,218 and 72 ns, and TinyEKF 1,575 and 103 ns, while the hand code takes 401 and
 52 ns. The other libraries' own times moved by up to 23% between this run and the one two commits
 before, with their code unchanged, so times of different runs compare only to about that.
+
+*Where the square-root filters' time went (2026-11-25).* Callgrind over one run of each pair at
+3D with 24 anchors in double put 61% of the square-root EKF's instructions, 100,000 per step, in
+one triangularization of the 30×30 joint root of the update, and the square-root UKF's update
+folds its statistical linearization through the same code, so it paid the same. The triangular
+solves, which the roadmap had suspected, took 1%. The update now reflects the state's columns
+and one column of the noise's lower-triangular root at a time, over 7 columns where the whole
+triangularization reached over up to 30 (`foldIntoSqrt()` in `Models/FormSteps.h`), and the square-root EKF's step
+takes 91,000 instructions to mherb/kalman's 161,000. In a run of 500 batches against
+mherb/kalman, at the commit *Fold a measurement into the square-root form a noise column at a
+time*, every square-root pair took less time than mherb/kalman's: the square-root EKF 0.29 to
+0.62 of it, the square-root UKF 0.44 to 0.89, from 1.08 and 1.27 at 3D with 24 anchors in
+double. `docs/benchmarks.md` is not yet measured again at that commit.
 
 *Where the instructions go with 8 and 12 anchors (2026-11-23).* The instruction ratios against
 TinyEKF are worst at 2D with 8 anchors (1.56) and 3D with 12 (1.19), between sizes where the

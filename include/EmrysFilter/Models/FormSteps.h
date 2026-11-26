@@ -805,6 +805,17 @@ oneBranch(Innovation<MeasurementSpace, Scalar> innovation, bool accepted = true)
  * \ref Kaminski1971 "Kaminski, Bryson, and Schmidt (1971)", with \f$ H \f$ and \f$ S_0 \f$ the
  * statistical linearization of whatever method made them.
  *
+ * \f$ L \f$ is \f$ W \f$ triangularized by reflections from the right, and \f$ W \f$'s shape
+ * lets each reflection be small: with \f$ S_0^{1/2} \f$ lower triangular, column \f$ j \f$ of
+ * \f$ L \f$ comes from noise column \f$ j \f$ and the \f$ n \f$ state columns alone, since no
+ * other column of \f$ W \f$ is nonzero at row \f$ j \f$. So each of the \f$ m \f$ reflections
+ * is over \f$ n + 1 \f$ columns, where a triangularization of the whole \f$ W \f$ makes
+ * reflections over up to \f$ m + n \f$; the state columns left at the end are a root of the
+ * posterior covariance, triangularized once. \f$ S_0^{1/2} \f$ is \f$ S_0 \f$'s Cholesky
+ * factor, or, for a noise that is not positive definite, the pivoted root of defaultRoot()
+ * triangularized. At 3D with 24 anchors this took the square-root EKF's step from 1.08 times
+ * mherb/kalman's to 0.62 [benchmarks].
+ *
  * \a accept, an acceptor (see AcceptEvery), is asked on the NIS before \a state is written
  * (decisions.md [update-outcomes]).
  *
@@ -828,25 +839,74 @@ foldIntoSqrt(
     constexpr int NMax = Form::MaxDifferenceDimensionAtCompileTime;
     constexpr int M = InnovationGaussian::DifferenceDimensionAtCompileTime;
     constexpr int MMax = InnovationGaussian::MaxDifferenceDimensionAtCompileTime;
-    using Joint = MatrixOf<Scalar, sizeSum<M, N>, sizeSum<M, N>, sizeSum<MMax, NMax>, sizeSum<MMax, NMax>>;
+    using StateColumns = MatrixOf<Scalar, sizeSum<M, N>, N, sizeSum<MMax, NMax>, NMax>;
+    using NoiseColumns = MatrixOf<Scalar, sizeSum<M, N>, M, sizeSum<MMax, NMax>, MMax>;
     using GainFactor = MatrixOf<Scalar, N, M, NMax, MMax>;
     auto const & space = state.space();
     Eigen::Index const n = state.differenceDimension();
     Eigen::Index const m = linearization.residual.size();
     auto const & factor = state.root();
 
-    Joint array(m + n, m + n);
-    array.topLeftCorner(m, n).noalias() = multiply(linearization.jacobian, asTriangular<Eigen::Lower>(factor));
-    array.topRightCorner(m, m) = defaultRoot(linearization.noise);
-    array.bottomLeftCorner(n, n) = factor;
-    array.bottomRightCorner(n, m).setZero();
-    Joint const lower = lowerTriangularRoot(array);
+    // The columns of W, the state's and the noise's. The noise's root is lower triangular, so its
+    // column j is zero above row j: the pivoted root of a noise that is not positive definite is
+    // triangularized first.
+    StateColumns columns(m + n, n);
+    columns.topRows(m).noalias() = multiply(linearization.jacobian, asTriangular<Eigen::Lower>(factor));
+    columns.bottomRows(n) = factor;
+    NoiseColumns lower(m + n, m);
+    if (auto const noiseRoot = roots::Cholesky{}.root(linearization.noise))
+    {
+        lower.topRows(m) = *noiseRoot;
+    }
+    else
+    {
+        lower.topRows(m) = lowerTriangularRoot(roots::Pivoted{}.root(linearization.noise));
+    }
+    lower.bottomRows(n).setZero();
+    // Column j of L, from noise column j and the n state columns: a reflection of those n + 1
+    // columns from the right that leaves row j only in the noise column's, which is then column j
+    // of L, and the state columns zero at row j; no other column of W is nonzero at row j or
+    // above. Whole columns are reflected, since what lies above row j in them is zero.
+    for (Eigen::Index j = 0; j < m; ++j)
+    {
+        Scalar const head = lower(j, j);
+        Scalar const tailNorm = columns.row(j).squaredNorm();
+        // As Eigen's makeHouseholder(): no reflection where the row's tail is zero, and a NaN
+        // reflected through.
+        if (!(tailNorm == Scalar(0)))
+        {
+            Scalar const length = Eigen::numext::sqrt(head * head + tailNorm);
+            Scalar const beta = head >= Scalar(0) ? -length : length;
+            Scalar const tau = (beta - head) / beta;
+            Scalar const toEssential = Scalar(1) / (head - beta);
+            // The reflection is I - tau u u^T, with u = (1, v) and v the row's tail times
+            // toEssential; W u is the noise column plus the state columns weighted by v.
+            auto noise = lower.col(j);
+            typename NoiseColumns::ColXpr::PlainObject product = noise;
+            for (Eigen::Index c = 0; c < n; ++c)
+            {
+                product += (columns(j, c) * toEssential) * columns.col(c);
+            }
+            product *= tau;
+            noise -= product;
+            for (Eigen::Index c = 0; c < n; ++c)
+            {
+                columns.col(c) -= (columns(j, c) * toEssential) * product;
+            }
+            noise(j) = beta;
+            columns.row(j).setZero();
+        }
+        if (lower(j, j) < Scalar(0))
+        {
+            lower.col(j) *= Scalar(-1);
+        }
+    }
     auto const innovationFactor = blockOf<M, M>(lower, 0, 0, m, m);
     if ((innovationFactor.diagonal().array() == Scalar(0)).any())
     {
         return std::unexpected{GaussianError::NotPositiveDefinite};
     }
-    GainFactor const gainFactor = lower.block(m, 0, n, m);
+    GainFactor const gainFactor = lower.bottomRows(n);
 
     typename InnovationGaussian::DifferenceVectorType whitened = linearization.residual;
     innovationFactor.template triangularView<Eigen::Lower>().solveInPlace(whitened);
@@ -868,11 +928,18 @@ foldIntoSqrt(
 
     typename Form::DifferenceVectorType const step = multiply(gainFactor, whitened);
     typename Form::VectorType const start = state.mean();
-    typename Form::MatrixType posterior = lower.bottomRightCorner(n, n);
+    // What the reflections left of the state columns, below the rows they zeroed, is a root of the
+    // posterior covariance; carried to the new mean's tangent space, if the space has a reset, and
+    // triangularized once.
+    typename Form::MatrixType posterior = blockOf<N, N>(columns, m, 0, n, n);
     if constexpr (!hasIdentityReset<Space>)
     {
         auto const g = resetJacobian(space, start, step);
         posterior = lowerTriangularRoot(typename Form::MatrixType{multiply(g, posterior)});
+    }
+    else
+    {
+        posterior = lowerTriangularRoot(posterior);
     }
     state.setMean(Emrys::plus(space, start, step));
     state.setRoot(std::move(posterior));
