@@ -173,7 +173,7 @@ public:
 
         /** Writes \f$ \log B_{vz} \f$ into \a out for each value \f$ v \f$ of \a space. */
         void
-        logLikelihoods(Space_ const & space, EmissionBuffer<Space_, Scalar_> out) const
+        logLikelihoods([[maybe_unused]] Space_ const & space, EmissionBuffer<Space_, Scalar_> out) const
         {
             EMRYS_FILTER_ASSERT(space == m_table->m_space && "the table is over a different space");
             EMRYS_FILTER_ASSERT(out.size() == m_table->m_matrix.rows());
@@ -296,7 +296,7 @@ public:
     /** Writes the observation's log-density under each value's distribution into \a out. */
     template <DiscreteSpace Space>
     void
-    logLikelihoods(Space const & space, EmissionBuffer<Space, Scalar> out) const
+    logLikelihoods([[maybe_unused]] Space const & space, EmissionBuffer<Space, Scalar> out) const
     {
         EMRYS_FILTER_ASSERT(out.size() == space.cardinality());
         for (Eigen::Index v = 0; v < out.size(); ++v)
@@ -400,7 +400,7 @@ public:
 
     /** Writes the Poisson log-probability of the count under each value's rate into \a out. */
     void
-    logLikelihoods(Space const & space, EmissionBuffer<Space, Scalar> out) const
+    logLikelihoods([[maybe_unused]] Space const & space, EmissionBuffer<Space, Scalar> out) const
     {
         auto const & rates = this->rates();
         EMRYS_FILTER_ASSERT(out.size() == space.cardinality() && rates.size() == out.size());
@@ -463,7 +463,7 @@ public:
 
     /** Writes the exponential log-density of the inter-arrival time under each value's rate into \a out. */
     void
-    logLikelihoods(Space const & space, EmissionBuffer<Space, Scalar> out) const
+    logLikelihoods([[maybe_unused]] Space const & space, EmissionBuffer<Space, Scalar> out) const
     {
         auto const & rates = this->rates();
         EMRYS_FILTER_ASSERT(out.size() == space.cardinality() && rates.size() == out.size());

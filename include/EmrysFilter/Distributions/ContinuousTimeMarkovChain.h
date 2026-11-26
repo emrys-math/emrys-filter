@@ -93,7 +93,7 @@ public:
     [[nodiscard]] static std::expected<ContinuousTimeMarkovChain, ChainError>
     create(Rates && rates, Space_ space = {})
     {
-        Eigen::Index const n = space.cardinality();
+        [[maybe_unused]] Eigen::Index const n = space.cardinality();
         MatrixType generator = internal::castScalar<Scalar>(std::forward<Rates>(rates));
         EMRYS_FILTER_ASSERT(
             generator.rows() == n && generator.cols() == n && "the generator has a row and a column per value"

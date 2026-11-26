@@ -357,11 +357,11 @@ public:
     template <typename GivenPath, typename Derived, internal::RepetitionChoice... Repetitions>
         requires(sizeof...(Repetitions) <= 1)
     [[nodiscard]] auto
-    conditional(Eigen::MatrixBase<Derived> const & values, Repetitions const &... repetitions) const
+    conditional([[maybe_unused]] Eigen::MatrixBase<Derived> const & values, Repetitions const &... repetitions) const
     {
         return internal::tagConditional<GivenPath>(
             m_space,
-            [&](auto const & t, auto const & g, auto space, auto const &) {
+            [&](auto const & t, [[maybe_unused]] auto const & g, auto space, auto const &) {
                 EMRYS_FILTER_ASSERT(values.size() == g.values.size());
                 return restricted(t.values, std::move(space));
             },

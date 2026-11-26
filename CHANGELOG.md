@@ -352,6 +352,10 @@ instead.
   would.
 - A program that includes `Models/Methods.h` builds with `-Wunused-parameter -Werror` and
   `NDEBUG` again: the sigma-point axes given a root read their argument only in an assertion.
+- Every header builds with `-Wall -Wextra -Werror` and `NDEBUG`: seventeen parameters and
+  variables that only an assertion reads, in `ContinuousTimeMarkovChain`, `Divergence.h`, `Gamma`,
+  `GridGaussian`, `Uniform`, `UniformMixture.h`, `RbUpdate.h`, `PosteriorCramerRaoBound`, the
+  emissions of `Emission.h`, and `ParticleFilter::predict()` without inputs, warned as unused.
 - `ParticleFilter::predict()` under a parallel policy no longer races: each particle's move
   recorded the change in the set's stamp, a write from every thread. It moves them through the
   set's `forEach()`, which records it once. Found by a ThreadSanitizer run of the parallel tests.

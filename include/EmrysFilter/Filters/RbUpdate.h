@@ -422,7 +422,7 @@ void
 updateGivenLikelihood(
     P && policy,
     Points const & points,
-    Store const & conditionals,
+    [[maybe_unused]] Store const & conditionals,
     M const & measurement,
     Likelihoods & result
 )

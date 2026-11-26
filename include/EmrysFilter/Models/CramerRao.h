@@ -394,7 +394,7 @@ private:
     /** Asserts that \a truths has a column per true state, each a value in the space. */
     template <typename Truths>
     void
-    assertTruths(Eigen::MatrixBase<Truths> const & truths) const
+    assertTruths([[maybe_unused]] Eigen::MatrixBase<Truths> const & truths) const
     {
         EMRYS_FILTER_ASSERT(truths.cols() > 0 && "the bound takes at least one true state");
         EMRYS_FILTER_ASSERT(truths.rows() == valueDimension(m_space) && "a true state does not fit the space");

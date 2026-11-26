@@ -281,7 +281,7 @@ struct NoClosedForm
 
 /** A programmer error unless \a p and \a q have the same value and difference dimensions. */
 inline void
-assertSameDimensions(auto const & p, auto const & q)
+assertSameDimensions([[maybe_unused]] auto const & p, [[maybe_unused]] auto const & q)
 {
     EMRYS_FILTER_ASSERT(
         p.valueDimension() == q.valueDimension() && p.differenceDimension() == q.differenceDimension()

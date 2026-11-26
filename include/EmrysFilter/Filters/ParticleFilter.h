@@ -570,7 +570,7 @@ private:
         EMRYS_FILTER_ASSERT(count > 0 && "the particle set must have a particle");
         Eigen::Index const noiseRows = differenceDimension(space);
         // Initialized in order, each input taking its rows after those before it.
-        Eigen::Index row = noiseRows;
+        [[maybe_unused]] Eigen::Index row = noiseRows;
         auto const drawn = std::tuple{internal::DrawnInput<Inputs>{inputs, row}...};
         Eigen::Index const rows = noiseRows + (Eigen::Index{0} + ... + internal::drawnRows(inputs));
         EMRYS_FILTER_ASSERT(row == rows);
@@ -654,7 +654,7 @@ private:
         Eigen::Index const count = m_state.size();
         EMRYS_FILTER_ASSERT(count > 0 && "the particle set must have a particle");
         Eigen::Index const noiseRows = differenceDimension(space);
-        Eigen::Index row = noiseRows;
+        [[maybe_unused]] Eigen::Index row = noiseRows;
         auto const drawn = std::tuple{internal::DrawnInput<Inputs>{inputs, row}...};
         Eigen::Index const rows = noiseRows + (Eigen::Index{0} + ... + internal::drawnRows(inputs));
         EMRYS_FILTER_ASSERT(row == rows);

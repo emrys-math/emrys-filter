@@ -563,7 +563,7 @@ private:
 
     /** A programmer error unless \a covariance is square over the block's differences. */
     void
-    checkCovariance(PinnedMatrix const & covariance) const
+    checkCovariance([[maybe_unused]] PinnedMatrix const & covariance) const
     {
         EMRYS_FILTER_ASSERT(
             covariance.rows() == pinnedDifferenceRows().size && covariance.cols() == pinnedDifferenceRows().size

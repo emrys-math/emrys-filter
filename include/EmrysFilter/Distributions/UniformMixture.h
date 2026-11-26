@@ -107,7 +107,7 @@ public:
             && m_covariance.rows() == m_corner.size() && m_covariance.cols() == m_corner.size()
             && "one corner, width, count, and covariance row per coordinate"
         );
-        Index gridded = 0;
+        [[maybe_unused]] Index gridded = 0;
         for (Index i = 0; i < m_counts.size(); ++i)
         {
             EMRYS_FILTER_ASSERT(m_counts(i) >= 0 && "a count must not be negative");
@@ -252,7 +252,7 @@ template <Space S, RealScalar Scalar, typename... Factors, typename CountOf>
 productGrid(
     Product<S, Scalar, Factors...> const & product,
     CountOf const & countOf,
-    Eigen::Index givenCounts,
+    [[maybe_unused]] Eigen::Index givenCounts,
     Scalar relativeWidth
 )
 {
