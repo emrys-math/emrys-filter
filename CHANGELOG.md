@@ -160,6 +160,10 @@ instead.
 - `CholeskyFactorization` no longer zeroes its scratch before writing it, 4.6 KB at a size of 24
   in `double` at every factorization: the ranging EKF's step at 3D with 24 anchors takes
   23,400 instructions, from 28,200. Its results are unchanged.
+- `triangularize()` of a column-major matrix whose columns are contiguous works through a map of
+  dynamic size, so that it is instantiated once per scalar and bound on the columns, whatever the
+  rows and the expression; the square-root forms instantiated it once per stacked shape. A test
+  file of the square-root filters compiles about a fifth faster with Clang.
 - `compose()` and `onEach()` forward the Jacobians their batched parts write, each part's or
   repetition's into its rows, so a method no longer differentiates a composition whose parts are all
   marked `batched(f, jacobians::perColumn())`, or a part at a point that writes its Jacobian. A
