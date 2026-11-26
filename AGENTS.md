@@ -72,8 +72,11 @@ the ones a change needs, with their commands:
 - **`pr`**, before `next` goes to `dev`: GCC, MSVC, the negative compile tests with each of Clang,
   GCC, and MSVC (the `<compiler>-compile-errors` workflows, which compile again only the cases
   whose file's object was rebuilt), the Doxygen build and the policy check over its XML,
-  `clang-sanitize` in WSL, and coverage, one at a time. The pull request then runs in CI every job
-  the script names at `pr`, the CI-only ones included, and it is merged only when they pass.
+  `clang-sanitize` in WSL, coverage, and the `clang-release` and `gcc-release` workflows (GCC in
+  WSL), Release builds of the benchmark runners and of the compile-cost units, which include each
+  header alone, where a name only an assertion reads is unused, one at a time. The pull request
+  then runs in CI every job the script names at `pr`, the CI-only ones included, and it is merged
+  only when they pass.
 - **`ci`**, before a release: every CI job.
 
 A change that needs no compiling, such as documentation or instructions, needs only the checks the
@@ -85,7 +88,7 @@ at most four cases at once.
 CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the same three workflow presets,
 GCC 14 and Clang 21 on Linux and MSVC on Windows, each with its `-compile-errors` workflow in a job beside it, and MSVC's
 tests split over three runners by `EMRYS_FILTER_TEST_SHARD` (`models`, `library`, and `programs`, set in
-the top-level CMakeLists.txt, and empty for all); the `clang-sanitize` preset (Clang 21 with
+the top-level CMakeLists.txt, and empty for all); `clang-release` and `gcc-release`; the `clang-sanitize` preset (Clang 21 with
 AddressSanitizer and UndefinedBehaviorSanitizer), `gcc-no-exceptions` (`-fno-exceptions
 -fno-rtti`), and `clang-libcxx` (LLVM's library), all on Linux; GCC on Linux arm64; the
 `apple-clang` preset on macOS; the Cortex-M build in `benchmarks/cortex_m/` under QEMU

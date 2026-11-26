@@ -3004,14 +3004,14 @@ check. The axis checklist is not built yet (roadmap, Verification).
 **Rule.** A change passes checks at three stages: `land` (onto `next`), `pr` (`next` to `dev`), and
 `ci` (before a release). A check's stage is set by what it alone can catch: Clang and the checks
 that take seconds at `land`; the other compiler families, the negative compile tests, the
-sanitizers, Doxygen, and coverage at `pr`; the builds only CI runs (no exceptions, libc++, arm64,
-macOS, Cortex-M) and the static analysis [static-analysis] at `ci`. A check moves to an earlier
-stage when the change touches what only it tests, as a deduction guide does MSVC, a claimed compile
-error Clang's negative compile tests, or a `throw` the build without exceptions, and a check is
-skipped when the change touches nothing it tests. `tools/required_checks.py` holds the rules and
-reads the diff, here and in CI on each pull request to `dev`. The negative compile tests run once
-per compiler, by the `clang-`, `gcc-`, and `msvc-compile-errors` workflows in those builds, and in
-no sanitizer or coverage build, which cannot change a compile's result.
+sanitizers, Doxygen, coverage, and Release builds at `pr`; the builds only CI runs (no exceptions,
+libc++, arm64, macOS, Cortex-M) and the static analysis [static-analysis] at `ci`. A check moves to
+an earlier stage when the change touches what only it tests, as a deduction guide does MSVC, a
+claimed compile error Clang's negative compile tests, or a `throw` the build without exceptions, and
+a check is skipped when the change touches nothing it tests. `tools/required_checks.py` holds the
+rules and reads the diff, here and in CI on each pull request to `dev`. The negative compile tests
+run once per compiler, by the `clang-`, `gcc-`, and `msvc-compile-errors` workflows in those builds,
+and in no sanitizer or coverage build, which cannot change a compile's result.
 
 **Why.** Measured in a Clang Debug build on 2026-11-02, compiling the test translation units takes
 about 1,300 CPU-seconds and the 182 negative compile cases 416 more, while the other tests run in
@@ -3020,11 +3020,11 @@ under 40; one test at a time, the per-test processes alone made a run 51 s, and 
 compiles are skipped where an earlier result still holds; a header change rebuilds every case.
 
 **Rejected.** Levels by run time, which saves almost nothing when running is a few percent of the
-cost. Rules in prose, which were applied from memory and let the negative tests go unrun on GCC
-and MSVC through six new claims. CI by hand alone, as until 2026-11-17, which let a required job
-go unrun. Running only the tests of the translation units that were rebuilt:
-the run is seconds, and the build already skips the rest. The negative tests in every build, as
-until 2026-11-12, which made `land` pay for them on each header change.
+cost. Rules in prose, which were applied from memory and let the negative tests go unrun on GCC and
+MSVC through six new claims. CI by hand alone, as until 2026-11-17, which let a required job go
+unrun. Running only the tests of the translation units that were rebuilt: the run is seconds, and
+the build already skips the rest. The negative tests in every build, as until 2026-11-12, which made
+`land` pay for them on each header change.
 
 **Where.** `tools/required_checks.py`, `.github/workflows/ci.yml`, `tests/compile_errors.cmake`,
 `CMakePresets.json`, and AGENTS.md's "Build and test".

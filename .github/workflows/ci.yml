@@ -52,6 +52,10 @@ on:
         description: MSVC on Windows
         type: boolean
         default: false
+      release:
+        description: Release builds of the benchmark runners and compile-cost units, Clang 21 and GCC 14
+        type: boolean
+        default: false
       docs:
         description: Doxygen reference, failing on any warning
         type: boolean
@@ -127,8 +131,10 @@ jobs:
   # malloc and free to count the heap. `gcc-no-exceptions` builds everything with -fno-exceptions
   # -fno-rtti [embedded-builds]; `clang-libcxx` builds with LLVM's library, as macOS does, but
   # without TBB, which is built against libstdc++; `gcc-arm64` runs the gcc preset on an Arm runner,
-  # where Eigen takes its NEON paths. The negative compile tests check a compiler's result, so each
-  # compiler runs them once, in its plain build [check-stages]; the `<compiler>-compile-errors`
+  # where Eigen takes its NEON paths; `clang-release` and `gcc-release` build the benchmark runners and
+  # the compile-cost units, which include each public header alone, with NDEBUG, so a name that only
+  # an assertion reads fails the build there. The negative compile tests check a compiler's result,
+  # so each compiler runs them once, in its plain build [check-stages]; the `<compiler>-compile-errors`
   # workflow builds only their four objects, not the tests, so it is a job of its own beside the
   # compiler's build, which then needn't wait for it, and reports even when the build fails. A job
   # not ticked is excluded from the matrix, so it starts no runner; the runner and preset are
@@ -140,13 +146,14 @@ jobs:
       fromJSON(needs.plan.outputs.run).gcc || fromJSON(needs.plan.outputs.run).clang
       || fromJSON(needs.plan.outputs.run).clang_sanitize || fromJSON(needs.plan.outputs.run).gcc_no_exceptions
       || fromJSON(needs.plan.outputs.run).clang_libcxx || fromJSON(needs.plan.outputs.run).gcc_arm64
+      || fromJSON(needs.plan.outputs.run).release
     runs-on: ${{ matrix.job == 'gcc-arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         job: [gcc, gcc-compile-errors, clang, clang-compile-errors, clang-sanitize, gcc-no-exceptions,
-              clang-libcxx, gcc-arm64]
+              clang-libcxx, gcc-arm64, clang-release, gcc-release]
         exclude:
           - job: ${{ !fromJSON(needs.plan.outputs.run).gcc && 'gcc' || '' }}
           - job: ${{ !fromJSON(needs.plan.outputs.run).gcc && 'gcc-compile-errors' || '' }}
@@ -156,6 +163,8 @@ jobs:
           - job: ${{ !fromJSON(needs.plan.outputs.run).gcc_no_exceptions && 'gcc-no-exceptions' || '' }}
           - job: ${{ !fromJSON(needs.plan.outputs.run).clang_libcxx && 'clang-libcxx' || '' }}
           - job: ${{ !fromJSON(needs.plan.outputs.run).gcc_arm64 && 'gcc-arm64' || '' }}
+          - job: ${{ !fromJSON(needs.plan.outputs.run).release && 'clang-release' || '' }}
+          - job: ${{ !fromJSON(needs.plan.outputs.run).release && 'gcc-release' || '' }}
     env:
       # Two heavy template translation units at a time fit in the runner's memory.
       CMAKE_BUILD_PARALLEL_LEVEL: 2

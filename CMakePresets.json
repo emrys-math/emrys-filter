@@ -117,7 +117,9 @@
     { "name": "apple-clang", "configurePreset": "apple-clang" },
     { "name": "clang-bench", "configurePreset": "clang-bench", "targets": ["benchmark"] },
     { "name": "gcc-bench", "configurePreset": "gcc-bench", "targets": ["benchmark"] },
-    { "name": "msvc-bench", "configurePreset": "msvc-bench", "targets": ["benchmark"] }
+    { "name": "msvc-bench", "configurePreset": "msvc-bench", "targets": ["benchmark"] },
+    { "name": "clang-release", "configurePreset": "clang-bench" },
+    { "name": "gcc-release", "configurePreset": "gcc-bench" }
   ],
   "testPresets": [
     {
@@ -264,6 +266,20 @@
       "steps": [
         { "type": "configure", "name": "msvc-bench" },
         { "type": "build", "name": "msvc-bench" }
+      ]
+    },
+    {
+      "name": "clang-release",
+      "steps": [
+        { "type": "configure", "name": "clang-bench" },
+        { "type": "build", "name": "clang-release" }
+      ]
+    },
+    {
+      "name": "gcc-release",
+      "steps": [
+        { "type": "configure", "name": "gcc-bench" },
+        { "type": "build", "name": "gcc-release" }
       ]
     }
   ]

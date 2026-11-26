@@ -84,6 +84,10 @@ CHECKS = [
           HEADERS + r'|^docs/|^README\.md$'),
     Check('policies', 'pr', 'python tools/check_policies.py build/docs/docs/xml (after the docs target)',
           HEADERS + r'|^tests/policies\.cpp$|^tools/check_policies\.py$'),
+    # A Release build defines NDEBUG, so a name only an assertion reads is unused there: the runners
+    # and the compile-cost units, which include each public header alone, build with warnings as errors.
+    Check('release', 'pr', 'cmake --workflow --preset clang-release, and gcc-release (in WSL)',
+          HEADERS + r'|^benchmarks/|(^|/)CMakeLists\.txt$|^CMakePresets\.json$|^cmake/'),
     Check('clang-sanitize', 'pr', 'cmake --workflow --preset clang-sanitize (in WSL)', COMPILED),
     Check('coverage', 'pr',
           'cmake --workflow --preset clang-coverage && '
@@ -134,6 +138,7 @@ CI_INPUTS = {
     'gcc compile errors': ['gcc'],
     'doxygen': ['docs'],
     'policies': ['docs'],
+    'release': ['release'],
     'clang-sanitize': ['clang_sanitize'],
     'coverage': ['coverage'],
     'clang-tidy': ['clang_tidy'],
