@@ -63,7 +63,7 @@ public:
     predict()
     {
         auto normal = std::normal_distribution<double>{};
-        auto z = StateVector{};
+        StateVector z;
         for (Eigen::Index i = 0; i < m_states.cols(); ++i)
         {
             for (double & coefficient : z)
@@ -192,10 +192,47 @@ private:
     [[nodiscard]] static StateMatrix
     noiseRoot(StateMatrix const & a)
     {
-        auto const llt = Eigen::LLT<StateMatrix>{a};
-        if (llt.info() == Eigen::Success)
+        // The Cholesky factorization without square roots, A = L~ D L~^T, a whole column at a time
+        // in columns padded to 16 bytes, as the library factorizes a fixed size: column k of L~ D
+        // is column k of A less L~(k, j) times each column j of L~ D before it. The root is then
+        // L~ D^{1/2}. Eigen's LLT rounds differently, and a difference in the last bit of the
+        // factor, though far inside the agreement test's tolerance, makes a systematic resample
+        // of a million particles choose differently.
+        constexpr int Lanes = int(16 / sizeof(double));
+        constexpr int Padded = (StateSize + Lanes - 1) / Lanes * Lanes;
+        using Column = Eigen::Matrix<double, Padded, 1>;
+        Eigen::Matrix<double, Padded, StateSize> unscaled;
+        Eigen::Matrix<double, Padded, StateSize> unit;
+        StateVector pivot;
+        StateVector reciprocal;
+        bool positive = true;
+        for (int k = 0; k < StateSize && positive; ++k)
         {
-            return llt.matrixL();
+            Column column = Column::Zero();
+            column.template head<StateSize>() = a.col(k);
+            for (int j = 0; j < k; ++j)
+            {
+                column -= (unscaled(k, j) * reciprocal(j)) * unscaled.col(j);
+            }
+            positive = column(k) > 0.0;
+            pivot(k) = column(k);
+            reciprocal(k) = 1 / column(k);
+            unscaled.col(k) = column;
+            unit.col(k) = column * reciprocal(k);
+        }
+        if (positive)
+        {
+            StateMatrix root = StateMatrix::Zero();
+            for (int j = 0; j < StateSize; ++j)
+            {
+                double const scale = std::sqrt(pivot(j));
+                root(j, j) = scale;
+                for (int i = j + 1; i < StateSize; ++i)
+                {
+                    root(i, j) = unit(i, j) * scale;
+                }
+            }
+            return root;
         }
         auto const ldlt = Eigen::LDLT<StateMatrix>{a};
         StateVector const d = ldlt.vectorD().cwiseMax(0.0).cwiseSqrt();
