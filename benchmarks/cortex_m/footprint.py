@@ -1,7 +1,10 @@
-"""Prints the Cortex-M programs' footprint as Markdown: each core's .text, .data, and .bss from
-arm-none-eabi-size, and the largest stack frames from GCC's -fstack-usage files.
+"""Prints the Cortex-M footprint programs' sizes as Markdown: each program's .text, .data, and .bss
+from arm-none-eabi-size, its .text and .bss less the simulator program's of the same core, which
+every program shares, and the largest stack frame from GCC's -fstack-usage files.
 
-usage: footprint.py <size tool> (<core> <elf> <object dir>)...
+usage: footprint.py <size tool> (<core> <program> <elf> <object dir>)...
+
+The program named "simulator" runs the simulation alone; the others add one filter to it.
 """
 
 import pathlib
@@ -30,18 +33,24 @@ def frames(object_dir):
 
 def main(arguments):
     size_tool, rest = arguments[0], arguments[1:]
-    cores = [rest[i : i + 3] for i in range(0, len(rest), 3)]
-    print("| Core | .text | .data | .bss | Largest stack frame |")
-    print("|---|---:|---:|---:|---|")
-    for core, elf, object_dir in cores:
-        text, data, bss = sizes(size_tool, elf)
-        largest = frames(object_dir)
+    programs = [rest[i : i + 4] for i in range(0, len(rest), 4)]
+    measured = {(core, name): (sizes(size_tool, elf), frames(object_dir)) for core, name, elf, object_dir in programs}
+    print("| Core | Program | .text | .data | .bss | .text less the simulator's | .bss less the simulator's | Largest stack frame |")
+    print("|---|---|---:|---:|---:|---:|---:|---|")
+    for core, name, _, _ in programs:
+        (text, data, bss), largest = measured[(core, name)]
+        base = measured.get((core, "simulator"))
+        if base is None or name == "simulator":
+            extra_text = extra_bss = ""
+        else:
+            extra_text = str(text - base[0][0])
+            extra_bss = str(bss - base[0][2])
         frame = f"{largest[0][0]} B, {largest[0][1]}" if largest else "none"
-        print(f"| {core} | {text} | {data} | {bss} | {frame} |")
-    for core, _, object_dir in cores:
-        print(f"\n{core}, largest frames (bytes, function, GCC's kind):\n")
-        for size, name, kind in frames(object_dir)[:10]:
-            print(f"- {size} `{name}` ({kind})")
+        print(f"| {core} | {name} | {text} | {data} | {bss} | {extra_text} | {extra_bss} | {frame} |")
+    for core, name, _, _ in programs:
+        print(f"\n{core}, {name}, largest frames (bytes, function, GCC's kind):\n")
+        for size, function, kind in measured[(core, name)][1][:5]:
+            print(f"- {size} `{function}` ({kind})")
 
 
 if __name__ == "__main__":
