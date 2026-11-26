@@ -23,6 +23,10 @@ if(EMRYS_FILTER_BENCHMARK_MHERB)
   add_library(emrys_filter_mherb_kalman INTERFACE)
   target_include_directories(emrys_filter_mherb_kalman SYSTEM INTERFACE "${mherb_kalman_SOURCE_DIR}/include")
   target_link_libraries(emrys_filter_mherb_kalman INTERFACE Eigen3::Eigen)
+  # In a Release build GCC 14 and 15 flag the packet loads of its square-root UKF in float with
+  # -Warray-bounds, a load of four floats at an offset into a 16-byte allocation, which the size
+  # checks at run time keep inside it; the system includes don't cover a warning on inlined code.
+  target_compile_options(emrys_filter_mherb_kalman INTERFACE $<$<CXX_COMPILER_ID:GNU>:-Wno-array-bounds>)
 endif()
 
 # TinyEKF, a C EKF for microcontrollers, another implementation of the ranging EKF (claims 6 and 9).
