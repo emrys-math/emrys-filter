@@ -159,10 +159,10 @@ elements takes a standard allocator, so a `std::pmr` arena holds a particle filt
 is owned and reused. The scalar is a template parameter: a `float` filter computes in `float`
 throughout, and autodiff and multiprecision scalars run the same code. The library throws
 nothing, reports failure through `std::expected`, and builds with `-fno-exceptions -fno-rtti`
-and for Cortex-M4F and M7. On the ranging benchmark the `KalmanFilter` takes 0.89 to 1.44 times
+and for Cortex-M4F and M7. On the ranging benchmark the `KalmanFilter` takes 1.10 to 1.91 times
 the instructions per step of a hand-written Eigen EKF, after both pass the same agreement and
 consistency tests; the ratio is highest on the smallest problems, where the library's fixed cost
-of about 320 instructions per update is a quarter of the total
+of about 240 instructions per update is two fifths of the total
 ([the benchmark results](docs/benchmarks.md)).
 
 **Parallel by policy.** Every loop over a run-time count (particles, mixture components, grid

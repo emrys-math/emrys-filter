@@ -92,10 +92,10 @@ might doubt, published with its method and machine, and never one per feature."
 | 3 | Sampled filters are as fast as a loop you would write, and scale with threads | Particle filter on the ranging problem | ns per particle-step; ratio of `par` at $T$ threads to `Sequential` | hand-rolled Eigen particle filter (sequential) | the pair is built, not in CI, not published; the thread sweep is step 18's |
 | 4 | Each option has a known price | Options table on the ranging problem | ns per step relative to the plain EKF row | the library's own EKF | not started |
 | 5 | Composition is additive | Filters table on the ranging problem | ns per step relative to the EKF, divided by the component count | the library's own EKF | not started |
-| 6 | It fits and runs on a microcontroller | Footprint and cycles on Cortex-M4F and M7 | `.text`, `.data`, stack per function, DWT cycles per step | hand-rolled EKF and TinyEKF on the same target | after [embedded-builds]'s Cortex-M job |
+| 6 | It fits and runs on a microcontroller | Footprint and cycles on Cortex-M4F and M7 | `.text`, `.data`, stack per function, DWT cycles per step | hand-rolled EKF and TinyEKF on the same target | the footprint is measured and published (2026-11-26): on the Cortex-M4F and M7 the library's ranging EKF takes 19.7 KB of code, the hand code's 6.9 KB, TinyEKF's 2.3 KB; the cycles per step wait on boards |
 | 7 | A template library's compile cost is tolerable | Compile cost of each benchmark translation unit | seconds and peak memory per compiler | the hand-rolled translation unit | built and measured on three compilers (section 7), not in CI, not published |
 | 8 | A GPU pays above some particle count | Device path against host `par` | crossover particle count | the library's own host path | step 19, not planned here |
-| 9 | It is no slower than the C++ Kalman library a user would otherwise pick | mherb/kalman's EKF, UKF, square-root EKF, and square-root UKF, TinyEKF's EKF, FrancoisCarouge/Kalman's EKF, and OpenCV's `cv::KalmanFilter` run as an EKF, on the ranging problem | instructions and ns per step, at the ranging sizes and scalars | each library, as its users write it | measured 2026-11-23 on branch `mherb-benchmark`, and FrancoisCarouge/Kalman on 2026-11-24; the EKF holds against all four at every size and the UKF in double; the claim fails in time for the UKF in float at 2D with 4 anchors (1.03), the square-root EKF in double at 3D with 24 (1.06), and the square-root UKF in double at every 3D size (up to 1.29), and both square-root filters hold since their update was changed on 2026-11-25 (below), in a run of 500 batches; the pairs that do not agree are timed with a mark |
+| 9 | It is no slower than the C++ Kalman library a user would otherwise pick | mherb/kalman's EKF, UKF, square-root EKF, and square-root UKF, TinyEKF's EKF, FrancoisCarouge/Kalman's EKF, and OpenCV's `cv::KalmanFilter` run as an EKF, on the ranging problem | instructions and ns per step, at the ranging sizes and scalars | each library, as its users write it | measured again 2026-11-26 with Clang on Linux and MSVC on Windows; with Clang the EKF holds against all four at every size but mherb/kalman's at 2D with 4 anchors in double (1.02), both square-root filters at every size, and the UKF but in float at 2D with 4 anchors (1.06); with MSVC the EKF (1.24 and 1.60) and the UKF (1.38 and 1.27) fail at 2D with 4 anchors; the pairs that do not agree are timed with a mark |
 
 **1. Ranging.** What exists, plus the two axes [benchmarks] names and the ranging benchmark lacks: a
 constant-acceleration case (state dimension 6 and 9 beside 4 and 6), and the scaling curves over
@@ -149,15 +149,14 @@ at 3D with 24 anchors that zeroed two 4.6 KB factor buffers at every update. Cal
 byte a `rep stosb` stores as an instruction, so those zeroings were 9,538 of the hand code's 32,605
 instructions per step there. The library zeroed one buffer of the same size in its own
 factorization, which it no longer does. The hand code now takes Eigen's lazy products and leaves
-its scratch uninitialized, as the library does, and in both references, so that they still differ
-in the factorization and the solve alone. The library then costs more than the hand code at every
-size: 1.12 to 1.64 times its instructions, and 1.08 to 1.69 times its time in a run of 500
-batches.
+its scratch uninitialized, as the library does. The library then costs more than the hand code at
+every size: 1.09 to 1.90 times its instructions and 1.07 to 1.72 times its time (2026-11-26).
 
 That reference measures the library's overhead, but it is not what a user of Eigen writes, who
 factorizes $S$ by `Eigen::LLT` and solves by its `solve()`. So the ranging and attitude hand code
 also has that form (`Factorization::EigenLlt` in each `scenario.h`), which differs from the first
-in the factorization and the solve alone, agrees with the library to the same tolerance, and
+in the factorization, the solve, and its products, `noalias()` ones as a user of Eigen writes them
+(since 2026-11-26; for a day it took the lazy ones too), agrees with the library to the same tolerance, and
 allocates nothing; each runner times the library against both, and the results page gives both
 ratios. On 2026-11-23 the library's ranging EKF took 0.38 to 0.84 of its time and its attitude EKF
 1.13 and 1.19 times it, where against the first reference they took 0.89 to 1.74 and 1.51 and
@@ -798,6 +797,53 @@ update, from a reading of the code that built nothing:
   triangles. The stored upper triangle would change, which a user who reads `covarianceLower()`
   as a whole matrix can see. The mirror is about six copies for a 4×4 matrix, so removing it
   does not close the gap at the small sizes by itself; it is to be measured before and after.
+
+*Where the fixed cost goes, measured (2026-11-26).* At 2D with 4 anchors in `double` with analytic
+Jacobians the library's step takes 635 instructions and 73 ns, the hand code's 394 and 52 ns.
+Callgrind, attributing inlined code to its source lines, puts about 93 of the hand code's
+instructions in the prediction and 301 in the update. Of the library's (645 in a program built with
+`-g`), 148 are outside `updateResolved()`: the prediction, and the measurement model built and its
+reads resolved at each update. 497 are inside it, of which `kalmanConditionInPlace()`, the
+factorization, the gain, and the posterior, takes 240. What the update adds to the hand code's:
+
+- 34 gather $P_{xS}$, the covariance of the state with the blocks read, an element at a time from
+  the lower triangle, with a branch on each (`lowerSymmetricBlock()` in `Spaces/Indexing.h`),
+  where the hand code reads `leftCols<2>()` of a covariance it keeps whole.
+- 26 move the update's result: `FilterUpdate`'s constructor takes its branches by value and moves
+  them into its member, and a fixed-size residual and $S$ are copied by a move. Built in place,
+  from the innovation's own arguments, the move goes: 450 instructions off the step at 3D with 24
+  anchors, where $S$ is 24×24. But Clang then leaves `linearizePrediction()` out of line, and the
+  time ratio at 2D with 4 anchors went from 1.40 to 1.46, at 3D with 6 from 1.37 to 1.45, and at
+  3D with 24 from 1.22 to 1.19, three runs each; it is left out until the linearization can be
+  kept inlined.
+- About 30 resolve the reads' index vectors and copy $R$ into $S$ at each update, and the rest is
+  spread over the entry and exit of the calls left out of line and the `std::expected`s, a few
+  instructions each.
+
+The attitude EKF's step took 44 instructions more than on 2026-11-23 (5,408 with analytic
+Jacobians); counted commit by commit, they came with *Write a function's Jacobian into its output,
+marked writesJacobians()*, whose `PointOutput` zeroed the Jacobian and was then copied into the
+result. It now writes into the result and zeroes only when some block is not wanted, and the step
+takes 5,327.
+
+*`float` at 3D with 6 anchors, and Linux (2026-11-26).* A step there is slower in `float` than in
+`double` on both sides with `-march=x86-64-v3` (the library 227 against 165 ns, the hand code 148
+against 120) and with `-march=x86-64-v2 -mavx` (228 against 171), and faster in `float` on Windows
+without `-march`, SSE2 (145 against 177). So it comes with AVX, where a 6-vector of `float`s is a
+half packet and two scalars, and is not yet narrowed further. On Linux a build without VEX
+encodings, SSE2 or `-march=x86-64-v2`, takes two to six times as long in `float` as the same code
+with `-mavx`, at every size, on both sides (3D with 24 anchors: 4,943 against 823 ns for the
+library), while Windows's SSE2 build does not; a `vzeroupper` before the timed code changes
+nothing, so dirty upper halves of the YMM registers are not the cause, which is not found. The
+results page uses `-march=x86-64-v3` on Linux.
+
+*The particle filter on Linux (2026-11-26).* The hand-written particle step takes about three
+times as long per particle on Linux as on Windows, 145 against 47 ns in 2D, and the library's ratio
+is 1.02 to 1.11 there against 1.29 to 1.56 on Windows. Half the runner's instructions are in
+libstdc++'s `std::normal_distribution`, whose uniform draws go through `std::generate_canonical`,
+which takes a `long double` logarithm (`logl`, by the x87 unit) at every call; both sides draw
+their normals through it, so on Linux a slow part common to both is most of each step and the
+ratio there says less about the library than Windows's does.
 
 **OpenCV.** The Kalman filter of OpenCV, the computer-vision library (Apache 2.0 license), is
 `cv::KalmanFilter` in its video module, a linear filter whose matrices are `cv::Mat`s sized at run

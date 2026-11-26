@@ -1031,19 +1031,27 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       square-root UKF 0.44 to 0.89. The triangular solves took 1% of the step; the
       substitution in `solveInPlace()` and `inverseFrom()`, which still solve a column at a
       time through Eigen, waits for a step it is found in. The library's ratios below 1 against
-      the hand code, at 12 anchors and more, were the hand code's: it took its larger products by
-      Eigen's run-time blocked product and zeroed scratch it overwrote, and now multiplies and
-      allocates as the library does, which stopped zeroing its own factorization's scratch
-      (2026-11-25, design/benchmarks.md section 1); the library then costs more than the hand
-      code at every size. Next: measure `docs/benchmarks.md` again at that commit; find where the 16 ns and 320 instructions go that the library adds to the hand
-      code's step at 2D with 4 anchors (candidates read from the code: the calls left out of
-      line, and the covariance mirror in `kalmanConditionInPlace()`); find whether the rest
-      of a 6-state step in float has the mismatch of stores and loads the substitution had,
-      since 3D with 6 anchors is still slower in float than in double on both sides, and the
-      library's float step there is 1.47 times the hand code's;
-      take the Windows times, and the
-      attitude and particle times, again; MSVC builds of the pairs; the Cortex-M half of
-      TinyEKF joins claim 6's footprint benchmark. The whole test suite passed with Clang 21
+      the hand code were the hand code's (2026-11-25, design/benchmarks.md section 1). The page
+      is measured again at the commit *Measure the footprint of each ranging EKF on the
+      Cortex-M, TinyEKF's included* (2026-11-26), on Linux and Windows, with MSVC beside Clang,
+      and with the footprint on the Cortex-M4F and M7: the library's EKF takes 19.7 KB of code,
+      the hand code's 6.9, TinyEKF's 2.3. Claim 9 fails narrowly for the EKF at 2D with 4
+      anchors in double against mherb/kalman (1.02) and the UKF in float there (1.06), and
+      with MSVC for both there. The particle hand code factors Q as the library does, so the
+      two agree at a million particles; the Eigen LLT reference multiplies as a user of Eigen
+      writes it; a `writesJacobians()` function writes where the library returns. Found and
+      left, in design/benchmarks.md: the fixed cost at 2D with 4 anchors, 241 instructions (the
+      gather of $P_{xS}$ an element at a time, 34; the update's result moved, 26, whose
+      construction in place makes Clang leave the linearization out of line; the reads resolved
+      at each update); `float` at 3D with 6 anchors slower than `double` with AVX only; Linux
+      builds without VEX slow in `float`; MSVC's code for the hand code's lazy products and
+      written-out factorization in `float` at 12 and 24 anchors; MSVC 19.50 at `/O2`
+      miscompiling the benchmark's `colwise().norm()` of a 2×8 `float` matrix inside its
+      measurement functions, both sides', so the `float` EKF at 2D with 8 anchors strays (not
+      reproduced alone, and 19.52 not tried); libstdc++'s `std::generate_canonical` taking a
+      `logl` at every draw, most of the Linux particle step. Next: the cycles per step on
+      boards; a test of `float` at 2D with 8 anchors that would catch the MSVC miscompilation,
+      with a workaround; the gather by blocks for a read that is one run of columns. The whole test suite passed with Clang 21
       and with GCC 15 in WSL (2026-11-23, both with warnings as errors) but
       `Allocation.ParticleFilterUnderAUsersPolicyStaysOffTheHeap`, whose scratch arena `next`
       enlarged before the branch was rebased onto it (2026-11-24). SymForce and manif wait for
