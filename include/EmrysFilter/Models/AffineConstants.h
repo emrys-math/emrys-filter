@@ -264,7 +264,7 @@ private:
             "the matrix of on<Name>(H) in affineIn() has a row per difference of the output and a column per "
             "difference of the input it names"
         );
-        Eigen::Index const n = differenceDimension(out);
+        [[maybe_unused]] Eigen::Index const n = differenceDimension(out);
         BlockRows const rows = blockRows<Name>(in);
         EMRYS_FILTER_ASSERT(
             constant.value.rows() == n && constant.value.cols() == rows.size
