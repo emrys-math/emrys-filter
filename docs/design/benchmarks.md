@@ -136,6 +136,24 @@ library. Since 2026-11-23 both substitute through the factor themselves instead,
 of at most 24, since Eigen's solve of a small vector turned out slow in time, and both factorize
 $S$ without square roots, a column at a time, as [own-cholesky] has it (claim 9, below).
 
+Two more such differences made the library look cheaper than the hand code at 12 anchors and
+more, by 0.72 to 0.87 of its instructions and 0.85 to 0.99 of its time (found 2026-11-25). The
+first is the products. The library takes every
+product of fixed sizes by Eigen's coefficient-based product (`internal::multiply()`), while the
+hand code wrote `noalias()` products, which Eigen sends to its run-time blocked product once a
+dimension reaches 8 (`EIGEN_CACHEFRIENDLY_PRODUCT_THRESHOLD`): $H P_{xy}$ and $K P_{xy}^T$ at 3D
+with 12 anchors were two calls of `general_matrix_matrix_product`, 36% of the hand code's
+instructions. The second is the scratch. The hand code declared each scratch matrix as
+`auto m = Eigen::Matrix<...>{}`, which Eigen zeroes, and wrote every element before reading it:
+at 3D with 24 anchors that zeroed two 4.6 KB factor buffers at every update. Callgrind counts each
+byte a `rep stosb` stores as an instruction, so those zeroings were 9,538 of the hand code's 32,605
+instructions per step there. The library zeroed one buffer of the same size in its own
+factorization, which it no longer does. The hand code now takes Eigen's lazy products and leaves
+its scratch uninitialized, as the library does, and in both references, so that they still differ
+in the factorization and the solve alone. The library then costs more than the hand code at every
+size: 1.12 to 1.64 times its instructions, and 1.08 to 1.69 times its time in a run of 500
+batches.
+
 That reference measures the library's overhead, but it is not what a user of Eigen writes, who
 factorizes $S$ by `Eigen::LLT` and solves by its `solve()`. So the ranging and attitude hand code
 also has that form (`Factorization::EigenLlt` in each `scenario.h`), which differs from the first

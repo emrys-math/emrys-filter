@@ -26,6 +26,17 @@ reference is hand-written code, and what is still to be measured.
 | Particle filter, 2D | 1.08–1.11 | 1.10–1.18 | 1.00–1.04 | |
 | Particle filter, 3D | 1.05–1.11 | 1.25–1.40 | 1.02–1.12 | |
 
+**The rows of 12 or more anchors are not the library's overhead.** They are below 1 because the
+hand code they were measured against did more work than the library: it took its larger products
+by Eigen's run-time blocked product, where the library takes Eigen's coefficient-based one, and it
+zeroed scratch matrices it then overwrote. On 2026-11-25 the hand code was changed to multiply and
+allocate as the library does, and the library stopped zeroing its own factorization's scratch.
+At that commit the library costs 1.12 to 1.64 times the hand code's instructions at every size,
+and 1.08 to 1.69 times its time in a run of 500 batches, with 12 or more anchors at
+1.12 to 1.19 and 1.09 to 1.27
+([design/benchmarks.md](design/benchmarks.md), section 1). The tables below have not been measured
+again since.
+
 A range covers every case of its row: `double` and `float`, analytic and automatic Jacobians, and
 for the particle filter its likelihoods, and in its times every particle count. Neither side
 allocates on the heap during a step, in any case. The particle filter factorizes no innovation
@@ -52,8 +63,9 @@ while both sides got faster: the nanoseconds are under each table.
 
 ## Method
 
-- **The same algorithm on both sides.** The hand code uses fixed-size matrices, `noalias()`, the
-  library's update form $P - K P_{xy}^T$, the library's Cholesky factorization of the innovation
+- **The same algorithm on both sides.** The hand code uses fixed-size matrices, Eigen's lazy
+  products as the library takes them, scratch matrices left uninitialized where they are written
+  before they are read, the library's update form $P - K P_{xy}^T$, the library's Cholesky factorization of the innovation
   covariance and its substitution for the gain, written out, and the library's order of
   operations. The difference measured is the library's overhead, not a difference of algorithm.
   The hand code with Eigen's LLT differs from it in the factorization and the solve alone.

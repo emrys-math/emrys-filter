@@ -1,7 +1,8 @@
 #pragma once
 
 // The ranging problem solved from scratch in plain Eigen, as a careful user would write it [benchmarks]:
-// fixed sizes, noalias() products, only the position columns of the covariance in the update,
+// fixed sizes, Eigen's lazy products as the library's multiply() takes them, scratch left
+// uninitialized where it is written before it is read, only the position columns of the covariance in the update,
 // fixed-size derivative vectors for autodiff, S formed by accumulating H Pxy into a copy of R as
 // the library forms it rather than into a zeroed matrix, and the library's covariance update form
 // and factorization (P - K Pxy^T on a covariance mirrored from its lower triangle, with a Cholesky
@@ -66,17 +67,21 @@ public:
     update(Ranges const & z)
     {
         // The residual z - h(x) and the Jacobian of h in position; h does not depend on velocity.
-        auto residual = Ranges{};
-        auto h = Eigen::Matrix<Scalar, AnchorCount, Dimension>{};
+        // Scratch is left uninitialized wherever it is written whole before it is read, as the
+        // library leaves it: Eigen zeroes a matrix initialized by {}.
+        Ranges residual;
+        Eigen::Matrix<Scalar, AnchorCount, Dimension> h;
         linearize(z, residual, h);
 
-        // Pxy = P H^T, where H is h's Jacobian padded with zero velocity columns.
-        auto cross = Eigen::Matrix<Scalar, StateSize, AnchorCount>{};
-        cross.noalias() = m_cov.template leftCols<Dimension>() * h.transpose();
+        // Pxy = P H^T, where H is h's Jacobian padded with zero velocity columns. Each product is
+        // Eigen's lazy one, as the library's multiply() takes every product of fixed sizes: from
+        // a dimension of 8, Eigen's operator* sends it to its run-time matrix product.
+        Eigen::Matrix<Scalar, StateSize, AnchorCount> cross =
+            m_cov.template leftCols<Dimension>().lazyProduct(h.transpose());
         RangeMatrix innovationCov = m_rangeNoise;
-        innovationCov.noalias() += h * cross.template topRows<Dimension>();
+        innovationCov += h.lazyProduct(cross.template topRows<Dimension>());
 
-        auto gain = Eigen::Matrix<Scalar, StateSize, AnchorCount>{};
+        Eigen::Matrix<Scalar, StateSize, AnchorCount> gain;
         if constexpr (F == Factorization::EigenLlt)
         {
             // The gain Pxy S^-1 as a user of Eigen writes it: S^-1 Pxy^T by Eigen's LLT, transposed.
@@ -97,9 +102,9 @@ public:
             constexpr int Lanes = int(16 / sizeof(Scalar));
             constexpr int PaddedAnchors = (AnchorCount + Lanes - 1) / Lanes * Lanes;
             using FactorColumn = Eigen::Matrix<Scalar, PaddedAnchors, 1>;
-            auto unscaled = Eigen::Matrix<Scalar, PaddedAnchors, AnchorCount>{};
-            auto unit = Eigen::Matrix<Scalar, PaddedAnchors, AnchorCount>{};
-            auto reciprocal = Ranges{};
+            Eigen::Matrix<Scalar, PaddedAnchors, AnchorCount> unscaled;
+            Eigen::Matrix<Scalar, PaddedAnchors, AnchorCount> unit;
+            Ranges reciprocal;
             for (int k = 0; k < AnchorCount; ++k)
             {
                 FactorColumn column = FactorColumn::Zero();
@@ -119,7 +124,7 @@ public:
             // padded as the factor's are.
             constexpr int Padded = (StateSize + Lanes - 1) / Lanes * Lanes;
             using PaddedColumn = Eigen::Matrix<Scalar, Padded, 1>;
-            auto work = Eigen::Matrix<Scalar, Padded, AnchorCount>{};
+            Eigen::Matrix<Scalar, Padded, AnchorCount> work;
             for (int r = 0; r < AnchorCount; ++r)
             {
                 PaddedColumn unknown = PaddedColumn::Zero();
@@ -141,9 +146,9 @@ public:
             }
             gain = work.template topRows<StateSize>();
         }
-        m_mean.noalias() += gain * residual;
+        m_mean += gain.lazyProduct(residual);
         m_cov.template triangularView<Eigen::StrictlyUpper>() = m_cov.transpose();
-        m_cov.noalias() -= gain * cross.transpose();
+        m_cov -= gain.lazyProduct(cross.transpose());
     }
 
     /// The current mean, position then velocity.

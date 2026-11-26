@@ -1030,8 +1030,12 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       mherb/kalman's in a run of 500 batches, the square-root EKF 0.29 to 0.62 and the
       square-root UKF 0.44 to 0.89. The triangular solves took 1% of the step; the
       substitution in `solveInPlace()` and `inverseFrom()`, which still solve a column at a
-      time through Eigen, waits for a step it is found in. Next: measure `docs/benchmarks.md`
-      again at that commit; find where the 16 ns and 320 instructions go that the library adds to the hand
+      time through Eigen, waits for a step it is found in. The library's ratios below 1 against
+      the hand code, at 12 anchors and more, were the hand code's: it took its larger products by
+      Eigen's run-time blocked product and zeroed scratch it overwrote, and now multiplies and
+      allocates as the library does, which stopped zeroing its own factorization's scratch
+      (2026-11-25, design/benchmarks.md section 1); the library then costs more than the hand
+      code at every size. Next: measure `docs/benchmarks.md` again at that commit; find where the 16 ns and 320 instructions go that the library adds to the hand
       code's step at 2D with 4 anchors (candidates read from the code: the calls left out of
       line, and the covariance mirror in `kalmanConditionInPlace()`); find whether the rest
       of a 6-state step in float has the mismatch of stores and loads the substitution had,
