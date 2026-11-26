@@ -14,157 +14,173 @@ FetchContent_MakeAvailable(googletest)
 
 include(GoogleTest)
 
-add_executable(emrys_filter_tests
-  smoke.cpp
-  unequal_dimensions_distributions.cpp
-  unequal_dimensions_filters.cpp
-  unequal_dimensions_transforms.cpp
-  parallel.cpp
-  printing.cpp
-  no_io.cpp
-  policies.cpp
-  Core/resampling.cpp
-  Core/math.cpp
-  Core/execution.cpp
-  Core/triangularization.cpp
-  Core/cholesky.cpp
-  Core/solve.cpp
-  Core/time.cpp
-  Spaces/space.cpp
-  Spaces/blocks.cpp
-  Spaces/reset.cpp
-  Spaces/unit_quaternion.cpp
-  Distributions/moments.cpp
-  Distributions/gaussian.cpp
-  Distributions/gaussian_mixture.cpp
-  Distributions/particle_set.cpp
-  Distributions/sampling.cpp
-  Distributions/roots.cpp
-  Models/spread.cpp
-  Distributions/kernel_density.cpp
-  Distributions/gaussian_subspace.cpp
-  Distributions/mixture_subspace.cpp
-  Distributions/particle_subspace.cpp
-  Distributions/fitting.cpp
-  Distributions/gaussian_space.cpp
-  Distributions/space_distributions.cpp
-  Distributions/resizable.cpp
-  Distributions/densities.cpp
-  Distributions/uniform_mixture.cpp
-  Distributions/product.cpp
-  Distributions/categorical.cpp
-  Distributions/continuous_time_markov_chain.cpp
-  Distributions/divergence.cpp
-  Distributions/autodiff_scalars.cpp
-  Distributions/upkeep.cpp
-  Distributions/component.cpp
-  Distributions/gaussian_forms.cpp
-  Distributions/info_gaussian.cpp
-  Models/transform.cpp
-  Models/affine_coordinates.cpp
-  Models/covariance_updates.cpp
-  Models/consider.cpp
-  Models/linearization_forms.cpp
-  Models/iterated.cpp
-  Models/iterated_posterior_linearization.cpp
-  Models/iterated_forms.cpp
-  Models/iterated_forms_attitude.cpp
-  Models/linearized_about.cpp
-  Models/sigma_points.cpp
-  Models/models.cpp
-  Models/model_policies.cpp
-  Models/batched.cpp
-  Models/measurement_model.cpp
-  Models/whole_state_models.cpp
-  Models/placement.cpp
-  Models/computed_space.cpp
-  Models/linear_measurement.cpp
-  Models/per_measurement.cpp
-  Models/selected_reads.cpp
-  Models/placed_repetitions.cpp
-  Models/selected_placement.cpp
-  Models/selected_writes.cpp
-  Models/fixed_step_model.cpp
-  Models/consistency.cpp
-  Models/cramer_rao.cpp
-  Models/simulation.cpp
-  Models/emission.cpp
-  Filters/kalman_filter.cpp
-  Filters/consider_consistency.cpp
-  Filters/info_filter.cpp
-  Filters/sqrt_filters.cpp
-  Filters/precise_input_noise.cpp
-  Filters/gaussian_mixture_filter.cpp
-  Filters/imm_filter.cpp
-  Filters/amm_filter.cpp
-  Filters/particle_filter.cpp
-  Filters/rb_point_mass_filter.cpp
-  Filters/rb_particle_filter.cpp
-  Filters/hidden_markov_filter.cpp
-  Filters/mixture_filter.cpp
-  Filters/time_steps.cpp
-  Filters/fixed_step_binding.cpp
-  Filters/filter_upkeep.cpp
-  Filters/update_failure.cpp
-  Filters/update_outcomes.cpp
-  Filters/large_fixed.cpp
-  Filters/selected_filters.cpp
-  Smoothers/smoothing.cpp
-  Smoothers/mixture_smoothing.cpp
-)
-target_link_libraries(emrys_filter_tests PRIVATE
-  EmrysFilter::EmrysFilter
-  GTest::gtest_main
-)
-# Test support shared between files, such as the unit quaternion space in Spaces/.
-target_include_directories(emrys_filter_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_compile_options(emrys_filter_tests PRIVATE
-  ${EMRYS_FILTER_WARNINGS}
-)
-
 # libstdc++ runs the parallel algorithms on TBB whenever its headers are found, and then the program
 # must link it; without TBB it runs them on one thread. MSVC's are built in.
 find_package(TBB QUIET)
-if(TBB_FOUND)
-  target_link_libraries(emrys_filter_tests PRIVATE TBB::tbb)
+
+# The unit tests, as two programs: those of tests/Models/, the heaviest to compile, and the rest,
+# so that a test shard builds one (EMRYS_FILTER_TEST_SHARD). Test support shared between
+# files, such as the unit quaternion space in Spaces/, is in headers beside the tests.
+function(emrys_filter_unit_tests target)
+  add_executable(${target} ${ARGN})
+  target_link_libraries(${target} PRIVATE
+    EmrysFilter::EmrysFilter
+    GTest::gtest_main
+  )
+  target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_compile_options(${target} PRIVATE
+    ${EMRYS_FILTER_WARNINGS}
+  )
+  if(TBB_FOUND)
+    target_link_libraries(${target} PRIVATE TBB::tbb)
+  endif()
+  gtest_discover_tests(${target})
+endfunction()
+
+if(EMRYS_FILTER_TEST_SHARD_library)
+  emrys_filter_unit_tests(emrys_filter_tests
+    smoke.cpp
+    unequal_dimensions_distributions.cpp
+    unequal_dimensions_filters.cpp
+    unequal_dimensions_transforms.cpp
+    parallel.cpp
+    printing.cpp
+    no_io.cpp
+    policies.cpp
+    Core/resampling.cpp
+    Core/math.cpp
+    Core/execution.cpp
+    Core/triangularization.cpp
+    Core/cholesky.cpp
+    Core/solve.cpp
+    Core/time.cpp
+    Spaces/space.cpp
+    Spaces/blocks.cpp
+    Spaces/reset.cpp
+    Spaces/unit_quaternion.cpp
+    Distributions/moments.cpp
+    Distributions/gaussian.cpp
+    Distributions/gaussian_mixture.cpp
+    Distributions/particle_set.cpp
+    Distributions/sampling.cpp
+    Distributions/roots.cpp
+    Distributions/kernel_density.cpp
+    Distributions/gaussian_subspace.cpp
+    Distributions/mixture_subspace.cpp
+    Distributions/particle_subspace.cpp
+    Distributions/fitting.cpp
+    Distributions/gaussian_space.cpp
+    Distributions/space_distributions.cpp
+    Distributions/resizable.cpp
+    Distributions/densities.cpp
+    Distributions/uniform_mixture.cpp
+    Distributions/product.cpp
+    Distributions/categorical.cpp
+    Distributions/continuous_time_markov_chain.cpp
+    Distributions/divergence.cpp
+    Distributions/autodiff_scalars.cpp
+    Distributions/upkeep.cpp
+    Distributions/component.cpp
+    Distributions/gaussian_forms.cpp
+    Distributions/info_gaussian.cpp
+    Filters/kalman_filter.cpp
+    Filters/consider_consistency.cpp
+    Filters/info_filter.cpp
+    Filters/sqrt_filters.cpp
+    Filters/precise_input_noise.cpp
+    Filters/gaussian_mixture_filter.cpp
+    Filters/imm_filter.cpp
+    Filters/amm_filter.cpp
+    Filters/particle_filter.cpp
+    Filters/rb_point_mass_filter.cpp
+    Filters/rb_particle_filter.cpp
+    Filters/hidden_markov_filter.cpp
+    Filters/mixture_filter.cpp
+    Filters/time_steps.cpp
+    Filters/fixed_step_binding.cpp
+    Filters/filter_upkeep.cpp
+    Filters/update_failure.cpp
+    Filters/update_outcomes.cpp
+    Filters/large_fixed.cpp
+    Filters/selected_filters.cpp
+    Smoothers/smoothing.cpp
+    Smoothers/mixture_smoothing.cpp
+  )
 endif()
 
-gtest_discover_tests(emrys_filter_tests)
+if(EMRYS_FILTER_TEST_SHARD_models)
+  emrys_filter_unit_tests(emrys_filter_model_tests
+    Models/spread.cpp
+    Models/transform.cpp
+    Models/affine_coordinates.cpp
+    Models/covariance_updates.cpp
+    Models/consider.cpp
+    Models/linearization_forms.cpp
+    Models/iterated.cpp
+    Models/iterated_posterior_linearization.cpp
+    Models/iterated_forms.cpp
+    Models/iterated_forms_attitude.cpp
+    Models/linearized_about.cpp
+    Models/sigma_points.cpp
+    Models/models.cpp
+    Models/model_policies.cpp
+    Models/batched.cpp
+    Models/measurement_model.cpp
+    Models/whole_state_models.cpp
+    Models/placement.cpp
+    Models/computed_space.cpp
+    Models/linear_measurement.cpp
+    Models/per_measurement.cpp
+    Models/selected_reads.cpp
+    Models/placed_repetitions.cpp
+    Models/selected_placement.cpp
+    Models/selected_writes.cpp
+    Models/fixed_step_model.cpp
+    Models/consistency.cpp
+    Models/cramer_rao.cpp
+    Models/simulation.cpp
+    Models/emission.cpp
+  )
+endif()
 
 # The allocation tests forbid Eigen's heap at run time, which needs EIGEN_RUNTIME_NO_MALLOC in
 # every translation unit of the target, and replace the global operator new, so they have their own.
-add_executable(emrys_filter_allocation_tests
-  allocation.cpp
-  allocation_forms.cpp
-  allocation_mixtures.cpp
-  allocation_particles.cpp
-)
-target_link_libraries(emrys_filter_allocation_tests PRIVATE
-  EmrysFilter::EmrysFilter
-  GTest::gtest_main
-)
-target_include_directories(emrys_filter_allocation_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_compile_definitions(emrys_filter_allocation_tests PRIVATE EIGEN_RUNTIME_NO_MALLOC)
-target_compile_options(emrys_filter_allocation_tests PRIVATE
-  ${EMRYS_FILTER_WARNINGS}
-)
+if(EMRYS_FILTER_TEST_SHARD_library)
+  add_executable(emrys_filter_allocation_tests
+    allocation.cpp
+    allocation_forms.cpp
+    allocation_mixtures.cpp
+    allocation_particles.cpp
+  )
+  target_link_libraries(emrys_filter_allocation_tests PRIVATE
+    EmrysFilter::EmrysFilter
+    GTest::gtest_main
+  )
+  target_include_directories(emrys_filter_allocation_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_compile_definitions(emrys_filter_allocation_tests PRIVATE EIGEN_RUNTIME_NO_MALLOC)
+  target_compile_options(emrys_filter_allocation_tests PRIVATE
+    ${EMRYS_FILTER_WARNINGS}
+  )
 
-gtest_discover_tests(emrys_filter_allocation_tests)
+  gtest_discover_tests(emrys_filter_allocation_tests)
+endif()
 
 # An EMRYS_FILTER_ASSERT override changes the body of every inline function that asserts, which a
 # program's translation units must agree on, so the test that defines one is a program of its own.
-add_executable(emrys_filter_assert_override_tests
-  assert_override.cpp
-)
-target_link_libraries(emrys_filter_assert_override_tests PRIVATE
-  EmrysFilter::EmrysFilter
-  GTest::gtest_main
-)
-target_compile_options(emrys_filter_assert_override_tests PRIVATE
-  ${EMRYS_FILTER_WARNINGS}
-)
+if(EMRYS_FILTER_TEST_SHARD_library)
+  add_executable(emrys_filter_assert_override_tests
+    assert_override.cpp
+  )
+  target_link_libraries(emrys_filter_assert_override_tests PRIVATE
+    EmrysFilter::EmrysFilter
+    GTest::gtest_main
+  )
+  target_compile_options(emrys_filter_assert_override_tests PRIVATE
+    ${EMRYS_FILTER_WARNINGS}
+  )
 
-gtest_discover_tests(emrys_filter_assert_override_tests)
+  gtest_discover_tests(emrys_filter_assert_override_tests)
+endif()
 
 # The negative compile tests [coverage]. Each `#if defined(CASE)` block of these files is a misuse
 # that must fail to compile with the static_assert or deleted function its comment names, and is a

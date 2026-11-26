@@ -303,9 +303,13 @@ jobs:
 
   # The build and its negative compile tests run side by side, as on Linux. The Windows runners'
   # processors differ, and the same job took 76 minutes on one and 89 on another on 2026-11-16, so
-  # the job names the processor it ran on.
+  # the job names the processor it ran on. One runner compiles three test translation units at once
+  # (below), and the whole build and test took 81 minutes on 2026-11-25, so the build is split in
+  # three shards (EMRYS_FILTER_TEST_SHARD in CMakeLists.txt), each a runner of its own: `models`,
+  # the tests of tests/Models/, the most to compile; `library`, the rest of tests/; and `programs`,
+  # the benchmarks' tests and the examples, the least to compile and the longest to run.
   msvc:
-    name: ${{ matrix.preset }} (Windows)
+    name: ${{ matrix.job }} (Windows)
     needs: plan
     if: fromJSON(needs.plan.outputs.run).msvc
     runs-on: windows-2025-vs2026
@@ -313,7 +317,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        preset: [msvc, msvc-compile-errors]
+        job: [msvc-models, msvc-library, msvc-programs, msvc-compile-errors]
     steps:
       - uses: actions/checkout@v4
 
@@ -330,14 +334,23 @@ jobs:
 
       # The runner has 4 logical processors and 16 GB, so Ninja runs 6 compiles at once. Six of the
       # heavy test and benchmark translation units ran MSVC out of heap space (C1060 on
-      # carouge_ranging.cpp, 2026-11-25), and the job's time had doubled to about 90 minutes since
-      # the benchmarks' tests joined it. Three run at once here; the workflow's own configure keeps
-      # the cached value.
+      # carouge_ranging.cpp, 2026-11-25), so three run at once here. The workflow's own configure
+      # keeps the cached values, the limit and the shard.
       - name: Build and test
+        env:
+          JOB: ${{ matrix.job }}
         run: |
-          cmake --preset msvc -DEMRYS_FILTER_TEST_COMPILE_JOBS=3
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cmake --workflow --preset ${{ matrix.preset }}
+          if ($env:JOB -eq 'msvc-compile-errors') {
+            cmake --preset msvc -DEMRYS_FILTER_TEST_COMPILE_JOBS=3
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            cmake --workflow --preset msvc-compile-errors
+          } else {
+            $shard = $env:JOB -replace '^msvc-', ''
+            cmake --preset msvc -DEMRYS_FILTER_TEST_COMPILE_JOBS=3 "-DEMRYS_FILTER_TEST_SHARD=$shard"
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            cmake --workflow --preset msvc
+          }
+          exit $LASTEXITCODE
 
   docs:
     name: docs (Doxygen)

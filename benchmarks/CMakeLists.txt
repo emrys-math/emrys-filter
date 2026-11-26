@@ -79,7 +79,7 @@ if(EMRYS_FILTER_BENCHMARK_OPENCV)
   target_link_libraries(emrys_filter_opencv INTERFACE opencv_core opencv_video)
 endif()
 
-if(EMRYS_FILTER_BUILD_TESTS)
+if(EMRYS_FILTER_BUILD_TESTS AND EMRYS_FILTER_TEST_SHARD_programs)
   add_executable(emrys_filter_benchmark_tests
     heap_counter.cpp
     ranging/agreement.cpp

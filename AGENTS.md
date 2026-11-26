@@ -83,7 +83,9 @@ presets run eight tests at once, and a negative compile test counts as two, so a
 at most four cases at once.
 
 CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the same three workflow presets,
-GCC 14 and Clang 21 on Linux and MSVC on Windows, each with its `-compile-errors` workflow in a job beside it; the `clang-sanitize` preset (Clang 21 with
+GCC 14 and Clang 21 on Linux and MSVC on Windows, each with its `-compile-errors` workflow in a job beside it, and MSVC's
+tests split over three runners by `EMRYS_FILTER_TEST_SHARD` (`models`, `library`, and `programs`, set in
+the top-level CMakeLists.txt, and empty for all); the `clang-sanitize` preset (Clang 21 with
 AddressSanitizer and UndefinedBehaviorSanitizer), `gcc-no-exceptions` (`-fno-exceptions
 -fno-rtti`), and `clang-libcxx` (LLVM's library), all on Linux; GCC on Linux arm64; the
 `apple-clang` preset on macOS; the Cortex-M build in `benchmarks/cortex_m/` under QEMU

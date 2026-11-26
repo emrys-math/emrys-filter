@@ -136,6 +136,25 @@ set(EMRYS_FILTER_WARNINGS
   $<$<BOOL:${EMRYS_FILTER_WARNINGS_AS_ERRORS}>:$<IF:$<CXX_COMPILER_ID:MSVC>,/WX,-Werror>>
 )
 
+# --- Test shards ------------------------------------------------------------
+# CI splits the MSVC test build across runners, since one Windows runner compiles three test
+# translation units at once and took 80 minutes over them all. EMRYS_FILTER_TEST_SHARD builds and
+# registers one part: `models`, the tests of tests/Models/; `library`, the rest of tests/; or
+# `programs`, the benchmarks' tests, the examples, and the skills' install. Empty, the default,
+# builds every part. The negative compile tests are in no part, since their workflows build them.
+set(EMRYS_FILTER_TEST_SHARD "" CACHE STRING "The part of the tests to build: models, library, programs, or empty for all")
+set_property(CACHE EMRYS_FILTER_TEST_SHARD PROPERTY STRINGS "" models library programs)
+if(NOT EMRYS_FILTER_TEST_SHARD MATCHES "^(|models|library|programs)$")
+  message(FATAL_ERROR "EMRYS_FILTER_TEST_SHARD is '${EMRYS_FILTER_TEST_SHARD}': give models, library, programs, or nothing")
+endif()
+foreach(part IN ITEMS models library programs)
+  if(EMRYS_FILTER_TEST_SHARD STREQUAL "" OR EMRYS_FILTER_TEST_SHARD STREQUAL part)
+    set(EMRYS_FILTER_TEST_SHARD_${part} ON)
+  else()
+    set(EMRYS_FILTER_TEST_SHARD_${part} OFF)
+  endif()
+endforeach()
+
 # --- Tests ------------------------------------------------------------------
 if(EMRYS_FILTER_BUILD_TESTS)
   # Build settings for everything below (GoogleTest, the tests, the benchmarks' agreement tests).
@@ -168,7 +187,7 @@ if(EMRYS_FILTER_BUILD_TESTS)
 endif()
 
 # --- Examples ---------------------------------------------------------------
-if(EMRYS_FILTER_BUILD_EXAMPLES)
+if(EMRYS_FILTER_BUILD_EXAMPLES AND EMRYS_FILTER_TEST_SHARD_programs)
   enable_testing()
   add_subdirectory(examples)
   add_subdirectory(skills)
