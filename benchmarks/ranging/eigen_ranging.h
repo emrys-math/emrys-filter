@@ -9,8 +9,10 @@
 // factorization of S without square roots, by whole columns, and the gain by substitution), so the two agree to
 // rounding, in double or in float. Without the mirror the two triangles drift
 // apart by rounding, which in float costs a tenth of the filter's accuracy. With
-// Factorization::EigenLlt it factorizes S by Eigen's LLT and solves for the gain by its solve()
-// instead, as a user of Eigen writes it, and agrees with the library to rounding all the same.
+// Factorization::EigenLlt it is written as a user of Eigen writes it: it factorizes S by Eigen's
+// LLT, solves for the gain by its solve(), and multiplies by noalias() products, which Eigen sends
+// to its run-time blocked product from a dimension of 8; it agrees with the library to rounding all
+// the same.
 // Compare emrys_ranging.h.
 
 #include "scenario.h"
@@ -56,10 +58,27 @@ public:
     predict()
     {
         m_mean.template head<Dimension>() += m_timeStep * m_mean.template tail<Dimension>();
-        auto propagated = StateMatrix{};
+        StateMatrix propagated;
         propagated.noalias() = m_transition * m_cov;
         m_cov.noalias() = propagated * m_transition.transpose();
         m_cov += m_processNoise;
+    }
+
+    /// \a a times \a b: by Eigen's lazy product, as the library's multiply() takes every product of
+    /// fixed sizes, or with Factorization::EigenLlt by operator*, as a user of Eigen writes it,
+    /// which from a dimension of 8 Eigen sends to its run-time blocked product.
+    template <typename A, typename B>
+    [[nodiscard]] static auto
+    product(A const & a, B const & b)
+    {
+        if constexpr (F == Factorization::EigenLlt)
+        {
+            return a * b;
+        }
+        else
+        {
+            return a.lazyProduct(b);
+        }
     }
 
     /// Conditions the estimate on the ranges \a z, one per anchor.
@@ -73,13 +92,11 @@ public:
         Eigen::Matrix<Scalar, AnchorCount, Dimension> h;
         linearize(z, residual, h);
 
-        // Pxy = P H^T, where H is h's Jacobian padded with zero velocity columns. Each product is
-        // Eigen's lazy one, as the library's multiply() takes every product of fixed sizes: from
-        // a dimension of 8, Eigen's operator* sends it to its run-time matrix product.
-        Eigen::Matrix<Scalar, StateSize, AnchorCount> cross =
-            m_cov.template leftCols<Dimension>().lazyProduct(h.transpose());
+        // Pxy = P H^T, where H is h's Jacobian padded with zero velocity columns.
+        Eigen::Matrix<Scalar, StateSize, AnchorCount> cross;
+        cross.noalias() = product(m_cov.template leftCols<Dimension>(), h.transpose());
         RangeMatrix innovationCov = m_rangeNoise;
-        innovationCov += h.lazyProduct(cross.template topRows<Dimension>());
+        innovationCov.noalias() += product(h, cross.template topRows<Dimension>());
 
         Eigen::Matrix<Scalar, StateSize, AnchorCount> gain;
         if constexpr (F == Factorization::EigenLlt)
@@ -146,9 +163,9 @@ public:
             }
             gain = work.template topRows<StateSize>();
         }
-        m_mean += gain.lazyProduct(residual);
+        m_mean.noalias() += product(gain, residual);
         m_cov.template triangularView<Eigen::StrictlyUpper>() = m_cov.transpose();
-        m_cov -= gain.lazyProduct(cross.transpose());
+        m_cov.noalias() -= product(gain, cross.transpose());
     }
 
     /// The current mean, position then velocity.

@@ -3,13 +3,15 @@
 // The attitude problem solved from scratch in plain Eigen, as a careful user would write it [benchmarks]:
 // the multiplicative EKF of Markley (2003) in the body-frame form of Solà (2017), with a quaternion
 // mean, a 6×6 covariance over the attitude error and the bias, an analytic transition, fixed sizes,
-// noalias() products, only the attitude columns of the covariance in the update, and fixed-size
-// derivative vectors for autodiff. It takes the library's covariance update form and
-// factorization (P - K Pxy^T, with a Cholesky factorization of S without square roots and the gain
-// by substitution) and its exact reset, the right Jacobian of SO(3) at the correction, where
-// Markley leaves the covariance as it is and Solà keeps the reset to first order, so the two agree
-// to rounding. With Factorization::EigenLlt it factorizes S by Eigen's LLT and solves for the gain
-// by its solve() instead, as a user of Eigen writes it. Compare emrys_attitude.h.
+// noalias() products (every one smaller than 8, where Eigen takes its lazy product, as the library
+// does), scratch left uninitialized where it is written before it is read, only the attitude
+// columns of the covariance in the update, and fixed-size derivative vectors for autodiff. It takes
+// the library's covariance update form and factorization (P - K Pxy^T, with a Cholesky
+// factorization of S without square roots and the gain by substitution) and its exact reset, the
+// right Jacobian of SO(3) at the correction, where Markley leaves the covariance as it is and Solà
+// keeps the reset to first order, so the two agree to rounding. With Factorization::EigenLlt it
+// factorizes S by Eigen's LLT and solves for the gain by its solve() instead, as a user of Eigen
+// writes it. Compare emrys_attitude.h.
 
 #include "scenario.h"
 
@@ -61,7 +63,7 @@ public:
         transition.topRightCorner<3, 3>() = -dt * rightJacobian(turn);
 
         m_attitude = (m_attitude * step).normalized();
-        auto propagated = DifferenceMatrix{};
+        DifferenceMatrix propagated;
         propagated.noalias() = transition * m_cov;
         m_cov.noalias() = propagated * transition.transpose();
         m_cov.diagonal().template head<3>().array() += m_gyroNoise;
@@ -109,17 +111,19 @@ private:
     updateBy(Eigen::Vector3d const & z, Eigen::Vector3d const & reference, double variance)
     {
         // The residual z - h(q) and h's Jacobian in the attitude error; h does not depend on bias.
-        auto residual = Eigen::Vector3d{};
-        auto h = Matrix3{};
+        // Scratch is left uninitialized wherever it is written whole before it is read, as the
+        // library leaves it: Eigen zeroes a matrix initialized by {}.
+        Eigen::Vector3d residual;
+        Matrix3 h;
         linearize(z, reference, residual, h);
 
         // Pxy = P H^T, where H is h's Jacobian padded with zero bias columns.
-        auto cross = Eigen::Matrix<double, 6, 3>{};
+        Eigen::Matrix<double, 6, 3> cross;
         cross.noalias() = m_cov.template leftCols<3>() * h.transpose();
         Matrix3 innovationCov = variance * Matrix3::Identity();
         innovationCov.noalias() += h * cross.topRows<3>();
 
-        auto gain = Eigen::Matrix<double, 6, 3>{};
+        Eigen::Matrix<double, 6, 3> gain;
         if constexpr (F == Factorization::EigenLlt)
         {
             // The gain Pxy S^-1 as a user of Eigen writes it: S^-1 Pxy^T by Eigen's LLT, transposed.
@@ -134,9 +138,9 @@ private:
             // L D is column k of S less L(k, j) times each column j before it, and the column after
             // it waits on one division. Each column is padded with a zero to two packets, so that
             // each step is one operation on a whole column.
-            auto unscaled = Eigen::Matrix<double, 4, 3>{};
-            auto unit = Eigen::Matrix<double, 4, 3>{};
-            auto reciprocal = Eigen::Vector3d{};
+            Eigen::Matrix<double, 4, 3> unscaled;
+            Eigen::Matrix<double, 4, 3> unit;
+            Eigen::Vector3d reciprocal;
             for (int k = 0; k < 3; ++k)
             {
                 Eigen::Vector4d column = Eigen::Vector4d::Zero();
@@ -170,7 +174,7 @@ private:
                 }
             }
         }
-        auto correction = Vector6{};
+        Vector6 correction;
         correction.noalias() = gain * residual;
         m_cov.noalias() -= gain * cross.transpose();
 
