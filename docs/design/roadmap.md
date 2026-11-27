@@ -50,8 +50,10 @@ Each piece lands by its own pull request, and the release waits for all of them.
       #22; the review's questions and the smoothers left stay there.
 - [ ] The branch `test-review` (#5 and #6, the chi-squared CDF and quantile corrected, and
       `UnitQuaternion` at a half turn), if its work is finished.
-- [ ] Test reviews of the Filters and Smoothers layers, filed as issues beside those of Core (#5),
-      Spaces (#6), Distributions (#8), and Models (#9). The work they list need not be in 0.2.0.
+- [ ] The work of the test reviews, where it is ready: Core (#5), Spaces (#6), Distributions (#8),
+      Models (#9), Filters (#30), and Smoothers (#31). Not all of it need be in 0.2.0, but #31's
+      first item is a fix, not a test: `internal::smoothMixtureStep()` reads a failed total weight
+      without checking it when assertions are off.
 - [ ] The OpenSSF Best Practices badge (Launch, below), which waits for this release.
 - [ ] The release: version 0.2.0 in `CMakeLists.txt`, `CITATION.cff`, the vcpkg port, the Conan
       recipe and its CI job, and the `GIT_TAG` in the README, `docs/usage.md`, and
