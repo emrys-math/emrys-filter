@@ -7,3 +7,4 @@ CMakeUserPresets.json
 *.pdb
 CLAUDE.local.md
 /.claude/
+__pycache__/
