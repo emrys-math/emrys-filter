@@ -963,7 +963,7 @@ bhattacharyya(P const & p, Q const & q)
         EMRYS_FILTER_ASSERT(
             (average.diagonal().array() != Scalar(0)).all() && "the average covariance must be positive definite"
         );
-        average.template triangularView<Eigen::Lower>().solveInPlace(difference);
+        internal::solveInPlace(average.template triangularView<Eigen::Lower>(), difference);
         logDeterminant = Scalar(2) * average.diagonal().array().abs().log().sum();
     }
     Scalar const distance = Scalar(0.125) * difference.squaredNorm()

@@ -548,7 +548,8 @@ private:
     [[nodiscard]] VectorType
     solvedMean() const
     {
-        DifferenceVectorType const offset = m_root.template triangularView<Eigen::Upper>().solve(m_whitenedOffset);
+        DifferenceVectorType const offset =
+            internal::solved(m_root.template triangularView<Eigen::Upper>(), m_whitenedOffset);
         VectorType result = Emrys::plus(m_space, m_reference, offset);
         return result;
     }
@@ -689,7 +690,7 @@ toSqrtInfo(G const & form)
         if constexpr (isInfoForm<G>)
         {
             typename Result::DifferenceVectorType whitened =
-                root->transpose().template triangularView<Eigen::Lower>().solve(form.infoVector());
+                internal::solved(root->transpose().template triangularView<Eigen::Lower>(), form.infoVector());
             return Result{form.space(), form.reference(), std::move(*root), std::move(whitened)};
         }
         else

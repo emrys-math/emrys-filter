@@ -423,7 +423,7 @@ private:
     void
     whitenInPlace(DifferenceVectorType & residual) const
     {
-        m_root.template triangularView<Eigen::Lower>().solveInPlace(residual);
+        internal::solveInPlace(m_root.template triangularView<Eigen::Lower>(), residual);
     }
 
     /** Colors the standard normals in the columns of \a normals in place: \f$ S z \f$. */

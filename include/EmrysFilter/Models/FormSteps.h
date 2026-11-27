@@ -909,7 +909,7 @@ foldIntoSqrt(
     GainFactor const gainFactor = lower.bottomRows(n);
 
     typename InnovationGaussian::DifferenceVectorType whitened = linearization.residual;
-    innovationFactor.template triangularView<Eigen::Lower>().solveInPlace(whitened);
+    internal::solveInPlace(innovationFactor.template triangularView<Eigen::Lower>(), whitened);
     auto const statistics = InnovationStatistics<Scalar>{
         whitened.squaredNorm(),
         Scalar(2) * innovationFactor.diagonal().array().abs().log().sum()

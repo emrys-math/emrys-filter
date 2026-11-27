@@ -3,13 +3,16 @@
 // factorizations (decisions.md [innovation-cholesky]): column by column through an LLT or a pivoted LDLT of a
 // fixed size of at most eight, against Eigen's solve of the whole right-hand side, and the whole
 // solve unchanged for any other size. The library's own factorization has its own transposed
-// solve, which tests/Core/cholesky.cpp covers.
+// solve, which tests/Core/cholesky.cpp covers. internal::solveInPlace() through a triangular view
+// of a small fixed size substitutes itself, against Eigen's triangular solve.
 
 #include <EmrysFilter/Core/Solve.h>
 
 #include <gtest/gtest.h>
 
 #include <Eigen/Cholesky>
+
+#include <type_traits>
 
 namespace
 {
@@ -98,6 +101,74 @@ TEST(Solve, SolvesOtherSizesWhole)
     auto const middleLdlt = Eigen::LDLT<Middle>{middleA};
     Eigen::Matrix<double, 2, 12> const middleExpected = middleLdlt.solve(middleB).transpose();
     EXPECT_EQ((Emrys::internal::transposedSolve<Eigen::Matrix<double, 2, 12>>(middleLdlt, middleB)), middleExpected);
+}
+
+// A lower triangle, an upper one, and the transpose of a lower one, of a fixed size, are
+// substituted through by the library's own substitution: for one right-hand side, for a fixed
+// number, and for a number known only at run time, the result agrees with Eigen's triangular solve
+// to rounding and solves the system.
+template <typename Scalar, int Size>
+void
+expectSubstitutionAgrees(Scalar tolerance)
+{
+    using Matrix = Eigen::Matrix<Scalar, Size, Size>;
+    Matrix root = Matrix::Random();
+    root.diagonal().array() = root.diagonal().array().abs() + Scalar(Size);
+    auto const check = [&](auto const & view, auto const & b) {
+        static_assert(Emrys::internal::substitutesTriangular<std::remove_cvref_t<decltype(view)>>);
+        auto x = b.eval();
+        Emrys::internal::solveInPlace(view, x);
+        auto const expected = view.solve(b).eval();
+        EXPECT_TRUE(x.isApprox(expected, tolerance));
+        EXPECT_TRUE((Matrix{view} * x).isApprox(b, tolerance));
+        EXPECT_TRUE(Emrys::internal::solved(view, b).isApprox(expected, tolerance));
+    };
+    using Vector = Eigen::Matrix<Scalar, Size, 1>;
+    using Fixed = Eigen::Matrix<Scalar, Size, 5>;
+    using Dynamic = Eigen::Matrix<Scalar, Size, Eigen::Dynamic>;
+    Vector const vector = Vector::Random();
+    Fixed const fixed = Fixed::Random();
+    Dynamic const dynamic = Dynamic::Random(Size, 3);
+    auto const lower = root.template triangularView<Eigen::Lower>();
+    auto const upper = root.template triangularView<Eigen::Upper>();
+    auto const transposed = root.template triangularView<Eigen::Lower>().transpose();
+    check(lower, vector);
+    check(lower, fixed);
+    check(lower, dynamic);
+    check(upper, vector);
+    check(upper, fixed);
+    check(upper, dynamic);
+    check(transposed, vector);
+    check(transposed, fixed);
+    check(transposed, dynamic);
+}
+
+TEST(Solve, SubstitutesThroughASmallFixedTriangle)
+{
+    expectSubstitutionAgrees<double, 1>(1e-14);
+    expectSubstitutionAgrees<double, 4>(1e-12);
+    expectSubstitutionAgrees<double, 24>(1e-10);
+    expectSubstitutionAgrees<float, 6>(1e-4F);
+}
+
+// A triangular view of a dynamic size, or a fixed size above 24, goes to Eigen's triangular
+// solve, exactly.
+TEST(Solve, LeavesOtherTrianglesToEigen)
+{
+    Eigen::MatrixXd root = Eigen::MatrixXd::Random(5, 5);
+    root.diagonal().array() += 3.0;
+    auto const view = root.triangularView<Eigen::Lower>();
+    static_assert(!Emrys::internal::substitutesTriangular<std::remove_cvref_t<decltype(view)>>);
+    Eigen::MatrixXd const b = Eigen::MatrixXd::Random(5, 2);
+    EXPECT_EQ(Emrys::internal::solved(view, b), view.solve(b));
+
+    using Large = Eigen::Matrix<double, 25, 25>;
+    Large large = Large::Random();
+    large.diagonal().array() += 3.0;
+    auto const largeView = large.triangularView<Eigen::Upper>();
+    static_assert(!Emrys::internal::substitutesTriangular<std::remove_cvref_t<decltype(largeView)>>);
+    Eigen::Matrix<double, 25, 1> const largeB = Eigen::Matrix<double, 25, 1>::Random();
+    EXPECT_EQ(Emrys::internal::solved(largeView, largeB), largeView.solve(largeB));
 }
 
 }  // namespace

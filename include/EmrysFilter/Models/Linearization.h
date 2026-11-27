@@ -184,7 +184,7 @@ solveWithRoot(Eigen::MatrixBase<Root> const & root, Eigen::MatrixBase<Whitened> 
     {
         if (isInvertibleLowerTriangular(root))
         {
-            root.template triangularView<Eigen::Lower>().transpose().solveInPlace(result);
+            solveInPlace(root.template triangularView<Eigen::Lower>().transpose(), result);
         }
         else
         {

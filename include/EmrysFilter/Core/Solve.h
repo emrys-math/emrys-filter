@@ -6,14 +6,16 @@
  * factorization of \f$ A \f$, and solveInPlace() overwrites \f$ B \f$ with
  * \f$ A^{-1} B \f$, and inverseFrom() gives \f$ A^{-1} \f$, all one column of \f$ B \f$ at a time
  * where \f$ A \f$ has a small fixed size, which Eigen's solve with a matrix right-hand side
- * does not do; a CholeskyFactorization (Cholesky.h) gives its own transposed solve. Multiply.h
- * does the same for products. Everything here is in `internal`. Read Stamp.h next.
+ * does not do; a CholeskyFactorization (Cholesky.h) gives its own transposed solve, and
+ * solveInPlace() substitutes through a small fixed triangular view itself. Multiply.h does the
+ * same for products. Everything here is in `internal`. Read Stamp.h next.
  */
 
 #include <Eigen/Cholesky>
 #include <Eigen/Core>
 
 #include <EmrysFilter/Core/Cholesky.h>
+#include <EmrysFilter/Core/Macros.h>
 #include <EmrysFilter/Core/Multiply.h>
 
 namespace Emrys::internal
@@ -81,10 +83,96 @@ transposedSolve(Decomposition const & decomposition, Eigen::MatrixBase<Rhs> cons
     }
 }
 
+/** Whether \a Solver is a lower or upper triangular view of a real matrix of a fixed size from 1
+ * to columnCholeskySize, which solveInPlace() substitutes through itself.
+ */
+template <typename Solver>
+inline constexpr bool substitutesTriangular = false;
+
+/// \cond INTERNAL_SPECIALIZATIONS
+template <typename Nested, unsigned int Mode>
+inline constexpr bool substitutesTriangular<Eigen::TriangularView<Nested, Mode>> =
+    (Mode == Eigen::Lower || Mode == Eigen::Upper) && Nested::RowsAtCompileTime != Eigen::Dynamic
+    && Nested::RowsAtCompileTime >= 1 && Nested::RowsAtCompileTime <= columnCholeskySize
+    && !Eigen::NumTraits<typename Nested::Scalar>::IsComplex;
+
+/// \endcond
+
+/** Overwrites \a matrix, \f$ B \f$, with \f$ T^{-1} B \f$ for the triangular view \a view,
+ * \f$ T \f$, of a fixed size (substitutesTriangular), by substitution: unknown \f$ r \f$ of every
+ * right-hand side together, from the unknowns before it in the order of the substitution, as
+ * CholeskyFactorization::transposedSolve() does. Where the number of right-hand sides is fixed
+ * and more than one, the rows of \f$ B \f$ are worked on as columns padded to whole packets, for
+ * the same reason as there.
+ */
+template <typename Nested, unsigned int Mode, typename Derived>
+void
+substituteInPlace(Eigen::TriangularView<Nested, Mode> const & view, Eigen::MatrixBase<Derived> & matrix)
+{
+    using Scalar = typename Derived::Scalar;
+    constexpr int size = Nested::RowsAtCompileTime;
+    EMRYS_FILTER_ASSERT(matrix.rows() == size);
+    auto const & t = view.nestedExpression();
+    // The k-th row substituted: from the top for a lower triangle, from the bottom for an upper.
+    auto const row = [](int k) {
+        return Mode == Eigen::Lower ? k : size - 1 - k;
+    };
+    if constexpr (Derived::ColsAtCompileTime == 1)
+    {
+        for (int k = 0; k < size; ++k)
+        {
+            int const r = row(k);
+            Scalar unknown = matrix.coeff(r, 0);
+            for (int l = 0; l < k; ++l)
+            {
+                int const c = row(l);
+                unknown -= t.coeff(r, c) * matrix.coeff(c, 0);
+            }
+            matrix.coeffRef(r, 0) = unknown / t.coeff(r, r);
+        }
+    }
+    else if constexpr (Derived::ColsAtCompileTime != Eigen::Dynamic)
+    {
+        constexpr int count = Derived::ColsAtCompileTime;
+        using Column = Eigen::Matrix<Scalar, paddedSize<Scalar, count>, 1>;
+        // Not initialized, since each column is written whole before the substitution reads it.
+        Eigen::Matrix<Scalar, paddedSize<Scalar, count>, size> work;
+        for (int k = 0; k < size; ++k)
+        {
+            int const r = row(k);
+            Column unknown = Column::Zero();
+            unknown.template head<count>() = matrix.row(r).transpose();
+            for (int l = 0; l < k; ++l)
+            {
+                int const c = row(l);
+                unknown -= t.coeff(r, c) * work.col(c);
+            }
+            work.col(r) = unknown / t.coeff(r, r);
+        }
+        matrix = work.template topRows<count>().transpose();
+    }
+    else
+    {
+        for (int k = 0; k < size; ++k)
+        {
+            int const r = row(k);
+            for (int l = 0; l < k; ++l)
+            {
+                int const c = row(l);
+                matrix.row(r) -= t.coeff(r, c) * matrix.row(c);
+            }
+            matrix.row(r) /= t.coeff(r, r);
+        }
+    }
+}
+
 /** Overwrites \a matrix, \f$ B \f$, with \f$ A^{-1} B \f$, for \a solver, anything with a
  * `solveInPlace()` for \f$ A \f$: an `Eigen::LLT` or `Eigen::LDLT`, or a triangular view.
  *
- * As in transposedSolve(), where \f$ B \f$ has a fixed number of rows of at most
+ * A triangular view of a real matrix of a fixed size of at most columnCholeskySize is
+ * substituted through here (substituteInPlace()), as a CholeskyFactorization substitutes through
+ * its own factor: Eigen's unrolled solve of a small fixed size is slow, as transposedSolve() says.
+ * Otherwise, as in transposedSolve(), where \f$ B \f$ has a fixed number of rows of at most
  * unrolledSolveSize and more than one column, each column is solved alone, so that Eigen unrolls
  * it rather than calling its blocked solver; any other shape is solved whole. An inverse is this
  * on the identity.
@@ -94,7 +182,11 @@ void
 solveInPlace(Solver const & solver, Eigen::MatrixBase<Derived> & matrix)
 {
     constexpr int size = Derived::RowsAtCompileTime;
-    if constexpr (size != Eigen::Dynamic && size <= unrolledSolveSize && Derived::ColsAtCompileTime != 1)
+    if constexpr (substitutesTriangular<Solver>)
+    {
+        substituteInPlace(solver, matrix);
+    }
+    else if constexpr (size != Eigen::Dynamic && size <= unrolledSolveSize && Derived::ColsAtCompileTime != 1)
     {
         using Column = Eigen::Matrix<typename Derived::Scalar, size, 1>;
         for (Eigen::Index j = 0; j < matrix.cols(); ++j)
@@ -108,6 +200,18 @@ solveInPlace(Solver const & solver, Eigen::MatrixBase<Derived> & matrix)
     {
         solver.solveInPlace(matrix);
     }
+}
+
+/** \returns \f$ A^{-1} B \f$ for \a solver and the right-hand side \a rhs, \f$ B \f$, by
+ * solveInPlace() on a copy of \a rhs.
+ */
+template <typename Solver, typename Rhs>
+[[nodiscard]] typename Rhs::PlainObject
+solved(Solver const & solver, Eigen::MatrixBase<Rhs> const & rhs)
+{
+    typename Rhs::PlainObject result = rhs;
+    solveInPlace(solver, result);
+    return result;
 }
 
 /** \returns \f$ A^{-1} \f$ as a \a Result, for the factorization \a decomposition of \f$ A \f$

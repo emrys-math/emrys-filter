@@ -1007,8 +1007,10 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       (2026-11-25, design/benchmarks.md): every square-root pair took less time than
       mherb/kalman's in a run of 500 batches, the square-root EKF 0.29 to 0.62 and the
       square-root UKF 0.44 to 0.89. The triangular solves took 1% of the step; the
-      substitution in `solveInPlace()` and `inverseFrom()`, which still solve a column at a
-      time through Eigen, waits for a step it is found in. The library's ratios below 1 against
+      triangular solves through a root of a fixed size of at most 24 are the library's own
+      substitution since 2026-11-26 (`internal::solveInPlace()`); the pivoted LDLTs of a block
+      that may be singular, and the LU inverses of `inverseFrom()`, stay Eigen's (the user's
+      decision, 2026-11-26). The library's ratios below 1 against
       the hand code were the hand code's (2026-11-25, design/benchmarks.md section 1). The page
       is measured again at the commit *Measure the footprint of each ranging EKF on the
       Cortex-M, TinyEKF's included* (2026-11-26), on Linux and Windows, with MSVC beside Clang,

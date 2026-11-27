@@ -26,6 +26,7 @@
 #include <EmrysFilter/Core/Macros.h>
 #include <EmrysFilter/Core/Math.h>
 #include <EmrysFilter/Core/NumericError.h>
+#include <EmrysFilter/Core/Solve.h>
 #include <EmrysFilter/Core/Triangularization.h>
 
 namespace Emrys
@@ -667,7 +668,7 @@ private:
             direction.size() == lower.rows() && "a direction has a coordinate per coordinate of the covariance"
         );
         ColumnType const whitened =
-            lower.template triangularView<Eigen::Lower>().solve(direction.template cast<Scalar>());
+            internal::solved(lower.template triangularView<Eigen::Lower>(), direction.template cast<Scalar>());
         Scalar const length = whitened.norm();
         if (!isFinite(length) || !(length > Scalar(0)))
         {

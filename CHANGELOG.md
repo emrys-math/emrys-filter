@@ -240,6 +240,11 @@ instead.
   most 24 that gives a gain or a statistical linearization, is formed by a substitution the
   library writes out, in place of Eigen's solve, which took most of a small update's time. The
   result differs from before by rounding.
+- A solve through a triangular root of a fixed size of at most 24, in the square-root and
+  information forms, the divergences, and the square-root update's whitening, is a substitution
+  the library writes out too, in place of Eigen's triangular solve, so the results differ from
+  before by rounding. A step takes fewer instructions: the ranging UKF's 2,254 at 2D with 4 anchors
+  where it took 3,255, and 9,799 at 3D with 6 where it took 11,613.
 - An update whose innovation covariance holds a NaN returns
   `GaussianError::NotPositiveDefinite` and leaves the state as it was. Before, `Eigen::LLT`
   reported success for such a matrix, and the update wrote NaN into the state, or, in a
