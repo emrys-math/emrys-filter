@@ -297,6 +297,9 @@ the decision, and history belongs in the commit message. An open question goes i
   plain enough for a reader whose first language isn't English or who reads through a
   translator: no idioms, no regional or sports metaphors, and literal wording. Titles and
   quotations keep their own spelling (*Mathematical and Computer Modelling*).
+- A document names a commit by its short hash, `a21a609`, not by its subject, and names only
+  a commit on `dev`, whose history is never rewritten. Where no single commit holds the state
+  meant, such as before the public launch, a date or a roadmap step names it.
 
 ## Commits
 

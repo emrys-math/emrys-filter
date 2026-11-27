@@ -202,7 +202,7 @@ to be found (see "What the measurement shows" below).
 *These counts do not reproduce (2026-11-22).* Counted the same way, Callgrind over `--count` with
 Clang 21.1.8 and `-march=x86-64-v3` in WSL, the hand code takes the same instructions as above
 (906 at 2D with 4 anchors, 3,396 at 3D with 6), but the library takes 2,410 and 6,236, a ratio of
-2.66 and 1.84; at the public launch commit (2026-11-12) it took 2,399 at 2D with 4 anchors. The
+2.66 and 1.84; at the public launch, `cccafd0` (2026-11-12), it took 2,399 at 2D with 4 anchors. The
 ratios at 12 anchors or more are 0.98 to 1.06. So the library's fixed cost per step at the small
 sizes is about 1,500 instructions, not 320, and it was so at the launch. Whether it grew between the
 measurement above and the launch, or the measurement above differed in a way not recorded, is not
@@ -216,8 +216,7 @@ expanded the Jacobian that a kinematic model's function returns to the whole sta
 by block assignments whose sizes are run-time values, and the prediction over a cached transition,
 each particle's step, and each sigma point of a transform kept only the value. At 2D with 4 anchors
 the prediction took 1,155 instructions, 891 of them for that Jacobian, where the hand code's takes
-64. The commit *Stop building a step's Jacobian where nothing reads it* gives those callers the
-value alone (`propagateValue()`), predicts in place over a cached transition, and copies the
+64. `a35b611` gives those callers the value alone (`propagateValue()`), predicts in place over a cached transition, and copies the
 Jacobians that are read in blocks of fixed size. The prediction now takes 83 instructions and the
 step 1,315, against the hand code's 906: ratios of 1.45 at 2D with 4 anchors, 1.21 at 3D with 6
 (4,096 against 3,396), and 0.89 to 1.00 from 12 anchors, in instructions, and in time on Linux 1.13,
@@ -561,8 +560,7 @@ the scalar TinyEKF runs in unless `_float_t` is defined, so the marked rows are 
 get. For claim 6 this is a finding before any cycle is counted: on the scalar of the target TinyEKF
 is written for, its estimate is the less accurate.
 
-*Measured* (2026-11-23, at the commit *Make the Cholesky factorization public and the Gaussian's own*;
-`docs/benchmarks.md` gives the tables and the machine, and the paragraphs below what the
+*Measured* (2026-11-23, at `2fe9aff`; `docs/benchmarks.md` gives the tables and the machine, and the paragraphs below what the
 measurements before it found). EmrysFilter's EKF takes less time than each library's at every size
 and in either scalar: 2 to 6% of OpenCV's; 0.93 of mherb/kalman's at 2D with 4 anchors in double,
 0.76 in float, and 0.13 to 0.46 elsewhere; and 0.72 and 0.86 of TinyEKF's at 2D with 4 and 8
@@ -574,8 +572,8 @@ double (1.06), and its square-root UKF 0.78 to 0.93 in float and 0.83 to 1.29 in
 2D with 4 anchors by 3%, the square-root EKF in double at 3D with 24 by 6%, and the square-root
 UKF in double at every 3D size. At 2D with 4 anchors the library takes 723 instructions and 67 ns,
 mherb/kalman 1,218 and 72 ns, and TinyEKF 1,575 and 103 ns, while the hand code takes 401 and
-52 ns. The other libraries' own times moved by up to 23% between this run and the one two commits
-before, with their code unchanged, so times of different runs compare only to about that.
+52 ns. The other libraries' own times moved by up to 23% between this run and the page's run of the
+same day before `a21a609` moved the sigma points' root, with their code unchanged, so times of different runs compare only to about that.
 
 *Where the square-root filters' time went (2026-11-25).* Callgrind over one run of each pair at
 3D with 24 anchors in double put 61% of the square-root EKF's instructions, 100,000 per step, in
@@ -585,8 +583,7 @@ solves, which the roadmap had suspected, took 1%. The update now reflects the st
 and one column of the noise's lower-triangular root at a time, over 7 columns where the whole
 triangularization reached over up to 30 (`foldIntoSqrt()` in `Models/FormSteps.h`), and the square-root EKF's step
 takes 91,000 instructions to mherb/kalman's 161,000. In a run of 500 batches against
-mherb/kalman, at the commit *Fold a measurement into the square-root form a noise column at a
-time*, every square-root pair took less time than mherb/kalman's: the square-root EKF 0.29 to
+mherb/kalman, at `5aec4af`, every square-root pair took less time than mherb/kalman's: the square-root EKF 0.29 to
 0.62 of it, the square-root UKF 0.44 to 0.89, from 1.08 and 1.27 at 3D with 24 anchors in
 double. `docs/benchmarks.md` is not yet measured again at that commit.
 
@@ -648,8 +645,7 @@ about 81 ns at 2D with 4 anchors, 214 at 2D with 8, and 185 at 3D with 6, agains
 second change to try. The library's `transposedSolve()` calls the same `llt.solve()` a row at a
 time, so both changes are the library's to make, and the hand code's with it.
 
-*The solve, cut (2026-11-23).* The commit *Substitute through the gain's Cholesky factor in place of Eigen's solve*
-puts that substitution in `transposedSolve()`, for an `Eigen::LLT` of a fixed size of at most 24
+*The solve, cut (2026-11-23).* `798caab` puts that substitution in `transposedSolve()`, for an `Eigen::LLT` of a fixed size of at most 24
 (`substitutionSolveSize`), and in the two hand-written filters. Up to 24 is where it was measured:
 against Eigen's blocked solve it took 115 ns in place of 352 at 3D with 12 anchors, 161 in place of
 399 at 2D with 16, and 386 in place of 922 at 3D with 24. Two things about its form were measured
@@ -672,8 +668,7 @@ before), 225 at 2D with 8 (547), 581 at 2D with 16 (882), 186 at 3D with 6 (412)
 with 8, from 18,946 to 12,505 at 2D with 16, from 17,675 to 10,439 at 3D with 12, and from 45,099
 to 30,752 at 3D with 24. The hand code's fall alike, so the ratios to it move little.
 
-*The factorization, made (2026-11-23).* The commit *Factorize the innovation covariance by the library's own Cholesky factorization*
-adds `internal::CholeskyFactorization` (`Core/Cholesky.h`, [own-cholesky]) and takes the
+*The factorization, made (2026-11-23).* `a21a609` adds `internal::CholeskyFactorization` (`Core/Cholesky.h`, [own-cholesky]) and takes the
 innovation covariance's gain, NIS, and log-determinant from it; the two hand-written filters
 factorize the same way. The probe had first timed a Cholesky factorization written out by whole
 padded columns, with what that leaves above the diagonal never read, alone: 13 ns in place of
@@ -717,8 +712,8 @@ for the 6×6, and the two are level at 24×24 (561 and 559). Keeping the factor 
 written in, in place of copying it into a square matrix, changed the runners' times by nothing
 that could be told from noise.
 
-After it, in `double`, a step of the library's EKF takes 70 ns at 2D with 4 anchors (114 at the
-commit before), 155 at 2D with 8 (225), 431 at 2D with 16 (581), 175 at 3D with 6 (186), 398 at
+After it, in `double`, a step of the library's EKF takes 70 ns at 2D with 4 anchors (114 at
+`798caab`), 155 at 2D with 8 (225), 431 at 2D with 16 (581), 175 at 3D with 6 (186), 398 at
 3D with 12 (482), and 1,144 at 3D with 24 (1,357), and 723 instructions at 2D with 4 anchors
 (1,218), 1,862 at 2D with 8 (3,833), and 28,024 at 3D with 24 (30,752). The hand code's step fell
 from 98 to 55 ns at 2D with 4 anchors and from 864 to 401 instructions, so what the library adds
@@ -734,27 +729,25 @@ covariance was NaN, and the update used to drop the cell without a word; it now 
 set-up measures a beacon off the grid now, and `UpdateFailure.AnInnovationThatHoldsANaNFails`
 holds the new behavior.
 
-The commit after it, *Take a covariance's Cholesky root by the library's own factorization*, moves
-`roots::Cholesky`, whose root the default sigma points are spread by, to the same type. Two runs
-of the runner against mherb/kalman after it have the UKF at 2D with 4 anchors at 0.90 and 0.93 of
+`a21a609` also moves `roots::Cholesky`, whose root the default sigma points are spread by, to the same type. Two runs
+of the runner against mherb/kalman with that root have the UKF at 2D with 4 anchors at 0.90 and 0.93 of
 mherb/kalman's time in double and 1.03 and 1.04 in float, where the tables have 1.10 and 1.33; one
 of the two runs had 3D with 6 anchors at 0.89 and the other at 0.74, where the tables have 0.77, so
 a single run of that runner is good to about 0.15 in a ratio.
 
-The commit after that makes the type public, `Emrys::CholeskyFactorization`, and the Gaussian's
+`2fe9aff` makes the type public, `Emrys::CholeskyFactorization`, and the Gaussian's
 own: `Gaussian::cholesky()` replaces `llt()`, and the factor $L$ that the samplers multiply by is
 made from it once and kept, `covarianceRoot()`. The page's tables are taken again at that commit:
-the EKF's rows are as before to within the runs' noise, the UKF's are those of the root's commit,
+the EKF's rows are as before to within the runs' noise, the UKF's are those of `a21a609`,
 and the particle filter's rows that draw from a Gaussian take 5 to 19 instructions fewer per
 particle, since the samplers no longer copy a triangle of Eigen's factor at each draw.
 
-The commit *Factorize the information forms and the remaining local matrices by the library's own
-Cholesky factorization* moves the rest: the information form's cached factorization, which keeps
+The same commit moves the rest: the information form's cached factorization, which keeps
 its upper factor $R = L^T$ beside it as the Gaussian keeps $L$, and the local factorizations of the
 form steps, the fitting, the particle sets, the Rao-Blackwellized particle filter's weights, and
 the conditional with its evidence. It is not timed; none of them is in the benchmarks' steps.
 
-The posterior Cramér-Rao bound stayed on `Eigen::LLT` one commit longer. From no information its
+The posterior Cramér-Rao bound stayed on `Eigen::LLT` until `9adeaef` (2026-11-25). From no information its
 prediction is $Q^{-1} - Q^{-1} F (F^T Q^{-1} F)^{-1} F^T Q^{-1}$, which is zero; with Eigen's
 factorization the terms of `PosteriorCramerRaoBound.StartsFromNoInfo` cancelled to exact zeros,
 and with the library's they left 1e-14 where the terms are of order 1, which factorized as if it
@@ -821,8 +814,7 @@ factorization, the gain, and the posterior, takes 240. What the update adds to t
   instructions each.
 
 The attitude EKF's step took 44 instructions more than on 2026-11-23 (5,408 with analytic
-Jacobians); counted commit by commit, they came with *Write a function's Jacobian into its output,
-marked writesJacobians()*, whose `PointOutput` zeroed the Jacobian and was then copied into the
+Jacobians); counted commit by commit, they came with `cac9760`, whose `PointOutput` zeroed the Jacobian and was then copied into the
 result. It now writes into the result and zeroes only when some block is not wanted, and the step
 takes 5,327.
 

@@ -737,7 +737,7 @@ the opening of this file says (decided 2026-11-16). Each guide question answered
 release with its `CHANGELOG.md` entry. The vcpkg and Conan submissions wait for the advertised
 launch (decided 2026-11-12), and Discussions are turned on with it.
 
-The repository is public since 2026-11-12, from one squashed commit. A release is tagged on
+The repository is public since 2026-11-12, from one squashed commit, `cccafd0`. A release is tagged on
 `main`, which `dev` fast-forwards, and published there as a GitHub release; Zenodo archives each
 published release, not a pushed tag, so a release is published only from its tag. The reference is
 on Pages, and Discussions are off.
@@ -878,9 +878,9 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       itself, without square roots, since a filter's steps wait on each other and a column
       then waits on one division, and the innovation covariance's gain, NIS, and
       log-determinant come from it; the step in double went from 114 to 70 ns at 2D with 4
-      anchors and from 225 to 155 at 2D with 8, and the page is measured again at that commit.
+      anchors and from 225 to 155 at 2D with 8 (`a21a609`), and the page is measured again.
       `roots::cholesky()`, which the default sigma points are spread by, takes its root by the
-      same type since the commit after. The type is public since the commit after that (the
+      same type since the same commit. The type is public since `2fe9aff` (the
       user's decision, 2026-11-23), and the Gaussian's own: `Gaussian::cholesky()` replaces
       `llt()`, and `covarianceRoot()` gives the factor $L$ kept with it, which the samplers
       multiply by; the page is measured again at that commit. Claim 9 now holds for the EKF
@@ -890,8 +890,8 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       1.29).
       The information forms' cached factorization and the local ones of the form steps, the
       fitting, the particle sets, the Rao-Blackwellized particle filter, and the conditional
-      with its evidence followed, in the commit after the page's, and the posterior Cramér-Rao
-      bound last (2026-11-25), once its `covariance()` told rounding from information
+      with its evidence moved in `2fe9aff` too, and the posterior Cramér-Rao
+      bound last (`9adeaef`, 2026-11-25), once its `covariance()` told rounding from information
       ([cramer-rao-bound]).
       `Core/Solve.h` no longer substitutes through an `Eigen::LLT`, which nothing called.
       The square-root update triangularized its whole joint root, 61% of the square-root
@@ -904,8 +904,7 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       that may be singular, and the LU inverses of `inverseFrom()`, stay Eigen's (the user's
       decision, 2026-11-26). The library's ratios below 1 against
       the hand code were the hand code's (2026-11-25, design/benchmarks.md section 1). The page
-      is measured again at the commit *Measure the footprint of each ranging EKF on the
-      Cortex-M, TinyEKF's included* (2026-11-26), on Linux and Windows, with MSVC beside Clang,
+      is measured again at `68d4cfd` (2026-11-26), on Linux and Windows, with MSVC beside Clang,
       and with the footprint on the Cortex-M4F and M7: the library's EKF takes 19.7 KB of code,
       the hand code's 6.9, TinyEKF's 2.3. Claim 9 fails narrowly for the EKF at 2D with 4
       anchors in double against mherb/kalman (1.02) and the UKF in float there (1.06), and
