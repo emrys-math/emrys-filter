@@ -130,6 +130,7 @@ Read the index, then the decisions your change touches.
 | [layered-headers](#layered-headers) | Headers are grouped in layered directories, under one namespace |
 | [analysis-project](#analysis-project) | Analysis tools live in one separate project; the libraries keep the numerics |
 | [benchmarks](#benchmarks) | Speed is benchmarked in this repository against hand-rolled Eigen |
+| [speed-before-build-time](#speed-before-build-time) | No change to the headers trades a filter's speed for compile time |
 | [coverage](#coverage) | Full coverage is instantiation, region, and axis coverage, measured per instantiation (region, entity, and compile-error coverage built; axes Verification) |
 | [check-stages](#check-stages) | Checks run in stages chosen by what each can catch, and the diff decides which a change needs |
 | [static-analysis](#static-analysis) | clang-tidy analyzes the headers through every test, example, and benchmark, before each release |
@@ -2964,6 +2965,30 @@ leaving the pair out hid both the time and the loss of accuracy that it buys.
 
 **Where.** `benchmarks/`; [benchmarks.md](benchmarks.md) is the plan, and the rule that a test
 checks the implementation while a benchmark backs a claim.
+
+### speed-before-build-time
+
+*No change to the headers trades a filter's speed for compile time.*
+
+**Rule.** A change made to shorten the build, of the tests, of CI, or of a user's program, must
+leave the benchmarks' instruction counts where they were at every size; one that raises them is
+not made, however much build time it saves. A change to the headers for compile time is measured
+by the benchmark runners' counts as well as by compile time, before it lands. Build time is found
+in the build: in how the tests are split into translation units, in what they instantiate, and in
+how CI runs them.
+
+**Why.** A user's filter runs on every step for the life of their product, and the small fixed
+sizes where a template's sizes matter most are the embedded ones, where the step's time is the
+budget. Compile time is paid by the developer, once per build. On 2026-11-26 `triangularize()`
+was moved onto one map of dynamic size to share its instantiations, which took 9 of 50 seconds
+from a test file and made the square-root EKF's step at 2D with 4 anchors 43% more instructions
+and 16 to 37% more time; it was reverted.
+
+**Rejected.** A size above which a template is shared through a dynamic-size view: the test
+files instantiate the small sizes almost only, so it saves no build time, and it still costs a
+step at the sizes where sharing begins.
+
+**Where.** [benchmarks.md](benchmarks.md) for how the counts are taken.
 
 ### coverage
 

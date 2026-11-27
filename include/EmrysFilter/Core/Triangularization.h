@@ -20,17 +20,42 @@
 namespace Emrys
 {
 
-namespace internal
-{
-
-/** The loop of triangularize() over \a matrix, with a row of scratch of at most \a MaxCols. */
-template <int MaxCols, typename Derived>
+/** \ingroup Core
+ * Reduces \a m to upper-triangular form in place by
+ * [Householder reflections](https://en.wikipedia.org/wiki/Householder_transformation) from the
+ * left, with a nonnegative diagonal.
+ *
+ * On return \a m holds \f$ Q^T M \f$ for the input \f$ M \f$ and an orthogonal \f$ Q \f$ that is
+ * never formed, with zeros below the diagonal. Since \f$ Q \f$ is orthogonal,
+ * \f$ (Q^T M)^T (Q^T M) = M^T M \f$: the leading square block \f$ R \f$ of the result is an
+ * upper-triangular factor of \f$ M^T M \f$, which is its Cholesky factor when the diagonal is
+ * positive, without \f$ M^T M \f$ ever being formed. Columns appended to \f$ M \f$ are carried
+ * along: triangularizing \f$ [\,A \;\; b\,] \f$ gives \f$ [\,R \;\; Q^T b\,] \f$, which is how the
+ * square-root information form keeps its vector beside its factor. A rank-deficient \f$ M \f$
+ * gives zeros on the diagonal rather than failing.
+ *
+ * This is Householder QR (\ref Golub2013 "Golub and Van Loan (2013)", as given in
+ * [QR decomposition](https://en.wikipedia.org/wiki/QR_decomposition#Using_Householder_reflections)),
+ * with the reflections applied as they are made and then discarded, so the work is in \a m
+ * and a row of scratch the width of \a m, sized by its compile-time bound: a matrix with a
+ * bounded size allocates nothing [allocation]. It departs from the algorithm only in flipping the
+ * sign of each row whose diagonal element is negative, which keeps \f$ R^T R \f$ and makes the
+ * factor of a full-rank \f$ M \f$ unique.
+ *
+ * \a m may be any writable Eigen matrix or expression, such as a block of a larger buffer passed
+ * as a temporary; a <tt>const</tt> one is rejected rather than written through.
+ */
+template <typename M, typename Derived = std::remove_cvref_t<M>>
+    requires std::derived_from<Derived, Eigen::MatrixBase<Derived>> && (!std::is_const_v<std::remove_reference_t<M>>)
+          && ((Derived::Flags & Eigen::LvalueBit) != 0)
 void
-triangularizeInPlace(Derived & matrix)
+triangularize(M && m)
 {
+    Derived & matrix = m;
     using Scalar = typename Derived::Scalar;
     using RealScalar = typename Eigen::NumTraits<Scalar>::Real;
-    using Workspace = Eigen::Matrix<Scalar, Eigen::Dynamic, 1, Eigen::ColMajor, MaxCols, 1>;
+    using Workspace =
+        Eigen::Matrix<Scalar, Derived::ColsAtCompileTime, 1, Eigen::ColMajor, Derived::MaxColsAtCompileTime, 1>;
     Eigen::Index const rows = matrix.rows();
     Eigen::Index const cols = matrix.cols();
     Workspace workspace(cols);
@@ -55,65 +80,6 @@ triangularizeInPlace(Derived & matrix)
         {
             matrix.row(k).tail(cols - k) *= Scalar(-1);
         }
-    }
-}
-
-/** Whether triangularize() reaches \a Derived's coefficients through a map of dynamic size: each
- *  column's are contiguous, and the columns are a stride apart. */
-template <typename Derived>
-inline constexpr bool mapsByColumns =
-    (Derived::Flags & Eigen::DirectAccessBit) != 0 && (Derived::Flags & Eigen::RowMajorBit) == 0
-    && Derived::InnerStrideAtCompileTime == 1;
-
-}  // namespace internal
-
-/** \ingroup Core
- * Reduces \a m to upper-triangular form in place by
- * [Householder reflections](https://en.wikipedia.org/wiki/Householder_transformation) from the
- * left, with a nonnegative diagonal.
- *
- * On return \a m holds \f$ Q^T M \f$ for the input \f$ M \f$ and an orthogonal \f$ Q \f$ that is
- * never formed, with zeros below the diagonal. Since \f$ Q \f$ is orthogonal,
- * \f$ (Q^T M)^T (Q^T M) = M^T M \f$: the leading square block \f$ R \f$ of the result is an
- * upper-triangular factor of \f$ M^T M \f$, which is its Cholesky factor when the diagonal is
- * positive, without \f$ M^T M \f$ ever being formed. Columns appended to \f$ M \f$ are carried
- * along: triangularizing \f$ [\,A \;\; b\,] \f$ gives \f$ [\,R \;\; Q^T b\,] \f$, which is how the
- * square-root information form keeps its vector beside its factor. A rank-deficient \f$ M \f$
- * gives zeros on the diagonal rather than failing.
- *
- * This is Householder QR (\ref Golub2013 "Golub and Van Loan (2013)", as given in
- * [QR decomposition](https://en.wikipedia.org/wiki/QR_decomposition#Using_Householder_reflections)),
- * with the reflections applied as they are made and then discarded, so the work is in \a m
- * and a row of scratch the width of \a m, sized by its compile-time bound: a matrix with a
- * bounded size allocates nothing [allocation]. It departs from the algorithm only in flipping the
- * sign of each row whose diagonal element is negative, which keeps \f$ R^T R \f$ and makes the
- * factor of a full-rank \f$ M \f$ unique.
- *
- * \a m may be any writable Eigen matrix or expression, such as a block of a larger buffer passed
- * as a temporary; a <tt>const</tt> one is rejected rather than written through. A column-major one
- * whose columns are contiguous is triangularized through a map of dynamic size, so that each scalar
- * and bound on the columns has one instantiation, whatever the rows and the expression: the
- * reflections act on blocks of dynamic size either way.
- */
-template <typename M, typename Derived = std::remove_cvref_t<M>>
-    requires std::derived_from<Derived, Eigen::MatrixBase<Derived>> && (!std::is_const_v<std::remove_reference_t<M>>)
-          && ((Derived::Flags & Eigen::LvalueBit) != 0)
-void
-triangularize(M && m)
-{
-    Derived & matrix = m;
-    if constexpr (internal::mapsByColumns<Derived>)
-    {
-        using Columns = Eigen::Map<
-            Eigen::Matrix<typename Derived::Scalar, Eigen::Dynamic, Eigen::Dynamic>,
-            Eigen::Unaligned,
-            Eigen::OuterStride<>>;
-        Columns columns(matrix.data(), matrix.rows(), matrix.cols(), Eigen::OuterStride<>(matrix.outerStride()));
-        internal::triangularizeInPlace<Derived::MaxColsAtCompileTime>(columns);
-    }
-    else
-    {
-        internal::triangularizeInPlace<Derived::MaxColsAtCompileTime>(matrix);
     }
 }
 
