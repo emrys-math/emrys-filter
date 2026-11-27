@@ -212,4 +212,4 @@ paper it would implement; see [CONTRIBUTING.md](CONTRIBUTING.md). To cite the li
 which resolves to the latest release. To take the library to another language, or to C++20 or
 C++17, start from [docs/porting.md](docs/porting.md).
 
-MIT license. Copyright (c) 2026 Jay Moore.
+Apache License 2.0 with LLVM Exceptions ([LICENSE](LICENSE)). Copyright (c) 2026 Jay Moore.

@@ -1,7 +1,7 @@
 ---
 name: emrys-filter-build-estimator
 description: Builds a state estimator with EmrysFilter, the header-only C++23 library of Kalman, unscented, particle, interacting multiple model, and Rao-Blackwellized filters on Eigen, and checks it in simulation. Use when writing C++ that estimates a state from noisy measurements with EmrysFilter, such as tracking, navigation, attitude estimation, sensor fusion, an EKF or UKF, a particle filter, or a multiple-model filter, or when checking such an estimator's consistency with NEES and NIS.
-license: MIT
+license: Apache-2.0 WITH LLVM-exception
 metadata:
   emrys-filter-version: "@EMRYS_FILTER_VERSION@"
 ---

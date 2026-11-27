@@ -16,7 +16,7 @@ class EmrysFilterConan(ConanFile):
         "Header-only C++23 state estimation library on Eigen 5.0: Kalman, particle, and grid "
         "filters over typed state spaces."
     )
-    license = "MIT"
+    license = "Apache-2.0 WITH LLVM-exception"
     url = "https://github.com/conan-io/conan-center-index"
     homepage = "https://github.com/emrys-math/emrys-filter"
     topics = ("state-estimation", "kalman-filter", "particle-filter", "eigen", "header-only")
