@@ -134,14 +134,29 @@ substituteInPlace(Eigen::TriangularView<Nested, Mode> const & view, Eigen::Matri
     else if constexpr (Derived::ColsAtCompileTime != Eigen::Dynamic)
     {
         constexpr int count = Derived::ColsAtCompileTime;
-        using Column = Eigen::Matrix<Scalar, paddedSize<Scalar, count>, 1>;
-        // Not initialized, since each column is written whole before the substitution reads it.
-        Eigen::Matrix<Scalar, paddedSize<Scalar, count>, size> work;
+        constexpr int padded = paddedSize<Scalar, count>;
+        using Column = Eigen::Matrix<Scalar, padded, 1>;
+        // Where columns are padded, the right-hand sides first, with the padding zeroed, in one pass,
+        // as CholeskyFactorization::transposedSolve() takes them; otherwise not initialized, since
+        // each column is written whole before the substitution reads it.
+        Eigen::Matrix<Scalar, padded, size> work;
+        if constexpr (padded != count)
+        {
+            work.template topRows<count>() = matrix.transpose();
+            work.template bottomRows<padded - count>().setZero();
+        }
         for (int k = 0; k < size; ++k)
         {
             int const r = row(k);
-            Column unknown = Column::Zero();
-            unknown.template head<count>() = matrix.row(r).transpose();
+            Column unknown;
+            if constexpr (padded != count)
+            {
+                unknown = work.col(r);
+            }
+            else
+            {
+                unknown = matrix.row(r).transpose();
+            }
             for (int l = 0; l < k; ++l)
             {
                 int const c = row(l);

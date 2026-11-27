@@ -274,14 +274,29 @@ public:
         {
             constexpr int size = Matrix::RowsAtCompileTime;
             constexpr int count = Result::RowsAtCompileTime;
-            using Column = Eigen::Matrix<Scalar, internal::paddedSize<Scalar, count>, 1>;
-            // Not initialized, since each column is written whole before a pass reads it.
-            Eigen::Matrix<Scalar, internal::paddedSize<Scalar, count>, size> work;
+            constexpr int padded = internal::paddedSize<Scalar, count>;
+            using Column = Eigen::Matrix<Scalar, padded, 1>;
+            // Where columns are padded, the right-hand sides first, with the padding zeroed, in one
+            // pass, from which each column is read whole, as compute() reads its matrix. Otherwise
+            // not initialized, since each column is written whole before a pass reads it.
+            Eigen::Matrix<Scalar, padded, size> work;
+            if constexpr (padded != count)
+            {
+                work.template topRows<count>() = rhs.transpose();
+                work.template bottomRows<padded - count>().setZero();
+            }
             // L~ Y = B: unknown r of every right-hand side from those before it.
             for (int r = 0; r < size; ++r)
             {
-                Column unknown = Column::Zero();
-                unknown.template head<count>() = rhs.row(r).transpose();
+                Column unknown;
+                if constexpr (padded != count)
+                {
+                    unknown = work.col(r);
+                }
+                else
+                {
+                    unknown = rhs.row(r).transpose();
+                }
                 for (int c = 0; c < r; ++c)
                 {
                     unknown -= m_storage.unit(r, c) * work.col(c);
@@ -437,16 +452,33 @@ private:
     factorize(Derived const & matrix)
     {
         constexpr int size = Matrix::RowsAtCompileTime;
-        using Column = Eigen::Matrix<Scalar, internal::paddedSize<Scalar, size>, 1>;
-        // The columns of L~ D, which the columns after them are reduced by. Not initialized, since
-        // column k is written whole before a column after it reads it: an initialized one, of
-        // 4.6 KB at a size of 24 in double, was zeroed at every factorization.
-        Eigen::Matrix<Scalar, internal::paddedSize<Scalar, size>, size> unscaled;
+        constexpr int padded = internal::paddedSize<Scalar, size>;
+        using Column = Eigen::Matrix<Scalar, padded, 1>;
+        // The columns of L~ D, which the columns after them are reduced by. Column k is written
+        // whole before a column after it reads it, so it is not initialized where no column is
+        // padded: an initialized one, of 4.6 KB at a size of 24 in double, was zeroed at every
+        // factorization. Where columns are padded, it first holds the matrix with its padding
+        // zeroed, in one pass, from which column k is then read whole: a column assembled from the
+        // matrix's column and zeros is read in packets other than those it was written in, and in
+        // `float` at a size of 6 with AVX the processor waited on each [benchmarks].
+        Eigen::Matrix<Scalar, padded, size> unscaled;
+        if constexpr (padded != size)
+        {
+            unscaled.template topRows<size>() = matrix;
+            unscaled.template bottomRows<padded - size>().setZero();
+        }
         m_positiveDefinite = false;
         for (int k = 0; k < size; ++k)
         {
-            Column column = Column::Zero();
-            column.template head<size>() = matrix.col(k);
+            Column column;
+            if constexpr (padded != size)
+            {
+                column = unscaled.col(k);
+            }
+            else
+            {
+                column = matrix.col(k);
+            }
             for (int j = 0; j < k; ++j)
             {
                 // L~(k, j), from the scalars it waits on, not from the column stored below.

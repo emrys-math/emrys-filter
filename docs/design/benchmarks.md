@@ -826,11 +826,41 @@ marked writesJacobians()*, whose `PointOutput` zeroed the Jacobian and was then 
 result. It now writes into the result and zeroes only when some block is not wanted, and the step
 takes 5,327.
 
-*`float` at 3D with 6 anchors, and Linux (2026-11-26).* A step there is slower in `float` than in
-`double` on both sides with `-march=x86-64-v3` (the library 227 against 165 ns, the hand code 148
-against 120) and with `-march=x86-64-v2 -mavx` (228 against 171), and faster in `float` on Windows
-without `-march`, SSE2 (145 against 177). So it comes with AVX, where a 6-vector of `float`s is a
-half packet and two scalars, and is not yet narrowed further. On Linux a build without VEX
+*`float` at 3D with 6 anchors (2026-11-26).* A step there was slower in `float` than in `double`
+on both sides with AVX (the library 238 against 168 ns, the hand code 155 against 122), and faster
+in `float` on Windows without `-march`, SSE2. Neither denormals (flushed to zero, the times did not
+move) nor alignment (`EIGEN_MAX_STATIC_ALIGN_BYTES=16`, the same) was the cause. Each stage of the
+hand code's step timed alone, each call waiting on the one before, took about twice as long in
+`float` as in `double` from the innovation covariance on, and its vectorized substitution took
+three times as long as the same code unvectorized (49 against 16 ns). The cause is store-to-load
+forwarding: a column of six `float`s is written in pieces of different widths, a 16-byte packet
+and 8 bytes, or by packets that run across columns, and the next operation reads it in packets of
+another width or offset. A load that spans two stores cannot be forwarded from them, and waits
+until they reach the cache. Two places did it:
+
+- The factorization and the substitution padded each column by zeroing it whole and writing the
+  six values into its head, and then read it whole. They now copy their input into the padded
+  columns in one pass before the loop and read each column from there: in the probe, 51 to 37 ns
+  for the factorization and 49 to 31 for the substitution, where reading an input already padded
+  gives 35 and 27.
+- The innovation covariance was $R$ copied and then $H P_{xy}$ accumulated into it, which reads
+  the copy back in other packets: 38 ns against 19 in `double`. Formed in one pass, $R$ added to
+  each coefficient of the product, it took 24. In one pass it took 4,300 more instructions in
+  `double` at 3D with 24 anchors and 45 more at 2D with 4, in no less time, so it is taken in
+  one pass only where a column is not a whole number of 16-byte packets.
+
+The library's step at 3D with 6 anchors in `float` went from 238 to 178 ns and the hand code's
+from 155 to 124, and `float` at 12 and 24 anchors from 327 to 281 and 860 to 740 ns; the
+instructions moved by less than 1%, and nothing in `double` moved. The hand code does as the
+library does.
+
+*The gather of $P_{xS}$ by blocks (2026-11-26).* Where a model reads one run of rows, $P_{xS}$
+can be copied as three blocks of the lower triangle, not an element at a time. It took about 100
+instructions more at every size (635 to 744 at 2D with 4 anchors): the blocks start at a row known
+only at run time, and the gather an element at a time is already about four instructions an
+element. It was not kept. The hand code takes no copy at all, since it keeps the whole covariance.
+
+*Linux without VEX (2026-11-26).* On Linux a build without VEX
 encodings, SSE2 or `-march=x86-64-v2`, takes two to six times as long in `float` as the same code
 with `-mavx`, at every size, on both sides (3D with 24 anchors: 4,943 against 823 ns for the
 library), while Windows's SSE2 build does not; a `vzeroupper` before the timed code changes

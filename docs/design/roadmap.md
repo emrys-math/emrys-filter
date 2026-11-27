@@ -1023,7 +1023,7 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       left, in design/benchmarks.md: the fixed cost at 2D with 4 anchors, 241 instructions (the
       gather of $P_{xS}$ an element at a time, 34; the update's result moved, 26, whose
       construction in place makes Clang leave the linearization out of line; the reads resolved
-      at each update); `float` at 3D with 6 anchors slower than `double` with AVX only; Linux
+      at each update; a gather by blocks took more, and the user left the rest, 2026-11-26); Linux
       builds without VEX slow in `float`; MSVC's code for the hand code's lazy products and
       written-out factorization in `float` at 12 and 24 anchors; MSVC 19.50 at `/O2`
       miscompiling the benchmark's `colwise().norm()` of a 2×8 `float` matrix inside its
@@ -1033,7 +1033,9 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       are omitted, with no board to count them on (the user's decision, 2026-11-26). Next: a
       test of `float` at 2D with 8 anchors that would catch the MSVC miscompilation, with a
       workaround, in an issue of its own if CI passes as the branch is (the user's decision,
-      2026-11-26); the gather by blocks for a read that is one run of columns. The whole test suite passed with Clang 21
+      2026-11-26). `float` at 3D with 6 anchors was slower than `double` with AVX from loads
+      that span two stores, and both sides now read padded columns whole and form $S$ in one pass
+      where its columns are padded (2026-11-26, design/benchmarks.md). The whole test suite passed with Clang 21
       and with GCC 15 in WSL (2026-11-23, both with warnings as errors) but
       `Allocation.ParticleFilterUnderAUsersPolicyStaysOffTheHeap`, whose scratch arena `next`
       enlarged before the branch was rebased onto it (2026-11-24). SymForce and manif wait for

@@ -245,6 +245,11 @@ instead.
   the library writes out too, in place of Eigen's triangular solve, so the results differ from
   before by rounding. A step takes fewer instructions: the ranging UKF's 2,254 at 2D with 4 anchors
   where it took 3,255, and 9,799 at 3D with 6 where it took 11,613.
+- A step in `float` at six measurements with AVX takes less time: the ranging EKF's at 3D with 6
+  anchors 178 ns where it took 238, and with 12 and 24 anchors 281 and 740 ns where it took 327 and
+  860. The factorization and its substitutions read each padded column whole, and an innovation
+  covariance whose columns are padded is formed in one pass, so that no load waits on stores of
+  another width.
 - An update whose innovation covariance holds a NaN returns
   `GaussianError::NotPositiveDefinite` and leaves the state as it was. Before, `Eigen::LLT`
   reported success for such a matrix, and the update wrote NaN into the state, or, in a

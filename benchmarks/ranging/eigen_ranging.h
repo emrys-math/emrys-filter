@@ -95,8 +95,21 @@ public:
         // Pxy = P H^T, where H is h's Jacobian padded with zero velocity columns.
         Eigen::Matrix<Scalar, StateSize, AnchorCount> cross;
         cross.noalias() = product(m_cov.template leftCols<Dimension>(), h.transpose());
-        RangeMatrix innovationCov = m_rangeNoise;
-        innovationCov.noalias() += product(h, cross.template topRows<Dimension>());
+        // S = R + H Pxy. As the library forms it, in one pass where a column of S is not a whole
+        // number of 16-byte packets: R copied and then read back by the product's accumulation is
+        // read in packets other than those it was written in, which in float at 6 anchors with AVX
+        // makes the processor wait on each.
+        constexpr bool OnePass = F != Factorization::EigenLlt && AnchorCount % int(16 / sizeof(Scalar)) != 0;
+        RangeMatrix innovationCov;
+        if constexpr (OnePass)
+        {
+            innovationCov = m_rangeNoise + product(h, cross.template topRows<Dimension>());
+        }
+        else
+        {
+            innovationCov = m_rangeNoise;
+            innovationCov.noalias() += product(h, cross.template topRows<Dimension>());
+        }
 
         Eigen::Matrix<Scalar, StateSize, AnchorCount> gain;
         if constexpr (F == Factorization::EigenLlt)
@@ -119,13 +132,29 @@ public:
             constexpr int Lanes = int(16 / sizeof(Scalar));
             constexpr int PaddedAnchors = (AnchorCount + Lanes - 1) / Lanes * Lanes;
             using FactorColumn = Eigen::Matrix<Scalar, PaddedAnchors, 1>;
+            // Where the columns are padded, S is first copied into them with the padding zeroed, in
+            // one pass, and each column read whole from there, as the library does: a column
+            // assembled from S's column and zeros is read in packets other than those it was
+            // written in.
             Eigen::Matrix<Scalar, PaddedAnchors, AnchorCount> unscaled;
+            if constexpr (PaddedAnchors != AnchorCount)
+            {
+                unscaled.template topRows<AnchorCount>() = innovationCov;
+                unscaled.template bottomRows<PaddedAnchors - AnchorCount>().setZero();
+            }
             Eigen::Matrix<Scalar, PaddedAnchors, AnchorCount> unit;
             Ranges reciprocal;
             for (int k = 0; k < AnchorCount; ++k)
             {
-                FactorColumn column = FactorColumn::Zero();
-                column.template head<AnchorCount>() = innovationCov.col(k);
+                FactorColumn column;
+                if constexpr (PaddedAnchors != AnchorCount)
+                {
+                    column = unscaled.col(k);
+                }
+                else
+                {
+                    column = innovationCov.col(k);
+                }
                 for (int j = 0; j < k; ++j)
                 {
                     column -= (unscaled(k, j) * reciprocal(j)) * unscaled.col(j);
@@ -142,10 +171,22 @@ public:
             constexpr int Padded = (StateSize + Lanes - 1) / Lanes * Lanes;
             using PaddedColumn = Eigen::Matrix<Scalar, Padded, 1>;
             Eigen::Matrix<Scalar, Padded, AnchorCount> work;
+            if constexpr (Padded != StateSize)
+            {
+                work.template topRows<StateSize>() = cross;
+                work.template bottomRows<Padded - StateSize>().setZero();
+            }
             for (int r = 0; r < AnchorCount; ++r)
             {
-                PaddedColumn unknown = PaddedColumn::Zero();
-                unknown.template head<StateSize>() = cross.col(r);
+                PaddedColumn unknown;
+                if constexpr (Padded != StateSize)
+                {
+                    unknown = work.col(r);
+                }
+                else
+                {
+                    unknown = cross.col(r);
+                }
                 for (int c = 0; c < r; ++c)
                 {
                     unknown -= unit(r, c) * work.col(c);

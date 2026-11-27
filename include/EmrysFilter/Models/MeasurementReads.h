@@ -24,6 +24,7 @@
 #include <Eigen/Cholesky>
 
 #include <EmrysFilter/Core/Allocation.h>
+#include <EmrysFilter/Core/Cholesky.h>
 #include <EmrysFilter/Core/Execution.h>
 #include <EmrysFilter/Core/Macros.h>
 #include <EmrysFilter/Core/Multiply.h>
@@ -1132,15 +1133,34 @@ public:
     }
 
     /** \returns the predicted covariance plus \a noise, as a \a Matrix, with the product accumulated
-     * into a copy of \a noise
+     * into a copy of \a noise; or, where every size is fixed and a column of \a Matrix is not a
+     * whole number of 16-byte packets (internal::paddedSize), in one pass, the noise added to each
+     * coefficient of the product. There the copy is read back by the accumulation in packets other
+     * than those it was written in, and in `float` at six measurements with AVX the processor
+     * waited on each, 20 ns of a 200 ns step [benchmarks]. At other sizes the one pass took more
+     * instructions and no less time.
      */
     template <typename Matrix, typename Noise>
     [[nodiscard]] Matrix
     covariancePlus(Noise const & noise) const
     {
-        Matrix result = noise;
-        result.noalias() += multiply(m_jacobian, m_cross);
-        return result;
+        using JacobianType = std::remove_cvref_t<decltype(m_jacobian)>;
+        using CrossType = std::remove_cvref_t<decltype(m_cross)>;
+        constexpr int rows = Matrix::RowsAtCompileTime;
+        if constexpr (JacobianType::RowsAtCompileTime != Eigen::Dynamic
+                      && JacobianType::ColsAtCompileTime != Eigen::Dynamic
+                      && CrossType::ColsAtCompileTime != Eigen::Dynamic && rows != Eigen::Dynamic
+                      && paddedSize<typename Matrix::Scalar, rows> != rows)
+        {
+            Matrix result = noise + m_jacobian.lazyProduct(m_cross);
+            return result;
+        }
+        else
+        {
+            Matrix result = noise;
+            result.noalias() += multiply(m_jacobian, m_cross);
+            return result;
+        }
     }
 
     /** \returns the length of the mean */
