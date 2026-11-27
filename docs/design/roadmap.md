@@ -26,6 +26,41 @@ question answered, breaking or not; and for every algorithm checked against its 
 read in full (decided 2026-11-16). With no date to meet, a feature that may want a change to the
 existing API is built before the launch rather than after it.
 
+## Release 0.2.0 — in progress
+
+A release before the advertised launch that collects the work close to done (decided 2026-11-27).
+Each piece lands by its own pull request, and the release waits for all of them.
+
+- [ ] The benchmarks of #15: the branch `fixed-cost` (the library's own substitution in place of
+      Eigen's triangular solve, padded columns read whole, the revert of the dynamic map in
+      `triangularize()`, the results page measured again), once the page's Windows column is
+      measured again. Its pull request closes #15.
+- [ ] The branch `cleanup`: the shorter README, the license changed to Apache-2.0 WITH
+      LLVM-exception (0.1.0 stays MIT), and 17zu closed.
+- [ ] #27: a test of the `float` EKF at 2D with 8 anchors that catches MSVC 19.50's
+      miscompilation of `colwise().norm()` at `/O2`, and a workaround.
+- [ ] Lie group spaces and the invariant EKF (17zf, #17), from the prototype on the branch
+      `groups-prototype` and its design review, `docs/guide/groups.md`. Its twelve questions are
+      reviewed and closed with the user before it lands, and the design changes where the review
+      finds it should (decided 2026-11-27). Then what the review's section 12 lists as missing, the
+      decisions it names, and the `land` and `pr` checks, with GCC and MSVC first, since neither has
+      compiled its tests.
+- [ ] The smoothers of 14b on the branch `smoothers` (fixed-point, two-filter, iterated, and
+      backward simulation), if its rebase onto `dev` goes cleanly. Its pull request is part of
+      #22; the review's questions and the smoothers left stay there.
+- [ ] The branch `test-review` (#5 and #6, the chi-squared CDF and quantile corrected, and
+      `UnitQuaternion` at a half turn), if its work is finished.
+- [ ] Test reviews of the Filters and Smoothers layers, filed as issues beside those of Core (#5),
+      Spaces (#6), Distributions (#8), and Models (#9). The work they list need not be in 0.2.0.
+- [ ] The OpenSSF Best Practices badge (Launch, below), which waits for this release.
+- [ ] The release: version 0.2.0 in `CMakeLists.txt`, `CITATION.cff`, the vcpkg port, the Conan
+      recipe and its CI job, and the `GIT_TAG` in the README, `docs/usage.md`, and
+      `examples/consumer/`; `CHANGELOG.md`'s Unreleased becomes 0.2.0; the `ci` stage dispatched
+      and passing; `main` fast-forwarded along `dev`, the tag `v0.2.0`, and a GitHub release,
+      which Zenodo archives.
+
+Done when: 0.2.0 is published from its tag.
+
 ## 17g. Posterior Cramér-Rao bound — in progress
 
 [cramer-rao-bound]: the recursion and its tests are done.
