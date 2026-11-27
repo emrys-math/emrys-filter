@@ -643,6 +643,15 @@ updatedBy(Model const & model)
 );
 #endif
 
+#if defined(AFFINE_SELECTION_WITH_FUNCTION)  // static_assert: AffineConstants.h: are a model's without one
+[[maybe_unused]] auto const model = Emrys::measurementModel(
+    positionOf,
+    Emrys::reads(Emrys::path<Position>),
+    Emrys::affineIn(Emrys::on(Emrys::path<Fixes>[1], Eigen::Matrix2d::Identity())),
+    Emrys::additiveNoise(makeNoise())
+);
+#endif
+
 #if defined(AFFINE_MAP_WITH_POINTS)  // static_assert: AffineConstants.h: takes on<Name>(H), not path<Name>
 [[maybe_unused]] auto const model = Emrys::measurementModel(
     Emrys::affineIn(Emrys::path<Position>, Emrys::on<Velocity>(Eigen::Matrix2d::Identity())),
@@ -653,6 +662,16 @@ updatedBy(Model const & model)
 #if defined(AFFINE_MAP_EACH_OFFSET)  // static_assert: AffineConstants.h: take no offset() yet
 [[maybe_unused]] auto const model = Emrys::measurementModel(
     Emrys::affineIn(Emrys::onEach<Fixes>(Eigen::Matrix2d::Identity()), Emrys::offset(Eigen::Vector2d::Zero())),
+    Emrys::additiveNoise(makeNoise())
+);
+#endif
+
+#if defined(AFFINE_MAP_SELECTED_OFFSET)  // static_assert: AffineConstants.h: take no offset() yet
+[[maybe_unused]] auto const model = Emrys::measurementModel(
+    Emrys::affineIn(
+        Emrys::on(Emrys::path<Fixes>[1], Eigen::Matrix2d::Identity()),
+        Emrys::offset(Eigen::Vector2d::Zero())
+    ),
     Emrys::additiveNoise(makeNoise())
 );
 #endif

@@ -2055,6 +2055,8 @@ the selections are compared resolved, against the state.
 `Eigen::seqN(1, 2)` and the list `{1, 2}` are the same repetitions, and two sequences that count
 from the end cannot be compared without a count.
 
+**Not yet.** Overlapping reads, which change every method that forms the joint (2026-11-23).
+
 **Evidence.** `tests/Models/selected_placement.cpp`: each update and each prediction equals the one
 on a state written with one tag per repetition, and parts that disagree assert, in a composition
 and in one that is placed.

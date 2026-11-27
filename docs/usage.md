@@ -1080,6 +1080,9 @@ that costs, and is the test of the probability and covariance you choose.
   caller computes both, as "Checking an estimator" says. There is no such test for a grid yet.
 - Non-Gaussian process noise: every filter's prediction, the particle filter's included, draws or
   propagates a Gaussian.
+- Parts of a composition whose reads overlap: one that reads `path<Landmarks>[k]` beside one that
+  reads all of `path<Landmarks>`, or two selections of one block that share a repetition. This is
+  asserted; a process model carries the other repetitions by a part that writes their list.
 - An update that reports a failing covariance root as its error: a transform refuses axes that can
   fail at compile time, so give them a fallback that can't ("Writing axes").
 
