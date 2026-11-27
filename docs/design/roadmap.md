@@ -33,8 +33,8 @@ Each piece lands by its own pull request, and the release waits for all of them.
 
 - [ ] The benchmarks of #15: the branch `fixed-cost` (the library's own substitution in place of
       Eigen's triangular solve, padded columns read whole, the revert of the dynamic map in
-      `triangularize()`, the results page measured again), once the page's Windows column is
-      measured again. Its pull request closes #15.
+      `triangularize()`, the results page measured again). Its pull request is part of #15, which
+      stays open.
 - [ ] The branch `cleanup`: the shorter README, the license changed to Apache-2.0 WITH
       LLVM-exception (0.1.0 stays MIT), and 17zu closed.
 - [ ] #27: a test of the `float` EKF at 2D with 8 anchors that catches MSVC 19.50's
