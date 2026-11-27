@@ -19,18 +19,18 @@ reference is hand-written code.
 
 | Problem | Instructions per step | Time per step, Windows | Time per step, Linux | Time per step, Linux, against hand code with Eigen's LLT |
 |---|---|---|---|---|
-| Ranging EKF, 2D, 4 anchors | 1.61–1.91 | 1.36–1.69 | 1.17–1.72 | 0.43–0.65 |
-| Ranging EKF, 2D, 8 anchors | 1.27–1.44 | 1.16–1.27 | 1.08–1.40 | 0.34–0.49 |
-| Ranging EKF, 3D, 6 anchors | 1.32–1.36 | 1.32–1.49 | 1.37–1.50 | 0.73–0.84 |
-| Ranging EKF, 12 or more anchors | 1.10–1.20 | 1.09–1.32 | 1.09–1.25 | 0.38–0.64 |
-| Attitude EKF, analytic Jacobians | 1.56 | 1.57 | 1.47 | 1.07 |
-| Attitude EKF, autodiff | 1.52 | 1.68 | 1.49 | 1.14 |
-| Particle filter, 2D | 1.06–1.10 | 1.29–1.45 | 1.02–1.08 | |
-| Particle filter, 3D | 1.04–1.10 | 1.29–1.56 | 1.07–1.15 | |
+| Ranging EKF, 2D, 4 anchors | 1.61–1.86 | 1.35–1.67 | 1.13–1.64 | 0.42–0.64 |
+| Ranging EKF, 2D, 8 anchors | 1.32–1.44 | 1.15–1.25 | 1.07–1.46 | 0.35–0.49 |
+| Ranging EKF, 3D, 6 anchors | 1.31–1.38 | 1.44–1.51 | 1.35–1.45 | 0.64–0.80 |
+| Ranging EKF, 12 or more anchors | 1.10–1.23 | 1.09–1.34 | 1.09–1.29 | 0.37–0.64 |
+| Attitude EKF, analytic Jacobians | 1.55 | 1.56 | 1.46 | 1.08 |
+| Attitude EKF, autodiff | 1.52 | 1.73 | 1.49 | 1.15 |
+| Particle filter, 2D | 1.06–1.10 | 1.30–1.47 | 1.02–1.08 | |
+| Particle filter, 3D | 1.04–1.10 | 1.28–1.55 | 1.07–1.15 | |
 
 The library costs more than the hand code in every case. Against hand code with Eigen's LLT, the
-ranging EKF takes 0.34 to 0.84 of the time. The attitude EKF takes more time than that hand code,
-1.07 and 1.14 times, because its two 3×3 factorizations per step are a small part of the step.
+ranging EKF takes 0.35 to 0.80 of the time. The attitude EKF takes more time than that hand code,
+1.08 and 1.15 times, because its two 3×3 factorizations per step are a small part of the step.
 
 A range covers every case of its row: `double` and `float`, analytic and automatic Jacobians, and
 for the particle filter its likelihoods and every particle count. Neither side allocates on the
@@ -79,52 +79,51 @@ by every range.
 
 | Instructions per step | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
 |---|---|---|---|---|---|---|
-| `double`, analytic | 1.61 | 1.27 | 1.13 | 1.35 | 1.15 | 1.20 |
-| `double`, autodiff | 1.76 | 1.30 | 1.14 | 1.34 | 1.16 | 1.18 |
-| `float`, analytic | 1.91 | 1.44 | 1.10 | 1.36 | 1.19 | 1.10 |
-| `float`, autodiff | 1.80 | 1.42 | 1.10 | 1.32 | 1.19 | 1.10 |
+| `double`, analytic | 1.61 | 1.32 | 1.14 | 1.38 | 1.16 | 1.20 |
+| `double`, autodiff | 1.76 | 1.34 | 1.16 | 1.36 | 1.18 | 1.19 |
+| `float`, analytic | 1.86 | 1.44 | 1.11 | 1.35 | 1.23 | 1.11 |
+| `float`, autodiff | 1.76 | 1.42 | 1.12 | 1.31 | 1.23 | 1.10 |
 
 | Time per step, Linux | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
 |---|---|---|---|---|---|---|
-| `double`, analytic | 1.40 | 1.18 | 1.11 | 1.37 | 1.19 | 1.21 |
-| `double`, autodiff | 1.38 | 1.11 | 1.17 | 1.46 | 1.25 | 1.24 |
-| `float`, analytic | 1.17 | 1.08 | 1.09 | 1.50 | 1.16 | 1.09 |
-| `float`, autodiff | 1.72 | 1.40 | 1.16 | 1.50 | 1.23 | 1.10 |
+| `double`, analytic | 1.40 | 1.19 | 1.09 | 1.38 | 1.19 | 1.22 |
+| `double`, autodiff | 1.38 | 1.11 | 1.17 | 1.45 | 1.27 | 1.24 |
+| `float`, analytic | 1.13 | 1.07 | 1.09 | 1.43 | 1.21 | 1.12 |
+| `float`, autodiff | 1.64 | 1.46 | 1.17 | 1.35 | 1.29 | 1.15 |
 
 Against hand code with Eigen's LLT:
 
 | Instructions per step | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
 |---|---|---|---|---|---|---|
-| `double`, analytic | 0.25 | 0.28 | 0.38 | 0.44 | 0.36 | 0.52 |
-| `double`, autodiff | 0.30 | 0.32 | 0.38 | 0.50 | 0.39 | 0.53 |
-| `float`, analytic | 0.26 | 0.22 | 0.32 | 0.36 | 0.28 | 0.29 |
-| `float`, autodiff | 0.32 | 0.26 | 0.31 | 0.40 | 0.30 | 0.30 |
+| `double`, analytic | 0.25 | 0.28 | 0.38 | 0.45 | 0.36 | 0.52 |
+| `double`, autodiff | 0.30 | 0.32 | 0.39 | 0.50 | 0.39 | 0.54 |
+| `float`, analytic | 0.26 | 0.22 | 0.32 | 0.35 | 0.26 | 0.29 |
+| `float`, autodiff | 0.32 | 0.26 | 0.31 | 0.39 | 0.27 | 0.30 |
 
 | Time per step, Linux | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
 |---|---|---|---|---|---|---|
-| `double`, analytic | 0.58 | 0.49 | 0.45 | 0.73 | 0.47 | 0.63 |
-| `double`, autodiff | 0.58 | 0.49 | 0.47 | 0.80 | 0.50 | 0.64 |
-| `float`, analytic | 0.43 | 0.34 | 0.38 | 0.84 | 0.45 | 0.45 |
-| `float`, autodiff | 0.65 | 0.47 | 0.39 | 0.84 | 0.49 | 0.47 |
+| `double`, analytic | 0.58 | 0.49 | 0.45 | 0.72 | 0.47 | 0.63 |
+| `double`, autodiff | 0.58 | 0.49 | 0.47 | 0.80 | 0.49 | 0.64 |
+| `float`, analytic | 0.42 | 0.35 | 0.39 | 0.64 | 0.37 | 0.37 |
+| `float`, autodiff | 0.64 | 0.48 | 0.40 | 0.65 | 0.41 | 0.39 |
 
-The three runs behind each time ratio differ by at most 0.07 against hand code and 0.04 against
+The three runs behind each time ratio differ by at most 0.14 against hand code and 0.05 against
 hand code with Eigen's LLT.
 
 | Time per step, Linux, `double`, analytic | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
 |---|---|---|---|---|---|---|
-| Hand code | 52 ns | 118 ns | 338 ns | 122 ns | 289 ns | 885 ns |
-| EmrysFilter | 73 ns | 139 ns | 374 ns | 167 ns | 344 ns | 1,073 ns |
-| Hand code with Eigen's LLT | 126 ns | 299 ns | 833 ns | 230 ns | 733 ns | 1,707 ns |
+| Hand code | 52 ns | 116 ns | 359 ns | 121 ns | 305 ns | 875 ns |
+| EmrysFilter | 73 ns | 139 ns | 373 ns | 168 ns | 363 ns | 1,070 ns |
+| Hand code with Eigen's LLT | 126 ns | 299 ns | 857 ns | 231 ns | 728 ns | 1,689 ns |
 
 At 2D with 4 anchors in `double` with analytic Jacobians, the hand code takes 394 instructions, the
 library 635, and the hand code with Eigen's LLT 2,531. The library's fixed cost per step there is
 about 21 ns and 241 instructions, so its ratios are highest at the smallest sizes. On Windows a
 step of the library takes from 80 ns (2D, 4 anchors, analytic) to 1,394 ns (3D, 24 anchors,
-`double`, autodiff), and the hand code's from 54 ns to 1,238 ns.
+`double`, autodiff), and the hand code's from 54 ns to 1,250 ns.
 
-At 3D with 6 anchors a step on Linux takes longer in `float` than in `double` on both sides (the
-library 225 against 167 ns, the hand code 153 against 122 ns), though it takes fewer instructions.
-It comes with AVX: built for Windows without `-march`, `float` is the faster.
+At 3D with 6 anchors a step on Linux takes about as long in `float` as in `double` (the library
+178 against 168 ns, the hand code 124 against 121 ns), though it takes fewer instructions.
 
 ## Attitude EKF
 
@@ -134,16 +133,16 @@ gravity and a magnetic field. The hand code is the multiplicative EKF of Markley
 
 | Instructions per step | Hand code | Hand code with Eigen's LLT | EmrysFilter | Ratio | Ratio, against Eigen's LLT |
 |---|---|---|---|---|---|
-| Analytic measurement Jacobians | 3,425 | 7,321 | 5,327 | 1.56 | 0.73 |
-| Autodiff measurement Jacobians | 4,985 | 8,889 | 7,593 | 1.52 | 0.85 |
+| Analytic measurement Jacobians | 3,425 | 7,321 | 5,319 | 1.55 | 0.73 |
+| Autodiff measurement Jacobians | 4,985 | 8,889 | 7,585 | 1.52 | 0.85 |
 
 | Time per step, Linux | Hand code | Hand code with Eigen's LLT | EmrysFilter | Ratio | Ratio, against Eigen's LLT |
 |---|---|---|---|---|---|
-| Analytic measurement Jacobians | 263 ns | 361 ns | 387 ns | 1.47 | 1.07 |
-| Autodiff measurement Jacobians | 338 ns | 462 ns | 504–526 ns | 1.49 | 1.14 |
+| Analytic measurement Jacobians | 263 ns | 374 ns | 385–405 ns | 1.46 | 1.08 |
+| Autodiff measurement Jacobians | 336 ns | 436 ns | 500 ns | 1.49 | 1.15 |
 
 EmrysFilter's time is that of its run against each reference. On Windows the hand code takes 227
-and 284 ns and the library 357 and 477 ns.
+and 284 ns and the library 355 and 491 ns.
 
 ## Particle filter
 
@@ -155,8 +154,8 @@ reference. Instructions are counted at 1000 particles.
 
 | Per particle and step | Hand code | EmrysFilter |
 |---|---|---|
-| 2D, Windows | 47–50 ns | 61–73 ns |
-| 3D, Windows | 66–70 ns | 85–110 ns |
+| 2D, Windows | 50–57 ns | 66–80 ns |
+| 3D, Windows | 68–71 ns | 89–109 ns |
 | 2D, Linux | 141–164 ns | 145–168 ns |
 | 3D, Linux | 210–217 ns | 225–248 ns |
 
@@ -179,24 +178,25 @@ FrancoisCarouge/Kalman are not timed there. Times on Windows, at high priority o
 
 | Time per step, MSVC | Against hand code | Against hand code with Eigen's LLT |
 |---|---|---|
-| Ranging EKF, 2D, 4 anchors | 1.35–1.91 | 0.94–1.04 |
-| Ranging EKF, 2D, 8 anchors | 1.25–1.60 | 0.56–0.67 |
-| Ranging EKF, 3D, 6 anchors | 1.20–1.59 | 0.80–0.96 |
-| Ranging EKF, 12 or more anchors, `double`, and 2D with 16 in `float` | 1.17–1.26 | 0.47–0.81 |
-| Ranging EKF, 3D, 12 and 24 anchors, `float` | 0.23–0.43 | 0.52–0.69 |
-| Attitude EKF, analytic and autodiff | 1.64, 1.27 | 1.21, 1.17 |
-| Particle filter, 2D and 3D | 1.37–1.53 | |
+| Ranging EKF, 2D, 4 anchors | 1.34–1.90 | 0.94–1.04 |
+| Ranging EKF, 2D, 8 anchors | 1.26–1.62 | 0.54–0.67 |
+| Ranging EKF, 3D, 6 anchors, `double` | 1.43–1.56 | 0.79–0.85 |
+| Ranging EKF, 12 or more anchors, `double`, and 2D with 16 in `float` | 1.15–1.25 | 0.45–0.81 |
+| Ranging EKF, 3D, 6, 12, and 24 anchors, `float` | 0.21–0.66 | 0.48–0.88 |
+| Attitude EKF, analytic and autodiff | 1.61, 1.25 | 1.20, 1.15 |
+| Particle filter, 2D and 3D | 1.34–1.57 | |
 
-The ratios below 1, in `float` at 3D with 12 and 24 anchors, are MSVC's code for the hand code, not
-the library's. There the hand code's step takes 1,494 and 5,606 ns, against 458 and 1,662 ns in
-`double`, while the library's takes 459 and 1,269 ns. MSVC compiles the hand code's lazy products in
-`float` at those sizes, and at 24 anchors its written-out factorization and substitution, to code
-several times slower than the library's for the same operations.
+The ratios below 1, in `float` at 3D, are MSVC's code for the hand code, not the library's. With
+6, 12, and 24 anchors the hand code's step takes 443, 1,461, and 5,534 ns, against 173, 448, and
+1,631 ns in `double`, while the library's takes 259, 419, and 1,178 ns. At 12 and 24 anchors MSVC
+compiles the hand code's lazy products in `float`, and at 24 its written-out factorization and
+substitution, to code several times slower than the library's for the same operations.
 
 MSVC's steps are longer than Clang's on the same machine: the library's at 2D with 4 anchors takes
-132 ns against 80. Built by MSVC, the EKF takes 1.24 times mherb/kalman's time at 2D with 4 anchors
-in `double` and 1.60 in `float`, and the UKF 1.38 and 1.27 times; at every other size, and against
-TinyEKF (0.26 to 0.90) and FrancoisCarouge/Kalman (0.14 to 0.39), it takes less.
+132 ns against 83, in `double` with analytic Jacobians. Built by MSVC on 2026-11-26, before the
+changes that the Clang numbers above include, the EKF took 1.24 times mherb/kalman's time at 2D
+with 4 anchors in `double` and 1.60 in `float`, and the UKF 1.38 and 1.27 times; at every other
+size, and against TinyEKF (0.26 to 0.90) and FrancoisCarouge/Kalman (0.14 to 0.39), it took less.
 
 ## Footprint on Cortex-M
 
@@ -254,61 +254,60 @@ marked rows are what their users get by default.
 | EKF | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
 |---|---|---|---|---|---|---|
 | mherb/kalman, `double`, instructions | 0.52 | 0.11 | 0.13 | 0.24 | 0.18 | 0.15 |
-| mherb/kalman, `double`, time | 1.02 | 0.19 | 0.15 | 0.35 | 0.21 | 0.18 |
-| mherb/kalman, `float` \*, instructions | 0.62 | 0.09 | 0.12 | 0.20 | 0.14 | 0.11 |
-| mherb/kalman, `float` \*, time | 0.77 | 0.13 | 0.14 | 0.47 | 0.20 | 0.16 |
+| mherb/kalman, `double`, time | 1.02 | 0.18 | 0.15 | 0.35 | 0.21 | 0.18 |
+| mherb/kalman, `float` \*, instructions | 0.62 | 0.09 | 0.12 | 0.20 | 0.13 | 0.11 |
+| mherb/kalman, `float` \*, time | 0.77 | 0.13 | 0.14 | 0.37 | 0.17 | 0.14 |
 | TinyEKF, `double`, instructions | 0.40 | 0.66 | 0.33 | 0.43 | 0.46 | 0.38 |
-| TinyEKF, `double`, time | 0.78 | 0.85 | 0.38 | 0.54 | 0.51 | 0.37 |
-| TinyEKF, `float` \*, instructions | 0.43 | 0.53 | 0.30 | 0.32 | 0.38 | 0.26 |
-| TinyEKF, `float` \*, time | 0.60 | 0.58 | 0.35 | 0.74 | 0.55 | 0.34 |
+| TinyEKF, `double`, time | 0.78 | 0.85 | 0.38 | 0.54 | 0.50 | 0.36 |
+| TinyEKF, `float` \*, instructions | 0.43 | 0.53 | 0.30 | 0.32 | 0.35 | 0.26 |
+| TinyEKF, `float` \*, time | 0.60 | 0.58 | 0.35 | 0.58 | 0.46 | 0.30 |
 | FrancoisCarouge/Kalman, `double`, instructions | 0.11 | 0.11 | 0.15 | 0.19 | 0.16 | 0.19 |
-| FrancoisCarouge/Kalman, `double`, time | 0.27 | 0.17 | 0.15 | 0.27 | 0.18 | 0.19 |
-| FrancoisCarouge/Kalman, `float`, instructions | 0.12 | 0.08 | 0.13 | 0.15 | 0.12 | 0.13 |
-| FrancoisCarouge/Kalman, `float`, time | 0.19 | 0.11 | 0.14 | 0.32 | 0.16 | 0.15 |
+| FrancoisCarouge/Kalman, `double`, time | 0.27 | 0.17 | 0.15 | 0.27 | 0.17 | 0.19 |
+| FrancoisCarouge/Kalman, `float`, instructions | 0.12 | 0.08 | 0.13 | 0.15 | 0.11 | 0.13 |
+| FrancoisCarouge/Kalman, `float`, time | 0.18 | 0.11 | 0.13 | 0.25 | 0.14 | 0.13 |
 | OpenCV, `double`, instructions | 0.02 | 0.03 | 0.04 | 0.04 | 0.05 | 0.04 |
 | OpenCV, `double`, time | 0.03 | 0.04 | 0.04 | 0.04 | 0.04 | 0.04 |
 | OpenCV, `float` \*, instructions | 0.02 | 0.02 | 0.03 | 0.03 | 0.03 | 0.02 |
-| OpenCV, `float` \*, time | 0.02 | 0.02 | 0.03 | 0.06 | 0.04 | 0.03 |
+| OpenCV, `float` \*, time | 0.02 | 0.02 | 0.03 | 0.04 | 0.03 | 0.02 |
 
 | Against mherb/kalman | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
 |---|---|---|---|---|---|---|
-| Square-root EKF, `double`, instructions | 0.11 | 0.14 | 0.27 | 0.18 | 0.27 | 0.53 |
-| Square-root EKF, `double`, time | 0.34 | 0.37 | 0.46 | 0.40 | 0.50 | 0.58 |
-| Square-root EKF, `float`, instructions | 0.07 | 0.08 | 0.15 | 0.12 | 0.18 | 0.31 |
-| Square-root EKF, `float`, time | 0.30 | 0.28 | 0.37 | 0.38 | 0.54 | 0.59 |
-| UKF, `double` \*, instructions | 1.25 | 0.39 | 0.35 | 0.59 | 0.50 | 0.43 |
-| UKF, `double` \*, time | 0.90 | 0.45 | 0.43 | 0.75 | 0.61 | 0.53 |
-| UKF, `float` \*, instructions | 1.30 | 0.33 | 0.30 | 0.50 | 0.44 | 0.33 |
-| UKF, `float` \*, time | 1.05 | 0.40 | 0.38 | 0.86 | 0.51 | 0.43 |
-| Square-root UKF, `double` \*, instructions | 0.55 | 0.50 | 0.58 | 0.67 | 0.65 | 0.98 |
-| Square-root UKF, `double` \*, time | 0.53 | 0.51 | 0.57 | 0.80 | 0.75 | 0.89 |
-| Square-root UKF, `float` \*, instructions | 0.47 | 0.41 | 0.43 | 0.57 | 0.57 | 0.60 |
-| Square-root UKF, `float` \*, time | 0.50 | 0.44 | 0.48 | 0.66 | 0.65 | 0.64 |
+| Square-root EKF, `double`, instructions | 0.11 | 0.14 | 0.27 | 0.18 | 0.26 | 0.53 |
+| Square-root EKF, `double`, time | 0.34 | 0.36 | 0.43 | 0.40 | 0.48 | 0.57 |
+| Square-root EKF, `float`, instructions | 0.07 | 0.08 | 0.15 | 0.12 | 0.17 | 0.31 |
+| Square-root EKF, `float`, time | 0.30 | 0.27 | 0.35 | 0.36 | 0.52 | 0.57 |
+| UKF, `double` \*, instructions | 0.86 | 0.32 | 0.31 | 0.50 | 0.44 | 0.40 |
+| UKF, `double` \*, time | 0.71 | 0.40 | 0.39 | 0.68 | 0.55 | 0.49 |
+| UKF, `float` \*, instructions | 0.91 | 0.26 | 0.27 | 0.41 | 0.37 | 0.30 |
+| UKF, `float` \*, time | 0.88 | 0.34 | 0.35 | 0.75 | 0.42 | 0.37 |
+| Square-root UKF, `double` \*, instructions | 0.48 | 0.45 | 0.54 | 0.61 | 0.59 | 0.94 |
+| Square-root UKF, `double` \*, time | 0.48 | 0.46 | 0.54 | 0.74 | 0.69 | 0.84 |
+| Square-root UKF, `float` \*, instructions | 0.41 | 0.37 | 0.39 | 0.51 | 0.51 | 0.57 |
+| Square-root UKF, `float` \*, time | 0.48 | 0.42 | 0.44 | 0.63 | 0.58 | 0.59 |
 
 | EKF, time per step | 2D, 4 | 2D, 8 | 2D, 16 | 3D, 6 | 3D, 12 | 3D, 24 |
 |---|---|---|---|---|---|---|
-| EmrysFilter, `double` | 73 ns | 139 ns | 373 ns | 168 ns | 346 ns | 1,078 ns |
-| mherb/kalman, `double` | 72 ns | 743 ns | 2,497 ns | 486 ns | 1,661 ns | 5,839 ns |
-| TinyEKF, `double` | 99 ns | 163 ns | 968 ns | 312 ns | 676 ns | 2,888 ns |
-| FrancoisCarouge/Kalman, `double` | 292 ns | 828 ns | 2,523 ns | 617 ns | 1,962 ns | 5,676 ns |
-| OpenCV, `double` | 2,397 ns | 3,786 ns | 9,190 ns | 3,780 ns | 9,003 ns | 30,368 ns |
-| EmrysFilter, `float` | 51 ns | 98 ns | 334 ns | 225 ns | 323 ns | 830 ns |
-| mherb/kalman, `float` \* | 67 ns | 762 ns | 2,350 ns | 482 ns | 1,628 ns | 5,331 ns |
-| TinyEKF, `float` \* | 86 ns | 160 ns | 909 ns | 305 ns | 584 ns | 2,479 ns |
-| FrancoisCarouge/Kalman, `float` | 269 ns | 844 ns | 2,453 ns | 703 ns | 1,969 ns | 5,777 ns |
-| OpenCV, `float` \* | 2,459 ns | 3,898 ns | 10,663 ns | 4,011 ns | 9,198 ns | 34,589 ns |
+| EmrysFilter, `double` | 73 ns | 141 ns | 393 ns | 170 ns | 350 ns | 1,082 ns |
+| mherb/kalman, `double` | 72 ns | 788 ns | 2,598 ns | 494 ns | 1,685 ns | 5,938 ns |
+| TinyEKF, `double` | 94 ns | 163 ns | 971 ns | 312 ns | 684 ns | 2,937 ns |
+| FrancoisCarouge/Kalman, `double` | 279 ns | 841 ns | 2,517 ns | 623 ns | 2,002 ns | 5,730 ns |
+| OpenCV, `double` | 2,397 ns | 3,789 ns | 9,117 ns | 3,748 ns | 8,900 ns | 30,428 ns |
+| EmrysFilter, `float` | 51 ns | 98 ns | 332 ns | 188 ns | 287 ns | 770 ns |
+| mherb/kalman, `float` \* | 67 ns | 768 ns | 2,345 ns | 506 ns | 1,699 ns | 5,483 ns |
+| TinyEKF, `float` \* | 86 ns | 160 ns | 908 ns | 308 ns | 600 ns | 2,480 ns |
+| FrancoisCarouge/Kalman, `float` | 282 ns | 855 ns | 2,402 ns | 711 ns | 2,063 ns | 5,566 ns |
+| OpenCV, `float` \* | 2,459 ns | 3,887 ns | 10,730 ns | 3,994 ns | 9,252 ns | 34,580 ns |
 
-EmrysFilter's times are those of its runs against mherb/kalman; they differ by up to 5% between
+EmrysFilter's times are those of its runs against mherb/kalman; they differ by up to 8% between
 runners, so times from different runners compare only to about that.
 
-- **Against TinyEKF** the EKF is faster at every size: 0.37 to 0.85 of TinyEKF's time in `double`,
-  0.34 to 0.74 in `float`.
+- **Against TinyEKF** the EKF is faster at every size: 0.36 to 0.85 of TinyEKF's time in `double`,
+  0.30 to 0.60 in `float`.
 - **Against mherb/kalman** the EKF is level at 2D with 4 anchors in `double` (73 ns against 72 ns)
   and faster everywhere else, at 0.13 to 0.77. The square-root EKF and the square-root UKF are faster
-  at every size. The UKF is faster at every size in `double`, and in `float` at every size but 2D
-  with 4 anchors, where it is 5% slower.
-- **Against FrancoisCarouge/Kalman** the EKF takes 0.11 to 0.32 of the time at every size.
-- **Against OpenCV** the EKF takes 2 to 6% of the time at every size.
+  at every size, and so is the UKF.
+- **Against FrancoisCarouge/Kalman** the EKF takes 0.11 to 0.27 of the time at every size.
+- **Against OpenCV** the EKF takes 2 to 4% of the time at every size.
 
 ### The marked pairs
 
@@ -378,4 +377,5 @@ the estimate it is measured from, as mean / covariance, over the six sizes.
 - **Compile time:** an Intel Raptor Lake processor under Windows 11, with Clang 21.1.0, GCC 14.2.0
   (w64devkit), and MSVC 19.50.
 
-Every number but the compile times was measured on 2026-11-26; the compile times on 2026-11-01.
+Every number but the compile times was measured on 2026-11-26 and 2026-11-27; the compile times on
+2026-11-01.
