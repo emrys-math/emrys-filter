@@ -224,17 +224,15 @@ none:
 
 ```cpp
 auto const gps = Emrys::measurementModel(
-    Eigen::Matrix2d::Identity(),
-    Emrys::reads(Emrys::path<Position>),
+    Emrys::affineIn(Emrys::on<Position>(Eigen::Matrix2d::Identity())),
     Emrys::additiveNoise(noise));
 auto const updated = filter.update(Emrys::observe(gps, z));
 ```
 
-`reads()` stacks the blocks it names, in that order, and $H$ has a column for each of their
-coordinates. The blocks are vectors or angles; a quaternion has no linear measurement. $H$ may
-instead be given by its columns, a matrix per block placed with `on<Block>()`, or with
-`onEach<Block>()` on a repeated block, which reads each repetition into a repetition of the
-measurement, so the measurement grows and shrinks with the block:
+$H$ is given by its columns, a matrix per block that the measurement reads, placed with
+`on<Block>()`. The blocks are vectors or angles; a quaternion has no linear measurement. On a
+repeated block the matrix is placed with `onEach<Block>()`, which reads each repetition into a
+repetition of the measurement, so the measurement grows and shrinks with the block:
 
 ```cpp
 // each landmark's position relative to the vehicle's, z_i = l_i - p

@@ -765,8 +765,8 @@ fetches the library, keeps template errors short, and installs the skills.
       and in step 3 of `emrys-filter-build-estimator`.
 - [ ] Short compile errors: the model contracts as named concepts, checked by `static_assert`s with
       plain messages at each filter's entry, and `checkModel<Model, Space>()`.
-- [ ] A compact API index generated from the Doxygen XML (public signatures only), and a header map
-      in the README.
+- [ ] A compact API index generated from the Doxygen XML (public signatures only), beside the header
+      map in docs/headers.md.
 - [ ] More user skills, as the evaluation shows where agents go wrong; candidates are choosing a
       filter for a problem, writing a process model, and checking an estimator on recorded data.
 - [ ] An evaluation: fresh agents in a clean copy of `examples/consumer/` given fixed tasks (GPS and odometry
@@ -1048,7 +1048,7 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
 - [ ] The day of the advertised launch: a Show HN (a Hacker News post of one's own work, with a first comment
       from the submitter saying what it is and what feedback is wanted; one attempt, a weekday
       morning US time, since a post climbs in its first hour or sinks and reposts are discouraged)
-      and an r/cpp post, both leading with the README's opening and the 50-line example. The
+      and an r/cpp post, both leading with the README's opening and its example. The
       story for that audience is the design, not another Kalman filter: one recursion over any
       space, allocation-free under `EIGEN_RUNTIME_NO_MALLOC`, no exceptions, Cortex-M under QEMU,
       execution policies, C++23 throughout. The thread's value is its bug and platform reports.
