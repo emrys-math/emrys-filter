@@ -6,8 +6,9 @@ for the coding agent you may give the work to. It says what to read first, which
 design are the library and which are only C++, how each likely language takes the parts that
 are hard to translate, and what moving to C++20 or C++17 costs.
 
-The library is under the MIT license ([LICENSE](../LICENSE)), so a port may be under any license
-that keeps the copyright notice. Say in your port's README that it is a port and which commit of
+The library is under the Apache License 2.0 with LLVM Exceptions ([LICENSE](../LICENSE)), so a
+port may be under any license that keeps its copyright notice and the license text, and marks
+the files it changed. Say in your port's README that it is a port and which commit of
 this repository it follows, so that readers can compare the two. If you open an issue about a
 port ([CONTRIBUTING.md](../CONTRIBUTING.md)), we will answer questions about the design and
 consider a link from this page.

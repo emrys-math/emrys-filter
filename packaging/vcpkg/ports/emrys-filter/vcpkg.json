@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Header-only C++23 state estimation library on Eigen 5.0: Kalman, particle, and grid filters over typed state spaces.",
   "homepage": "https://github.com/emrys-math/emrys-filter",
-  "license": "MIT",
+  "license": "Apache-2.0 WITH LLVM-exception",
   "dependencies": [
     {
       "name": "eigen3",

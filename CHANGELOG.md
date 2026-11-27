@@ -6,6 +6,14 @@ instead.
 
 ## [Unreleased]
 
+### Changed
+
+- The license is now the Apache License 2.0 with LLVM Exceptions
+  (`Apache-2.0 WITH LLVM-exception`), in place of MIT; 0.1.0 stays under MIT. It states that its
+  grant is perpetual and irrevocable, and that a contribution is under the same license. The LLVM
+  exceptions mean a program that compiles the headers need not ship the license or its notices
+  with the binary, and keep the library usable with GPLv2 code.
+
 ### Added
 
 - `shared(path<Name>)` in `affineIn()`: the input `Name`, in which the function is affine with a

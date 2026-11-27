@@ -26,6 +26,43 @@ question answered, breaking or not; and for every algorithm checked against its 
 read in full (decided 2026-11-16). With no date to meet, a feature that may want a change to the
 existing API is built before the launch rather than after it.
 
+## Release 0.2.0 — in progress
+
+A release before the advertised launch that collects the work close to done (decided 2026-11-27).
+Each piece lands by its own pull request, and the release waits for all of them.
+
+- [ ] The benchmarks of #15: the branch `fixed-cost` (the library's own substitution in place of
+      Eigen's triangular solve, padded columns read whole, the revert of the dynamic map in
+      `triangularize()`, the results page measured again). Its pull request is part of #15, which
+      stays open.
+- [ ] The branch `cleanup`: the shorter README, the license changed to Apache-2.0 WITH
+      LLVM-exception (0.1.0 stays MIT), and 17zu closed.
+- [ ] #27: a test of the `float` EKF at 2D with 8 anchors that catches MSVC 19.50's
+      miscompilation of `colwise().norm()` at `/O2`, and a workaround.
+- [ ] Lie group spaces and the invariant EKF (17zf, #17), from the prototype on the branch
+      `groups-prototype` and its design review, `docs/guide/groups.md`. Its twelve questions are
+      reviewed and closed with the user before it lands, and the design changes where the review
+      finds it should (decided 2026-11-27). Then what the review's section 12 lists as missing, the
+      decisions it names, and the `land` and `pr` checks, with GCC and MSVC first, since neither has
+      compiled its tests.
+- [ ] The smoothers of 14b on the branch `smoothers` (fixed-point, two-filter, iterated, and
+      backward simulation), if its rebase onto `dev` goes cleanly. Its pull request is part of
+      #22; the review's questions and the smoothers left stay there.
+- [ ] The branch `test-review` (#5 and #6, the chi-squared CDF and quantile corrected, and
+      `UnitQuaternion` at a half turn), if its work is finished.
+- [ ] The work of the test reviews, where it is ready: Core (#5), Spaces (#6), Distributions (#8),
+      Models (#9), Filters (#30), and Smoothers (#31). Not all of it need be in 0.2.0, but #31's
+      first item is a fix, not a test: `internal::smoothMixtureStep()` reads a failed total weight
+      without checking it when assertions are off.
+- [ ] The OpenSSF Best Practices badge (Launch, below), which waits for this release.
+- [ ] The release: version 0.2.0 in `CMakeLists.txt`, `CITATION.cff`, the vcpkg port, the Conan
+      recipe and its CI job, and the `GIT_TAG` in the README, `docs/usage.md`, and
+      `examples/consumer/`; `CHANGELOG.md`'s Unreleased becomes 0.2.0; the `ci` stage dispatched
+      and passing; `main` fast-forwarded along `dev`, the tag `v0.2.0`, and a GitHub release,
+      which Zenodo archives.
+
+Done when: 0.2.0 is published from its tag.
+
 ## 17g. Posterior Cramér-Rao bound — in progress
 
 [cramer-rao-bound]: the recursion and its tests are done.
@@ -110,114 +147,6 @@ thread counts but not across standard libraries.
 
 Done when: parallel draws are bitwise reproducible across thread counts within one standard
 library, and the six resamplers pass their tests.
-
-## 17zu. Selections of a repeated block — in progress
-
-A model, a placement, and an accessor name part of a repeated block: one repetition, a run of
-repetitions, or a list of them. Today an item of `reads()` is a path, a path is a type, and a model's
-reads are resolved from those types and the space alone, so a model that uses one landmark of
-`Landmarks` reads the whole block. A sigma-point method then spreads its points over every landmark.
-`affineIn()` does not replace the selection: it names whole items, so it is right only where the
-function is affine in the repetition it uses, and it still forms the Jacobian and $P_{a|n}$ over
-every repetition. Designed on 2026-11-23, its spellings decided that day; the items below are what
-is left to build. Every place that names a block takes a selection in this one step, so that no
-spelling is left to be found incompatible later.
-
-**The selection** is the subscript of a path value that runs through a repeated block. A repeated
-block cannot hold another, so a path takes one subscript and it is never ambiguous. The path may
-reach the repeated block through other tags (`path<Map, Landmarks>[k]`) and may go on inside it
-(`path<Fleet, Heading>[k]`, vehicle `k`'s heading).
-
-| Path value | Names | Its space |
-|---|---|---|
-| `path<Landmarks>[k]` | repetition `k` | the repetition's, `Landmark`, of fixed size |
-| `path<Landmarks>[Eigen::seqN(first, n)]` | `n` repetitions from `first` | `Landmarks` with count `n` |
-| `path<Landmarks>[seen]`, `path<Landmarks>[{2, 5, 9}]` | the repetitions listed, in that order | `Landmarks` with the list's count |
-
-An integer names the block that is repeated. A sequence or a list names a smaller repeated block,
-even of one repetition, so a function written for the whole block runs unchanged on part of it. The
-selection is held by value in the model, and a model over a selection that changes is built per
-measurement, as one whose geometry changes already is (usage.md's `tdoa(a1, a2)`).
-
-```cpp
-// range and bearing to landmark k: 2 * 5 + 1 sigma points, whatever the count of landmarks
-Emrys::measurementModel(
-    sighting,  // reads block<Landmark>(in, x)
-    Emrys::reads(Emrys::path<Position>, Emrys::path<Heading>, Emrys::path<Landmarks>[k]),
-    Emrys::outputSpace(RangeBearing{}),
-    Emrys::additiveNoise(noise));
-
-// every landmark sighted in one scan; scan loops over block<Landmarks>(in, x, i)
-Emrys::measurementModel(
-    scan,
-    Emrys::reads(Emrys::path<Pose>, Emrys::path<Landmarks>[seen]),
-    Emrys::outputSpace(RangeBearings{RangeBearing{}, std::ssize(seen)}),
-    Emrys::additiveNoise(Emrys::onEach<RangeBearings>(r)));
-```
-
-The rules, of which [repetition-selections] holds those built, the rest for it or [model-policies]:
-
-- **Name.** A selected path is read or written under its last tag, and under the repetition's tag
-  where the path ends at the repeated block and the subscript is an integer. A space without a tag
-  (a repetition declared as `Linear<2>`, or the `Repeated<Heading>` of `path<Fleet, Heading>[seen]`)
-  needs `on<Name>(...)`. Two selections of one block take two names, as two paths that end in one
-  tag do today.
-- **Bound.** A sequence's or a list's space has the bound of the state's block, which sizes fixed
-  storage for every landmark where three are read. `on<Sighted>(path<Landmarks>[seen])` with
-  `struct Sighted : Repeated<Landmark, 8> {}` reads it under a smaller bound, and the count is
-  asserted to fit: the name check accepts a repeated tag of the same repetition and another bound.
-- **Index in the function.** `block<Landmarks>(in, x, i)` is the `i`th repetition read, not the
-  state's `i`th.
-- **Sequences.** Eigen's `seq` and `seqN`. An increment of 1 is one run of rows; any other
-  increment is treated as a list. A sequence may count from the block's end, as
-  `Eigen::placeholders::lastN(3)` does, and is resolved against the count of the state it meets:
-  `Indexing.h` already resolved Eigen's symbols by indexing a vector, which needs none of Eigen's
-  internals. `Eigen::placeholders::all` and a bare `last` have no overload. Eigen's types were
-  chosen over a `range(first, n)` of the library's own: users know them, and `idx()` returns them.
-- **Lists.** Any range of integers, copied into the path value. A braced list or a `std::array` is
-  stored at fixed size, so a model that holds one allocates nothing. A selection names each
-  repetition once, which bounds a list by the block's `MaxCount`.
-- **Checks.** At compile time: a subscript on a path through no repeated block, and a selection
-  with no name. Asserted when the model meets a state: every index within the block's count, no
-  coordinate named twice among a model's reads or among its writes, and equal selections wherever
-  parts of a composition share a name.
-- **Counts.** `CountFrom<Landmarks, ...>` keeps counting the state's block. A model over a sequence
-  or a list gives its output space sized, since a count is never inferred from what a model reads
-  [several-resizable-blocks].
-
-Where a path is a value it takes the subscript. Where a path is a template argument and the call
-takes an integer repetition today, that argument takes a sequence or a list too.
-
-- [ ] **`reads()`, the rest.** A plain model reads a selection ([selected-reads],
-      `tests/Models/selected_reads.cpp`), with a returned Jacobian and for the likelihoods of
-      sampled states, and through each Gaussian form of the Kalman filter, `GaussianMixtureFilter`,
-      `ParticleFilter`, and both Rao-Blackwellized filters (`tests/Filters/selected_filters.cpp`),
-      and an update that reads one repetition of a bounded block allocates nothing
-      (`tests/allocation.cpp`). A
-      `SelectedPath` (`Spaces/TagPath.h`) is not a `PathValue`, so that no policy takes one and
-      drops its selection: each item here makes its policy take it. `on<Path>()` and `compose()`
-      carry the selections of the models they take ([composed-selections],
-      `tests/Models/selected_placement.cpp`, which also has process models that read a selection,
-      as parts of a composition).
-- [ ] **Parts that read a block and one of its repetitions.** Decided by the user on
-      2026-11-23: the rule stays in this step, and overlapping reads may come later. The blocks a
-      model reads are disjoint: `ReadBlocks` asserts "a
-      model must not read a coordinate twice", since the joint of what is read is a marginal of
-      the state. A composition's reads are the union of its parts' by name, so
-      `compose(steerToward, Constant<Landmarks>{})`, where `steerToward` reads
-      `path<Landmarks>[k]` under `Landmark` and `Constant` reads all of `path<Landmarks>`, reads
-      landmark `k` twice and asserts. So does any part that reads one repetition beside a part
-      that carries the whole block; a process model can instead carry the other repetitions with
-      a part that writes their list (`tests/Models/selected_writes.cpp`). Two selections of one
-      block that overlap assert too. To allow them, the joint would hold each coordinate once and an item's rows of the
-      input would be gathered from it, the input then having more coordinates than the joint,
-      and a Jacobian's columns would be summed into the joint's: every method that forms the
-      joint (`FormSteps.h`, `IteratedUpdate.h`, `Likelihood.h`, `Measurement.h`,
-      `MeasurementReads.h`, `ProcessModel.h`) would change. Until then `writes()` of a selection is
-      the way to split the block; writes must stay distinct in any case. The item closes when the
-      step does, with the assertion documented in usage.md.
-Done when: every item's test and every negative compile case passes on all three compilers, and the
-audit's list has no function without a test or a refusal.
 
 ## 19b. A public API ready for the GPU backend — not started
 
@@ -765,8 +694,8 @@ fetches the library, keeps template errors short, and installs the skills.
       and in step 3 of `emrys-filter-build-estimator`.
 - [ ] Short compile errors: the model contracts as named concepts, checked by `static_assert`s with
       plain messages at each filter's entry, and `checkModel<Model, Space>()`.
-- [ ] A compact API index generated from the Doxygen XML (public signatures only), and a header map
-      in the README.
+- [ ] A compact API index generated from the Doxygen XML (public signatures only), beside the header
+      map in docs/headers.md.
 - [ ] More user skills, as the evaluation shows where agents go wrong; candidates are choosing a
       filter for a problem, writing a process model, and checking an estimator on recorded data.
 - [ ] An evaluation: fresh agents in a clean copy of `examples/consumer/` given fixed tasks (GPS and odometry
@@ -845,7 +774,7 @@ the opening of this file says (decided 2026-11-16). Each guide question answered
 release with its `CHANGELOG.md` entry. The vcpkg and Conan submissions wait for the advertised
 launch (decided 2026-11-12), and Discussions are turned on with it.
 
-The repository is public since 2026-11-12, from one squashed commit. A release is tagged on
+The repository is public since 2026-11-12, from one squashed commit, `cccafd0`. A release is tagged on
 `main`, which `dev` fast-forwards, and published there as a GitHub release; Zenodo archives each
 published release, not a pushed tag, so a release is published only from its tag. The reference is
 on Pages, and Discussions are off.
@@ -986,9 +915,9 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       itself, without square roots, since a filter's steps wait on each other and a column
       then waits on one division, and the innovation covariance's gain, NIS, and
       log-determinant come from it; the step in double went from 114 to 70 ns at 2D with 4
-      anchors and from 225 to 155 at 2D with 8, and the page is measured again at that commit.
+      anchors and from 225 to 155 at 2D with 8 (`a21a609`), and the page is measured again.
       `roots::cholesky()`, which the default sigma points are spread by, takes its root by the
-      same type since the commit after. The type is public since the commit after that (the
+      same type since the same commit. The type is public since `2fe9aff` (the
       user's decision, 2026-11-23), and the Gaussian's own: `Gaussian::cholesky()` replaces
       `llt()`, and `covarianceRoot()` gives the factor $L$ kept with it, which the samplers
       multiply by; the page is measured again at that commit. Claim 9 now holds for the EKF
@@ -998,8 +927,8 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       1.29).
       The information forms' cached factorization and the local ones of the form steps, the
       fitting, the particle sets, the Rao-Blackwellized particle filter, and the conditional
-      with its evidence followed, in the commit after the page's, and the posterior Cramér-Rao
-      bound last (2026-11-25), once its `covariance()` told rounding from information
+      with its evidence moved in `2fe9aff` too, and the posterior Cramér-Rao
+      bound last (`9adeaef`, 2026-11-25), once its `covariance()` told rounding from information
       ([cramer-rao-bound]).
       `Core/Solve.h` no longer substitutes through an `Eigen::LLT`, which nothing called.
       The square-root update triangularized its whole joint root, 61% of the square-root
@@ -1012,8 +941,7 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
       that may be singular, and the LU inverses of `inverseFrom()`, stay Eigen's (the user's
       decision, 2026-11-26). The library's ratios below 1 against
       the hand code were the hand code's (2026-11-25, design/benchmarks.md section 1). The page
-      is measured again at the commit *Measure the footprint of each ranging EKF on the
-      Cortex-M, TinyEKF's included* (2026-11-26), on Linux and Windows, with MSVC beside Clang,
+      is measured again at `68d4cfd` (2026-11-26), on Linux and Windows, with MSVC beside Clang,
       and with the footprint on the Cortex-M4F and M7: the library's EKF takes 19.7 KB of code,
       the hand code's 6.9, TinyEKF's 2.3. Claim 9 fails narrowly for the EKF at 2D with 4
       anchors in double against mherb/kalman (1.02) and the UKF in float there (1.06), and
@@ -1048,7 +976,7 @@ are what a reader checks in the first hour, and a thread that finds them wrong i
 - [ ] The day of the advertised launch: a Show HN (a Hacker News post of one's own work, with a first comment
       from the submitter saying what it is and what feedback is wanted; one attempt, a weekday
       morning US time, since a post climbs in its first hour or sinks and reposts are discouraged)
-      and an r/cpp post, both leading with the README's opening and the 50-line example. The
+      and an r/cpp post, both leading with the README's opening and its example. The
       story for that audience is the design, not another Kalman filter: one recursion over any
       space, allocation-free under `EIGEN_RUNTIME_NO_MALLOC`, no exceptions, Cortex-M under QEMU,
       execution policies, C++23 throughout. The thread's value is its bug and platform reports.
@@ -1332,3 +1260,4 @@ resolve.
 | 17zt | Constant items `on<Name>(H)` and `offset()` in `affineIn()`, models without a function in place of the matrix forms, functions that write their Jacobians by block (`writesJacobians()`, `BatchedOutput`'s free functions), `shared(path<Name>)`, and compositions that forward their parts' Jacobians in a batch | [affine-coordinates], [returned-jacobians], [linear-sensors], [whole-state-models], [transform-policies], [batched-functions], [fixed-step-models] |
 | 17zv | `OrnsteinUhlenbeck<B, RevertingTo<M>>`, an Ornstein-Uhlenbeck block about a mean read from another block | [continuous-time-noise] |
 | 17zw | What 17zt left: constant items read in closed form and taken by a batched function, the blocks wanted passed on by the update given a block, a composition at a point, and `transform()`, and `onEach()` of a model that names `shared(path<Name>)` | [affine-coordinates], [returned-jacobians], [batched-functions] |
+| 17zu | Selections of a repeated block, `path<Landmarks>[k]`, `[Eigen::seqN(first, n)]`, or a list, in `reads()`, `writes()`, placements, compositions, the accessors, every distribution, and every filter | [repetition-selections], [selected-reads], [selected-writes], [composed-selections], [model-placement] |

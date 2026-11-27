@@ -193,10 +193,11 @@ compiles the hand code's lazy products in `float`, and at 24 its written-out fac
 substitution, to code several times slower than the library's for the same operations.
 
 MSVC's steps are longer than Clang's on the same machine: the library's at 2D with 4 anchors takes
-132 ns against 83, in `double` with analytic Jacobians. Built by MSVC on 2026-11-26, before the
-changes that the Clang numbers above include, the EKF took 1.24 times mherb/kalman's time at 2D
-with 4 anchors in `double` and 1.60 in `float`, and the UKF 1.38 and 1.27 times; at every other
-size, and against TinyEKF (0.26 to 0.90) and FrancoisCarouge/Kalman (0.14 to 0.39), it took less.
+132 ns against 83, in `double` with analytic Jacobians. Built by MSVC at `68d4cfd`, before
+`19019da`, `c679b0a`, and `ab1b0b9`, which the Clang numbers above include, the EKF took 1.24
+times mherb/kalman's time at 2D with 4 anchors in `double` and 1.60 in `float`, and the UKF 1.38
+and 1.27 times; at every other size, and against TinyEKF (0.26 to 0.90) and
+FrancoisCarouge/Kalman (0.14 to 0.39), it took less.
 
 ## Footprint on Cortex-M
 
@@ -377,5 +378,9 @@ the estimate it is measured from, as mean / covariance, over the six sizes.
 - **Compile time:** an Intel Raptor Lake processor under Windows 11, with Clang 21.1.0, GCC 14.2.0
   (w64devkit), and MSVC 19.50.
 
-Every number but the compile times was measured on 2026-11-26 and 2026-11-27; the compile times on
+Every number but the compile times was measured at `ab1b0b9` on 2026-11-27, but those not measured
+again. The particle filter's instructions, the footprint, and the MSVC comparisons with the other
+libraries are of `68d4cfd` (2026-11-26), before `19019da`, `c679b0a`, and `ab1b0b9`. The particle
+filter's times on Linux are of `2829773`, whose particle steps are the same on both sides, but for
+the 3D rows at a million particles, which `9fa89d5` made comparable. The compile times are of
 2026-11-01.

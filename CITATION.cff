@@ -16,4 +16,5 @@ authors:
     affiliation: Emrys Applied Mathematics
 doi: 10.5281/zenodo.24195424
 repository-code: https://github.com/emrys-math/emrys-filter
-license: MIT
+# Apache-2.0 WITH LLVM-exception; the schema takes a license identifier, not an exception.
+license: Apache-2.0

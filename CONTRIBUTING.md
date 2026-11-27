@@ -7,6 +7,12 @@ says what the code takes from it, and says where it departs. That rule shapes ho
 proposed and how open problems are handled. It also obliges the library to leave room: a method it
 won't take must be writable against its public contracts, without a fork ([user-extension-points]).
 
+## License of contributions
+
+The library is under the Apache License 2.0 with LLVM Exceptions ([LICENSE](LICENSE)). By its
+section 5, a contribution you submit is under the same license unless you say otherwise when you
+submit it, so no separate contributor agreement is needed.
+
 ## Conduct
 
 Everyone who takes part in the project follows the [Code of Conduct](CODE_OF_CONDUCT.md). It says

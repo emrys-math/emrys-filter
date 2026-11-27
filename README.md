@@ -8,225 +8,147 @@ Rao-Blackwellized particle filter, on vectors, angles, quaternions, and discrete
 Header-only, allocation-free on bounded states, parallel by policy, and every algorithm cited
 to the paper it implements.**
 
-EmrysFilter is a header-only library by Emrys Applied Mathematics for sequential Bayesian
-estimation: predict, update, repeat. The same state description, models, and transforms run
-under a Kalman filter and its square-root and information forms, a Gaussian mixture filter, an
-interacting multiple model filter, a particle filter, a grid filter, their Rao-Blackwellized
-combinations, and a hidden Markov filter, with smoothers over all of them. Nothing in it is
-invented here.
+A Kalman filter that tracks a target in the plane from position fixes:
 
 ```cpp
 #include <EmrysFilter/EmrysFilter.h>
 
 #include <print>
-#include <random>
 
 using namespace Emrys;
 
-// The state is named blocks. These two are plain vectors; a heading is an
-// angle.
+// The state is named blocks: a position and a velocity in the plane.
 struct Position : Linear<2> {};
 struct Velocity : Linear<2> {};
 using State = Composite<Position, Velocity>;
 
-// A radar measures a range and a bearing, an angle that wraps at plus and
-// minus pi.
-struct Range : Linear<1> {};
-struct Bearing : RadiansPi<1> {};
-
 int main()
 {
-    // Constant velocity, driven by white acceleration noise of spectral
-    // density 0.1.
-    double const accelerationDensity = 0.1;
-    auto const motion =
-        ConstantVelocity<Position, Velocity>{accelerationDensity};
-    auto const initial = GaussianParams<State>{
-        ValueVector<State>{-78.0, 12.0, 0.8, -0.3},
-        DifferenceVector<State>{25.0, 25.0, 1.0, 1.0}.asDiagonal()};
-    auto filter = KalmanFilter{motion, initial};
+    // The target moves at nearly constant velocity.
+    auto const motion = ConstantVelocity<Position, Velocity>{0.1};
 
-    // A radar at the origin sees the Position block as range and bearing,
-    // which is nonlinear. The model reads the blocks it names, wherever they
-    // sit in the state; Linearized differentiates it automatically, or takes
-    // the Jacobian a function writes, marked writesJacobians().
-    double const rangeVariance = 1.0;
-    double const bearingVariance = 1e-4;
-    Eigen::Matrix2d const radarNoise =
-        Eigen::Vector2d{rangeVariance, bearingVariance}.asDiagonal();
-    auto const radar = measurementModel(
-        []<typename T>(auto const & in, auto const & x) {
-            auto const p = block<Position>(in, x);
-            return Eigen::Matrix<T, 2, 1>{
-                sqrt(p.squaredNorm()), atan2(p(1), p(0))};
-        },
-        reads(path<Position>),
-        writes(path<Range>, path<Bearing>),
-        additiveNoise(radarNoise));
-
-    // A GPS fix sees the Position block itself, with correlated noise. It is
-    // linear, so it is given by its matrix, and its update is the Kalman
-    // filter's exact one.
-    Eigen::Matrix2d const gpsNoise{{4.0, 1.0}, {1.0, 3.0}};
+    // A GPS fix measures the position, with 1 m^2 of noise on each axis.
     auto const gps = measurementModel(
-        Eigen::Matrix2d::Identity(),
-        reads(path<Position>),
-        additiveNoise(gpsNoise));
+        affineIn(on<Position>(Eigen::Matrix2d::Identity())),
+        additiveNoise(Eigen::Matrix2d::Identity()));
 
-    auto rng = std::mt19937_64{42};
-    auto truth = ValueVector<State>{-80.0, 10.0, 1.0, -0.5};  // bearing wraps
-    auto monitor = NisMonitor{50};
+    // Before the first fix: near the origin, moving slowly.
+    auto const prior = GaussianParams<State>{
+        ValueVector<State>{0.0, 0.0, 1.0, 0.5},
+        DifferenceVector<State>{10.0, 10.0, 1.0, 1.0}.asDiagonal()};
+    auto filter = KalmanFilter{motion, prior};
 
-    // The filter takes a measurement from any model the same way, each with
-    // its method. An update fails if the innovation covariance is not
-    // positive definite.
-    auto const measure = [&](auto const & m) {
-        auto const z = Eigen::Vector2d{simulate<State>(truth, m, rng)};
-        auto const updated =
-            filter.update(observe(methods::linearized(), m, z));
-        if (updated) {
-            monitor.add(*updated);
-        }
-        return updated.has_value();
-    };
-    for (int k = 0; k < 50; ++k) {
-        truth = simulate<State>(truth, motion, rng, 1.0);  // moves
-        filter.predict(1.0);
-        if (!measure(radar) || (k % 10 == 9 && !measure(gps))) {
-            return 1;
+    // A fix arrives every half second.
+    Eigen::Vector2d const fixes[] = {{0.6, 0.2}, {1.1, 0.4}, {1.4, 0.8}};
+    for (auto const & fix : fixes) {
+        filter.predict(0.5);
+        if (!filter.update(observe(gps, fix))) {
+            return 1;  // the innovation covariance was not positive definite
         }
     }
-    auto const position = truth(idx<State, Position>());
-    std::println("{:.3}", filter.state().marginal<Position>().copy());
-    std::println("truth {:.3} {:.3}", position(0), position(1));
-    std::println("NIS average {:.3}, consistent at 99%: {}",
-                 monitor.average().value(),
-                 monitor.verdict(0.99) == Consistency::Consistent);
+    std::println("{:.3}", filter.state().marginal<Velocity>().copy());
 }
 ```
 
 ```
 Gaussian of dimension 2
-  mean: 47.1 -130
+  mean: 0.934 0.532
   covariance:
-    0.718 0.111
-    0.111 0.493
-truth 46.8 -129
-NIS average 1.01, consistent at 99%: true
+    0.715     0
+        0 0.715
 ```
 
-(Clang 21 on the MSVC standard library; libstdc++ draws different noise from the same seed.)
-Write `methods::unscented()`, `methods::iterated(methods::linearized())`, or
-`methods::gaussHermite<3>()` in place of the radar's `methods::linearized()` and the same filter
-is a UKF, an iterated EKF, or a Gauss-Hermite filter. Write `SqrtKalmanFilter` in place of
-`KalmanFilter` and it runs in square-root form. Give the noise a second, wide component and the
-update is probabilistic data association. The state, the model, and the measurement don't change.
+The fixes measure the position alone, and the filter estimates the velocity from them.
+
+A model reads the blocks it names, wherever they sit in the state, so the same filter takes a
+nonlinear measurement with nothing else changed. A radar at the origin measures a range and a
+bearing, an angle that wraps at plus and minus pi:
+
+```cpp
+struct Range : Linear<1> {};
+struct Bearing : RadiansPi<1> {};
+
+Eigen::Matrix2d const radarNoise = Eigen::Vector2d{1.0, 1e-4}.asDiagonal();
+auto const radar = measurementModel(
+    []<typename T>(auto const & in, auto const & x) {
+        auto const p = block<Position>(in, x);
+        return Eigen::Matrix<T, 2, 1>{p.norm(), atan2(p(1), p(0))};
+    },
+    reads(path<Position>),
+    writes(path<Range>, path<Bearing>),
+    additiveNoise(radarNoise));
+
+// z is the measured range and bearing.
+auto const updated = filter.update(observe(methods::linearized(), radar, z));
+```
+
+`methods::linearized()` is the extended Kalman filter's update, and it differentiates the function
+automatically. Write `methods::unscented()`, `methods::iterated(methods::linearized())`, or
+`methods::gaussHermite<3>()` in its place and the update is that of a UKF, an iterated EKF, or a
+Gauss-Hermite filter. Write `SqrtKalmanFilter` in place of `KalmanFilter` and the filter runs in
+square-root form. The state, the models, and the measurements don't change. The programs in
+[examples/](examples/) are complete estimators, from this filter to a Rao-Blackwellized particle
+filter, and each simulates its problem and checks that its filter is consistent.
 
 ## How it fits together
 
-Four layers, each a directory of headers, each built on the ones before it.
+Four layers, each built on the ones before it.
 
-- **Spaces** say what a state is made of. A state is a `Composite` of named blocks, and each
-  block is a vector (`Linear<3>`), an angle (`RadiansPi<>`), a `UnitQuaternion`, a repeated or
-  resizable block (a growing map), or a discrete mode. A space knows how to add a difference to
-  a value and take the difference of two values, so a residual across an angle wraps, a
-  quaternion's covariance is three by three, and a mean of headings is taken in the tangent
-  space. Code addresses blocks by name (`marginal<Position>()`), never by index.
+- **Spaces** say what a state is made of: a `Composite` of named blocks, each a vector, an
+  angle, a unit quaternion, a repeated block such as a growing map, or a discrete mode.
 - **Distributions** put probability on a space: the Gaussian in four forms, mixtures, particle
-  sets, sparse grids, categoricals, hybrids of a discrete mode and a continuous state, and
-  Student-t, Gamma, uniform, and products of them.
-- **Models** say how a state moves and is observed: process models composed from blocks
-  (`ConstantVelocity`, `OrnsteinUhlenbeck`, your own), measurement models that arrive with their
-  measurement and choose their own method (`methods::linearized()`, `methods::unscented()`, the
-  sigma-point sets, `methods::iterated()`) or, for a linear measurement, give its matrix, and the
-  simulation and consistency checks.
-- **Filters** are the recursions over all of that, each a state plus `predict()` and `update()`.
+  sets, grids, categoricals, and hybrids of a discrete mode and a continuous state.
+- **Models** say how a state moves and is observed, and each measurement chooses its own method.
+- **Filters** are the recursions over all of that, each a state with `predict()` and `update()`,
+  and the smoothers estimate past states from later data.
 
 ## Why EmrysFilter
 
-**One design, every representation.** A filter is a state and a recursion; the state is any
-distribution over any space. So the estimators are combinations, not special cases: a mixture
-of IMM filters, a particle filter whose particles each carry a Gaussian, a grid of Kalman
-filters, a hidden Markov filter beside them. Marginals, conditionals, upkeep, smoothing,
-and printing are written once and work on all of them. Manifold states are built in: the
-boxplus and boxminus of a space, tangent-space covariances and means, and the covariance reset
-are the library's, and angles and SO(3), as the unit quaternion, ship. SE(3) and the extended
-pose group are planned as spaces, and the invariant EKF is then a space, not a filter.
-
-**Efficient and embedded-friendly.** Nothing sized by a bounded space allocates: not a predict,
-an update, a transform, a marginal, or a draw, and the allocation tests build with
-`EIGEN_RUNTIME_NO_MALLOC` to prove it for every filter's steps. A type with a run-time number of
-elements takes a standard allocator, so a `std::pmr` arena holds a particle filter, and scratch
-is owned and reused. The scalar is a template parameter: a `float` filter computes in `float`
-throughout, and autodiff and multiprecision scalars run the same code. The library throws
-nothing, reports failure through `std::expected`, and builds with `-fno-exceptions -fno-rtti`
-and for Cortex-M4F and M7. On the ranging benchmark the `KalmanFilter` takes 1.10 to 1.91 times
-the instructions per step of a hand-written Eigen EKF, after both pass the same agreement and
-consistency tests; the ratio is highest on the smallest problems, where the library's fixed cost
-of about 240 instructions per update is two fifths of the total
-([the benchmark results](docs/benchmarks.md)).
-
-**Parallel by policy.** Every loop over a run-time count (particles, mixture components, grid
-cells) takes an `ExecutionPolicy` as its first argument, `execution::sequential` by default. Pass a
-standard policy such as `std::execution::par`, or your own type with a `forEachIndex(count, f)`
-(a thread pool handle, say, with its own allocator for the scratch), and the same step runs on
-threads. Under `execution::sequential` it runs the code it always ran, bitwise, and every overload is
-tested against it. The per-element bodies touch nothing
-shared, which is the shape the planned GPU backend needs.
-
-**Researched, documented, tested.** Every algorithm cites its source (eighty bibliography
-entries) with a sentence on what the code takes and where it departs. Every entity is
-documented, internals included, and the reference build fails on one warning. The architecture
-is more than ninety named decisions with their reasons, reached through area-by-area design
-reviews whose examples quote their compiled output. The tests, each saying what it is
-evidence for, run under GCC, Clang, MSVC, and the sanitizers, and a coverage job checks that they
-instantiate every public function and execute all but a handful of the headers' regions. Where no
-published method fills a need, the library records the problem in
-[docs/research.md](docs/research.md) instead of improvising.
-
-**Agent-friendly.** A coding agent in a fresh clone should build a working estimator while
-reading little, compiling few times, and checking the result numerically. So: eleven examples of
-100 to 250 lines, built and run in CI, to copy; a usage page with a "which filter?" table;
-`simulate()` and the NIS and NEES monitors, which say pass or fail without a plot; one naming
-convention without exceptions; [CLAUDE.md](CLAUDE.md) and [AGENTS.md](AGENTS.md), which route an
-agent to the right page; and a skill in [skills/](skills/) that an agent working in your own
-project installs. Still to come, and listed with the rest of what is not built on the usage
-page: the model contracts as concepts, so that a wrong model fails at the filter's entry with a
-plain message, and a compact API index.
-
-Also: every update returns its innovation, log-likelihood, and NIS, and the posterior Cramér-Rao
-bound says how well any filter could have done. What intervenes in an update is a policy passed
-to it (`reductions::gate()`, `select()`, `collapse()`); upkeep (`upkeep::resample(rng)`, `roughen(rng)`,
-`pruneBelow()`, ...) runs when the caller says, on a trigger such as `upkeep::whenEss()`: applied to
-the filter's state, or held by the filter and run by `maintain()`. Every policy is
-made by a factory in the namespace of its kind. No mixins, no virtual dispatch, no hidden state
-between steps. The library keeps Eigen's conventions and offers what Eigen lacks upstream,
-and it is meant to sit beside a graduate course in state estimation.
+- **One design, every representation.** A filter's state is any distribution over any space, so
+  the estimators are combinations, not special cases: a mixture of IMM filters, a particle
+  filter whose particles each carry a Gaussian, a grid of Kalman filters. Marginals,
+  conditionals, smoothing, and printing are written once and work on all of them.
+- **States on manifolds.** A space knows how to add a difference to a value and how to subtract
+  two values, so a residual across an angle wraps, and a quaternion's covariance is three by
+  three. Code names a block (`marginal<Position>()`) and never indexes it.
+- **Efficient and embedded-friendly.** Nothing sized by a bounded space allocates, and the tests
+  build with `EIGEN_RUNTIME_NO_MALLOC` to check it for every filter's steps. The library throws
+  nothing, reports failure through `std::expected`, and builds with `-fno-exceptions -fno-rtti`
+  and for Cortex-M. The scalar is a template parameter, so a `float` filter computes in `float`
+  throughout. On the ranging benchmark, a `KalmanFilter` step takes 1.10 to 1.91 times the
+  instructions of a hand-written Eigen EKF ([the benchmark results](docs/benchmarks.md)).
+- **Parallel by policy.** Every loop over particles, mixture components, or grid cells takes an
+  execution policy: `std::execution::par`, or a type of your own that wraps a thread pool.
+- **Cited, documented, tested.** Every algorithm cites the paper it implements, and the library
+  invents none. The tests run under GCC, Clang, MSVC, and the sanitizers. Every update returns
+  its innovation and its NIS, so `simulate()` and the consistency monitors say whether an
+  estimator works, without a plot.
+- **Ready for a coding agent.** [AGENTS.md](AGENTS.md) routes an agent to the right page, the
+  examples are programs to copy, and a skill in [skills/](skills/) takes an agent in your own
+  project through building an estimator and checking it.
 
 ## Which filter?
 
-| Your problem | Start with | Then read |
-|---|---|---|
-| Linear or mildly nonlinear, one mode | `KalmanFilter` with `methods::linearized()`, `unscented()`, `iterated()`, or a sigma-point set | [docs/choosing.md](docs/choosing.md) |
-| Ill-conditioned covariances, `float`, long runs | `SqrtKalmanFilter` | [docs/choosing.md](docs/choosing.md), "Can the arithmetic be trusted?" |
-| Many sensors, fusion, uninformative priors | `InfoFilter`, `SqrtInfoFilter` | the same |
-| Outliers, clutter, ambiguous measurements | mixture measurement noise with `reductions::collapse()`, `select()`, or `gate()`; `GaussianMixtureFilter` to keep the components | [docs/choosing.md](docs/choosing.md), "How is the noise distributed?"; [examples/gaussian_mixture.cpp](examples/gaussian_mixture.cpp) |
-| Several motion regimes | `ImmFilter`, `AmmFilter`, `byMode`, `MarkovChain` | [docs/choosing.md](docs/choosing.md); [examples/imm.cpp](examples/imm.cpp) |
-| Multimodal or strongly nonlinear | `ParticleFilter` with `upkeep::resample(rng)` and `roughen(rng)` | [particle-filter.md](docs/guide/particle-filter.md) |
-| Part of the state is conditionally linear | `RbParticleFilter` | [rao-blackwellized-filters.md](docs/guide/rao-blackwellized-filters.md) |
-| A low-dimensional nonlinear part worth a grid | `RbPointMassFilter`, `PointMassFilter` | rao-blackwellized-filters.md |
-| A discrete state, counts, or arrivals | `HiddenMarkovFilter` with `EmissionTable`, `PoissonEmission`, `ContinuousTimeMarkovChain` | [hidden-markov-filter.md](docs/guide/hidden-markov-filter.md) |
-| Estimates after the fact | the histories in `Smoothers/`: fixed-interval and fixed-lag, IMM, mixture, particle, and `mostProbableSequence()` | [smoothing.md](docs/guide/smoothing.md) |
-| An angle, a rotation, or your own manifold | `Periodic`, `UnitQuaternion`, or a type that satisfies the `Space` concept | the Spaces module page (`Spaces/Space.h`) |
-| How good could any filter be? | `CramerRao.h` | the Models module page (`Models.h`) |
+| Your problem | Start with |
+|---|---|
+| Linear or mildly nonlinear, one mode | `KalmanFilter`, each model with `methods::linearized()` or `unscented()` |
+| `float`, ill-conditioned covariances, long runs | `SqrtKalmanFilter` |
+| Many sensors, or a prior with no information | `InfoFilter`, `SqrtInfoFilter` |
+| Outliers, clutter, ambiguous measurements | mixture measurement noise, `GaussianMixtureFilter` |
+| Motion that switches between regimes | `ImmFilter`, `AmmFilter` |
+| Multimodal or strongly nonlinear | `ParticleFilter` |
+| Part of the state is conditionally linear | `RbParticleFilter`, `RbPointMassFilter` |
+| A discrete state, counts, or arrivals | `HiddenMarkovFilter` |
+| Estimates of past states from later data | the smoothers in `Smoothers/` |
+
+[docs/usage.md](docs/usage.md#which-filter) has the full table, with an example for each row,
+and [docs/choosing.md](docs/choosing.md) gives the reasoning.
 
 ## Install
 
-A C++23 compiler and Eigen 5.0. CI tests GCC 14, Clang 21, Apple Clang 21, and the MSVC of Visual
-Studio 2026; GCC 13 builds the examples but is not tested. `std::expected` sets the floor, and a
-compiler without it, Clang 18 on libstdc++ among them, stops at the first `std::expected` in
-`Core/Weights.h` rather than with a message naming the floor. Eigen 5 is required, not the 3.4
-that Linux distributions still ship; if CMake finds no Eigen 5, the build fetches it.
+A C++23 compiler and Eigen 5.0. Eigen 5 is required, not the 3.4 that Linux distributions still
+ship; if CMake finds no Eigen 5, the build fetches it. CI tests GCC 14, Clang 21, Apple Clang 21,
+and the MSVC of Visual Studio 2026.
 
 ```cmake
 include(FetchContent)
@@ -237,80 +159,35 @@ FetchContent_MakeAvailable(EmrysFilter)
 target_link_libraries(my_estimator PRIVATE EmrysFilter::EmrysFilter)
 ```
 
-An installed copy is found with `find_package(EmrysFilter 0.1 CONFIG)`. Include
-`<EmrysFilter/EmrysFilter.h>`, a layer's umbrella (`<EmrysFilter/Filters.h>`), or one header.
-Including everything costs about three seconds and 300 MB of compiler memory, and a program the
-size of the examples compiles in 5 to 25 seconds in under a gigabyte, so one file builds without a
-CMake project: `clang++ -std=c++23 -O2 -I <checkout>/include -isystem <eigen> estimator.cpp`.
-Build and test the library itself with `cmake --workflow --preset clang` (or `gcc`, or `msvc`
-from an x64 developer prompt); a test translation unit takes about one to eight GiB, so the
-presets limit how many compile at once. [CONTRIBUTING.md](CONTRIBUTING.md) says how a change
-is checked.
-
-## Header map
-
-The headers live in `include/EmrysFilter/` in six layers. A header includes only its own layer
-and the ones before it, and CI checks that.
-
-| Layer | Holds | Headers |
-|---|---|---|
-| `Core/` | What everything else builds on | `Version.h`, `Macros.h` (assertions, no exceptions), `Math.h`, `Allocation.h`, `Execution.h` (policies), `Forwarding.h`, `Time.h`, `Stamp.h`, `Print.h`, `NumericError.h` (why a step fails), `Resampling.h`, `Weights.h`, `ChiSquared.h`, `Triangularization.h`, `Multiply.h`, `Solve.h` |
-| `Spaces/` | What a state is made of | `Space.h` (the concept, `plus`, `minus`), `Coordinates.h` (`Linear`, `Periodic`), `Composite.h` (`Composite`, `Repeated`), `TagPath.h`, `Subspace.h`, `Indexing.h`, `Discrete.h`, `Reset.h`, `UnitQuaternion.h` |
-| `Distributions/` | Probability over a space | `Params.h` (parameters and densities), `Component.h`, `Gaussian.h` and its forms (`SqrtGaussian.h`, `InfoGaussian.h`, `SqrtInfoGaussian.h`, `GaussianForm.h`), `Roots.h` (covariance roots and repairs), `Mixture.h`, `UniformMixture.h`, `SampleSet.h`, `ParticleSet.h`, `KernelDensity.h`, `Hybrid.h`, `Categorical.h`, `ContinuousTimeMarkovChain.h`, `Conditionals.h`, `GridGaussian.h`, `ParticleGaussian.h`, `StudentT.h`, `Gamma.h`, `Uniform.h`, `Product.h`, `Moments.h`, `Statistics.h`, `Sampling.h`, `Fitting.h`, `Divergence.h`, `Upkeep.h` |
-| `Models/` | How states move and are observed | `Policies.h` (what a model declares), `ProcessModel.h`, `MeasurementModel.h`, `Placement.h` (placing and composing models), `ResolvedReads.h`, `Measurement.h` (the update), `MeasurementUpdate.h`, `MeasurementReads.h`, `IteratedUpdate.h`, `Likelihood.h`, `Transform.h`, `Methods.h` (the methods and sigma-point sets), `Batched.h` (functions that take every point at once), `TransformArgs.h`, `Linearization.h`, `Condition.h` (the Kalman update), `ByMode.h` (parts per value of a mode axis), `SwitchingModel.h`, `Emission.h`, `Simulation.h`, `Consistency.h`, `CramerRao.h`, `Reduction.h` (policies), `FormSteps.h` |
-| `Filters/` | The recursions | `Recursion.h` (the contract), `FilterUpkeep.h` (the upkeep a filter holds), `KalmanFilter.h`, `SqrtKalmanFilter.h`, `InfoFilter.h`, `SqrtInfoFilter.h`, `MixtureFilter.h`, `ImmFilter.h`, `AmmFilter.h`, `ParticleFilter.h`, `RbUpdate.h`, `RbParticleFilter.h`, `RbPointMassFilter.h`, `HiddenMarkovFilter.h` |
-| `Smoothers/` | Estimates of past states from later data | `Lag.h`, `GaussianHistory.h` (with `smoothStep()`), `HybridGaussianHistory.h`, `GaussianMixtureHistory.h`, `ParticleHistory.h`, `CategoricalHistory.h` |
+One file also builds without a CMake project:
+`clang++ -std=c++23 -O2 -I <checkout>/include -isystem <eigen> estimator.cpp`. A program the size
+of the examples compiles in 5 to 25 seconds. To start a project, copy
+[examples/consumer/](examples/consumer/). [docs/usage.md](docs/usage.md#getting-it) covers an
+installed copy, `find_package`, older compilers, and microcontrollers.
 
 ## Documentation
 
-- **Using it:** [docs/usage.md](docs/usage.md), the examples in [examples/](examples/),
-  [docs/choosing.md](docs/choosing.md) for the choice of filter, and
+- **Using it:** [docs/usage.md](docs/usage.md), the programs in [examples/](examples/),
+  [docs/choosing.md](docs/choosing.md) for the choice of filter,
+  [docs/headers.md](docs/headers.md) for what each header holds, and
   [the reference](https://emrys-math.github.io/emrys-filter/), the public API of every header.
-  The `docs` target builds it, or with the internals for the maintainer.
-- **How fast it is:** [docs/benchmarks.md](docs/benchmarks.md), each benchmark's results against
-  the same filter written by hand in Eigen, and how to run them on your own machine.
-- **Understanding it:** [docs/guide/](docs/guide/), the four design reviews still open, in reading order from
-  [hidden-markov-filter.md](docs/guide/hidden-markov-filter.md) to
-  [smoothing.md](docs/guide/smoothing.md), each
-  showing real use with its printed results.
-- **Why it is this way:** [docs/design/decisions.md](docs/design/decisions.md), the decisions;
-  [docs/design/roadmap.md](docs/design/roadmap.md), the ordered steps and their status;
-  [parallelism.md](docs/design/parallelism.md) and [benchmarks.md](docs/design/benchmarks.md),
-  the plans behind the execution policies, the GPU backend, and the benchmarks.
-- **What it cites:** [docs/reference/bibliography.md](docs/reference/bibliography.md).
-- **What nobody has published yet:** [docs/research.md](docs/research.md), open problems with
-  their hooks and starting points.
+- **How fast it is:** [docs/benchmarks.md](docs/benchmarks.md), each benchmark against the same
+  filter written by hand in Eigen, and how to run them on your own machine.
+- **Why it is this way:** [docs/design/decisions.md](docs/design/decisions.md), the decisions and
+  their reasons; [docs/guide/](docs/guide/), the design reviews still open; and
+  [docs/design/roadmap.md](docs/design/roadmap.md), the ordered steps and their status.
+- **What it cites:** [docs/reference/bibliography.md](docs/reference/bibliography.md), and
+  [docs/research.md](docs/research.md) for the problems that no published method solves yet.
 
-## Here, coming, and elsewhere
+## Scope
 
 EmrysFilter does sequential inference on one state over time, continuous, discrete, or hybrid.
-
-**Coming to EmrysFilter** ([roadmap](docs/design/roadmap.md)): SE(2), SE(3), and the extended
-pose group as spaces beside SO(3), with the invariant EKF as their example; noise covariances
-adapted as the filter runs, and Student-t robust updates; particle proposals that use the
-measurement, the auxiliary particle filter, and resample-move; the ensemble Kalman filter;
-correlated process and measurement noise; the UD form; unknown inputs; fixed-gain filters; GPB1
-and GPB2; the second-order EKF and the divided-difference filters; state constraints;
-continuous-discrete filtering; the fixed-point, two-filter, iterated, and particle smoothers; a
-test of the innovations' whiteness; fusion rules, out-of-sequence updates, and the consensus
-step for distributed estimation; hooks for splitting a mixture by nonlinearity; and counter-based
-random numbers. A GPU backend for the particle, grid, and Rao-Blackwellized filters comes later,
-and the API is being made ready for it.
-
-**Planned as separate Emrys projects** that build on this one: a **tracker** (data association
-and track management: JPDA, MHT, multi-target), **navigation** (inertial, GNSS, and geodetic
-models and frames as a catalog), **analysis** (log readers, noise identification, Monte Carlo
-runners, plots, and bindings), and a **controller**, an **optimizer**, a **graph library** for
-factor graphs and Bayes nets, and a **sampler** for MCMC. Single-target association stays here,
-since clutter is mixture measurement noise.
-
-**Out of scope:** I/O, serialization, plotting, and configuration files (the analysis project's);
-Python and ROS bindings (built on the analysis project's catalog of instantiations); batch
-optimization and SLAM back-ends (the graph library's; use GTSAM today); model predictive control
-(needs a solver the header-only libraries don't take); and inference runtimes for learned
-models, which are supported as models through `writesJacobians()` and `Unscented` but not linked.
-
-## How it compares
+When the problem is a graph, as in batch optimization and SLAM back ends, GTSAM is the tool
+today. Data association and track management for many targets are planned as a separate
+project that builds on this one, as are navigation models and analysis tools. I/O, plotting, and
+Python and ROS bindings are out of scope here. The [roadmap](docs/design/roadmap.md) lists what
+is coming, including SE(3) and the other pose groups as spaces, noise covariances adapted as
+the filter runs, particle proposals that use the measurement, and the ensemble Kalman filter.
 
 | | EmrysFilter | mherb/kalman | GTSAM | manif | FilterPy |
 |---|---|---|---|---|---|
@@ -321,28 +198,18 @@ models, which are supported as models through `writesJacobians()` and `Unscented
 | Allocation control, no exceptions, `float` | yes, tested | partly | no | yes | no |
 | Every algorithm cited | yes | no | partly | yes | yes, as a book |
 
-A manif group can be wrapped as a `Space` and estimated with any filter here. GTSAM is the tool
-when the problem is a graph; this library is the tool when the problem is a recursion.
+A manif group can be wrapped as a `Space` and estimated with any filter here.
 
-## Status
+## Status, contributing, and citing
 
-0.1.0, pre-1.0: a minor release may change the API, and [CHANGELOG.md](CHANGELOG.md) records
-every change a user can see, with what to do about one that breaks code. The design reviews in
-[docs/guide/](docs/guide/) hold the questions still open, and an answer may rename or reshape
-what it covers. CI runs every compiler and platform under Install, the sanitizers, the
-no-exceptions, libc++, arm64, Cortex-M, coverage, vcpkg, and Conan builds, clang-format, the
-header-layer check, and the Doxygen build, dispatched by a maintainer for the changes that need
-them.
+The library is at 0.1.0. Before 1.0, a minor release may change the API, and
+[CHANGELOG.md](CHANGELOG.md) records every change a user can see, with what to write instead
+where one breaks code.
 
-## Contributing and citing
+The library implements algorithms from the public literature, so a feature request names the
+paper it would implement; see [CONTRIBUTING.md](CONTRIBUTING.md). To cite the library, use
+`CITATION.cff` or its DOI, [10.5281/zenodo.24195424](https://doi.org/10.5281/zenodo.24195424),
+which resolves to the latest release. To take the library to another language, or to C++20 or
+C++17, start from [docs/porting.md](docs/porting.md).
 
-The library implements algorithms from the public literature and contributes none of its own,
-so a feature request names the paper it would implement; see
-[CONTRIBUTING.md](CONTRIBUTING.md). A need that no published method fills goes on
-[docs/research.md](docs/research.md) for a researcher to solve and publish, after which the
-library implements and cites it. To cite the library, use `CITATION.cff` or its DOI,
-[10.5281/zenodo.24195424](https://doi.org/10.5281/zenodo.24195424), which resolves to the latest
-release. To take the library
-to another language, or to C++20 or C++17, start from [docs/porting.md](docs/porting.md).
-
-MIT license. Copyright (c) 2026 Jay Moore.
+Apache License 2.0 with LLVM Exceptions ([LICENSE](LICENSE)). Copyright (c) 2026 Jay Moore.

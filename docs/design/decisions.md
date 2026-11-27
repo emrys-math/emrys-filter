@@ -2055,6 +2055,8 @@ the selections are compared resolved, against the state.
 `Eigen::seqN(1, 2)` and the list `{1, 2}` are the same repetitions, and two sequences that count
 from the end cannot be compared without a count.
 
+**Not yet.** Overlapping reads, which change every method that forms the joint (2026-11-23).
+
 **Evidence.** `tests/Models/selected_placement.cpp`: each update and each prediction equals the one
 on a state written with one tag per repetition, and parts that disagree assert, in a composition
 and in one that is placed.
@@ -2979,10 +2981,10 @@ how CI runs them.
 
 **Why.** A user's filter runs on every step for the life of their product, and the small fixed
 sizes where a template's sizes matter most are the embedded ones, where the step's time is the
-budget. Compile time is paid by the developer, once per build. On 2026-11-26 `triangularize()`
-was moved onto one map of dynamic size to share its instantiations, which took 9 of 50 seconds
-from a test file and made the square-root EKF's step at 2D with 4 anchors 43% more instructions
-and 16 to 37% more time; it was reverted.
+budget. Compile time is paid by the developer, once per build. `9db4414` moved `triangularize()`
+onto one map of dynamic size to share its instantiations, which took 9 of 50 seconds from a test
+file and made the square-root EKF's step at 2D with 4 anchors 43% more instructions and 16 to 37%
+more time; `ab1b0b9` reverted it.
 
 **Rejected.** A size above which a template is shared through a dynamic-size view: the test
 files instantiate the small sizes almost only, so it saves no build time, and it still costs a
