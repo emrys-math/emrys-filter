@@ -1,5 +1,6 @@
 # EmrysFilter
 
+[![CI](https://github.com/emrys-math/emrys-filter/actions/workflows/ci.yml/badge.svg?branch=dev&event=push)](https://github.com/emrys-math/emrys-filter/actions/workflows/ci.yml?query=branch%3Adev+event%3Apush)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.24195424.svg)](https://doi.org/10.5281/zenodo.24195424)
 
 **State estimation in C++23 on Eigen 5. One design from the Kalman filter to the

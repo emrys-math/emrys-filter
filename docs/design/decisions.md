@@ -3009,9 +3009,9 @@ libc++, arm64, macOS, Cortex-M) and the static analysis [static-analysis] at `ci
 an earlier stage when the change touches what only it tests, as a deduction guide does MSVC, a
 claimed compile error Clang's negative compile tests, or a `throw` the build without exceptions, and
 a check is skipped when the change touches nothing it tests. `tools/required_checks.py` holds the
-rules and reads the diff, here and in CI on each pull request to `dev`. The negative compile tests
-run once per compiler, by the `clang-`, `gcc-`, and `msvc-compile-errors` workflows in those builds,
-and in no sanitizer or coverage build, which cannot change a compile's result.
+rules and reads the diff, here and in CI on each pull request and push to `dev`. The negative
+compile tests run once per compiler, by the `clang-`, `gcc-`, and `msvc-compile-errors` workflows
+in those builds, and in no sanitizer or coverage build, which cannot change a compile's result.
 
 **Why.** Measured in a Clang Debug build on 2026-11-02, compiling the test translation units takes
 about 1,300 CPU-seconds and the 182 negative compile cases 416 more, while the other tests run in

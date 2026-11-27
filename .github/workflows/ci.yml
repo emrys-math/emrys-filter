@@ -1,7 +1,8 @@
 name: CI
 
 # Runs on a pull request to dev, the `pr` stage of [check-stages], with the jobs that
-# `tools/required_checks.py pr --ci-inputs` names for the pull request's change, and when
+# `tools/required_checks.py pr --ci-inputs` names for the pull request's change; on a push to dev,
+# with the same jobs for the commits pushed, so the README's badge shows dev's own result; and when
 # dispatched, with the jobs ticked. A full run costs hours of runner time, so no run takes a job
 # the change doesn't need, and the jobs only a release needs, the `ci` stage, are dispatched by
 # hand. Every input defaults to off. From the command line:
@@ -9,6 +10,8 @@ name: CI
 #   gh workflow run CI --ref next -f clang=true -f format=true
 on:
   pull_request:
+    branches: [dev]
+  push:
     branches: [dev]
   workflow_dispatch:
     inputs:
@@ -94,7 +97,8 @@ env:
 
 jobs:
   # The jobs to run, as a JSON object with one boolean per input: the inputs ticked when
-  # dispatched, and on a pull request the checks required at `pr` for its change from the base.
+  # dispatched, on a pull request the checks required at `pr` for its change from the base, and on
+  # a push the checks required at `pr` for the commits pushed, from dev's head before the push.
   plan:
     name: plan
     runs-on: ubuntu-24.04
@@ -103,7 +107,7 @@ jobs:
       run: ${{ steps.plan.outputs.run }}
     steps:
       - uses: actions/checkout@v4
-        if: github.event_name == 'pull_request'
+        if: github.event_name != 'workflow_dispatch'
         with:
           fetch-depth: 0
 
@@ -111,9 +115,12 @@ jobs:
         id: plan
         env:
           INPUTS: ${{ toJSON(inputs) }}
-          BASE: origin/${{ github.base_ref }}
+          BASE: ${{ github.event_name == 'push' && github.event.before || format('origin/{0}', github.base_ref) }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+          if [ "$GITHUB_EVENT_NAME" = push ] && ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            BASE=HEAD^  # a push that created dev has no head before it
+          fi
+          if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ]; then
             python3 tools/required_checks.py pr --base "$BASE" | tee -a "$GITHUB_STEP_SUMMARY"
             run=$(python3 tools/required_checks.py pr --base "$BASE" --ci-inputs)
           else

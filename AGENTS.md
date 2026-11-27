@@ -104,7 +104,9 @@ test (`tools/check_compile_errors.py`), and a Doxygen build that fails on any wa
 check over its XML that each policy namespace holds only its kind (`tools/check_policies.py`). The tests, examples, and benchmarks build with warnings as errors
 (`EMRYS_FILTER_WARNINGS_AS_ERRORS`). A full CI run takes hours, so no run takes a
 job the change doesn't need: a pull request to `dev` runs the jobs that
-`python tools/required_checks.py pr --ci-inputs` names for its change, and nothing runs on a push.
+`python tools/required_checks.py pr --ci-inputs` names for its change, and a push to `dev` runs
+the same jobs for the commits pushed, which the README's CI badge shows; nothing runs on a push to
+another branch.
 Run the local checks above first, and dispatch a job by hand only when the user asks for it
 (`gh workflow run CI --ref next -f gcc=true -f docs=true`), as for the `ci` stage before a release. The Linux jobs but `clang-libcxx`
 install TBB, so libstdc++ runs `std::execution::par` on threads; without TBB it runs on one
